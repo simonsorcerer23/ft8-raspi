@@ -213,6 +213,35 @@ mid-QSO-Station via Doppelklick) bei uns nicht entstehen.
      hat zwei Manifestationen (repeated report + repeated CQ), gleiche
      Reaktion. Refactor zu unified "they didn't hear R-Report"-Branch.
 
+4. **picked_another-Detection auch in QSO_REPORT** *(Erledigt v0.2.2)*
+   - **Symptom:** Sebastian M7CCZ-Case 2026-05-24 16:42 UTC — M7CCZ gab uns
+     `DK9XR M7CCZ -06`, wir antworteten R-06, dann startete M7CCZ statt
+     RR73 ein neues QSO mit EA1DUS (`EA1DUS M7CCZ -03` → RR73). Unsere
+     State-Machine sah keinen RR73 zu DK9XR + keinen repeated-CQ + keinen
+     repeated-report → wartete 3 Slots (~45 s) bis Timeout. Real-Loss: 3
+     verschwendete RX/TX-Slots, Pi-Slot blockiert für andere QSO-
+     Möglichkeiten.
+   - **Gap:** Die `heard_them_with_other`-Detection (Partner sendet
+     `call_from=their, call_to=other`) existierte bereits in QSO_RESPOND
+     (Zeile 294-303 in `machine.py`) aber **fehlte in QSO_REPORT**.
+     Asymmetrie zwischen den beiden QSO-Active-States.
+   - **Fix (v0.2.2):** Spiegel-Check in QSO_REPORT VOR der
+     repeated-report/cq-Auswertung. Bei Match: sofort
+     `_bail_qso_with_cooldown(their_call, "picked_another")` — gleicher
+     Bail-Pfad wie in QSO_RESPOND, gleicher 15-min-Cooldown.
+   - **Tests:**
+     - `test_qso_report_partner_picks_another_bails_with_cooldown`
+     - `test_qso_report_picked_another_takes_priority_over_repeated_report`
+   - **Quantitatives:** In der Killer-Query oben („106 QSO_REPORT-Timeouts
+     letzte 7 Tage") waren 8 Cases (8 %) "Partner schon im neuen QSO mit
+     anderer Station" — genau die Klasse die dieser Fix einsparrt. **Keine
+     zusätzlichen QSOs** (Partner ist sowieso weg), aber **8 × 3 Slots =
+     24 vergeudete Slots/Woche** zurückgewonnen.
+   - **Lessons:** Symmetrie-Disziplin zwischen verwandten States — wenn
+     QSO_RESPOND einen Bail-Trigger hat, QSO_REPORT prüfen ob derselbe
+     Trigger dort auch greifen sollte. Tracking-Punkt für künftige
+     state-machine-Additions.
+
 ### Bewusste Abweichungen (würde NICHT ändern, dokumentieren)
 
 3. Aggressive Bail + 15-min-Failed-Cooldown — Unattended-Design.
@@ -246,9 +275,9 @@ mid-QSO-Station via Doppelklick) bei uns nicht entstehen.
 
    **Was tatsächlich helfen würde** (nicht Teil dieses Audits, eigene
    Tickets):
-   - QSO_REPORT-Bail wenn Partner schon im neuen QSO mit anderer Station
+   - ~~QSO_REPORT-Bail wenn Partner schon im neuen QSO mit anderer Station
      (heard_them_with_other-Pattern wie schon in QSO_RESPOND existiert) →
-     spart Slots, erhöht QSO-Quote nicht
+     spart Slots, erhöht QSO-Quote nicht~~ **→ Erledigt v0.2.2 als Action 4.**
    - Schnelleres Pickup von Stationen die wir grad gehört haben aber
      verloren — mit Cooldown-Bypass-Logik
 

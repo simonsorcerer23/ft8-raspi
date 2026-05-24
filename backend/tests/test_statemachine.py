@@ -540,6 +540,65 @@ def test_qso_report_partner_repeats_cq_triggers_r_resend(
         "Kein weiterer Resend nach Limit"
 
 
+def test_qso_report_partner_picks_another_bails_with_cooldown(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Partner schickt uns +Report, wir senden R-Report, dann startet er
+    ein QSO mit jemand ANDEREM statt RR73 zu uns. Spiegel-Pattern zu
+    QSO_RESPOND.picked_another. Sebastian 2026-05-24 M7CCZ-Case: M7CCZ
+    gab uns +06, wir antworteten R-06, dann lief M7CCZ → EA1DUS −03 →
+    RR73. Ohne Detection warteten wir 3 Slots vergeblich; mit Detection
+    bail sofort + Cooldown.
+
+    Audit Action 4 (docs/wsjtx_qso_state_audit.md)."""
+    sm.qso_failed_cooldown_s = 900.0
+    sm.qso_max_report_resends = 1
+    cq = _decode("M7CCZ", None, "CQ M7CCZ JO02")
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    # Partner schickt Signal-Report → wir gehen in QSO_REPORT
+    sm.on_decodes(good_hw, [_decode("M7CCZ", "DK9XR", "DK9XR M7CCZ -06", snr=-6)])
+    assert sm.state is State.QSO_REPORT
+    sm.drain_actions()
+
+    # Partner pickt nun einen anderen Caller (EA1DUS) statt unser RR73
+    sm.on_decodes(good_hw, [
+        _decode("M7CCZ", "EA1DUS", "EA1DUS M7CCZ -03"),
+    ])
+    assert sm.state is State.IDLE, "Bail sobald picked_another erkannt"
+    assert sm.qso is None
+    assert "M7CCZ" in sm.ctx.recent_until, \
+        "Cooldown gesetzt damit wir M7CCZ nicht sofort wieder anworten"
+    actions = sm.drain_actions()
+    assert not any(a.kind == "TX_MESSAGE" for a in actions), \
+        "Kein zus\u00e4tzlicher R-Resend wenn Partner schon weg ist"
+
+
+def test_qso_report_picked_another_takes_priority_over_repeated_report(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Im selben Decode-Slot kann der Partner sowohl seinen +Report nochmal
+    schicken (an uns) UND auch was zu jemand anderem senden. Eigentlich
+    Edge-Case, aber wir testen Priorit\u00e4t: picked_another schl\u00e4gt R-Resend,
+    weil der Partner offensichtlich nicht mehr unser Partner ist."""
+    sm.qso_failed_cooldown_s = 900.0
+    sm.qso_max_report_resends = 1
+    cq = _decode("M7CCZ", None, "CQ M7CCZ JO02")
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    sm.on_decodes(good_hw, [_decode("M7CCZ", "DK9XR", "DK9XR M7CCZ -06", snr=-6)])
+    assert sm.state is State.QSO_REPORT
+    sm.drain_actions()
+
+    # Beides im selben Slot: Report-Repeat + Other-QSO. Priority: bail.
+    sm.on_decodes(good_hw, [
+        _decode("M7CCZ", "DK9XR", "DK9XR M7CCZ -06", snr=-6),
+        _decode("M7CCZ", "EA1DUS", "EA1DUS M7CCZ -03"),
+    ])
+    assert sm.state is State.IDLE
+    assert sm.qso is None
+
+
 def test_qso_report_closing_after_resend_logs_qso(
     sm: StateMachine, good_hw: HardwareState,
 ) -> None:

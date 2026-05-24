@@ -371,6 +371,28 @@ class StateMachine:
                 #      R-Report-Resend; klappt's nicht, läuft Timeout.
                 #      Sebastian 2026-05-24 nach DO1BJF-Verlust.
                 their_call = self.qso.their_call
+                # (c) Partner hat einen anderen Caller gepickt nach unserem
+                #     R-Report (z.B. weil eine staerkere Station gleichzeitig
+                #     geantwortet hat). Spiegelt die picked_another-Detection
+                #     aus QSO_RESPOND. Sebastian 2026-05-24 nach M7CCZ-Case:
+                #     M7CCZ gab uns +06, wir sendeten R-06, dann startete er
+                #     QSO mit EA1DUS statt RR73 zu uns. Wir warteten 3 Slots
+                #     vergeblich. Ohne diesen Check laufen wir in Timeout
+                #     + verschwenden TX-Slots, mit Check bail sofort +
+                #     Cooldown (Partner ist sowieso weg).
+                heard_them_with_other = any(
+                    d.call_from == their_call
+                    and d.call_to is not None
+                    and d.call_to != self.ctx.callsign
+                    for d in decodes
+                )
+                if heard_them_with_other:
+                    log.info(
+                        "QSO_REPORT: %s picked another caller — bailing",
+                        their_call,
+                    )
+                    self._bail_qso_with_cooldown(their_call, "picked_another")
+                    return
                 rep_again = _find_report_from_them(
                     decodes, their_call, self.ctx.callsign
                 )
