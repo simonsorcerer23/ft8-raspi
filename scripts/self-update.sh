@@ -225,24 +225,29 @@ fi
 
 # -----------------------------------------------------------------------------
 # Health-Probe nach Restart.
+#
+# Wir verwenden /api/system/version (HTTP 200) statt /api/healthcheck —
+# Grund: /healthcheck.overall geht auf "red" sobald die rig-section fail
+# meldet (rig.freq_hz is None). Auf rig-losen Pis (ft8-2 als Standby
+# ohne IC) ist das der BASELINE-Zustand, nicht ein Regression-Signal.
+# overall="red" wäre also kein verlässliches Indiz dass das Update was
+# kaputt gemacht hat — wir würden permanent rollbacken.
+#
+# /api/system/version 200 OK = Controller läuft, FastAPI antwortet,
+# Routes geladen. Das ist alles was wir nach „restart erfolgreich"
+# wissen müssen. Echte Regression-Detection bleibt Sache des ntfy-
+# Watchdogs (kein Decode in X min usw.).
 log "Health-Probe in ${HEALTH_WAIT_S}s …"
 sleep "${HEALTH_WAIT_S}"
 
 HEALTHY=0
 for i in $(seq 1 "${HEALTH_RETRIES}"); do
-    HEALTH_JSON="$(curl -fsS -m 5 "${API_BASE}/healthcheck" 2>/dev/null || echo '')"
-    if [ -n "${HEALTH_JSON}" ]; then
-        OVERALL="$(printf '%s' "${HEALTH_JSON}" | jq -r '.overall // "unknown"')"
-        log "Health-Probe ${i}/${HEALTH_RETRIES}: overall=${OVERALL}"
-        # green oder yellow akzeptieren wir. yellow ist oft "GPS-Fix
-        # noch nicht da" — kein Grund für Rollback.
-        if [ "${OVERALL}" = "green" ] || [ "${OVERALL}" = "yellow" ]; then
-            HEALTHY=1
-            break
-        fi
-    else
-        log "Health-Probe ${i}/${HEALTH_RETRIES}: keine Antwort"
+    if curl -fsS -m 5 -o /dev/null "${API_BASE}/system/version"; then
+        log "Health-Probe ${i}/${HEALTH_RETRIES}: 200 OK"
+        HEALTHY=1
+        break
     fi
+    log "Health-Probe ${i}/${HEALTH_RETRIES}: kein 200 — Controller noch nicht oben?"
     sleep "${HEALTH_RETRY_DELAY_S}"
 done
 
