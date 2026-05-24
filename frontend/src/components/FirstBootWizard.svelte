@@ -21,8 +21,8 @@
                 cat_baud: 19200, max_power_w: null },
     antennas: [{ name: 'main', bands: ['20m', '40m'] }],
     bands: [
-      { name: '20m', freq_khz: 14074, antenna: 'main' },
-      { name: '40m', freq_khz: 7074,  antenna: 'main' },
+      { name: '20m', freq_khz: 14074, freq_khz_ft4: 14080, antenna: 'main' },
+      { name: '40m', freq_khz: 7074,  freq_khz_ft4: 7047,  antenna: 'main' },
     ],
     qrz: { user: '', password: '' },
   });
@@ -78,7 +78,10 @@ rig:
   cat_baud: ${c.rig.cat_baud}
 
 bands:
-${c.bands.map(b => `  - { name: "${b.name}", freq_khz: ${b.freq_khz}, antenna: ${b.antenna} }`).join('\n')}
+${c.bands.map(b => {
+  const ft4 = b.freq_khz_ft4 ? `, freq_khz_ft4: ${b.freq_khz_ft4}` : '';
+  return `  - { name: "${b.name}", freq_khz: ${b.freq_khz}${ft4}, antenna: ${b.antenna} }`;
+}).join('\n')}
 
 antennas:
 ${c.antennas.map(a => `  - { name: ${a.name}, bands: [${a.bands.map(x => `"${x}"`).join(', ')}] }`).join('\n')}
@@ -166,11 +169,16 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
         <input type="text" value={cfg.antennas[0].bands.join(', ')}
                onchange={(e) => {
                  cfg.antennas[0].bands = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                 const FT8_DEFAULTS = { '160m': 1840, '80m': 3573, '60m': 5357, '40m': 7074,
+                   '30m': 10136, '20m': 14074, '17m': 18100,
+                   '15m': 21074, '12m': 24915, '10m': 28074 };
+                 const FT4_DEFAULTS = { '160m': 1840, '80m': 3575, '60m': 5357, '40m': 7047,
+                   '30m': 10140, '20m': 14080, '17m': 18104,
+                   '15m': 21140, '12m': 24919, '10m': 28180 };
                  cfg.bands = cfg.antennas[0].bands.map(name => ({
                    name,
-                   freq_khz: { '160m': 1840, '80m': 3573, '60m': 5357, '40m': 7074,
-                                '30m': 10136, '20m': 14074, '17m': 18100,
-                                '15m': 21074, '12m': 24915, '10m': 28074 }[name] ?? 14074,
+                   freq_khz: FT8_DEFAULTS[name] ?? 14074,
+                   freq_khz_ft4: FT4_DEFAULTS[name] ?? null,
                    antenna: cfg.antennas[0].name,
                  }));
                }}

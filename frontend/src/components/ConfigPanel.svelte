@@ -91,7 +91,11 @@
     if (c.bands?.length) {
       s += `\nbands:\n`;
       for (const b of c.bands) {
-        s += `${ind(2)}- { name: "${b.name}", freq_khz: ${b.freq_khz} }\n`;
+        // freq_khz_ft4 nur emittieren wenn gesetzt — sonst greift im
+        // Backend der FT4_DEFAULT_DIALS-Fallback aus dem Bandplan.
+        const ft4 = (b.freq_khz_ft4 != null && b.freq_khz_ft4 !== '')
+          ? `, freq_khz_ft4: ${b.freq_khz_ft4}` : '';
+        s += `${ind(2)}- { name: "${b.name}", freq_khz: ${b.freq_khz}${ft4} }\n`;
       }
     }
     if (c.antennas?.length) {
@@ -174,9 +178,24 @@
     finally { saving = false; }
   }
 
+  // Standard-FT4-Dial-Frequenzen pro Band (Mirror der backend
+  // FT4_DEFAULT_DIALS-Tabelle). Wird im Placeholder + als Default
+  // beim Hinzufuegen neuer Baender genutzt. Quelle: WSJT-X / IARU.
+  const FT4_DEFAULT_DIALS = {
+    '160m':   1840, '80m':   3575, '60m':    5357, '40m':    7047,
+    '30m':   10140, '20m':  14080, '17m':   18104, '15m':   21140,
+    '12m':   24919, '10m':  28180, '6m':    50318, '2m':   144170,
+  };
+  // FT8-Standard-Dial-Frequenzen analog — fuer addBand-Default.
+  const FT8_DEFAULT_DIALS = {
+    '160m':   1840, '80m':   3573, '60m':    5357, '40m':    7074,
+    '30m':   10136, '20m':  14074, '17m':   18100, '15m':   21074,
+    '12m':   24915, '10m':  28074, '6m':    50313, '2m':   144174,
+  };
+
   function addBand() {
     cfg.bands = [...(cfg.bands || []),
-                 { name: '20m', freq_khz: 14074 }];
+                 { name: '20m', freq_khz: 14074, freq_khz_ft4: 14080 }];
   }
   function removeBand(i) { cfg.bands = cfg.bands.filter((_, j) => j !== i); }
 
@@ -304,13 +323,22 @@
       <section>
         <h3>Bänder <button class="add" onclick={addBand}>+ Band</button></h3>
         <p class="hint">
-          Bänder sind die Funkbereiche mit ihrer Standard-FT8-Dial-Frequenz.
-          Welche Antenne ein Band abdeckt, wird darunter pro Antenne eingestellt.
+          Bänder mit FT8- und FT4-Dial-Frequenz in kHz. FT4 lässt sich
+          leer lassen — dann wird der Standard-Bandplan-Wert benutzt
+          (z.B. 21140 für 15m).
         </p>
+        <div class="row band-header">
+          <span style="max-width: 5rem">Name</span>
+          <span>FT8 (kHz)</span>
+          <span>FT4 (kHz)</span>
+          <span></span>
+        </div>
         {#each cfg.bands as b, i}
           <div class="row">
             <input type="text" bind:value={b.name} placeholder="20m" style="max-width: 5rem"/>
             <input type="number" bind:value={b.freq_khz} placeholder="14074" min="1800"/>
+            <input type="number" bind:value={b.freq_khz_ft4}
+                   placeholder={FT4_DEFAULT_DIALS[b.name] ?? 'auto'} min="1800"/>
             <button class="rm" onclick={() => removeBand(i)}>×</button>
           </div>
         {/each}

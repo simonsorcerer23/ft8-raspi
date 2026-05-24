@@ -431,6 +431,14 @@ class Orchestrator:
             await self.rig.connect()
         except Exception as exc:
             log.warning("rig.connect() failed at boot (rigctld down?): %s — will retry in poll loop", exc)
+        # Sebastian v0.4.2: nach erfolgreichem Connect Rig-Dial auf
+        # die mode-passende Sub-Band-Freq setzen. FT4 hat eigene Sub-
+        # Bänder (z.B. 14.080 vs 14.074 MHz auf 20m). Ohne diesen
+        # Hook bliebe der Pi auf der FT8-Dial-Freq auch bei mode=FT4.
+        try:
+            await self._ensure_dial_matches_mode("boot")
+        except Exception as exc:
+            log.warning("boot ensure_dial_matches_mode failed: %s", exc)
         self._bg_tasks.append(asyncio.create_task(self.gps.run_forever(), name="gpsd"))
         self._bg_tasks.append(asyncio.create_task(self._slot_loop(), name="slot-loop"))
         self._bg_tasks.append(asyncio.create_task(self._rig_poll_loop(), name="rig-poll"))
@@ -1065,6 +1073,63 @@ class Orchestrator:
             return abs(rig_value - expected) <= tolerance
         return rig_value == expected
 
+    async def _ensure_dial_matches_mode(self, reason: str) -> None:
+        """Stell Rig-Dial auf die mode-passende Sub-Band-Freq.
+
+        Sebastian-Audit v0.4.2: FT4 hat eigene Sub-Bänder (z.B. 14.080
+        statt 14.074 MHz auf 20m). Beim Boot und beim Mode-Switch im
+        UI muessen wir das Rig auf die richtige Dial-Frequenz fuer den
+        aktiven Mode bringen, sonst hoert der FT4-Decoder weiterhin
+        auf der FT8-Frequenz und sieht nichts.
+
+        Pickt das aktuell aktive Band aus dem Rig-Snapshot (per Toleranz-
+        Match) oder fallback config.bands[0]. Setzt nur wenn die
+        Zielfrequenz von der aktuellen abweicht.
+        """
+        mode = self.config.operating.mode
+        if not self.config.bands:
+            return
+        # Welches Band sind wir gerade auf? Match per ±50 kHz Toleranz
+        # gegen den aktuellen Rig-Dial. Wenn nichts passt, nimm das
+        # erste konfigurierte Band als Default (typischer Single-Band-Pi).
+        active_band = None
+        current_hz = self._last_rig.freq_hz if self._last_rig else None
+        if current_hz is not None:
+            current_khz = current_hz / 1000.0
+            for band in self.config.bands:
+                # Prüfe beide Subbands damit ein Wechsel zwischen den
+                # Sub-Bändern des gleichen Bands erkannt wird
+                for candidate_khz in (band.freq_khz, band.freq_for_mode("FT8"),
+                                       band.freq_for_mode("FT4")):
+                    if abs(candidate_khz - current_khz) <= 100:
+                        active_band = band
+                        break
+                if active_band is not None:
+                    break
+        if active_band is None:
+            active_band = self.config.bands[0]
+        target_khz = active_band.freq_for_mode(mode)
+        target_hz = target_khz * 1000
+        if current_hz == target_hz:
+            log.debug(
+                "ensure_dial_matches_mode (%s): already on %d Hz",
+                reason, target_hz,
+            )
+            return
+        log.info(
+            "ensure_dial_matches_mode (%s): %s mode → set dial %s -> %d Hz "
+            "(band=%s)",
+            reason, mode, current_hz, target_hz, active_band.name,
+        )
+        try:
+            await self.handle_set_freq(target_hz)
+        except Exception as exc:
+            log.warning(
+                "ensure_dial_matches_mode: set_freq(%d) failed: %s "
+                "(rig disconnected?). Will retry on next mode-event.",
+                target_hz, exc,
+            )
+
     async def handle_set_freq(self, hz: int) -> None:
         """Wrap rig.set_freq + Echo-Registration fuer Tamper-Detection."""
         await self.rig.set_freq(hz)
@@ -1302,13 +1367,22 @@ class Orchestrator:
         # bleibt unveraendert (running async iter), Service-Restart
         # ist fuer vollen Effekt noetig — bei Bedarf via ntfy melden.
         new_mode = new_cfg.operating.mode if new_cfg.operating.mode in ("FT8", "FT4") else "FT8"
+        old_mode_for_dial = None
         if hasattr(self.decode_source, "mode") and self.decode_source.mode != new_mode:
             log.warning(
                 "FT8/FT4 mode switch detected: %s -> %s. Decoder live-switched; "
                 "slot_clock tempo requires service restart for full effect.",
                 self.decode_source.mode, new_mode,
             )
+            old_mode_for_dial = self.decode_source.mode
             self.decode_source.mode = new_mode
+        # Sebastian v0.4.2: nach Mode-Switch Rig-Dial auf das richtige
+        # Sub-Band setzen (FT4 hat eigene Frequenzen pro Band, sonst
+        # hoert der FT4-Decoder weiter auf FT8-Freq).
+        if old_mode_for_dial is not None:
+            await self._ensure_dial_matches_mode(
+                f"mode_switch:{old_mode_for_dial}->{new_mode}"
+            )
         # Default TX power update too (if user changed it in the form)
         if new_cfg.operator.default_power_w != self._tx_power_w:
             self._tx_power_w = new_cfg.operator.default_power_w
@@ -2962,7 +3036,11 @@ class Orchestrator:
                     call=payload["call"],
                     band=payload.get("band", "20m"),
                     freq_hz=freq_hz,
-                    mode=payload.get("mode", "FT8"),
+                    # Sebastian-Bug v0.4.2: state_machine-Payload hat
+                    # kein mode-Feld -> default "FT8" hat alle QSOs
+                    # falsch als FT8 geloggt auch wenn wir FT4 fuhren.
+                    # Jetzt: live aus operating.mode lesen.
+                    mode=payload.get("mode") or self.config.operating.mode,
                     rst_sent=payload.get("rst_sent"),
                     rst_rcvd=payload.get("rst_rcvd"),
                     grid_rcvd=payload.get("grid_rcvd"),

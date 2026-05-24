@@ -143,8 +143,12 @@ async def get_status(orch: Orchestrator = Depends(get_orchestrator)) -> StatusRe
         rx_audio_dbfs=s.rx_audio_dbfs,
         audio_gain=s.audio_gain,
         last_alc_pct=s.last_alc_pct,
-        mode=orch.config.operating.mode,
-        cq_directed=(orch.config.operating.cq_directed or "").upper(),
+        # getattr-Guard wie bei den Flag-Lookups: FakeOrchestrator
+        # in den Tests hat kein config-Attribut.
+        mode=getattr(getattr(orch, "config", None), "operating", None)
+              and orch.config.operating.mode or "FT8",
+        cq_directed=(getattr(getattr(orch, "config", None), "operating", None)
+                     and (orch.config.operating.cq_directed or "").upper() or ""),
     )
 
 

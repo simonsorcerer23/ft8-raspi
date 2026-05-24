@@ -63,21 +63,67 @@ class OperatorConfig(BaseModel):
 
 # ---------------------------------------------------------------------------
 class BandConfig(BaseModel):
-    """Ein Funkband mit seiner FT8-Dial-Frequenz.
+    """Ein Funkband mit seiner FT8- + FT4-Dial-Frequenz.
 
     Bänder sind intrinsisch — die Frequenz hängt nicht von der Antenne
     ab, nur vom Bandplan. Welche Antenne aktuell für ein Band genutzt
     werden kann, wird umgekehrt in AntennaConfig.bands gepflegt.
+
+    FT4 hat eigene Sub-Bänder pro Band (z.B. 14.080 MHz statt 14.074
+    MHz auf 20m). Sebastian-Bug v0.4.2: ohne dedizierte FT4-Dial-Freq
+    war der Mode-Switch im UI nur halb-wirksam — Pi blieb auf der
+    FT8-Frequenz und der FT4-Decoder fand nichts.
     """
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    freq_khz: int = Field(ge=1_800, le=148_000)  # HF + 6m + 2m falls IC-9700
+    freq_khz: int = Field(ge=1_800, le=148_000)  # FT8-Dial; HF + 6m + 2m falls IC-9700
+    # FT4-Sub-Band-Dial. None = nicht konfiguriert → fallback auf freq_khz
+    # (= FT8-Dial). Wenn der Pi auf FT4 geschaltet ist und das Band einen
+    # ft4-Wert hat, springt das Rig automatisch auf diese Frequenz.
+    freq_khz_ft4: int | None = Field(default=None, ge=1_800, le=148_000)
     # Alt-Feld (Migrations-Kompat): wurde in alten Configs gepflegt,
     # ist heute deprecated. Wird ignoriert, BandConfig braucht keine
     # Antennen-Zuordnung mehr. Lass null/auto-stripped damit alte
     # YAMLs nicht durchfallen.
     antenna: str | None = None
+
+    def freq_for_mode(self, mode: str) -> int:
+        """Liefert die korrekte Dial-Freq je nach Mode.
+
+        Sebastian-Audit v0.4.2: FT4 hat pro Band eigene Sub-Bänder.
+        Resolutions-Reihenfolge fuer Mode='FT4':
+        1. ``freq_khz_ft4`` aus Config (User-Override)
+        2. ``FT4_DEFAULT_DIALS[self.name]`` (Standard-Bandplan)
+        3. ``freq_khz`` (FT8-Fallback, wenn Band unbekannt)
+        Fuer Mode='FT8' immer ``freq_khz``.
+        """
+        if mode == "FT4":
+            if self.freq_khz_ft4 is not None:
+                return self.freq_khz_ft4
+            default_ft4 = FT4_DEFAULT_DIALS.get(self.name)
+            if default_ft4 is not None:
+                return default_ft4
+        return self.freq_khz
+
+
+# Standard-FT4-Sub-Band-Defaults pro Band (in kHz). Werden in der Config
+# nicht zwingend gepflegt — wenn fehlt, faellt freq_for_mode() auf
+# freq_khz (FT8-Dial) zurueck. Quelle: WSJT-X-Defaults / IARU-Bandplan.
+FT4_DEFAULT_DIALS: dict[str, int] = {
+    "160m": 1_840,
+    "80m":  3_575,
+    "60m":  5_357,    # FT4 auf 60m selten benutzt, aber dokumentiert
+    "40m":  7_047,    # 7.0475 MHz (.5 kHz Offset zur Standard-Notation)
+    "30m": 10_140,
+    "20m": 14_080,
+    "17m": 18_104,
+    "15m": 21_140,
+    "12m": 24_919,
+    "10m": 28_180,
+    "6m":  50_318,
+    "2m": 144_170,
+}
 
 
 class AntennaConfig(BaseModel):
