@@ -729,16 +729,22 @@ class Orchestrator:
         await self.gps.close()
 
     def status(self) -> OrchestratorStatus:
-        # Aktives Band aus rig.freq_hz ableiten (Toleranz ±50 kHz —
-        # FT8-Sub-Band ist eng, mehr brauchen wir nicht).
+        # Aktives Band aus rig.freq_hz ableiten. Sebastian-Bugfix v0.4.3:
+        # mode-aware — matcht gegen FT8-Dial UND FT4-Subband (vorher nur
+        # band.freq_khz, der FT4-Subband 14.080 wurde nicht als 20m
+        # erkannt und active_band blieb None → Antennen-Guard locked).
         active_band: str | None = None
         effective_max: int | None = None
         if self._last_rig.freq_hz is not None:
             freq_khz = self._last_rig.freq_hz / 1000.0
             for band in self.config.bands:
-                if abs(band.freq_khz - freq_khz) <= 50:
-                    active_band = band.name
-                    effective_max = self.config.effective_max_power_w(band.name)
+                for candidate_khz in (band.freq_for_mode("FT8"),
+                                       band.freq_for_mode("FT4")):
+                    if abs(candidate_khz - freq_khz) <= 50:
+                        active_band = band.name
+                        effective_max = self.config.effective_max_power_w(band.name)
+                        break
+                if active_band is not None:
                     break
         # Bandwechsel-Detection (Sebastian 2026-05-24, v0.2.3): wenn das
         # Band wechselt, Safety-Floor neu anwenden — Per-Band-Cap kann
@@ -1077,37 +1083,50 @@ class Orchestrator:
         """Stell Rig-Dial auf die mode-passende Sub-Band-Freq.
 
         Sebastian-Audit v0.4.2: FT4 hat eigene Sub-Bänder (z.B. 14.080
-        statt 14.074 MHz auf 20m). Beim Boot und beim Mode-Switch im
-        UI muessen wir das Rig auf die richtige Dial-Frequenz fuer den
-        aktiven Mode bringen, sonst hoert der FT4-Decoder weiterhin
-        auf der FT8-Frequenz und sieht nichts.
+        statt 14.074 MHz auf 20m). Beim Mode-Switch im UI muessen wir
+        das Rig auf die richtige Dial-Frequenz fuer den aktiven Mode
+        bringen, sonst hoert der FT4-Decoder weiterhin auf der FT8-
+        Frequenz und sieht nichts.
 
-        Pickt das aktuell aktive Band aus dem Rig-Snapshot (per Toleranz-
-        Match) oder fallback config.bands[0]. Setzt nur wenn die
-        Zielfrequenz von der aktuellen abweicht.
+        Sebastian-Bugfix v0.4.3: Defensiv — ist die aktuelle Rig-Freq
+        unbekannt (Boot-Race) oder zu keinem konfigurierten Band
+        matchbar, machen wir NICHTS. Vorher fiel das auf bands[0]
+        zurueck und schickte das Rig auf ein zufaelliges Band — bei
+        Sebastians Pi (Antenne nur 15m, bands=[20m,15m]) hat das den
+        Rig auf 14.080 MHz gesetzt → Antennen-Guard locked TX +
+        Tamper-Push.
         """
         mode = self.config.operating.mode
         if not self.config.bands:
             return
-        # Welches Band sind wir gerade auf? Match per ±50 kHz Toleranz
-        # gegen den aktuellen Rig-Dial. Wenn nichts passt, nimm das
-        # erste konfigurierte Band als Default (typischer Single-Band-Pi).
-        active_band = None
         current_hz = self._last_rig.freq_hz if self._last_rig else None
-        if current_hz is not None:
-            current_khz = current_hz / 1000.0
-            for band in self.config.bands:
-                # Prüfe beide Subbands damit ein Wechsel zwischen den
-                # Sub-Bändern des gleichen Bands erkannt wird
-                for candidate_khz in (band.freq_khz, band.freq_for_mode("FT8"),
-                                       band.freq_for_mode("FT4")):
-                    if abs(candidate_khz - current_khz) <= 100:
-                        active_band = band
-                        break
-                if active_band is not None:
+        if current_hz is None:
+            log.info(
+                "ensure_dial_matches_mode (%s): rig-freq noch unbekannt "
+                "(rigctld not ready?) — skip, wird beim naechsten Mode-Event retried",
+                reason,
+            )
+            return
+        # Welches Band sind wir gerade auf? Match per ±100 kHz Toleranz
+        # gegen ALLE Sub-Band-Frequenzen (FT8 + FT4) jedes konfig-Bands.
+        active_band = None
+        current_khz = current_hz / 1000.0
+        for band in self.config.bands:
+            for candidate_khz in (band.freq_for_mode("FT8"),
+                                   band.freq_for_mode("FT4")):
+                if abs(candidate_khz - current_khz) <= 100:
+                    active_band = band
                     break
+            if active_band is not None:
+                break
         if active_band is None:
-            active_band = self.config.bands[0]
+            log.info(
+                "ensure_dial_matches_mode (%s): rig auf %.4f MHz matched "
+                "kein konfiguriertes Band — skip (User koennte auf eine "
+                "andere Frequenz manuell gegangen sein)",
+                reason, current_hz / 1e6,
+            )
+            return
         target_khz = active_band.freq_for_mode(mode)
         target_hz = target_khz * 1000
         if current_hz == target_hz:
@@ -1117,7 +1136,7 @@ class Orchestrator:
             )
             return
         log.info(
-            "ensure_dial_matches_mode (%s): %s mode → set dial %s -> %d Hz "
+            "ensure_dial_matches_mode (%s): %s mode → set dial %d -> %d Hz "
             "(band=%s)",
             reason, mode, current_hz, target_hz, active_band.name,
         )
@@ -2124,7 +2143,12 @@ class Orchestrator:
             if actual_hz is not None and self.config.bands:
                 band = self._band_for_rig_freq(actual_hz)
                 if band is not None:
-                    expected_hz = band.freq_khz * 1000
+                    # Sebastian-Bugfix v0.4.3: Tamper-Check muss die
+                    # mode-passende Sub-Band-Freq als expected nehmen,
+                    # nicht starr freq_khz (FT8-Default). Sonst feuert
+                    # nach unserem eigenen FT4-Mode-Switch der Push
+                    # "Frequenz wurde verstellt".
+                    expected_hz = band.freq_for_mode(self.config.operating.mode) * 1000
                     delta_hz = actual_hz - expected_hz
                     if abs(delta_hz) > 100:
                         last = getattr(self, "_last_logged_drift_hz", None)
