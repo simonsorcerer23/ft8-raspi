@@ -82,6 +82,14 @@ class StatusResponse(BaseModel):
     # RigPanel als kleine Status-Zelle.
     audio_gain: float | None = None
     last_alc_pct: int | None = None
+    # Digital-Mode (FT8/FT4) — wird im RigPanel als Tag angezeigt damit
+    # der Operator sieht in welchem Slot-Tempo der Pi laeuft.
+    # Sebastian-Bug v0.4.1: das UI-Tag las statusStore.value.mode aber
+    # das Feld war nie im API-Output -> fiel immer auf 'FT8' default.
+    mode: str = "FT8"
+    # CQ-Direction-Tag (Audit F7 v0.3.4) — leer = klassischer CQ, sonst
+    # "DX"/"EU"/"POTA"/... fuer Anzeige im RigPanel.
+    cq_directed: str = ""
 
 
 @router.get("/status", response_model=StatusResponse)
@@ -135,6 +143,8 @@ async def get_status(orch: Orchestrator = Depends(get_orchestrator)) -> StatusRe
         rx_audio_dbfs=s.rx_audio_dbfs,
         audio_gain=s.audio_gain,
         last_alc_pct=s.last_alc_pct,
+        mode=orch.config.operating.mode,
+        cq_directed=(orch.config.operating.cq_directed or "").upper(),
     )
 
 

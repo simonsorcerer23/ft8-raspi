@@ -135,9 +135,20 @@
   <div class="header">
     <span class="badge">🎙️ {modelLabel} {rig.vfo && rig.vfo !== '0' && !rig.vfo.startsWith('RPRT') ? rig.vfo : ''}</span>
     <div class="meta">
-      <span class="tag mode-tag" title="Active digital mode (FT8: 15s slots, FT4: 7.5s slots)">
-        📡 {statusStore.value.mode ?? 'FT8'}
+      {@const digMode = statusStore.value.mode ?? 'FT8'}
+      <span class="tag mode-tag"
+            class:mode-ft4={digMode === 'FT4'}
+            title={digMode === 'FT4'
+              ? 'FT4 active — 7.5s slots, schnellere QSOs, ~3 dB weniger Sensitivity als FT8'
+              : 'FT8 active — 15s slots, Standard-Modus'}>
+        📡 {digMode}
       </span>
+      {#if statusStore.value.cq_directed}
+        <span class="tag directed-tag"
+              title="Directed CQ: nur Stationen aus dieser Region/Award rufen den Pi an">
+          🎯 CQ {statusStore.value.cq_directed}
+        </span>
+      {/if}
       {#if rig.split_on}<span class="tag">SPLIT</span>{/if}
       {#if rig.battery_v != null}
         <span class="tag" style="color: {batColor(rig.battery_v)}">
@@ -240,6 +251,17 @@
   .mode-tag {
     color: var(--accent); border-color: rgba(56,189,248,0.3);
     background: rgba(56,189,248,0.08);
+  }
+  /* FT4 markant orange — sichtbar dass der Pi im schnelleren Modus
+     laeuft, damit der Operator das nicht aus Versehen uebersieht
+     wenn er Standard-FT8 erwartet hat. Sebastian v0.4.1. */
+  .mode-tag.mode-ft4 {
+    color: #fb923c; border-color: rgba(251,146,60,0.4);
+    background: rgba(251,146,60,0.12);
+  }
+  .directed-tag {
+    color: #c084fc; border-color: rgba(192,132,252,0.3);
+    background: rgba(192,132,252,0.08);
   }
   .warn {
     color: #f59e0b; font-size: 0.75rem;
