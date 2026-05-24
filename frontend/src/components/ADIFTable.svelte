@@ -102,7 +102,8 @@
         <tr>
           <th class="pfx-col">Präfix</th>
           {#each headers as h}
-            <th class="sortable" onclick={() => logStore.setSort(h.col)}>
+            <th class="sortable {h.col === 'call' ? 'call-col' : ''}"
+                onclick={() => logStore.setSort(h.col)}>
               {h.label}{sortArrow(h.col)}
             </th>
           {/each}
@@ -115,7 +116,7 @@
                        onclick={() => logStore.setFilter('prefix', extractPrefix(q.call))}
                        title="Filter auf diesen Präfix">{extractPrefix(q.call)}</span></td>
             <td class="ts">{shortTs(q.qso_start)}</td>
-            <td>
+            <td class="call-col">
               {#if q.flag}<span class="flag" title={q.call}>{q.flag}</span>{/if}
               <span class="call" style="color: {COLOURS.worked}">{q.call}</span>
             </td>
@@ -185,6 +186,11 @@
     font-weight: 700; letter-spacing: 0.03em; cursor: pointer;
   }
   .pfx-tag:hover { background: rgba(167,139,250,0.3); }
+  /* Call-Spalte breit genug fuer Flag + 7-Zeichen-Call wie "DK9XR/P"
+     ohne Umbruch. Sebastian-Bug 2026-05-24 nach Flag-Einbau (v0.3.0).
+     min-width damit auch lange Special-Calls (3-letter-prefix + 3-digit
+     + 3-letter-suffix) keine umbrechen. */
+  .call-col { min-width: 8.5rem; white-space: nowrap; }
   .call { font-weight: 700; }
   .flag { display: inline-block; margin-right: 0.3em; vertical-align: middle; }
   .ts { color: #94a3b8; }

@@ -242,6 +242,39 @@ mid-QSO-Station via Doppelklick) bei uns nicht entstehen.
      Trigger dort auch greifen sollte. Tracking-Punkt für künftige
      state-machine-Additions.
 
+5. **R-Report-SNR-Direction nicht WSJT-X-konform** *(Action 5, offen)*
+   - **Symptom:** Unser `_emit_send_r_report` schickt
+     `R{our_snr_received}` — das ist der SNR den DER PARTNER UNS
+     gegeben hat (= unser Signal an seiner Station), als Echo
+     zurueck-gespiegelt.
+   - **WSJT-X-Referenz (QEX Fig 6, Tx4-Message):** Standard ist
+     `R + SNR-of-them-at-us` — also der SNR den WIR von IHM gemessen
+     haben (das was im Header der Decode steht), nicht das Echo seines
+     Reports.
+   - **Beweis aus realem ON4MDW-Trace 2026-05-24 15:49:**
+     - ON4MDW → DO3BZ: `DO3BZ ON4MDW -07` (DO3BZ's signal an ON4MDW = -07)
+     - DO3BZ → ON4MDW: `ON4MDW DO3BZ R-16` (ON4MDW's signal an DO3BZ
+       gemessen = -16, NICHT R-07 als Echo)
+   - **Konsequenz fuer rst_sent:**
+     - Unser Code: `rst_sent` enthaelt jetzt (seit v0.3.1) das was wir
+       transmitten (Echo des Reports = unser Signal-Report von ihm).
+       Semantisch: "der SNR-String den wir gefunkt haben" — ADIF-korrekt
+       als Snapshot dessen was on-air ging.
+     - WSJT-X-Konform waere: `rst_sent` enthaelt unser eigenes
+       SNR-Measurement der Partner-Signale (mehrere ueber den QSO-
+       Verlauf, Median oder zuletzt).
+   - **Aufwand:** ~20 Zeilen — `QsoContext.their_snr_at_us` neu, in
+     `_handle_qso_respond`/`_handle_qso_report` bei jedem Decode des
+     Partners aktualisieren (mit Median ueber QSO), in
+     `_emit_send_r_report` den Wert statt `our_snr_received` nehmen.
+   - **Priority:** medium. Beeintraechtigt nicht QSO-Erfolg (Partner
+     akzeptiert R-Report unabhaengig vom konkreten SNR-Wert), aber:
+     - Hunt-Fehlanalyse: wir senden ihm SEINEN Eindruck zurueck statt
+       was wir messen — er kann seine eigene Antenne nicht trimmen
+     - QSO-Log-Daten weniger nuetzlich (rst_sent waere = rst_rcvd in
+       allen Faellen, kein independent value)
+   - **Decision pending:** Sebastian-OK + dedizierter Refactor-Cycle.
+
 ### Bewusste Abweichungen (würde NICHT ändern, dokumentieren)
 
 3. Aggressive Bail + 15-min-Failed-Cooldown — Unattended-Design.

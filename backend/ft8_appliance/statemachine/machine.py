@@ -632,6 +632,14 @@ class StateMachine:
     def _emit_send_r_report(self) -> None:
         assert self.qso is not None
         snr = self.qso.our_snr_received if self.qso.our_snr_received is not None else -10
+        # Capture WHAT wir transmitten als rst_sent fuers QSO-Log
+        # (Sebastian-Bug 2026-05-24: Spalte war fuer Hunting-QSOs immer
+        # leer weil their_snr nur im CQ-Caller-Pfad gesetzt war).
+        # ADIF-Semantik: rst_sent = der String den wir gefunkt haben.
+        # Anmerkung WSJT-X-Konformanz: real WSJT-X sendet R + SNR-of-
+        # them-at-us, wir hier R + SNR-they-reported-of-us (Echo) —
+        # separater Audit-Punkt (Action 5).
+        self.qso.their_snr = snr
         msg = f"{self.qso.their_call} {self.ctx.callsign} R{snr:+03d}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "r_report")))
 

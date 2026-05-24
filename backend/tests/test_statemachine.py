@@ -145,6 +145,35 @@ def test_user_reply_to_hunting_flow(sm: StateMachine, good_hw: HardwareState) ->
     assert tx.payload["message"] == "W1AW DK9XR JN58"
 
 
+def test_hunt_flow_log_qso_captures_rst_sent(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Im Hunt-Pfad (wir antworten auf fremde CQ) muss rst_sent im
+    LOG_QSO-Payload den SNR-Wert enthalten den wir transmitten — vorher
+    war's immer None weil their_snr nur im CQ-Caller-Pfad gesetzt
+    wurde. Sebastian-Bug 2026-05-24 nach Screenshot des QSO-Logs mit
+    leerer RST↑-Spalte."""
+    cq = _decode("W1AW", None, "CQ W1AW FN31", grid="FN31")
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    # Partner schickt uns -08 Report → wir gehen in QSO_REPORT + senden
+    # R-Report. Hier muss qso.their_snr nun gesetzt sein.
+    sm.on_decodes(good_hw, [_decode("W1AW", "DK9XR", "DK9XR W1AW -08", snr=-8)])
+    assert sm.state is State.QSO_REPORT
+    assert sm.qso is not None
+    assert sm.qso.their_snr == -8, \
+        "their_snr (= rst_sent fuer Log) muss beim R-Report-Emit gesetzt sein"
+    sm.drain_actions()
+
+    # Partner schickt RR73 → wir loggen + landen in QSO_GRACE
+    sm.on_decodes(good_hw, [_decode("W1AW", "DK9XR", "DK9XR W1AW RR73")])
+    actions = sm.drain_actions()
+    log_action = next(a for a in actions if a.kind == "LOG_QSO")
+    assert log_action.payload["rst_sent"] == -8, \
+        "rst_sent muss im LOG_QSO-Payload landen, nicht None"
+    assert log_action.payload["rst_rcvd"] == -8, "rst_rcvd Sanity"
+
+
 def test_slot_tick_retransmits_cq(sm: StateMachine, good_hw: HardwareState) -> None:
     sm.on_user_start_cq(good_hw)
     sm.drain_actions()
