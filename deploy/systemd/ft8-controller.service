@@ -40,9 +40,12 @@ ReadWritePaths=/var/lib/ft8-appliance /var/log/ft8-appliance /etc/ft8-appliance
 PrivateTmp=true
 SupplementaryGroups=plugdev dialout netdev
 
-# Watchdog (systemd kills us if our heartbeat stops; our app needs to call sd_notify periodically)
-WatchdogSec=30
-NotifyAccess=main
+# NOTE: WatchdogSec/NotifyAccess waren früher hier — aber im
+# orchestrator wird NIE sd_notify("WATCHDOG=1") aufgerufen, also wurde
+# der Service seit der Migration alle 30s vom systemd gekillt (SIGABRT-
+# Cascade, Restart=always-Loop). Entfernt 2026-05-24. Wenn wir später
+# echten liveness-watchdog wollen: sdnotify-Package in pyproject + in
+# einer asyncio-Loop alle 10s notifien. Separate Engineering-Übung.
 
 [Install]
 WantedBy=multi-user.target
