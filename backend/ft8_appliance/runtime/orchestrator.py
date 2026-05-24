@@ -1283,12 +1283,20 @@ class Orchestrator:
         # Slider bewegt hat.
         self._maybe_persist_runtime_state(force=True)
 
-    def _compute_safe_default_power_w(self, band: str | None = None) -> int:
+    def _compute_safe_default_power_w(self, band: str | None = None) -> int | None:
         """Effective-max / 2 als sicherer Default fuer das gegebene Band.
 
         Sebastian 2026-05-24 (v0.2.3): Safety-Floor-Default. Bei
         Reset-Events (Boot, Operator-Wechsel, Rig-Wechsel, Bandwechsel)
         nehmen wir max(1, effective_max // 2) als Obergrenze.
+
+        v0.4.5 (Sebastian-Bug 1W-Clamp): wenn das Band fuer die Klasse
+        gar nicht freigegeben ist (effective_max == 0), gibt es KEINEN
+        sinnvollen Safety-Floor — Senden ist eh durch antenna_guard /
+        license_guard blockiert. Wir returnen None damit der Caller
+        skipt statt den User-Slider auf 1W zu kicken (war ein vergiftetes
+        Geschenk: Pi wechselte spaeter aufs erlaubte Band zurueck und
+        blieb bei 1W stehen).
 
         Wenn ``band`` None ist oder nicht in der Config existiert, fallen
         wir auf ``rig.effective_max_power_w`` zurueck (das ist der Hard-
@@ -1302,6 +1310,9 @@ class Orchestrator:
                 eff_max = None
         if eff_max is None:
             eff_max = self.config.rig.effective_max_power_w
+        if eff_max <= 0:
+            # Band nicht erlaubt fuer die Klasse → kein Floor anwenden
+            return None
         return max(1, eff_max // 2)
 
     async def _apply_tx_power_safety_floor(
@@ -1313,11 +1324,21 @@ class Orchestrator:
         wenn die aktuelle Leistung ueber dem Safety-Floor liegt. QRP-
         Settings darunter bleiben unangetastet.
 
+        v0.4.5: wenn das Band fuer die Klasse nicht freigegeben ist
+        (safe == None), skippen wir die Floor-Anwendung komplett.
+
         Reasons (fuer Logs): "boot", "operator_switch", "rig_change",
         "band_change".
         """
         active_band = band if band is not None else self._last_active_band
         safe = self._compute_safe_default_power_w(active_band)
+        if safe is None:
+            log.info(
+                "tx-power safety-floor (%s): band=%s nicht fuer Klasse "
+                "freigegeben — skip (TX wird ohnehin von Guards blockiert)",
+                reason, active_band or "?",
+            )
+            return
         if self._tx_power_w <= safe:
             log.info(
                 "tx-power safety-floor (%s): aktuell %dW <= safe %dW — keine Aenderung",

@@ -109,6 +109,44 @@ def test_compute_safe_default_qmx_plus_5w() -> None:
     assert safe == 2
 
 
+def test_compute_safe_default_returns_none_for_disallowed_band() -> None:
+    """Sebastian-Bug v0.4.5: E-Klasse darf nicht auf 20m. Statt
+    safe=1W zu liefern (was den User-Slider boesartig auf 1W kickt
+    selbst beim Zurueckwechsel auf erlaubtes Band) -> None ->
+    Caller skipt Floor-Application komplett.
+    """
+    cfg = _cfg(license_class="E")
+    # Hack: 20m als verbotenes Band manuell hinzufuegen (E-Klasse darf
+    # nicht auf 20m). _cfg() hat 15m+10m, beide erlaubt. Wir koennten
+    # alternativ direkt effective_max_power_w mocken, aber so ist's
+    # naeher am Real-Bug.
+    from ft8_appliance.config import BandConfig
+    cfg.bands.append(BandConfig(name="20m", freq_khz=14074, antenna="endfed"))
+    orch = _build_orch(cfg)
+    safe = orch._compute_safe_default_power_w("20m")
+    assert safe is None, (
+        "E-Klasse auf 20m → effective_max=0 → safe muss None sein "
+        "damit der safety-floor skipt statt auf 1W zu clampen"
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_safety_floor_skips_for_disallowed_band() -> None:
+    """Konsequenz aus dem None-Return: _tx_power_w bleibt unveraendert
+    wenn das Band nicht freigegeben ist."""
+    cfg = _cfg(license_class="E")
+    from ft8_appliance.config import BandConfig
+    cfg.bands.append(BandConfig(name="20m", freq_khz=14074, antenna="endfed"))
+    orch = _build_orch(cfg)
+    orch._tx_power_w = 50  # User-Stand
+    await orch._apply_tx_power_safety_floor("band_change", band="20m")
+    assert orch._tx_power_w == 50, (
+        "Nicht auf 1W kicken — User-Slider bleibt, TX wird durch "
+        "license/antenna guard separat blockiert"
+    )
+    orch.rig.set_rfpower.assert_not_awaited()
+
+
 # ---------------------------------------------------------------- apply()
 
 
