@@ -41,9 +41,9 @@ async def export_adif() -> PlainTextResponse:
     """
     out = StringIO()
     out.write(
-        "FT8 Hochgericht Appliance — ADIF export\n"
+        "FT8 Raspi Appliance — ADIF export\n"
         f"<ADIF_VER:5>3.1.4 "
-        f"<PROGRAMID:18>ft8-hochgericht-pi "
+        f"<PROGRAMID:9>ft8-raspi "
         f"<PROGRAMVERSION:5>0.1.0 "
         f"<EOH>\n"
     )

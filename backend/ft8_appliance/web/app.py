@@ -119,7 +119,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     either pass in a fake or attach one later via ``app.state``.
     """
     app = FastAPI(
-        title="FT8 Hochgericht Appliance",
+        title="FT8 Raspi Appliance",
         version="0.1.0",
         docs_url="/api/docs",
         redoc_url=None,
@@ -186,7 +186,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
                 },
             )
         return Response(
-            content="FT8 Hochgericht — controller is running.\n"
+            content="FT8 Raspi — controller is running.\n"
                     "Frontend not built. Run `cd frontend && npm run build`.",
             media_type="text/plain",
         )

@@ -1,7 +1,7 @@
 [project]
 name = "ft8-appliance"
 version = "0.1.0"
-description = "Hochgericht FT8 Appliance — headless FT8 controller for IC-705"
+description = "FT8 Raspi Appliance — headless FT8 controller for IC-705 / IC-7300"
 authors = [{ name = "DK9XR" }]
 requires-python = ">=3.12"
 license = { text = "MIT" }

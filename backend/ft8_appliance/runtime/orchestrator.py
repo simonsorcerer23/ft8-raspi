@@ -1318,6 +1318,13 @@ class Orchestrator:
                 ntfy = self.integrations.ntfy
                 if ntfy is None or not ntfy.enabled:
                     continue
+                # Kein Rig angeschlossen (z.B. ft8-2 als Standby-Pi ohne
+                # IC-Anschluss) → Mode-Watchdog macht keinen Sinn, der
+                # Pi soll ja gar nicht senden. Sebastian-Feedback
+                # 2026-05-24: "boot_mode=off"-Pi pingt sonst alle 15min
+                # umsonst, reine Nuisance.
+                if self._last_rig.freq_hz is None:
+                    continue
                 now_t = _time.time()
                 if now_t - last_alert_at < alert_cooldown_s:
                     continue
@@ -1435,7 +1442,13 @@ class Orchestrator:
         )
 
     async def _send_mode_alert(self, ntfy, message: str, target_mode: str) -> None:
-        """Schickt einen Mode-Alert mit Action-Buttons (Hunt/CQ-Start)."""
+        """Schickt einen Mode-Alert mit Action-Buttons (Hunt/CQ-Start).
+
+        ``target_mode`` ist nur für die Action-URLs relevant (welche
+        Buttons wir anbieten). Der Titel zeigt einheitlich „Auto-Modus
+        inaktiv" — Sebastian-Feedback: „off-Modus inaktiv" liest sich
+        widersprüchlich, der User-mentale Begriff ist „Auto-Modus".
+        """
         host = self.config.operating.public_hostname or "ft8"
         # ntfy-Action-Format: "http, <label>, <url>, method=POST, body=<json>"
         actions = [
@@ -1451,7 +1464,7 @@ class Orchestrator:
         ]
         await ntfy.notify(
             message,
-            title=f"⚠️ FT8 Pi: {target_mode}-Modus inaktiv",
+            title=f"⚠️ FT8 {host}: Auto-Modus inaktiv",
             priority="high",
             tags=["warning"],
             actions=actions,
@@ -2338,7 +2351,7 @@ class Orchestrator:
         try:
             await ntfy.notify(
                 msg,
-                title="🔊 FT8 Hochgericht — RX-Pegel zu hoch",
+                title=f"🔊 FT8 {self.config.operating.public_hostname or 'Pi'} — RX-Pegel zu hoch",
                 priority="default",  # nicht urgent — Decoder funktioniert noch
                 tags=["loud_sound"],
             )
@@ -2788,7 +2801,7 @@ class Orchestrator:
             try:
                 await ntfy.notify(
                     f"TX gesperrt: {reason}",
-                    title="⚠️ FT8 Hochgericht — TX-Lock",
+                    title=f"⚠️ FT8 {self.config.operating.public_hostname or 'Pi'} — TX-Lock",
                     priority="urgent",
                     tags=tags,
                     actions=actions,
