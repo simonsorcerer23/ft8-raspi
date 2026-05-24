@@ -1,5 +1,5 @@
 [Unit]
-Description=FT8 Hochgericht Appliance Controller
+Description=FT8 Raspi Appliance Controller
 Documentation=file:///home/sebastian/ft8-appliance/architecture.md
 After=network-online.target gpsd.service chrony.service
 Wants=network-online.target gpsd.service chrony.service
