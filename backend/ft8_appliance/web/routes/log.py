@@ -56,6 +56,7 @@ SORTABLE_QSO_COLUMNS = {
     "qso_start": Qso.qso_start,
     "call": Qso.call,
     "band": Qso.band,
+    "mode": Qso.mode,
     "freq_hz": Qso.freq_hz,
     "rst_sent": Qso.rst_sent,
     "rst_rcvd": Qso.rst_rcvd,
@@ -75,6 +76,7 @@ async def get_log(
         description='DXCC-style prefix filter — matches "X*", "X/*", "*/X*"'
     ),
     band: str | None = Query(None),
+    mode: str | None = Query(None, description="exakter Match: FT8 / FT4"),
     grid_filter: str | None = Query(None, description="substring on remote grid"),
     sort_by: str = Query("qso_start"),
     sort_dir: Literal["asc", "desc"] = Query("desc"),
@@ -107,6 +109,8 @@ async def get_log(
             )
         if band:
             stmt = stmt.where(Qso.band == band)
+        if mode:
+            stmt = stmt.where(Qso.mode == mode.upper())
         if grid_filter:
             stmt = stmt.where(Qso.grid_rcvd.ilike(f"{grid_filter.upper()}%"))
         if since_days is not None:

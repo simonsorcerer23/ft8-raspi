@@ -42,6 +42,7 @@
     { col: 'qso_start',  label: 'Zeit (UTC)' },
     { col: 'call',       label: 'Call' },
     { col: 'band',       label: 'Band' },
+    { col: 'mode',       label: 'Mode' },
     { col: 'freq_hz',    label: 'Frequenz' },
     { col: 'rst_sent',   label: 'RST↑' },
     { col: 'rst_rcvd',   label: 'RST↓' },
@@ -71,6 +72,12 @@
       {#each ['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm'] as b}
         <option value={b}>{b}</option>
       {/each}
+    </select>
+    <select value={logStore.filters.mode}
+            onchange={(e) => logStore.setFilter('mode', e.target.value)}>
+      <option value="">Alle Modi</option>
+      <option value="FT8">FT8</option>
+      <option value="FT4">FT4</option>
     </select>
     <input type="text" placeholder="Grid"
            value={logStore.filters.grid}
@@ -121,6 +128,7 @@
               <span class="call" style="color: {COLOURS.worked}">{q.call}</span>
             </td>
             <td>{q.band}</td>
+            <td><span class="mode-tag mode-{(q.mode ?? 'FT8').toLowerCase()}">{q.mode ?? 'FT8'}</span></td>
             <td class="freq">{fmtFreq(q.freq_hz)}</td>
             <td class="rst">{fmtRst(q.rst_sent)}</td>
             <td class="rst">{fmtRst(q.rst_rcvd)}</td>
@@ -193,6 +201,19 @@
   .call-col { min-width: 8.5rem; white-space: nowrap; }
   .call { font-weight: 700; }
   .flag { display: inline-block; margin-right: 0.3em; vertical-align: middle; }
+  .mode-tag {
+    display: inline-block; padding: 0.05em 0.4em; border-radius: 3px;
+    font-size: 0.7rem; font-weight: 700; font-family: ui-monospace, monospace;
+    border: 1px solid;
+  }
+  .mode-tag.mode-ft8 {
+    color: var(--accent); border-color: rgba(56,189,248,0.4);
+    background: rgba(56,189,248,0.08);
+  }
+  .mode-tag.mode-ft4 {
+    color: #fb923c; border-color: rgba(251,146,60,0.4);
+    background: rgba(251,146,60,0.10);
+  }
   .ts { color: #94a3b8; }
   .freq, .rst { text-align: right; color: #cbd5e1; }
   .pager {

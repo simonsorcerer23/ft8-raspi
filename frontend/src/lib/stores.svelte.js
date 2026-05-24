@@ -51,7 +51,7 @@ function makeLogStore() {
   let page = $state(1);
   let pageSize = $state(50);
   let filters = $state({
-    call: '', prefix: '', band: '', grid: '',
+    call: '', prefix: '', band: '', mode: '', grid: '',
     since_days: null, min_snr: null,
   });
   let sortBy = $state('qso_start');
@@ -66,6 +66,7 @@ function makeLogStore() {
         call_filter: filters.call || undefined,
         prefix: filters.prefix || undefined,
         band: filters.band || undefined,
+        mode: filters.mode || undefined,
         grid_filter: filters.grid || undefined,
         since_days: filters.since_days || undefined,
         min_snr_rcvd: filters.min_snr || undefined,
@@ -87,7 +88,7 @@ function makeLogStore() {
     get loading()   { return loading; },
     setPage(p)      { page = p; refresh(); },
     setFilter(k, v) { filters[k] = v; page = 1; refresh(); },
-    clearFilters()  { filters = { call:'', prefix:'', band:'', grid:'',
+    clearFilters()  { filters = { call:'', prefix:'', band:'', mode:'', grid:'',
                                    since_days:null, min_snr:null };
                       page = 1; refresh(); },
     setSort(col) {

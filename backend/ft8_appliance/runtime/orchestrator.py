@@ -3056,8 +3056,12 @@ class Orchestrator:
                     "method=POST"
                 ),
             ]
+            # Sebastian v0.4.6: Mode mit in den Push damit auf einen
+            # Blick erkennbar ist ob FT8 oder FT4. Format: "DK9XR 15m
+            # FT4 IO91" — Mode zwischen Band und Grid einsortiert.
+            qso_mode = self.config.operating.mode
             asyncio.create_task(self.integrations.ntfy.notify(
-                f"{call} {band} {grid}",
+                f"{call} {band} {qso_mode} {grid}",
                 title=title,
                 priority="high" if is_new_dxcc else "default",
                 tags=["radio", "new"] if is_new_dxcc else ["radio"],
