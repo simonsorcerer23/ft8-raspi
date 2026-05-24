@@ -1,0 +1,17 @@
+# /etc/sudoers.d/ft8-self-update — installed by deploy/install.sh
+#
+# Erlaubt User `sebastian` exakt vier systemctl-Operationen ohne
+# Passwort. Scope ist absichtlich minimal: nur was Self-Update + der
+# Backend-Trigger des Self-Update-Services brauchen.
+#
+# WARUM:
+#  * self-update.sh muss nach erfolgreichem `git checkout` einen
+#    `systemctl restart ft8-controller` triggern.
+#  * Backend-Route `/api/system/self-update` (Button auf der Konfig-
+#    Seite) triggert `systemctl start ft8-self-update.service`.
+#  * Health-Check vor Restart prüft `systemctl is-active ft8-controller`.
+#
+# Diese Datei hat Mode 0440 (per `visudo -c` validiert in install.sh).
+# Syntax-Validierung bei jedem Edit zwingend, sonst lockt man sich aus.
+
+sebastian ALL=(root) NOPASSWD: /bin/systemctl restart ft8-controller, /bin/systemctl restart ft8-controller.service, /bin/systemctl start ft8-controller, /bin/systemctl start ft8-controller.service, /bin/systemctl is-active ft8-controller, /bin/systemctl is-active ft8-controller.service, /bin/systemctl start ft8-self-update, /bin/systemctl start ft8-self-update.service

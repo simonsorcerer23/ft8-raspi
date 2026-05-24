@@ -144,7 +144,7 @@ rigctld   gpsd          ft8_lib       IC-705 USB-Audio
 - **Sprachen:** Deutsch (Dad), Englisch — Toggle in der UI
 - **Theme:** Auto Day/Night basierend auf GPS-Uhrzeit + Sonnenstand
 
-**Tile-Serving-Trennung (Pflicht):** Die Offline-Tiles liegen physisch in `/opt/ft8-appliance/tiles/` und werden von FastAPI als eigener `StaticFiles`-Mount unter `/tiles/{z}/{x}/{y}.png` ausgeliefert — **nicht** als Teil des Vite-Build-Bundles. Leaflet referenziert sie per URL-Template. Damit bleibt `backend/ft8_appliance/web/static/` (der Vite-Build-Output) klein (<10 MB), und Tiles lassen sich unabhängig vom App-Update aktualisieren oder regenerieren.
+**Tile-Serving-Trennung (Pflicht):** Die Offline-Tiles liegen physisch in `/var/lib/ft8-appliance/tiles/` (neben der `qso.sqlite`) und werden von FastAPI als eigener `StaticFiles`-Mount unter `/tiles/{z}/{x}/{y}.png` ausgeliefert — **nicht** als Teil des Vite-Build-Bundles. Leaflet referenziert sie per URL-Template. Damit bleibt `backend/ft8_appliance/web/static/` (der Vite-Build-Output) klein (<10 MB), und Tiles lassen sich unabhängig vom App-Update aktualisieren oder regenerieren. Wichtig: tiles liegen explizit **außerhalb** des git-Workdirs (`/home/sebastian/ft8-appliance/`), damit `ft8-self-update.service` (= `git checkout vX.Y.Z`) sie nie anfasst.
 
 ### 4.5 Process-Management
 

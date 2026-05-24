@@ -18,8 +18,10 @@ htmlcov/
 # Node / Frontend
 node_modules/
 frontend/dist/
-backend/ft8_appliance/web/static/*
-!backend/ft8_appliance/web/static/.gitkeep
+# backend/ft8_appliance/web/static/ wird vom release-Script gefüllt
+# (scripts/release.sh) und MUSS eingecheckt sein damit Self-Update auf
+# den Pis kein npm/node braucht. .gitkeep ist legacy aus rsync-Zeiten.
+!backend/ft8_appliance/web/static/
 
 # Build artefacts
 vendor/ft8_lib/build/

@@ -73,8 +73,8 @@ def fetch(client: httpx.Client, z: int, x: int, y: int, tiles_dir: Path) -> bool
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--tiles-dir", default="/opt/ft8-appliance/tiles",
-                   help="Output directory (default /opt/ft8-appliance/tiles)")
+    p.add_argument("--tiles-dir", default="/var/lib/ft8-appliance/tiles",
+                   help="Output directory (default /var/lib/ft8-appliance/tiles)")
     args = p.parse_args()
     tiles_dir = Path(args.tiles_dir)
     tiles_dir.mkdir(parents=True, exist_ok=True)

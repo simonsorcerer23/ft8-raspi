@@ -78,6 +78,10 @@ export const api = {
   operatingLocations: () => request('/operating-locations'),
   heatmap:      (opts)   => request('/heard/heatmap',         { query: opts }),
 
+  // Version / Self-Update — futtert die SystemUpdateCard auf der Konfig-Seite.
+  systemVersion:    ()       => request('/system/version'),
+  triggerSelfUpdate:()       => request('/system/self-update', { method: 'POST' }),
+
   // Multi-Operator-Profile (Sebastian 2026-05-23)
   operatorsList:   ()       => request('/operators'),
   operatorActive:  ()       => request('/operators/active'),

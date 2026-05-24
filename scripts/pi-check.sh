@@ -5,8 +5,12 @@
 
 set -u
 
-APP_DIR="/opt/ft8-appliance"
-DB="${APP_DIR}/data/appliance.db"
+APP_DIR="/home/sebastian/ft8-appliance"
+# Live DB liegt unter /var/lib (siehe ReadWritePaths in
+# deploy/systemd/ft8-controller.service). Frühere Versionen suchten unter
+# ${APP_DIR}/data/appliance.db — das war ein Doppel-Bug (Pfad + Dateiname),
+# der Bestand-DBs unsichtbar gemacht hat.
+DB="/var/lib/ft8-appliance/qso.sqlite"
 
 section() { printf '\n=== %s ===\n' "$1"; }
 

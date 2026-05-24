@@ -157,7 +157,11 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     # Offline map tiles — populated by scripts/fetch_offline_tiles.sh on the
     # Pi. Frontend Leaflet hits /tiles/{z}/{x}/{y}.png. If the directory
     # isn't there (dev workstation), the frontend falls back to online OSM.
-    tiles_dir = Path("/opt/ft8-appliance/tiles")
+    #
+    # Tiles liegen unter /var/lib (NICHT im git-Workdir) damit Self-Update
+    # / git checkout sie nie anfasst. Selber Persistenz-Mountpoint wie die
+    # qso.sqlite-DB.
+    tiles_dir = Path("/var/lib/ft8-appliance/tiles")
     if tiles_dir.is_dir():
         app.mount("/tiles", StaticFiles(directory=str(tiles_dir)), name="tiles")
 

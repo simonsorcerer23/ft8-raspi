@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import SystemUpdateCard from './SystemUpdateCard.svelte';
 
   // Stock max-power per rig. Mirrors backend RigConfig._RIG_TABLE — used
   // to bound the default-power slider when the operator switches rig.
@@ -192,6 +193,11 @@
       <span>YAML-Modus</span>
     </label>
   </header>
+
+  <!-- System-Update-Card: lädt asynchron, blockiert nichts, ist auch
+       sichtbar wenn die Konfig selbst noch nicht geladen ist oder
+       fehlschlägt — Self-Update soll dann gerade nutzbar bleiben. -->
+  <SystemUpdateCard />
 
   {#if !cfg && !error}
     <p class="empty">Lade Konfig…</p>

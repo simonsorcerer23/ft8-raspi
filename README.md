@@ -39,17 +39,28 @@ git submodule update --init --recursive
 cd vendor/ft8_lib && make
 ```
 
-## Bring-up auf Pi (sobald Hardware da)
+## Bring-up auf Pi (initial — danach via self-update)
 
 ```bash
-# Vom Workstation aus
-rsync -av --exclude='.venv' --exclude='node_modules' . pi@ft8.local:/opt/ft8-appliance/
-
-# Auf dem Pi
-ssh pi@ft8.local
-cd /opt/ft8-appliance && sudo ./deploy/install.sh
+# Auf dem Pi (User sebastian, NOPASSWD-sudo)
+git clone git@github.com:simonsorcerer23/ft8-raspi.git /home/sebastian/ft8-appliance
+cd /home/sebastian/ft8-appliance && sudo ./deploy/install.sh
 ```
+
+Spätere Updates erfolgen automatisch via `ft8-self-update.timer`, der die
+neueste getaggte Release-Version aus dem GitHub-Repo holt. Siehe
+[`docs/self_update.md`](docs/self_update.md).
+
+Eine neue Release schneidet man auf der Workstation mit:
+
+```bash
+./scripts/release.sh v0.1.1
+```
+
+Das Script baut das Frontend, committed `backend/.../web/static/`, taggt
+und pusht — die Pis holen sich's beim nächsten Timer-Tick (max ~10 min)
+oder sofort via Button auf der Konfig-Seite.
 
 ## Status
 
-In aktiver Entwicklung, vor Hardware-Eintreffen. Bring-up-Phasen siehe `architecture.md` §9.2.
+In aktiver Entwicklung. Aktuelle Phase: Shake-Down, beide Pis (`ft8`, `ft8-2`) laufen.

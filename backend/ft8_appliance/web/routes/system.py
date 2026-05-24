@@ -5,18 +5,31 @@ Lightweight, alle Reads aus /proc + /sys + ein subprocess für vcgencmd
 Drama gibt — Werte sind dann einfach None).
 
 Frontend pollt diesen Endpoint alle 30s für das System-Panel.
+
+Enthält zusätzlich Version/Self-Update-Endpoints (`/system/version`,
+`/system/self-update`) für die Update-Card auf der Konfig-Seite.
 """
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from .. import deps  # noqa: F401 — keeps import-shape consistent
+
+log = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Repo-Wurzel = zwei Ebenen über backend/. WorkingDirectory der unit
+# zeigt auf .../backend, also Parent davon ist die Repo-Wurzel mit .git.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class SystemInfo(BaseModel):
@@ -177,3 +190,170 @@ async def get_system_info() -> SystemInfo:
         throttled_hex=throttled_hex,
         throttled_healthy=throttled_healthy,
     )
+
+
+# ---------------------------------------------------------------------------
+# Version + Self-Update — feeds the "System-Update"-Card auf der Konfig-Seite.
+#
+# Strategie:
+#  * `current_version` kommt aus dem eingecheckten _version.py (Single source
+#    of truth — release.sh schreibt es bei jedem Tag-Cut neu).
+#  * `latest_version` ist der höchste lokal bekannte v*-Tag (set wird vom
+#    Self-Update-Timer alle 10min via `git fetch --tags` aktualisiert).
+#    Wir machen hier KEIN Live-Fetch — das wäre langsam und würde bei
+#    Netzwerkausfall die UI blockieren.
+#  * `update_in_progress` checkt ob ft8-self-update.service gerade aktiv ist.
+
+_SEMVER_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+
+
+def _parse_semver(tag: str) -> tuple[int, int, int] | None:
+    m = _SEMVER_RE.match(tag.strip())
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+
+def _read_installed_version() -> tuple[str, str]:
+    """Returns (version, tag). Beide leer-strings falls _version.py nicht da."""
+    try:
+        from ft8_appliance import _version as v
+        return (getattr(v, "__version__", ""), getattr(v, "__tag__", ""))
+    except Exception:  # pragma: no cover — defensive
+        return ("", "")
+
+
+def _read_latest_local_tag() -> str | None:
+    """Höchster lokal bekannter v*-Tag (ohne network call)."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "tag", "-l", "v*", "--sort=-v:refname"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if _parse_semver(line):
+            return line
+    return None
+
+
+def _last_fetch_at() -> float | None:
+    """Mtime von .git/FETCH_HEAD — zeigt wann zuletzt git fetch lief."""
+    fh = _REPO_ROOT / ".git" / "FETCH_HEAD"
+    try:
+        return fh.stat().st_mtime
+    except OSError:
+        return None
+
+
+def _git_describe() -> str | None:
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "describe", "--tags", "--always", "--dirty"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.strip() or None
+
+
+def _update_in_progress() -> bool:
+    """systemctl is-active ft8-self-update.service → true wenn läuft."""
+    try:
+        r = subprocess.run(
+            ["systemctl", "is-active", "--quiet", "ft8-self-update.service"],
+            timeout=3,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return r.returncode == 0
+
+
+class VersionInfo(BaseModel):
+    current_version: str           # z.B. "0.1.0" oder "0.0.0-dev"
+    current_tag: str               # z.B. "v0.1.0" oder "" wenn untagged
+    git_describe: str | None       # z.B. "v0.1.0" oder "v0.1.0-3-gabc1234-dirty"
+    latest_version: str | None     # höchster lokal bekannter v*-Tag
+    update_available: bool
+    update_in_progress: bool
+    last_fetch_at: float | None    # unix-ts vom letzten git fetch
+    repo_is_git: bool              # false wenn rsync-Installation (alte Pis)
+
+
+@router.get("/system/version", response_model=VersionInfo)
+async def get_version() -> VersionInfo:
+    version, tag = _read_installed_version()
+    latest = _read_latest_local_tag()
+    is_git = (_REPO_ROOT / ".git").is_dir()
+    desc = _git_describe()
+
+    update_available = False
+    if latest is not None:
+        current_sem = _parse_semver(tag) if tag else None
+        latest_sem = _parse_semver(latest)
+        if latest_sem is not None and (current_sem is None or latest_sem > current_sem):
+            update_available = True
+
+    return VersionInfo(
+        current_version=version,
+        current_tag=tag,
+        git_describe=desc,
+        latest_version=latest,
+        update_available=update_available,
+        update_in_progress=_update_in_progress(),
+        last_fetch_at=_last_fetch_at(),
+        repo_is_git=is_git,
+    )
+
+
+class SelfUpdateResponse(BaseModel):
+    triggered: bool
+    detail: str
+
+
+@router.post("/system/self-update", response_model=SelfUpdateResponse, status_code=202)
+async def trigger_self_update() -> SelfUpdateResponse:
+    """Triggert manuell den Self-Update-Service.
+
+    Der Service prüft selbst ob ein neuer Tag verfügbar ist und ob der
+    Pi gerade idle ist — wir starten ihn einfach. Reaktion via Polling
+    von ``GET /system/version`` (Frontend erkennt update_in_progress
+    → false + current_version geändert).
+    """
+    if not (_REPO_ROOT / ".git").is_dir():
+        raise HTTPException(
+            status_code=409,
+            detail="Pi ist keine git-Installation — siehe docs/self_update.md für Migration",
+        )
+
+    if _update_in_progress():
+        return SelfUpdateResponse(triggered=False, detail="already in progress")
+
+    # sudoers.d/ft8-self-update erlaubt diesen Aufruf NOPASSWD.
+    try:
+        r = subprocess.run(
+            ["sudo", "-n", "/bin/systemctl", "start", "ft8-self-update.service"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        raise HTTPException(status_code=500, detail=f"systemctl call failed: {e}") from e
+
+    if r.returncode != 0:
+        # Häufigste Ursache: sudoers-Snippet nicht installiert oder
+        # falsch (visudo-Validierung in install.sh sollte das fangen,
+        # aber nicht bei rsync-Pis ohne re-install).
+        msg = r.stderr.strip() or r.stdout.strip() or "unknown error"
+        raise HTTPException(
+            status_code=500,
+            detail=f"systemctl start fehlgeschlagen (rc={r.returncode}): {msg}",
+        )
+
+    return SelfUpdateResponse(triggered=True, detail="ft8-self-update.service gestartet")

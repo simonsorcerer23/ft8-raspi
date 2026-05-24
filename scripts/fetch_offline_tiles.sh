@@ -10,12 +10,14 @@
 # public tile servers — be a good citizen and rate-limit, comply with their
 # tile usage policy (<10 req/sec, real User-Agent).
 #
-# Tiles land in $TILES_DIR (default /opt/ft8-appliance/tiles), structure
-# is {z}/{x}/{y}.png so Leaflet's url-template works directly.
+# Tiles land in $TILES_DIR (default /var/lib/ft8-appliance/tiles), Struktur
+# {z}/{x}/{y}.png — Leaflet's url-template kann direkt drauf zugreifen.
+# Liegen unter /var/lib (NICHT im git-Workdir) damit Self-Update-Checkouts
+# sie nie anfassen.
 
 set -euo pipefail
 
-TILES_DIR="${TILES_DIR:-/opt/ft8-appliance/tiles}"
+TILES_DIR="${TILES_DIR:-/var/lib/ft8-appliance/tiles}"
 USER_AGENT="${USER_AGENT:-ft8-hochgericht-appliance/0.1 (operator: DK9XR)}"
 TILE_SERVER="${TILE_SERVER:-https://tile.openstreetmap.org}"
 RATE_LIMIT_SLEEP="${RATE_LIMIT_SLEEP:-0.15}"  # ~6 req/sec

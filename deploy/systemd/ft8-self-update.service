@@ -1,0 +1,35 @@
+[Unit]
+Description=FT8 Appliance — Self-Update from GitHub tagged releases
+Documentation=file:///home/sebastian/ft8-appliance/docs/self_update.md
+# Internet wird gebraucht. Wenn nicht da, exit-OK (idle skip).
+After=network-online.target ft8-controller.service
+Wants=network-online.target
+# WICHTIG: NICHT ConditionPathExists=...controller.service Requires= machen
+# — wenn ft8-controller failed/dead, soll Self-Update trotzdem laufen
+# können (das wäre genau dann nützlich, um ggf. einen fixed Release zu
+# pullen). Also nur soft-After.
+
+[Service]
+Type=oneshot
+User=sebastian
+Group=sebastian
+WorkingDirectory=/home/sebastian/ft8-appliance
+
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/home/sebastian
+
+# Self-Update darf max 10 min laufen. Wenn länger → hängt, kill.
+TimeoutStartSec=600
+
+ExecStart=/home/sebastian/ft8-appliance/scripts/self-update.sh
+
+# StandardOutput/StandardError → journald (default). Sieht man mit
+#   journalctl -u ft8-self-update.service -n 100 --no-pager
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Wird vom Timer gestartet, kein direktes Enable nötig — aber falls
+# jemand `systemctl enable ft8-self-update.service` macht, soll's nicht
+# falsch sein.
+WantedBy=multi-user.target

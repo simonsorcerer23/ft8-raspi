@@ -1,20 +1,20 @@
 [Unit]
 Description=FT8 Hochgericht Appliance Controller
-Documentation=file:///opt/ft8-appliance/architecture.md
+Documentation=file:///home/sebastian/ft8-appliance/architecture.md
 After=network-online.target gpsd.service chrony.service
 Wants=network-online.target gpsd.service chrony.service
 
 [Service]
 Type=simple
-User=pi
-Group=audio
-WorkingDirectory=/opt/ft8-appliance/backend
+User=sebastian
+Group=sebastian
+WorkingDirectory=/home/sebastian/ft8-appliance/backend
 
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=FT8_CONFIG=/etc/ft8-appliance/config.yaml
 
-ExecStart=/opt/ft8-appliance/backend/.venv/bin/uvicorn \
+ExecStart=/home/sebastian/ft8-appliance/backend/.venv/bin/uvicorn \
     ft8_appliance.web.app:app \
     --host 0.0.0.0 \
     --port 8000 \
@@ -28,8 +28,14 @@ RestartSec=5
 # NOPASSWD sudoers rule scoped to this single-user box). ProtectSystem=full
 # (vs strict) leaves /etc writable for ``sudo`` so NetworkManager can drop
 # system-connection files. The web layer only binds to the LAN.
+#
+# ProtectHome wurde von "read-only" auf "false" gestellt, weil das
+# Code-Verzeichnis unter /home/sebastian/ft8-appliance liegt und
+# self-update.sh dort schreibend zugreifen können muss (git checkout,
+# pip install). Der Self-Update-Service läuft als derselbe User und
+# muss zudem Python-Bytecode-Caches und venv-Updates schreiben dürfen.
 ProtectSystem=full
-ProtectHome=read-only
+ProtectHome=false
 ReadWritePaths=/var/lib/ft8-appliance /var/log/ft8-appliance /etc/ft8-appliance
 PrivateTmp=true
 SupplementaryGroups=plugdev dialout netdev

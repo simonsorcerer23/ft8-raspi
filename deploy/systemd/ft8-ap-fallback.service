@@ -7,5 +7,5 @@ After=NetworkManager.service
 [Service]
 Type=oneshot
 RemainAfterExit=true
-ExecStart=/opt/ft8-appliance/deploy/scripts/start-ap-fallback.sh
-ExecStop=/opt/ft8-appliance/deploy/scripts/stop-ap-fallback.sh
+ExecStart=/home/sebastian/ft8-appliance/deploy/scripts/start-ap-fallback.sh
+ExecStop=/home/sebastian/ft8-appliance/deploy/scripts/stop-ap-fallback.sh

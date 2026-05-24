@@ -1,0 +1,27 @@
+[Unit]
+Description=Periodic FT8 Self-Update poll (every 10 min + boot + nightly)
+Documentation=file:///home/sebastian/ft8-appliance/docs/self_update.md
+
+[Timer]
+Unit=ft8-self-update.service
+
+# Strategie:
+#  * 2 min nach Boot: einmal pollen (Pi kommt vom Storm/Stromausfall hoch
+#    und holt sich evtl. einen versäumten Release).
+#  * Alle 10 min: pollen ob ein neuer Tag existiert. Wenn keiner: schnell
+#    raus (git fetch ist billig). Wenn doch + Pi idle: durchziehen.
+#  * Nachts 04:00 fest: garantierter Slot auch wenn der 10-min-Cycle aus
+#    irgendeinem Grund ausgesetzt hat. Persistent=true holt verpasste
+#    Triggers nach Boot nach.
+OnBootSec=2min
+OnUnitActiveSec=10min
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+
+# Randomized delay damit beide Pis (ft8 + ft8-2) nicht im selben
+# Millisekunden-Slot pullen. Spielt für die Last keine Rolle, aber log-
+# diff lesbarer.
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

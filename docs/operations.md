@@ -113,7 +113,7 @@ ssh ft8 'gpspipe -n 5 -w | head'                    # GPS-Daten
 ssh ft8 'chronyc tracking; chronyc sources'         # Zeit-Status
 ssh ft8 'sensors 2>/dev/null; vcgencmd measure_temp; vcgencmd get_throttled'
 ssh ft8 'nmcli -t -f NAME,DEVICE,STATE connection show --active'
-ssh ft8 sqlite3 /opt/ft8-appliance/data/appliance.db \
+ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
    "select count(*) qso_today from qso where date(qso_start)=date('now')"
 ```
 
@@ -141,11 +141,11 @@ Claude führt **kein eigenes State-Tracking** zwischen Sessions (Memory ist für
 
 ```bash
 # QSO-Verlauf der letzten 7 Tage
-ssh ft8 sqlite3 /opt/ft8-appliance/data/appliance.db \
+ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
   "select date(qso_start), count(*) from qso where qso_start > date('now','-7 days') group by 1"
 
 # Decode-Rate pro Stunde der letzten 24h
-ssh ft8 sqlite3 /opt/ft8-appliance/data/appliance.db \
+ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
   "select strftime('%Y-%m-%d %H', ts) h, count(*) from decode where ts > datetime('now','-1 day') group by 1"
 ```
 
