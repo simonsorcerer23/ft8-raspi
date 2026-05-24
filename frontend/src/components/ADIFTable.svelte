@@ -115,7 +115,10 @@
                        onclick={() => logStore.setFilter('prefix', extractPrefix(q.call))}
                        title="Filter auf diesen Präfix">{extractPrefix(q.call)}</span></td>
             <td class="ts">{shortTs(q.qso_start)}</td>
-            <td><span class="call" style="color: {COLOURS.worked}">{q.call}</span></td>
+            <td>
+              {#if q.flag}<span class="flag" title={q.call}>{q.flag}</span>{/if}
+              <span class="call" style="color: {COLOURS.worked}">{q.call}</span>
+            </td>
             <td>{q.band}</td>
             <td class="freq">{fmtFreq(q.freq_hz)}</td>
             <td class="rst">{fmtRst(q.rst_sent)}</td>
@@ -183,6 +186,7 @@
   }
   .pfx-tag:hover { background: rgba(167,139,250,0.3); }
   .call { font-weight: 700; }
+  .flag { display: inline-block; margin-right: 0.3em; vertical-align: middle; }
   .ts { color: #94a3b8; }
   .freq, .rst { text-align: right; color: #cbd5e1; }
   .pager {

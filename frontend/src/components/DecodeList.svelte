@@ -88,6 +88,7 @@
           <span class="dt">{d.dt_s?.toFixed(1) ?? ' '}</span>
           <span class="freq">{d.freq_offset_hz ?? ''}</span>
           <span class="msg">
+            {#if d.flag}<span class="flag" title={d.call_from ?? ''}>{d.flag}</span>{/if}
             {#if d.is_new_dxcc}<span class="badge ndxcc" title="Neue DXCC-Entity">🏆DXCC</span>{/if}
             {#if d.is_new_grid && !d.is_new_dxcc}<span class="badge ngrid" title="Neuer Grid">🆕Grid</span>{/if}
             {#if d.is_new_grid_on_band && !d.is_new_grid && !d.is_new_dxcc}<span class="badge ngridb" title="Neuer Grid auf diesem Band">🎯Band</span>{/if}
@@ -146,6 +147,8 @@
   .dt   { color: #64748b; }
   .freq { color: #64748b; }
   .msg  { color: var(--fg); }
+  .flag { display: inline-block; margin-right: 0.35em; font-size: 0.95em;
+          vertical-align: middle; }
   .badge { display: inline-block; padding: 0.05em 0.4em; border-radius: 4px;
            font-size: 0.7rem; font-weight: 700; margin-right: 0.3em;
            vertical-align: middle; }

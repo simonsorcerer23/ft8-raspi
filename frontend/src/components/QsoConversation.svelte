@@ -38,7 +38,7 @@
     <h2>Live-Konversation</h2>
     {#if conv.partner_call}
       <div class="partner">
-        <strong>📡 {conv.partner_call}</strong>
+        <strong>📡 {#if conv.partner_flag}<span class="flag" title={conv.partner_call}>{conv.partner_flag}</span> {/if}{conv.partner_call}</strong>
         {#if conv.partner_grid}<span class="grid">{conv.partner_grid}</span>{/if}
         {#if conv.our_snr_sent != null}<span class="snr">SNR↑ {conv.our_snr_sent > 0 ? '+' : ''}{conv.our_snr_sent}</span>{/if}
         {#if conv.partner_snr_received != null}<span class="snr">SNR↓ {conv.partner_snr_received > 0 ? '+' : ''}{conv.partner_snr_received}</span>{/if}

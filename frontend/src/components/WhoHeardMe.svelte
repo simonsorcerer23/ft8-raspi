@@ -33,6 +33,7 @@
           rx_call: r.rx_call, rx_grid: r.rx_grid,
           best_snr: r.snr_db, count: 1, last_seen: ts,
           bands: new Set(r.band ? [r.band] : []),
+          flag: r.flag ?? '',
         });
       } else {
         e.count += 1;
@@ -91,7 +92,7 @@
       <tbody>
         {#each grouped as g (g.rx_call)}
           <tr>
-            <td class="call">{g.rx_call}</td>
+            <td class="call">{#if g.flag}<span class="flag" title={g.rx_call}>{g.flag}</span>{/if}{g.rx_call}</td>
             <td class="grid">{g.rx_grid ?? '—'}</td>
             <td class="snr">{g.best_snr ?? '—'} dB</td>
             <td class="count">{g.count}</td>
@@ -122,6 +123,7 @@
   th { color: #94a3b8; font-weight: 500; font-size: 0.75rem;
        text-transform: uppercase; letter-spacing: 0.05em; }
   .call { font-family: ui-monospace, monospace; font-weight: 600; color: var(--accent); }
+  .flag { display: inline-block; margin-right: 0.3em; }
   .grid, .ts { color: #94a3b8; font-size: 0.8rem; }
   .snr { font-family: ui-monospace, monospace; }
   .count { font-weight: 600; }

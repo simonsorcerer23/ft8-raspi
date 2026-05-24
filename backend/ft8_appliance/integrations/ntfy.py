@@ -76,12 +76,28 @@ class NtfyClient(Integration):
         priority: str | None = None,  # "min" | "low" | "default" | "high" | "urgent"
         tags: list[str] | None = None,
         actions: list[str] | None = None,
+        flag: str = "",
     ) -> bool:
+        """Push an ntfy notification.
+
+        ``flag``: optionales Flag-Emoji (z.B. "🇩🇪") das dem Titel
+        vorangestellt wird. Sebastian-Request v0.3.0 — Pushes die ein
+        fremdes Callsign enthalten kriegen die Landesflagge davor. Der
+        Caller berechnet das Flag via ``integrations.flags.flag_for_call``;
+        wir hier nur das Rendering. Leerer String = kein Prepend.
+        """
         if not self.enabled or not self.topic:
             return False
         body: dict = {"topic": self.topic, "message": message}
         if title:
-            body["title"] = title
+            if flag:
+                body["title"] = f"{flag} {title}"
+            else:
+                body["title"] = title
+        elif flag:
+            # Kein title → flag dem message-body voranstellen damit's
+            # ueberhaupt sichtbar wird.
+            body["message"] = f"{flag} {message}"
         if priority:
             body["priority"] = _PRIO_MAP.get(priority, 3)
         if tags:

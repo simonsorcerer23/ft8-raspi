@@ -61,7 +61,7 @@
   <div class="cell"><small>WORKED</small><strong>{v.worked_count ?? 0}</strong></div>
 
   {#if v.current_qso_call}
-    <div class="qso">📡 {v.current_qso_call}</div>
+    <div class="qso">📡 {#if v.current_qso_flag}<span class="flag" title={v.current_qso_call}>{v.current_qso_flag}</span> {/if}{v.current_qso_call}</div>
   {/if}
   {#if v.last_lock_reason}
     <div class="reason">⚠ {v.last_lock_reason}</div>

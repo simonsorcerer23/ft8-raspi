@@ -101,6 +101,7 @@ class PskHeardRow(BaseModel):
     band: str | None = None
     mode: str | None = None
     received_at: str
+    flag: str = ""  # Sebastian v0.3.0 — Landesflagge des Reporters
 
 
 class PskHeardResponse(BaseModel):
@@ -116,11 +117,14 @@ async def psk_who_heard_me(
         return PskHeardResponse(reports=[])
     callsign = orch.state_machine.ctx.callsign
     rs = await orch.integrations.psk_reporter.who_heard_me(callsign, hours=hours)
+    from ...integrations.flags import flag_for_call
+    cty = getattr(getattr(orch, "integrations", None), "cty", None)
     return PskHeardResponse(
         reports=[
             PskHeardRow(
                 rx_call=r.rx_call, rx_grid=r.rx_grid, snr_db=r.snr_db,
                 band=r.band, mode=r.mode, received_at=r.received_at.isoformat(),
+                flag=flag_for_call(r.rx_call, cty),
             )
             for r in rs
         ]

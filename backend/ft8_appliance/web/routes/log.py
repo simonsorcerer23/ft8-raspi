@@ -17,6 +17,7 @@ from sqlalchemy import desc, func, select
 
 from ...db import session_scope
 from ...db.models import Blacklist, Decode, Heard, Qso
+from ...integrations.flags import flag_for_call
 from ...runtime import Orchestrator
 from ..deps import get_orchestrator
 
@@ -38,6 +39,10 @@ class QsoOut(BaseModel):
     my_grid: str
     my_power_w: int | None
     swr_avg: float | None
+    # Sebastian-Request 2026-05-24 (v0.3.0): Unicode-Flag-Emoji aus dem
+    # Callsign via cty.dat → ISO2 → Flag. Leerer String wenn unbekannt
+    # oder Sonder-DXCC ohne Flag-Mapping (ITU/UN/Antarktis).
+    flag: str = ""
 
 
 class LogResponse(BaseModel):
@@ -118,11 +123,17 @@ async def get_log(
         stmt = stmt.limit(page_size).offset((page - 1) * page_size)
         rows = list((await s.execute(stmt)).scalars())
 
+    cty = orch.integrations.cty
+    qsos_out: list[QsoOut] = []
+    for q in rows:
+        item = QsoOut.model_validate(q, from_attributes=True)
+        item.flag = flag_for_call(item.call, cty)
+        qsos_out.append(item)
     return LogResponse(
         total=total,
         page=page,
         page_size=page_size,
-        qsos=[QsoOut.model_validate(q, from_attributes=True) for q in rows],
+        qsos=qsos_out,
     )
 
 
@@ -133,6 +144,7 @@ class HeardOut(BaseModel):
     count: int
     grid: str | None
     best_snr: int | None
+    flag: str = ""  # Flag-Emoji, siehe QsoOut.flag
 
 
 class HeardResponse(BaseModel):
@@ -155,9 +167,13 @@ async def get_heard(
             .order_by(desc(Heard.last_seen))
         )
         rows = list((await s.execute(stmt)).scalars())
-    return HeardResponse(
-        stations=[HeardOut.model_validate(h, from_attributes=True) for h in rows]
-    )
+    cty = orch.integrations.cty
+    stations = []
+    for h in rows:
+        item = HeardOut.model_validate(h, from_attributes=True)
+        item.flag = flag_for_call(item.call, cty)
+        stations.append(item)
+    return HeardResponse(stations=stations)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +196,8 @@ class DecodeOut(BaseModel):
     is_new_dxcc: bool = False
     is_new_grid: bool = False
     is_new_grid_on_band: bool = False
+    # Flag-Emoji des Senders (call_from) — Sebastian-Request v0.3.0.
+    flag: str = ""
 
 
 class DecodesResponse(BaseModel):
@@ -197,6 +215,7 @@ async def get_decodes(
                 await s.execute(select(Decode).order_by(desc(Decode.ts)).limit(limit))
             ).scalars()
         )
+    cty = orch.integrations.cty
     out: list[DecodeOut] = []
     for d in rows:
         item = DecodeOut.model_validate(d, from_attributes=True)
@@ -205,6 +224,7 @@ async def get_decodes(
         item.is_new_dxcc = orch.is_new_dxcc_for(d.call_from)
         item.is_new_grid = orch.is_new_grid(d.grid)
         item.is_new_grid_on_band = orch.is_new_grid_on_band(d.grid, d.band)
+        item.flag = flag_for_call(d.call_from, cty)
         out.append(item)
     return DecodesResponse(decodes=out)
 

@@ -55,6 +55,9 @@ class StatusResponse(BaseModel):
     last_lock_reason: str | None = None
     cq_count: int = 0
     current_qso_call: str | None = None
+    # Flag-Emoji des current_qso_call (Sebastian v0.3.0). Leer wenn kein
+    # QSO aktiv oder Call nicht in DXCC-Tabelle mapbar.
+    current_qso_flag: str = ""
     last_slot_index: int = -1
     last_decodes: int = 0
     auto_answer: bool = False
@@ -83,13 +86,18 @@ class StatusResponse(BaseModel):
 
 @router.get("/status", response_model=StatusResponse)
 async def get_status(orch: Orchestrator = Depends(get_orchestrator)) -> StatusResponse:
+    from ...integrations.flags import flag_for_call as _flag_for_call
     s = orch.status()
+    # getattr-Guard: FakeOrchestrator in den tests hat kein integrations-Feld
+    cty = getattr(getattr(orch, "integrations", None), "cty", None)
+    current_qso_flag = _flag_for_call(s.current_qso_call, cty)
     return StatusResponse(
         callsign=s.callsign,
         state=s.state,
         last_lock_reason=s.last_lock_reason,
         cq_count=s.cq_count,
         current_qso_call=s.current_qso_call,
+        current_qso_flag=current_qso_flag,
         last_slot_index=s.last_slot_index,
         last_decodes=s.last_decodes,
         auto_answer=s.auto_answer,
@@ -149,6 +157,9 @@ class ConversationResponse(BaseModel):
     started_at: str | None
     entries: list[ConvEntry]
     next_action_hint: str | None      # what we'll do next slot
+    # Flag-Emoji des Partner-Callsigns (Sebastian v0.3.0). Leer wenn
+    # kein Partner aktiv oder Call nicht mapbar.
+    partner_flag: str = ""
 
 
 @router.get("/qso/conversation", response_model=ConversationResponse)
@@ -242,14 +253,19 @@ async def conversation(
     elif state == "TX_LOCKED":
         hint = f"TX gesperrt: {sm.ctx.last_lock_reason}"
 
+    partner_call_val = qso.their_call if qso else None
+    from ...integrations.flags import flag_for_call as _flag_for_call
+    cty = getattr(getattr(orch, "integrations", None), "cty", None)
+    partner_flag = _flag_for_call(partner_call_val, cty)
     return ConversationResponse(
         op_mode=op_mode,
         state=state,
-        partner_call=qso.their_call if qso else None,
+        partner_call=partner_call_val,
         partner_grid=qso.their_grid if qso else None,
         partner_snr_received=qso.our_snr_received if qso else None,
         our_snr_sent=qso.their_snr if qso else None,
         started_at=qso.started.isoformat() if qso else None,
         entries=entries[-20:],  # last 20 entries
         next_action_hint=hint,
+        partner_flag=partner_flag,
     )

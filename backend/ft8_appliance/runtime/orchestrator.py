@@ -1752,6 +1752,8 @@ class Orchestrator:
                     seen_keys.add(key)
                     spot_cooldown[key] = now_t + 3600  # 1h pro call
                     band = spot.band or f"{spot.freq_hz / 1e6:.3f} MHz"
+                    from ..integrations.flags import flag_for_call
+                    spot_flag = flag_for_call(key, cty)
                     await ntfy.notify(
                         f"{key} aus {rec.entity.name} ({rec.entity.continent}) "
                         f"auf {band}.  Aktuelles Band: {self.config.bands[0].name}"
@@ -1759,6 +1761,7 @@ class Orchestrator:
                         title=f"🆕 DXCC-Spot: {rec.entity.name}",
                         priority="high",
                         tags=["dart"],
+                        flag=spot_flag,
                     )
                     log.info("DX-Cluster-Hint pushed: %s (%s)", key, rec.entity.name)
             except Exception as exc:
@@ -2890,8 +2893,10 @@ class Orchestrator:
                     self._worked_grid_band.add((g4, band))
         # Push to ntfy.sh (fire-and-forget, must not block)
         if self.integrations.ntfy and self.integrations.ntfy.enabled:
+            from ..integrations.flags import flag_for_call
             band = payload.get("band", "?")
             grid = payload.get("grid_rcvd", "?")
+            qso_flag = flag_for_call(call, self.integrations.cty)
             title = ("🆕 New DXCC! " if is_new_dxcc else "📡 QSO complete: ") + (call or "?")
             # Action-Buttons damit Dad nach jedem QSO direkt vom
             # Lockscreen aus den Modus wechseln kann ohne in die
@@ -2918,6 +2923,7 @@ class Orchestrator:
                 priority="high" if is_new_dxcc else "default",
                 tags=["radio", "new"] if is_new_dxcc else ["radio"],
                 actions=actions,
+                flag=qso_flag,
             ))
         if not self.db_enabled:
             return
