@@ -21,6 +21,10 @@ dependencies = [
     "structlog>=24.4",
     "sse-starlette>=2.1",
     "anyio>=4.6",
+    # systemd-Watchdog-Integration. Pure-Python (200 Zeilen), kein
+    # native dep. Auf nicht-systemd-Hosts (Workstation, Tests) silent
+    # no-op weil NOTIFY_SOCKET env-var dort nicht gesetzt ist.
+    "sdnotify>=0.3.2",
 ]
 
 [project.optional-dependencies]

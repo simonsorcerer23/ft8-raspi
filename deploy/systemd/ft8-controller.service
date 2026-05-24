@@ -5,7 +5,12 @@ After=network-online.target gpsd.service chrony.service
 Wants=network-online.target gpsd.service chrony.service
 
 [Service]
-Type=simple
+# Type=notify: systemd wartet auf sd_notify("READY=1") vom orchestrator
+# bevor er "active" meldet. Wird im orchestrator.start() ganz am Ende
+# geschickt, nachdem alle bg-tasks scheduled sind (Slot-Loop, GPS,
+# Rig-Poll, Heartbeat). Wenn READY=1 nicht binnen TimeoutStartSec
+# kommt, gilt der Start als failed.
+Type=notify
 User=sebastian
 Group=sebastian
 WorkingDirectory=/home/sebastian/ft8-appliance/backend
@@ -22,6 +27,13 @@ ExecStart=/home/sebastian/ft8-appliance/backend/.venv/bin/uvicorn \
 
 Restart=always
 RestartSec=5
+# Damit der watchdog nicht in einer Endlos-Restart-Schleife endet (z.B.
+# wenn der Bug das READY=1 verhindert), gibt systemd nach 5 Restarts in
+# 120 s auf und setzt den Service auf failed. Mode-Watchdog im
+# orchestrator + ntfy-Push würden Sebastian dann via mode-watchdog-
+# Decode-Funkstille-Detektion warnen.
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 # Hardening note: NoNewPrivileges is intentionally NOT set so the WLAN-
 # manager API can shell out to ``sudo nmcli`` (the appliance user has a
@@ -40,12 +52,17 @@ ReadWritePaths=/var/lib/ft8-appliance /var/log/ft8-appliance /etc/ft8-appliance
 PrivateTmp=true
 SupplementaryGroups=plugdev dialout netdev
 
-# NOTE: WatchdogSec/NotifyAccess waren früher hier — aber im
-# orchestrator wird NIE sd_notify("WATCHDOG=1") aufgerufen, also wurde
-# der Service seit der Migration alle 30s vom systemd gekillt (SIGABRT-
-# Cascade, Restart=always-Loop). Entfernt 2026-05-24. Wenn wir später
-# echten liveness-watchdog wollen: sdnotify-Package in pyproject + in
-# einer asyncio-Loop alle 10s notifien. Separate Engineering-Übung.
+# Liveness-Watchdog: Orchestrator pingt alle 10s sd_notify("WATCHDOG=1")
+# über die asyncio-Heartbeat-Task. Wenn der event-loop hängt oder die
+# Heartbeat-Task stirbt, killt systemd den Prozess nach 30s und startet
+# neu (Restart=always). 30s ist großzügig — Heartbeat alle 10s gibt
+# uns 2 verpasste Pings Spielraum (StartLimitBurst fängt Loop ab).
+#
+# Hat bis v0.2.0 NICHT funktioniert weil sd_notify nirgends aufgerufen
+# wurde — siehe docs/self_update.md "Watchdog NICHT aktiv" für die
+# Geschichte. Jetzt wired.
+NotifyAccess=main
+WatchdogSec=30
 
 [Install]
 WantedBy=multi-user.target

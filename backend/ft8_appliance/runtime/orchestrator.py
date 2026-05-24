@@ -23,6 +23,9 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
+
+import sdnotify
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -429,6 +432,37 @@ class Orchestrator:
             self._bg_tasks.append(asyncio.create_task(
                 self._qrz_logbook_sync_loop(), name="qrz-logbook-sync"
             ))
+
+        # systemd liveness-watchdog: nur schedulen wenn unter systemd
+        # mit NotifyAccess+WatchdogSec gestartet (NOTIFY_SOCKET env).
+        # In Tests / Workstation-runs ist die env nicht da → wir sparen
+        # uns den Task komplett. sdnotify.notify() wäre eh no-op,
+        # aber wir wollen auch keinen idlen Task.
+        if os.environ.get("NOTIFY_SOCKET"):
+            self._sd = sdnotify.SystemdNotifier()
+            self._bg_tasks.append(asyncio.create_task(
+                self._sd_heartbeat_loop(), name="sd-heartbeat"
+            ))
+            # READY=1 signalisiert systemd: orchestrator ist fully
+            # wired, bg tasks laufen, FastAPI gleich am yield. Type=
+            # notify-unit wartet darauf bevor "active" gemeldet wird.
+            self._sd.notify("READY=1")
+            log.info("sd_notify: READY=1 (systemd liveness aktiv, WATCHDOG alle 10s)")
+
+    async def _sd_heartbeat_loop(self) -> None:
+        """Pingt systemd alle 10 s damit WatchdogSec=30 nicht greift.
+
+        1/3 des WatchdogSec-Werts ist die übliche Empfehlung — gibt 2
+        verpasste heartbeats Spielraum.
+
+        BEWUSST KEIN try/except außen rum. Wenn der event-loop hängt
+        oder diese task selbst stirbt, MUSS systemd den Prozess killen
+        — das ist genau der Sinn eines liveness-watchdogs. Defensive
+        catch hier würde die Detektion blind machen.
+        """
+        while True:
+            await asyncio.sleep(10)
+            self._sd.notify("WATCHDOG=1")
 
     def _init_integrations(self) -> None:
         """Wire up online integration clients from AppConfig.
