@@ -12,6 +12,7 @@
  * the callsign hash interface is passed as NULL.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,113 @@
 #include "ft8/decode.h"
 #include "ft8/message.h"
 #include "common/monitor.h"
+
+/* ===================================================================
+ * Callsign Hash-Tabelle (Sebastian-Request 2026-05-24, v0.5.0)
+ * ===================================================================
+ *
+ * FT8 hashed compound/lange Calls auf 22 Bits (mit Sub-Hashes 12/10
+ * Bits). Decoder zeigen sie als "<...>" wenn der Empfaenger den Hash
+ * nicht aufloesen kann. ft8_lib bietet ein Hash-Interface mit
+ * lookup_hash + save_hash Callbacks — wir wireup'en das mit einer
+ * static circular-buffer-Tabelle und reichen den Interface-Pointer
+ * an ftx_message_decode weiter. Dann macht ft8_lib alles:
+ *   - save_hash() wird automatisch aufgerufen wenn ein vollstaendiger
+ *     Compound-Call decoded wird (z.B. "EK/RX3DPK" als Sender in
+ *     einer Standard-Message)
+ *   - lookup_hash() wird beim Unhashen aufgerufen wenn der Decoder
+ *     auf einen Hash-Slot trifft (z.B. "<HASH22>")
+ * Ergebnis: spaeter empfangene "<...>"-Messages werden zu vollen Calls
+ * aufgeloest, sofern wir den Call vorher mal mit-vollem-Namen
+ * gesehen haben.
+ *
+ * KEINE Synchronisation — decode_slot() laeuft sequenziell (Python-
+ * Pool-Worker single-threaded fuer diese Funktion). Bei zukuenftiger
+ * Parallelisierung muesste das ein mutex bekommen.
+ */
+#define HASH_TABLE_SIZE 256
+
+typedef struct {
+    uint32_t n22;
+    char     call[14];   /* max FT8 callsign length 11 chars + null + pad */
+    bool     used;
+} hash_entry_t;
+
+static hash_entry_t s_hash_table[HASH_TABLE_SIZE];
+static int s_hash_head = 0;  /* circular buffer write index */
+
+static bool shim_lookup_hash(ftx_callsign_hash_type_t type, uint32_t hash, char* call_out) {
+    for (int i = 0; i < HASH_TABLE_SIZE; ++i) {
+        if (!s_hash_table[i].used) continue;
+        uint32_t stored = s_hash_table[i].n22;
+        bool match = false;
+        switch (type) {
+            case FTX_CALLSIGN_HASH_22_BITS:
+                match = (stored == hash);
+                break;
+            case FTX_CALLSIGN_HASH_12_BITS:
+                /* n12 = n22 >> 10 (siehe ft8_lib message.c::save_callsign) */
+                match = ((stored >> 10) == hash);
+                break;
+            case FTX_CALLSIGN_HASH_10_BITS:
+                /* n10 = n22 >> 12 */
+                match = ((stored >> 12) == hash);
+                break;
+        }
+        if (match) {
+            strncpy(call_out, s_hash_table[i].call, 13);
+            call_out[13] = '\0';
+            return true;
+        }
+    }
+    return false;
+}
+
+static void shim_save_hash(const char* callsign, uint32_t n22) {
+    /* Dedup: existing entry mit gleichem n22 -> Call aktualisieren
+     * (sollte gleich sein, aber defensiv). */
+    for (int i = 0; i < HASH_TABLE_SIZE; ++i) {
+        if (s_hash_table[i].used && s_hash_table[i].n22 == n22) {
+            strncpy(s_hash_table[i].call, callsign, 13);
+            s_hash_table[i].call[13] = '\0';
+            return;
+        }
+    }
+    /* Neuer Eintrag in head-Slot (overwrite oldest). */
+    s_hash_table[s_hash_head].n22 = n22;
+    strncpy(s_hash_table[s_hash_head].call, callsign, 13);
+    s_hash_table[s_hash_head].call[13] = '\0';
+    s_hash_table[s_hash_head].used = true;
+    s_hash_head = (s_hash_head + 1) % HASH_TABLE_SIZE;
+}
+
+static ftx_callsign_hash_interface_t s_hash_if = {
+    .lookup_hash = shim_lookup_hash,
+    .save_hash   = shim_save_hash,
+};
+
+/* Optional API: aus Python pre-populate (z.B. aus DB worked-Calls).
+ * Liefert die aktuelle Anzahl belegter Slots zurueck. */
+int ft8_shim_hash_table_save(const char* callsign, uint32_t n22)
+{
+    if (callsign == NULL || callsign[0] == '\0') return -1;
+    shim_save_hash(callsign, n22);
+    int count = 0;
+    for (int i = 0; i < HASH_TABLE_SIZE; ++i) {
+        if (s_hash_table[i].used) ++count;
+    }
+    return count;
+}
+
+/* Liefert die aktuelle Hash-Tabelle-Belegung fuer Debug/Status. */
+int ft8_shim_hash_table_count(void)
+{
+    int count = 0;
+    for (int i = 0; i < HASH_TABLE_SIZE; ++i) {
+        if (s_hash_table[i].used) ++count;
+    }
+    return count;
+}
 
 #define FT8_SAMPLE_RATE_HZ 12000
 #define FT8_SLOT_SECONDS   15
@@ -129,7 +237,7 @@ int ft8_shim_decode_slot(
          * for the MVP. */
         char                   text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t  offsets;
-        ftx_message_rc_t       rc = ftx_message_decode(&message, NULL, text, &offsets);
+        ftx_message_rc_t       rc = ftx_message_decode(&message, &s_hash_if, text, &offsets);
         if (rc != FTX_MESSAGE_RC_OK) {
             continue;
         }
@@ -399,7 +507,7 @@ int ft4_shim_decode_slot(
 
         char                   text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t  offsets;
-        ftx_message_rc_t       rc = ftx_message_decode(&message, NULL, text, &offsets);
+        ftx_message_rc_t       rc = ftx_message_decode(&message, &s_hash_if, text, &offsets);
         if (rc != FTX_MESSAGE_RC_OK) continue;
 
         ft8_shim_result_t* r = &out[num_out];

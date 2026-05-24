@@ -128,6 +128,12 @@ ffi.cdef(
         ft8_shim_result_t* out,
         int            max_out
     );
+
+    /* Callsign-Hash-Tabelle (v0.5.0): Python kann optional Calls
+     * pre-populieren (z.B. aus DB worked-Calls) damit beim Boot die
+     * <...>-Aufloesung sofort funktioniert. */
+    int ft8_shim_hash_table_save(const char* callsign, uint32_t n22);
+    int ft8_shim_hash_table_count(void);
     """
 )
 
@@ -202,6 +208,9 @@ ffi.set_source(
         ft8_shim_result_t* out,
         int            max_out
     );
+
+    int ft8_shim_hash_table_save(const char* callsign, uint32_t n22);
+    int ft8_shim_hash_table_count(void);
     """,
     sources=[SHIM_C],
     include_dirs=[str(FT8_LIB_DIR)],
