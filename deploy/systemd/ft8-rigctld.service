@@ -1,0 +1,27 @@
+[Unit]
+Description=Hamlib rigctld (configured from /etc/default/ft8-rigctld)
+After=systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=simple
+User=sebastian
+Group=dialout
+
+# RIG_MODEL / RIG_DEVICE / RIG_BAUD are rendered from RigConfig (config.yaml)
+# by ft8_appliance.rig.write_rigctld_envfile; see deploy/install.sh for the
+# initial bootstrap. -T 127.0.0.1 binds loopback only — the controller is
+# the only client, Hamlib is never exposed to the LAN.
+EnvironmentFile=/etc/default/ft8-rigctld
+ExecStart=/usr/bin/rigctld \
+    -m ${RIG_MODEL} \
+    -r ${RIG_DEVICE} \
+    -s ${RIG_BAUD} \
+    -t 4532 \
+    -T 127.0.0.1
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

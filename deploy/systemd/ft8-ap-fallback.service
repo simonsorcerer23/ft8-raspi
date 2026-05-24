@@ -1,0 +1,11 @@
+[Unit]
+Description=FT8 Appliance AP-Fallback (hostapd + dnsmasq)
+# Started by ft8-controller when no upstream WiFi has been reachable for
+# more than fallback_delay_s. Not "WantedBy multi-user.target" — only ad-hoc.
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/opt/ft8-appliance/deploy/scripts/start-ap-fallback.sh
+ExecStop=/opt/ft8-appliance/deploy/scripts/stop-ap-fallback.sh

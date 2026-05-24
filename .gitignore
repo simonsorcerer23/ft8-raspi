@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+backend/ft8_appliance/web/static/*
+!backend/ft8_appliance/web/static/.gitkeep
+
+# Build artefacts
+vendor/ft8_lib/build/
+*.o
+*.a
+# cffi generated sources / binaries
+backend/ft8_appliance/decode/_ft8_native.c
+backend/ft8_appliance/decode/_ft8_native*.so
+
+# Data
+data/cty.dat
+data/*.zip
+tiles/
+backend/tests/data/*.wav
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Secrets / Local Config
+config.yaml
+config.local.yaml
+.env
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/

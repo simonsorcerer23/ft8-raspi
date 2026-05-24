@@ -1,0 +1,139 @@
+"""SQLAlchemy ORM models for the appliance's local SQLite database.
+
+Schema follows ``architecture.md`` §7.2. We deliberately stay close to
+the SQL there — no fancy ORM features, just plain tables — so the
+schema can also be queried from ``sqlite3`` on the Pi during pi-check.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import DateTime, Float, Integer, String, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+# ---------------------------------------------------------------------------
+class Qso(Base):
+    __tablename__ = "qso"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    call: Mapped[str] = mapped_column(String, index=True)
+    band: Mapped[str] = mapped_column(String, index=True)
+    freq_hz: Mapped[int] = mapped_column(Integer)
+    mode: Mapped[str] = mapped_column(String, default="FT8")
+    rst_sent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rst_rcvd: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    grid_rcvd: Mapped[str | None] = mapped_column(String, nullable=True)
+    qso_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    qso_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    my_grid: Mapped[str] = mapped_column(String)
+    my_power_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    swr_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Operator location at the moment of QSO — drives the "trip map"
+    # (Bonus 12). Null when no GPS fix was available.
+    my_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    my_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Multi-Operator-Tracking (Sebastian 2026-05-23). Speichert welcher
+    # Operator den QSO gemacht hat — bei mehreren Profilen am gleichen
+    # Pi (DK9XR, DL2XYZ, …) bleibt das Log sauber getrennt. Nullable
+    # fuer Backward-Compat mit alten QSOs aus der Pre-Multi-User-Aera;
+    # die Migration weist denen den damaligen Single-Operator zu.
+    user_callsign: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    # QRZ.com Logbook upload tracking. The appliance must work offline
+    # (vacation, intermittent hotspot) — every QSO is persisted locally
+    # immediately, then a background task drains the unuploaded ones
+    # whenever connectivity returns. qrz_logbook_id is what QRZ returns
+    # on successful insert; we keep it to support future delete/update.
+    qrz_uploaded: Mapped[bool] = mapped_column(default=False, index=True)
+    qrz_logbook_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    qrz_upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    qrz_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
+class Decode(Base):
+    __tablename__ = "decode"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    call_from: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    call_to: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    grid: Mapped[str | None] = mapped_column(String, nullable=True)
+    message: Mapped[str] = mapped_column(String)
+    snr_db: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dt_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    freq_offset_hz: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    band: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+class Heard(Base):
+    __tablename__ = "heard"
+
+    # PK bleibt single-column (SQLite kann composite-PK nicht in-place
+    # migrieren). Multi-Operator-Trennung via user_callsign-Column +
+    # WHERE-Filter in der Repository-Schicht — Application garantiert
+    # Eindeutigkeit per upsert-Logik.
+    call: Mapped[str] = mapped_column(String, primary_key=True)
+    user_callsign: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    count: Mapped[int] = mapped_column(Integer, default=1)
+    grid: Mapped[str | None] = mapped_column(String, nullable=True)
+    best_snr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+class PskReporterIn(Base):
+    """'Wer hat mich gehört' inbound reports from pskreporter.info."""
+
+    __tablename__ = "psk_reporter_in"
+
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    rx_call: Mapped[str] = mapped_column(String, primary_key=True)
+    rx_grid: Mapped[str | None] = mapped_column(String, nullable=True)
+    snr_db: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    band: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+class SwrLog(Base):
+    __tablename__ = "swr_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    band: Mapped[str] = mapped_column(String, index=True)
+    freq_hz: Mapped[int] = mapped_column(Integer)
+    swr: Mapped[float] = mapped_column(Float)
+
+
+# ---------------------------------------------------------------------------
+class Blacklist(Base):
+    __tablename__ = "blacklist"
+
+    # PK bleibt single-column aus SQLite-Migrations-Gruenden — Operator-
+    # Isolation via user_callsign-Filter in Repository.
+    call: Mapped[str] = mapped_column(String, primary_key=True)
+    user_callsign: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    added: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+class ConfigHistory(Base):
+    __tablename__ = "config_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    yaml_snapshot: Mapped[str] = mapped_column(String)

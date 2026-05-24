@@ -1,0 +1,213 @@
+<script>
+  import { onMount } from 'svelte';
+  import StateIndicator from './components/StateIndicator.svelte';
+  import StatusBadges   from './components/StatusBadges.svelte';
+  import ControlPanel   from './components/ControlPanel.svelte';
+  import DecodeList     from './components/DecodeList.svelte';
+  import Map            from './components/Map.svelte';
+  import ADIFTable      from './components/ADIFTable.svelte';
+  import ConfigPanel    from './components/ConfigPanel.svelte';
+  import WifiManager    from './components/WifiManager.svelte';
+  import BlacklistPanel from './components/BlacklistPanel.svelte';
+  import SolarWidget    from './components/SolarWidget.svelte';
+  import StatusBar      from './components/StatusBar.svelte';
+  import StatsDashboard from './components/StatsDashboard.svelte';
+  import SystemPanel from './components/SystemPanel.svelte';
+  import BestTimeChart  from './components/BestTimeChart.svelte';
+  import FirstBootWizard from './components/FirstBootWizard.svelte';
+  import QsoConversation from './components/QsoConversation.svelte';
+  import RigPanel       from './components/RigPanel.svelte';
+  import SwrTrendChart  from './components/SwrTrendChart.svelte';
+  import WhoHeardMe     from './components/WhoHeardMe.svelte';
+  import { api }        from './lib/api.js';
+  import { statusStore, healthStore, decodeStore } from './lib/stores.svelte.js';
+  import { attachStatusStream, attachDecodeStream,
+           requestNotificationPermission,
+           setSoundEnabled, isSoundEnabled } from './lib/sound.svelte.js';
+
+  let soundOn = $state(true);
+  let needsSetup = $state(false);
+
+  async function checkSetup() {
+    // localStorage so the dismiss persists across browser sessions —
+    // sessionStorage would re-trigger the wizard on every new tab, which
+    // is annoying once the operator is past the first-boot dance.
+    if (localStorage.getItem('ft8_setup_done')) return false;
+    if (localStorage.getItem('ft8_setup_skipped')) return false;
+    try {
+      const c = await api.config();
+      // Trigger heuristic: no callsign yet, OR placeholder + bands look like
+      // the unconfigured stub (no antennas at all).
+      const needsCall = !c.operator.callsign;
+      const noAntennas = !c.antennas || c.antennas.length === 0;
+      return needsCall || noAntennas;
+    } catch { return false; }
+  }
+
+  onMount(async () => {
+    needsSetup = await checkSetup();
+    statusStore.refresh();
+    healthStore.refresh();
+    const t1 = setInterval(() => statusStore.refresh(), 5_000);
+    const t2 = setInterval(() => healthStore.refresh(), 15_000);
+    const detachStatus = attachStatusStream();
+    const detachDecodes = attachDecodeStream(decodeStore);
+    return () => { clearInterval(t1); clearInterval(t2); detachStatus(); detachDecodes(); };
+  });
+
+  function skipSetup() {
+    localStorage.setItem('ft8_setup_skipped', '1');
+    needsSetup = false;
+  }
+
+  async function toggleSound() {
+    soundOn = !soundOn;
+    setSoundEnabled(soundOn);
+    if (soundOn) await requestNotificationPermission();
+  }
+
+  let tab = $state('main');
+
+  // Map current rig dial freq to a band name for the BestTimeChart
+  function _bandFromHz(hz) {
+    if (!hz) return '20m';
+    const M = hz / 1_000_000;
+    if (M < 2)   return '160m';
+    if (M < 4.5) return '80m';
+    if (M < 8)   return '40m';
+    if (M < 11)  return '30m';
+    if (M < 15)  return '20m';
+    if (M < 19)  return '17m';
+    if (M < 22)  return '15m';
+    if (M < 25)  return '12m';
+    return '10m';
+  }
+  const currentBandName = $derived(_bandFromHz(statusStore.value.rig?.freq_hz));
+
+  function handleReply(decode) {
+    // Wired up when the user-reply API lands. For now, just log.
+    console.log('reply to', decode);
+  }
+
+  function handleBadgeDetail(key, section) {
+    console.log('badge detail', key, section);
+  }
+</script>
+
+<header>
+  <h1>FT8 Hochgericht</h1>
+  <SolarWidget />
+  <nav>
+    <button class:active={tab === 'main'}  onclick={() => tab = 'main'}>🎙️ Funk</button>
+    <button class:active={tab === 'map'}   onclick={() => tab = 'map'}>🌍 Map</button>
+    <button class:active={tab === 'log'}   onclick={() => tab = 'log'}>📒 Log</button>
+    <button class:active={tab === 'who'}   onclick={() => tab = 'who'}>📡 Empfänger</button>
+    <button class:active={tab === 'bl'}    onclick={() => tab = 'bl'}>🚫 Blacklist</button>
+    <button class:active={tab === 'wifi'}  onclick={() => tab = 'wifi'}>📶 WLAN</button>
+    <button class:active={tab === 'cfg'}   onclick={() => tab = 'cfg'}>⚙️ Konfig</button>
+    <button class="sound" onclick={toggleSound}
+            title={soundOn ? 'Browser-Sound + Push-Benachrichtigungen AN — klick zum Stummschalten'
+                           : 'Browser-Sound + Push-Benachrichtigungen AUS — klick zum Aktivieren'}>
+      {soundOn ? '🔊' : '🔇'}
+    </button>
+  </nav>
+</header>
+
+{#if needsSetup}
+  <FirstBootWizard onDone={() => needsSetup = false} />
+  <div style="text-align: center; margin-top: 1rem;">
+    <button onclick={skipSetup} style="background: transparent; color: #94a3b8;
+            border: none; cursor: pointer; font-size: 0.85rem;">
+      Wizard überspringen
+    </button>
+  </div>
+{:else}
+
+<main>
+  <StatusBar />
+  <StatusBadges onDetail={handleBadgeDetail} />
+
+  {#if tab === 'main'}
+    <RigPanel />
+    <StatsDashboard />
+    <QsoConversation />
+    <DecodeList onReply={handleReply} />
+    <SwrTrendChart hours={24} />
+    <BestTimeChart band={currentBandName} />
+    <SystemPanel />
+    <!-- ControlPanel ganz ans Ende: TX-Leistung-Slider, Antenne-Dropdown,
+         PANIC und Shutdown sind Tap-empfindlich. Sebastian 2026-05-24:
+         beim Scrollen aufm Handy mit "Wurstfingern" zu leicht verstellt.
+         CQ/Antworten-Buttons sind auch hier drin — fuer den Notfall-Switch
+         scrollt man bis zum Ende, das ist akzeptabel weil der Notfall-
+         State im StatusBar oben sichtbar bleibt. -->
+    <ControlPanel />
+  {:else if tab === 'map'}
+    <Map />
+  {:else if tab === 'log'}
+    <ADIFTable />
+  {:else if tab === 'who'}
+    <WhoHeardMe />
+  {:else if tab === 'bl'}
+    <BlacklistPanel />
+  {:else if tab === 'wifi'}
+    <WifiManager />
+  {:else if tab === 'cfg'}
+    <ConfigPanel />
+  {/if}
+</main>
+
+<footer>
+  <small>DK9XR · FT8 · {new Date().toISOString().slice(0,10)}</small>
+</footer>
+{/if}
+
+<style>
+  :global(body) { margin: 0; }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #0b1220;
+    border-bottom: 1px solid #1e293b;
+    padding: 0.6rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  header h1 { margin: 0; font-size: 1.1rem; color: var(--accent); letter-spacing: 0.05em; }
+  nav { display: flex; gap: 0.3rem; }
+  nav button {
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  nav button.active { background: var(--accent); color: #0f172a; font-weight: 600; }
+  main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    padding: 0.8rem;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  footer {
+    text-align: center;
+    color: #64748b;
+    padding: 1rem;
+    font-family: ui-monospace, monospace;
+  }
+  .placeholder {
+    background: var(--panel);
+    padding: 1rem;
+    border-radius: 8px;
+    color: #94a3b8;
+  }
+  .placeholder h2 { margin: 0 0 0.5rem; color: var(--accent); }
+</style>

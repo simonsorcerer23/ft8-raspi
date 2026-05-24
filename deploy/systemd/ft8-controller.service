@@ -1,0 +1,42 @@
+[Unit]
+Description=FT8 Hochgericht Appliance Controller
+Documentation=file:///opt/ft8-appliance/architecture.md
+After=network-online.target gpsd.service chrony.service
+Wants=network-online.target gpsd.service chrony.service
+
+[Service]
+Type=simple
+User=pi
+Group=audio
+WorkingDirectory=/opt/ft8-appliance/backend
+
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=FT8_CONFIG=/etc/ft8-appliance/config.yaml
+
+ExecStart=/opt/ft8-appliance/backend/.venv/bin/uvicorn \
+    ft8_appliance.web.app:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --no-access-log
+
+Restart=always
+RestartSec=5
+
+# Hardening note: NoNewPrivileges is intentionally NOT set so the WLAN-
+# manager API can shell out to ``sudo nmcli`` (the appliance user has a
+# NOPASSWD sudoers rule scoped to this single-user box). ProtectSystem=full
+# (vs strict) leaves /etc writable for ``sudo`` so NetworkManager can drop
+# system-connection files. The web layer only binds to the LAN.
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/ft8-appliance /var/log/ft8-appliance /etc/ft8-appliance
+PrivateTmp=true
+SupplementaryGroups=plugdev dialout netdev
+
+# Watchdog (systemd kills us if our heartbeat stops; our app needs to call sd_notify periodically)
+WatchdogSec=30
+NotifyAccess=main
+
+[Install]
+WantedBy=multi-user.target

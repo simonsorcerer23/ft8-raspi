@@ -1,0 +1,22 @@
+#!/usr/sbin/nft -f
+###############################################################################
+# /etc/nftables.d/ft8-captive.nft
+#
+# Redirects all inbound HTTP from clients on the AP-fallback subnet to our
+# FastAPI on :8000. dnsmasq already steers DNS to the Pi; this catches any
+# HTTP traffic that bypassed DNS (e.g. directly-typed IPs).
+###############################################################################
+
+table inet ft8_captive {
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+
+        # Only act on the AP-fallback interface
+        iifname "wlan0" ip saddr 192.168.66.0/24 tcp dport 80 \
+            dnat to 192.168.66.1:8000;
+    }
+
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+}

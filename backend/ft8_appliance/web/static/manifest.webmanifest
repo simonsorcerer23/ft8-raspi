@@ -1,0 +1,17 @@
+{
+  "name": "FT8 Hochgericht",
+  "short_name": "FT8 HG",
+  "description": "Headless FT8-Appliance Steuerung für IC-705",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
