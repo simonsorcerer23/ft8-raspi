@@ -195,6 +195,13 @@ install_and_restart() {
         (cd vendor/ft8_lib && make --quiet CFLAGS='-O3 -DHAVE_STPCPY -I. -fPIC') \
             || { log "ft8_lib build failed (${label})"; return 1; }
     fi
+    # cffi-extension _ft8_native.so — bei migrations hatten wir den Fall
+    # dass pip install -e . die Extension NICHT mit-baut und das Service-
+    # Start dann die Decode-Pipeline disabled ("No module named _ft8_native").
+    # Defensiv jedes Mal aufrufen — wenn nichts zu tun ist, ist's <1s no-op.
+    (cd backend && .venv/bin/python -m ft8_appliance.decode._build_ft8) \
+        >/dev/null 2>&1 \
+        || { log "cffi _ft8_native build failed (${label})"; return 1; }
     log "systemctl restart ft8-controller (${label})"
     if ! sudo -n /bin/systemctl restart ft8-controller; then
         log "systemctl restart fehlgeschlagen — sudoers-snippet fehlt?"

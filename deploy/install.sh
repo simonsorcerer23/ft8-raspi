@@ -62,7 +62,21 @@ section "2/8  Directories"
 install -d -o "${APP_USER}" -g "${APP_USER}" "${ETC_DIR}" "${LOG_DIR}" "${LIB_DIR}" "${TILES_DIR}"
 
 # ----------------------------------------------------------------------------
-section "3/8  Python venv + dependencies"
+# Reihenfolge wichtig: ft8_lib MUSS vor dem cffi-build da sein, weil
+# _build_ft8.py gegen vendor/ft8_lib/libft8.a linkt. Frühere Versionen
+# hatten venv/cffi vor ft8_lib stehen und _build_ft8.py meldete
+# fälschlich "(already up-to-date)" ohne die .so zu produzieren —
+# Service startete dann mit disabled Decode-Pipeline.
+section "3/8  ft8_lib (vendored submodule, compile with -fPIC)"
+sudo -u "${APP_USER}" bash -lc "
+    set -e
+    cd ${APP_DIR}/vendor/ft8_lib
+    make clean
+    make CFLAGS='-O3 -DHAVE_STPCPY -I. -fPIC'
+"
+
+# ----------------------------------------------------------------------------
+section "4/8  Python venv + dependencies + cffi-Extension"
 sudo -u "${APP_USER}" bash -lc "
     set -e
     cd ${APP_DIR}/backend
@@ -70,15 +84,6 @@ sudo -u "${APP_USER}" bash -lc "
     .venv/bin/pip install --upgrade pip setuptools wheel
     .venv/bin/pip install -e .[hardware]
     .venv/bin/python -m ft8_appliance.decode._build_ft8
-"
-
-# ----------------------------------------------------------------------------
-section "4/8  ft8_lib (vendored submodule, compile with -fPIC)"
-sudo -u "${APP_USER}" bash -lc "
-    set -e
-    cd ${APP_DIR}/vendor/ft8_lib
-    make clean
-    make CFLAGS='-O3 -DHAVE_STPCPY -I. -fPIC'
 "
 
 # ----------------------------------------------------------------------------

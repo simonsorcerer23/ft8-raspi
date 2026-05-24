@@ -120,11 +120,13 @@ ssh ft8 'git clone git@github.com:simonsorcerer23/ft8-raspi.git ~/ft8-appliance'
 # Persistente Daten zurückrücken: venv neu, tiles + db bleiben in /var/lib
 ssh ft8 'sudo mv /opt/ft8-appliance/tiles /var/lib/ft8-appliance/tiles || true'
 
+# Reihenfolge: ft8_lib ZUERST (cffi-Build linkt gegen libft8.a),
+# danach venv + pip + cffi-Extension.
+ssh ft8 'cd ~/ft8-appliance/vendor/ft8_lib \
+  && make CFLAGS="-O3 -DHAVE_STPCPY -I. -fPIC"'
 ssh ft8 'cd ~/ft8-appliance/backend && python3 -m venv .venv \
   && .venv/bin/pip install -e .[hardware] \
   && .venv/bin/python -m ft8_appliance.decode._build_ft8'
-ssh ft8 'cd ~/ft8-appliance/vendor/ft8_lib \
-  && make CFLAGS="-O3 -DHAVE_STPCPY -I. -fPIC"'
 
 # Updated service-unit + sudoers + timer installieren
 ssh ft8 'sudo install -m 644 ~/ft8-appliance/deploy/systemd/ft8-controller.service /etc/systemd/system/'

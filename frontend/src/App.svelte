@@ -28,6 +28,18 @@
   let soundOn = $state(true);
   let needsSetup = $state(false);
 
+  // Pi-Identität in den Titel: ft8 vs ft8-2 unterscheidbar machen.
+  // Quelle ist die URL der User benutzt (Tailscale-DNS, .local, oder IP).
+  // First-segment vor "." extrahieren — bei Tailscale "ft8-2.tail9dd...ts.net"
+  // ergibt das "ft8-2", bei "192.168.x.y" einfach die IP.
+  const piLabel = (() => {
+    const h = (typeof window !== 'undefined' ? window.location.hostname : '') || '';
+    const first = h.split('.')[0];
+    return first || 'Raspi';
+  })();
+  const pageTitle = `FT8 ${piLabel}`;
+  if (typeof document !== 'undefined') document.title = pageTitle;
+
   async function checkSetup() {
     // localStorage so the dismiss persists across browser sessions —
     // sessionStorage would re-trigger the wizard on every new tab, which
@@ -95,7 +107,7 @@
 </script>
 
 <header>
-  <h1>FT8 Hochgericht</h1>
+  <h1>{pageTitle}</h1>
   <SolarWidget />
   <nav>
     <button class:active={tab === 'main'}  onclick={() => tab = 'main'}>🎙️ Funk</button>
