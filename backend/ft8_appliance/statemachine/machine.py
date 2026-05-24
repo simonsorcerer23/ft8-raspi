@@ -641,12 +641,24 @@ class StateMachine:
         msg = f"{self.qso.their_call} {self.ctx.callsign} {self.ctx.my_grid[:4]}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "respond_grid")))
 
+    # FT8-Spec: SNR-Feld ist 7-bit signed, Bereich -50..+49 dB (siehe
+    # WSJT-X-Manual + QEX-Paper). Werte ausserhalb werden vom ft8_lib-
+    # Encoder ggf. truncated oder fuehren zu invaliden Frames.
+    # Sebastian-Audit v0.3.3 (defensiv): clamp auf safe range.
+    FT8_SNR_MIN = -50
+    FT8_SNR_MAX = 49
+
+    def _clamp_snr(self, snr: int | None, default: int = -10) -> int:
+        if snr is None:
+            return default
+        return max(self.FT8_SNR_MIN, min(self.FT8_SNR_MAX, int(snr)))
+
     def _emit_respond_with_report(self) -> None:
         assert self.qso is not None
         # WSJT-X-konform (Audit Action 5, v0.3.2): R + SNR-of-them-at-us
         # = der Wert den WIR von ihrem Signal gemessen haben, NICHT
         # Echo von their_snr_at_them.
-        snr = self.qso.their_snr_at_us if self.qso.their_snr_at_us is not None else -10
+        snr = self._clamp_snr(self.qso.their_snr_at_us)
         self.qso.their_snr = snr  # = rst_sent fuer Log
         msg = f"{self.qso.their_call} {self.ctx.callsign} {snr:+03d}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "respond_report")))
@@ -658,7 +670,7 @@ class StateMachine:
         # (= our_snr_received), was rst_sent in der DB stets gleich
         # rst_rcvd machte (= statistisch wertlos) und Partner kein
         # echtes Feedback ueber sein Signal bei uns gab.
-        snr = self.qso.their_snr_at_us if self.qso.their_snr_at_us is not None else -10
+        snr = self._clamp_snr(self.qso.their_snr_at_us)
         self.qso.their_snr = snr  # = rst_sent fuer Log
         msg = f"{self.qso.their_call} {self.ctx.callsign} R{snr:+03d}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "r_report")))

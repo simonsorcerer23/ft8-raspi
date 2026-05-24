@@ -417,6 +417,20 @@ class Orchestrator:
         if isinstance(self.slot_clock, SlotClock) and self.config.operating.mode == "FT4":
             from .slot_clock import FT4_SLOT_SECONDS
             self.slot_clock = SlotClock(slot_seconds=FT4_SLOT_SECONDS)
+            # Sebastian-Audit v0.3.3: FT4-Mode ist nur halbwegs eingebaut.
+            # Der SlotClock wird umgestellt aber audio/slot_sync.py hat
+            # SAMPLES_PER_SLOT auf 180000 (15s) hartcodiert + ft8_lib
+            # decoded nur FT8-Frames. Effekt bei mode=FT4: TX-Timing
+            # falsch (Pi sendet alle 7.5s aber capture-window ist 15s →
+            # decode zerstoert) + Encoder produziert FT8-Frames nicht
+            # FT4 → Partner kann nicht decoden. Warnung damit der
+            # Operator weiss dass FT4 derzeit broken ist.
+            log.warning(
+                "FT4 mode is NOT fully supported (audit-finding v0.3.3): "
+                "SlotBuffer is hardcoded to 15s + decoder is FT8-only. "
+                "Decoder will see empty/garbage. Use mode=FT8 in production. "
+                "See docs/ft8_complete_audit.md Finding F6."
+            )
         # rig.connect() can fail if rigctld isn't running yet (e.g. rig not
         # plugged in at boot). Don't crash the orchestrator over it — the
         # rig_poll_loop's _ensure_connected reconnects automatically when

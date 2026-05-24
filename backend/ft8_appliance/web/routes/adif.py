@@ -10,12 +10,15 @@ from __future__ import annotations
 from datetime import datetime
 from io import StringIO
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import desc, select
 
+from ..._version import __version__
 from ...db import session_scope
 from ...db.models import Qso
+from ...runtime import Orchestrator
+from ..deps import get_orchestrator
 
 router = APIRouter()
 
@@ -33,20 +36,45 @@ def _adif_date_time(dt: datetime) -> tuple[str, str]:
     return dt.strftime("%Y%m%d"), dt.strftime("%H%M")
 
 
+def _dxcc_for_call(call: str | None, cty) -> str | None:
+    """Best-effort DXCC-Entity-Name via cty.dat lookup.
+    None wenn cty nicht geladen oder Lookup fehlschlaegt."""
+    if not call or cty is None:
+        return None
+    try:
+        rec = cty.lookup(call)
+    except Exception:
+        return None
+    if rec is None:
+        return None
+    return rec.entity.name
+
+
 @router.get("/log/adif", response_class=PlainTextResponse)
-async def export_adif() -> PlainTextResponse:
+async def export_adif(
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> PlainTextResponse:
     """Return the entire QSO log as an ADIF file.
 
-    Browser will download as ``log.adif`` if you GET it directly.
+    Sebastian Audit 2026-05-24: dynamische Version + Multi-Op-Filename
+    + STATION_CALLSIGN/OPERATOR/DXCC-Felder + COMMENT mit Software-Tag.
     """
     out = StringIO()
+    progver = __version__
     out.write(
-        "FT8 Raspi Appliance — ADIF export\n"
+        f"FT8 Raspi Appliance — ADIF export v{progver}\n"
         f"<ADIF_VER:5>3.1.4 "
         f"<PROGRAMID:9>ft8-raspi "
-        f"<PROGRAMVERSION:5>0.1.0 "
+        f"{_adif_field('PROGRAMVERSION', progver)} "
         f"<EOH>\n"
     )
+
+    # Multi-Operator: aktiver Operator bestimmt Dateinamen. Wenn ein QSO
+    # eine andere user_callsign hat (z.B. ein DK9XR-QSO im DO3XR-Export),
+    # schreiben wir das per-row in OPERATOR + STATION_CALLSIGN — der
+    # Dateiname zeigt aber den AKTIVEN Operator des Exports.
+    active_op = orch.config.operator.callsign.upper()
+    cty = getattr(getattr(orch, "integrations", None), "cty", None)
 
     async with session_scope() as s:
         rows = list(
@@ -56,6 +84,8 @@ async def export_adif() -> PlainTextResponse:
     for q in rows:
         date_on, time_on = _adif_date_time(q.qso_start)
         date_off, time_off = _adif_date_time(q.qso_end)
+        op_call = (q.user_callsign or active_op).upper()
+        dxcc_name = _dxcc_for_call(q.call, cty)
         fields = "".join([
             _adif_field("CALL", q.call),
             _adif_field("QSO_DATE", date_on),
@@ -70,14 +100,20 @@ async def export_adif() -> PlainTextResponse:
             _adif_field("GRIDSQUARE", q.grid_rcvd),
             _adif_field("MY_GRIDSQUARE", q.my_grid),
             _adif_field("TX_PWR", q.my_power_w),
+            # Sebastian-Audit v0.3.3: zusaetzliche Standard-Felder fuer
+            # LotW / eQSL / ClubLog-Upload-Kompatibilitaet.
+            _adif_field("OPERATOR", op_call),
+            _adif_field("STATION_CALLSIGN", op_call),
+            _adif_field("COUNTRY", dxcc_name),
             "<EOR>",
         ])
         out.write(fields + "\n")
 
+    filename = f"{active_op.lower()}_ft8.adif"
     return PlainTextResponse(
         out.getvalue(),
         headers={
-            "Content-Disposition": 'attachment; filename="dk9xr_ft8.adif"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Type": "text/plain; charset=utf-8",
         },
     )

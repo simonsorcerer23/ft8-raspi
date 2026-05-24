@@ -213,6 +213,32 @@ def test_wsjtx_conform_r_report_uses_our_measurement_not_echo(
         "rst_sent und rst_rcvd sind unabhaengige Messungen"
 
 
+def test_snr_clamped_to_ft8_spec_range(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Audit F4 v0.3.3: SNR-Werte ausserhalb FT8-Spec-Range (-50..+49)
+    werden vor dem TX clamped damit der Encoder keinen out-of-range-
+    Frame produziert.
+
+    Defensiv — realer Decoder liefert nur -30..+30, aber wenn QSB-
+    Bug oder fehlerhafter Mock einen krassen Wert reinhaut, wollen
+    wir nicht 'R-120' on-air haben."""
+    cq = _decode("W1AW", None, "CQ W1AW FN31", snr=-7)
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    sm.qso.their_snr_at_us = -120  # impossible aber defensiv
+    sm._emit_send_r_report()
+    actions = sm.drain_actions()
+    tx = next(a.payload["message"] for a in actions if a.kind == "TX_MESSAGE")
+    assert "R-50" in tx, f"clamp auf FT8_SNR_MIN=-50, got: {tx!r}"
+
+    sm.qso.their_snr_at_us = 200
+    sm._emit_send_r_report()
+    actions = sm.drain_actions()
+    tx = next(a.payload["message"] for a in actions if a.kind == "TX_MESSAGE")
+    assert "R+49" in tx, f"clamp auf FT8_SNR_MAX=+49, got: {tx!r}"
+
+
 def test_their_snr_at_us_tracks_latest_decode(
     sm: StateMachine, good_hw: HardwareState,
 ) -> None:
