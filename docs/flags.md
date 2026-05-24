@@ -145,6 +145,40 @@ ja im Call selbst.
 - End-to-end flag_for_call mit mini-cty.dat (DL/K/JA/EA)
 - Edge-cases (None-inputs, unbekannte Calls, Exception im Lookup)
 
+## Deployment-Voraussetzung: `data/cty.dat`
+
+Die `cty.dat`-Datei (~100 KB, von country-files.com) ist **gitignored**
+und muss **manuell** im Repo-Pfad `data/cty.dat` deployed werden — sie
+ist Runtime-Data, kein Source-Code, und ändert sich periodisch
+(Quartal/Jahres-Updates).
+
+Wenn die Datei fehlt, läuft der Service problemlos weiter, aber:
+- `orch.integrations.cty` ist `None`
+- `flag_for_call()` liefert immer `""` (leerer String)
+- Flaggen sind in UI/Log/Decodes/ntfy **unsichtbar**
+
+**Fix bei frischem Pi-Setup oder fehlender Datei:**
+
+```bash
+# Aus aktuellem Backup (falls vorhanden):
+cp /home/sebastian/ft8-appliance.rsync-backup-*/data/cty.dat \
+   /home/sebastian/ft8-appliance/data/cty.dat
+
+# ODER von country-files.com nachziehen:
+curl -L -o /home/sebastian/ft8-appliance/data/cty.dat \
+   "https://www.country-files.com/cty/cty.dat"
+
+# Service neu starten damit's geladen wird:
+sudo systemctl restart ft8-controller
+
+# Verify im Log: "cty.dat loaded (4482 entries)"
+sudo journalctl -u ft8-controller --since "30 sec ago" | grep cty
+```
+
+Self-Updates lassen `data/cty.dat` unangetastet (untracked file, git
+checkout berührt's nicht). Datei einmal deployen → reicht bis zur
+nächsten cty-Version.
+
 ## Pflege
 
 Wenn neue DXCC dazukommen (sehr selten — Z8 South Sudan war die letzte
