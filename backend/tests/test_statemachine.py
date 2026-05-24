@@ -174,6 +174,65 @@ def test_hunt_flow_log_qso_captures_rst_sent(
     assert log_action.payload["rst_rcvd"] == -8, "rst_rcvd Sanity"
 
 
+def test_wsjtx_conform_r_report_uses_our_measurement_not_echo(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """WSJT-X-Konformanz (Sebastian Audit-Action 5, v0.3.2):
+
+    Wenn Partner uns Report -05 schickt (= unser Signal bei ihm), und
+    WIR ihn mit -15 messen (= sein Signal bei uns), soll der R-Report
+    R-15 enthalten — NICHT R-05 (Echo).
+
+    Beweis dass rst_sent und rst_rcvd zwei verschiedene unabhaengige
+    Messungen sind und nicht das gleiche Echo."""
+    # Pickup mit unserer Messung -15
+    cq = _decode("W1AW", None, "CQ W1AW FN31", snr=-15)
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    assert sm.qso.their_snr_at_us == -15, "Pickup-SNR getrackt"
+
+    # Partner schickt uns Report -05 (sein Signal-Report ueber uns) mit
+    # decode-SNR -16 (unsere Messung in dem Slot)
+    sm.on_decodes(good_hw, [_decode("W1AW", "DK9XR", "DK9XR W1AW -05", snr=-16)])
+    assert sm.state is State.QSO_REPORT
+    assert sm.qso.our_snr_received == -5, "rst_rcvd = was sie schickten"
+    assert sm.qso.their_snr_at_us == -16, "their_snr_at_us = neueste Messung"
+
+    actions = sm.drain_actions()
+    tx_msg = next(a.payload["message"] for a in actions if a.kind == "TX_MESSAGE")
+    assert "R-16" in tx_msg, \
+        f"R-Report muss our_measurement (-16) sein, nicht Echo (-05). Got: {tx_msg!r}"
+
+    # QSO abschliessen, rst_sent != rst_rcvd verifizieren
+    sm.on_decodes(good_hw, [_decode("W1AW", "DK9XR", "DK9XR W1AW RR73")])
+    actions = sm.drain_actions()
+    log = next(a for a in actions if a.kind == "LOG_QSO")
+    assert log.payload["rst_sent"] == -16, "rst_sent = unser Decode-SNR"
+    assert log.payload["rst_rcvd"] == -5, "rst_rcvd = ihr Report"
+    assert log.payload["rst_sent"] != log.payload["rst_rcvd"], \
+        "rst_sent und rst_rcvd sind unabhaengige Messungen"
+
+
+def test_their_snr_at_us_tracks_latest_decode(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """their_snr_at_us folgt dem zuletzt gemessenen SNR des Partners
+    ueber den QSO-Verlauf. Wenn QSB seine Signalstaerke aendert,
+    spiegeln spaetere R-Reports den aktuellsten Wert wider."""
+    cq = _decode("EA1AKS", None, "CQ EA1AKS IN73", snr=-7)
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    assert sm.qso.their_snr_at_us == -7
+
+    # Slot 2: Partner-Decode mit anderem SNR (QSB) — auch kein Report
+    # an uns, nur generelle Partner-Aktivitaet (z.B. CQ-Wiederholung).
+    sm.on_decodes(good_hw, [_decode("EA1AKS", None, "CQ EA1AKS IN73", snr=-13)])
+    # Da kein Report → wir bleiben in QSO_RESPOND aber their_snr_at_us
+    # aktualisiert auf -13.
+    assert sm.state is State.QSO_RESPOND
+    assert sm.qso.their_snr_at_us == -13, "neuester Decode getrackt"
+
+
 def test_slot_tick_retransmits_cq(sm: StateMachine, good_hw: HardwareState) -> None:
     sm.on_user_start_cq(good_hw)
     sm.drain_actions()
@@ -537,29 +596,37 @@ def test_qso_report_partner_repeats_cq_triggers_r_resend(
     """Partner fällt nach unserem R-Report zurück zu CQ statt RR73 → wir
     resenden R-Report 1× (analog zum repeated-report-Pfad, weil Symptom
     dasselbe ist: unser R-Report kam nicht an). Sebastian 2026-05-24
-    nach DO1BJF-Verlust — er drückte +04 ab, hörte unser R+04 nicht,
-    fiel zurück in CQ-Loop, und wir liefen in den 45-s-Timeout statt
-    nochmal zu senden."""
+    nach DO1BJF-Verlust.
+
+    NOTE v0.3.2 (Audit-Action 5): R-Report-Inhalt = unser gemessener
+    SNR des Partners (their_snr_at_us), nicht Echo seines Reports. Die
+    Resend-Logik bleibt — nur die Zahl im R-Slot ist jetzt unser
+    Decode-SNR, nicht +04."""
     sm.qso_max_report_resends = 1
     sm.qso_max_stale_slots = 6
-    cq = _decode("DO1BJF", None, "CQ DO1BJF JO42")
+    # Pickup-Decode: snr=-08 (was wir vom Partner messen)
+    cq = _decode("DO1BJF", None, "CQ DO1BJF JO42", snr=-8)
     sm.on_user_reply_to(good_hw, cq)
     sm.drain_actions()
-    # Partner schickt Signal-Report → QSO_REPORT + R-Report TX
+    # Partner schickt Signal-Report +04 mit decode-SNR=-12 (sein Signal
+    # ist schwacher in diesem Slot) → wir senden R{decode-SNR} = R-12
     sm.on_decodes(good_hw, [_decode("DO1BJF", "DK9XR", "DK9XR DO1BJF +04", snr=-12)])
     assert sm.state is State.QSO_REPORT
-    sm.drain_actions()
+    actions = sm.drain_actions()
+    assert any(a.kind == "TX_MESSAGE"
+               and "R-12" in a.payload.get("message", "")
+               for a in actions), "R-Report nutzt our_snr_of_them (-12), nicht Echo (+04)"
     assert sm.qso.report_resends == 0
 
-    # Partner fällt zurück in CQ (statt RR73 zu schicken) — er hat
-    # unser R+04 nicht decoded
-    sm.on_decodes(good_hw, [_decode("DO1BJF", None, "CQ DO1BJF JO42")])
+    # Partner fällt zurück in CQ mit decode-SNR=-09 — wir messen ihn
+    # diesen Slot anders. R-Resend nimmt den neuesten Wert.
+    sm.on_decodes(good_hw, [_decode("DO1BJF", None, "CQ DO1BJF JO42", snr=-9)])
     assert sm.state is State.QSO_REPORT, "Wir geben nicht direkt auf"
     assert sm.qso.report_resends == 1, "Resend-Counter hochgezählt"
     actions = sm.drain_actions()
     assert any(a.kind == "TX_MESSAGE"
-               and "R+04" in a.payload.get("message", "")
-               for a in actions), "R-Report wurde erneut gesendet"
+               and "R-09" in a.payload.get("message", "")
+               for a in actions), "R-Resend nutzt aktuellsten SNR (-09)"
 
     # Partner ruft ein DRITTES Mal CQ — am Limit, kein weiterer Send
     sm.on_decodes(good_hw, [_decode("DO1BJF", None, "CQ DO1BJF JO42")])

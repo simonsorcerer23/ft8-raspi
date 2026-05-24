@@ -242,38 +242,48 @@ mid-QSO-Station via Doppelklick) bei uns nicht entstehen.
      Trigger dort auch greifen sollte. Tracking-Punkt für künftige
      state-machine-Additions.
 
-5. **R-Report-SNR-Direction nicht WSJT-X-konform** *(Action 5, offen)*
-   - **Symptom:** Unser `_emit_send_r_report` schickt
-     `R{our_snr_received}` — das ist der SNR den DER PARTNER UNS
-     gegeben hat (= unser Signal an seiner Station), als Echo
-     zurueck-gespiegelt.
+5. **R-Report-SNR-Direction WSJT-X-konform** *(Erledigt v0.3.2)*
+   - **Symptom (vor Fix):** `_emit_send_r_report` schickte
+     `R{our_snr_received}` — Echo des Werts den der Partner UNS
+     geschickt hatte. ADIF-`rst_sent` war dadurch immer = `rst_rcvd`,
+     kein independent measurement. Partner bekam keinen echten
+     Feedback ueber sein Signal bei uns.
    - **WSJT-X-Referenz (QEX Fig 6, Tx4-Message):** Standard ist
-     `R + SNR-of-them-at-us` — also der SNR den WIR von IHM gemessen
-     haben (das was im Header der Decode steht), nicht das Echo seines
-     Reports.
-   - **Beweis aus realem ON4MDW-Trace 2026-05-24 15:49:**
-     - ON4MDW → DO3BZ: `DO3BZ ON4MDW -07` (DO3BZ's signal an ON4MDW = -07)
-     - DO3BZ → ON4MDW: `ON4MDW DO3BZ R-16` (ON4MDW's signal an DO3BZ
-       gemessen = -16, NICHT R-07 als Echo)
-   - **Konsequenz fuer rst_sent:**
-     - Unser Code: `rst_sent` enthaelt jetzt (seit v0.3.1) das was wir
-       transmitten (Echo des Reports = unser Signal-Report von ihm).
-       Semantisch: "der SNR-String den wir gefunkt haben" — ADIF-korrekt
-       als Snapshot dessen was on-air ging.
-     - WSJT-X-Konform waere: `rst_sent` enthaelt unser eigenes
-       SNR-Measurement der Partner-Signale (mehrere ueber den QSO-
-       Verlauf, Median oder zuletzt).
-   - **Aufwand:** ~20 Zeilen — `QsoContext.their_snr_at_us` neu, in
-     `_handle_qso_respond`/`_handle_qso_report` bei jedem Decode des
-     Partners aktualisieren (mit Median ueber QSO), in
-     `_emit_send_r_report` den Wert statt `our_snr_received` nehmen.
-   - **Priority:** medium. Beeintraechtigt nicht QSO-Erfolg (Partner
-     akzeptiert R-Report unabhaengig vom konkreten SNR-Wert), aber:
-     - Hunt-Fehlanalyse: wir senden ihm SEINEN Eindruck zurueck statt
-       was wir messen — er kann seine eigene Antenne nicht trimmen
-     - QSO-Log-Daten weniger nuetzlich (rst_sent waere = rst_rcvd in
-       allen Faellen, kein independent value)
-   - **Decision pending:** Sebastian-OK + dedizierter Refactor-Cycle.
+     `R + SNR-of-them-at-us` — der SNR den WIR von IHM aus dem Decode-
+     Header rauslesen.
+   - **Empirischer Beweis (ON4MDW-Trace 2026-05-24 15:49):**
+     - ON4MDW → DO3BZ: `DO3BZ ON4MDW -07` (Sebastians Signal bei ON4MDW = -07)
+     - DO3BZ → ON4MDW: `ON4MDW DO3BZ R-16` (ON4MDWs Signal bei Sebastian = -16,
+       NICHT R-07 als Echo) ← echtes WSJT-X
+   - **Fix (v0.3.2):**
+     - Neues Feld `QsoContext.their_snr_at_us` getrennt von dem
+       semantisch falsch genutzten `our_snr_received`
+     - Initial-Wert beim Pickup-Decode: `their_snr_at_us = decode.snr_db`
+     - Tracking-Helper `_track_partner_snr(decodes)` aktualisiert den
+       Wert bei jedem Partner-Decode in QSO_RESPOND/QSO_REPORT auf
+       den jeweils neuesten gemessenen SNR
+     - `_emit_send_r_report` und `_emit_respond_with_report` nutzen
+       beide `their_snr_at_us` statt `our_snr_received`
+     - Bei Grid-Reply-Pickups (kein Report in der Message): kein
+       `our_snr_received` setzen mehr (vorher fehlerhaft auf `ans.snr_db`
+       gemirrort → API-Feld `partner_snr_received` zeigte Wert obwohl
+       Partner uns noch nichts gemeldet hatte)
+   - **Tests:**
+     - `test_wsjtx_conform_r_report_uses_our_measurement_not_echo`:
+       Partner schickt -05, wir messen -16 → R-16 gefunkt, rst_sent=-16,
+       rst_rcvd=-5, **explizit `assert rst_sent != rst_rcvd`**
+     - `test_their_snr_at_us_tracks_latest_decode`: QSB-Verhalten
+       (Pickup -07 → spaeter -13 → R-Report nimmt -13)
+     - `test_hunt_flow_log_qso_captures_rst_sent` (v0.3.1) immer noch grun
+   - **Lessons:**
+     - Dataklassen-Felder ehrlich benennen: `our_snr_received` darf NUR
+       Werte halten die der Partner uns wirklich geschickt hat (Tx3-
+       Message-SNR). Misuse als Proxy fuer andere Daten fuehrt zu Bugs
+       in nachgelagerten Konsumenten (API, ADIF-Export).
+     - Bei Protokoll-Spec-Konformanz: explizite QEX/WSJT-X-Source als
+       Test-Oracle nutzen, nicht nur Eigenheuristik. Reale Traces
+       (ON4MDW/DO3BZ) deckten den Bug auf — eigentlicher Audit-Hit war
+       erst Sebastians Frage "warum ist eine RST-Spalte leer".
 
 ### Bewusste Abweichungen (würde NICHT ändern, dokumentieren)
 

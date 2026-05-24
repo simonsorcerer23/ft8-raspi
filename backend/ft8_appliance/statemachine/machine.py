@@ -135,6 +135,7 @@ class StateMachine:
             their_grid=decoded.grid,
             band=decoded.band,
             freq_offset_hz=decoded.freq_offset_hz or 1500,
+            their_snr_at_us=decoded.snr_db,
         )
         self.state = State.QSO_RESPOND
         self._emit_respond_with_grid()
@@ -186,6 +187,7 @@ class StateMachine:
                         band=decoded.band,
                         freq_offset_hz=decoded.freq_offset_hz or 1500,
                         our_snr_received=their_snr,
+                        their_snr_at_us=decoded.snr_db,
                     )
                     self.state = State.QSO_REPORT
                     self._emit_send_r_report()
@@ -206,12 +208,16 @@ class StateMachine:
                         "IDLE→QSO_RESPOND: %s ruft uns mit Grid → Report senden",
                         their_call,
                     )
+                    # ans ist eine Grid-Antwort (kein Report von ihnen) →
+                    # our_snr_received bleibt None bis sie uns spaeter
+                    # einen echten Report schicken. their_snr_at_us nimmt
+                    # ans.snr_db (unsere Messung ihrer Grid-Message).
                     self.qso = QsoContext(
                         their_call=their_call or "?",
                         their_grid=ans.grid,
                         band=ans.band,
                         freq_offset_hz=ans.freq_offset_hz or 1500,
-                        our_snr_received=ans.snr_db,
+                        their_snr_at_us=ans.snr_db,
                     )
                     self.state = State.QSO_RESPOND
                     self._emit_respond_with_report()
@@ -227,6 +233,7 @@ class StateMachine:
                     their_grid=best.grid,
                     band=best.band,
                     freq_offset_hz=best.freq_offset_hz or 1500,
+                    their_snr_at_us=best.snr_db,
                 )
                 self.state = State.QSO_RESPOND
                 self._emit_respond_with_grid()
@@ -248,6 +255,7 @@ class StateMachine:
                     band=decoded.band,
                     freq_offset_hz=decoded.freq_offset_hz or 1500,
                     our_snr_received=their_snr,
+                    their_snr_at_us=decoded.snr_db,
                 )
                 self.state = State.QSO_REPORT
                 self._emit_send_r_report()
@@ -258,17 +266,24 @@ class StateMachine:
             if ans is not None:
                 if not self._check_guards(hw):
                     return
+                # Grid-Antwort = noch kein Report von ihnen, our_snr_received
+                # bleibt None. their_snr_at_us aus unserer Decode-Messung.
                 self.qso = QsoContext(
                     their_call=ans.call_from or "?",
                     their_grid=ans.grid,
                     band=ans.band,
                     freq_offset_hz=ans.freq_offset_hz or 1500,
-                    our_snr_received=ans.snr_db,
+                    their_snr_at_us=ans.snr_db,
                 )
                 self.state = State.QSO_RESPOND
                 self._emit_respond_with_report()
 
         elif self.state is State.QSO_RESPOND and self.qso is not None:
+            # Tracking: bei jedem Decode des Partners their_snr_at_us
+            # auf den aktuellsten Wert ziehen (Sebastian Audit Action 5,
+            # WSJT-X-Konformanz fuer R-Report). Nutzt den SNR den WIR
+            # gemessen haben, nicht den den er uns gemeldet hat.
+            self._track_partner_snr(decodes)
             # did they send us a report?
             rep = _find_report_from_them(decodes, self.qso.their_call, self.ctx.callsign)
             if rep is not None:
@@ -349,6 +364,10 @@ class StateMachine:
                 self._exit_grace()
 
         elif self.state is State.QSO_REPORT and self.qso is not None:
+            # Tracking (siehe Audit Action 5): aktualisiere their_snr_at_us
+            # bei jedem Partner-Decode auch in QSO_REPORT damit ein R-Resend
+            # mit dem neuesten Wert sendet.
+            self._track_partner_snr(decodes)
             # did they send RR73 / 73 ?
             if _find_closing(decodes, self.qso.their_call, self.ctx.callsign):
                 self.qso.stale_slots = 0
@@ -624,24 +643,40 @@ class StateMachine:
 
     def _emit_respond_with_report(self) -> None:
         assert self.qso is not None
-        snr = self.qso.our_snr_received if self.qso.our_snr_received is not None else -10
-        self.qso.their_snr = snr
+        # WSJT-X-konform (Audit Action 5, v0.3.2): R + SNR-of-them-at-us
+        # = der Wert den WIR von ihrem Signal gemessen haben, NICHT
+        # Echo von their_snr_at_them.
+        snr = self.qso.their_snr_at_us if self.qso.their_snr_at_us is not None else -10
+        self.qso.their_snr = snr  # = rst_sent fuer Log
         msg = f"{self.qso.their_call} {self.ctx.callsign} {snr:+03d}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "respond_report")))
 
     def _emit_send_r_report(self) -> None:
         assert self.qso is not None
-        snr = self.qso.our_snr_received if self.qso.our_snr_received is not None else -10
-        # Capture WHAT wir transmitten als rst_sent fuers QSO-Log
-        # (Sebastian-Bug 2026-05-24: Spalte war fuer Hunting-QSOs immer
-        # leer weil their_snr nur im CQ-Caller-Pfad gesetzt war).
-        # ADIF-Semantik: rst_sent = der String den wir gefunkt haben.
-        # Anmerkung WSJT-X-Konformanz: real WSJT-X sendet R + SNR-of-
-        # them-at-us, wir hier R + SNR-they-reported-of-us (Echo) —
-        # separater Audit-Punkt (Action 5).
-        self.qso.their_snr = snr
+        # WSJT-X-konform (Audit Action 5, v0.3.2): R + SNR-of-them-at-us.
+        # Bis v0.3.1 sendeten wir hier Echo des their_snr_at_them
+        # (= our_snr_received), was rst_sent in der DB stets gleich
+        # rst_rcvd machte (= statistisch wertlos) und Partner kein
+        # echtes Feedback ueber sein Signal bei uns gab.
+        snr = self.qso.their_snr_at_us if self.qso.their_snr_at_us is not None else -10
+        self.qso.their_snr = snr  # = rst_sent fuer Log
         msg = f"{self.qso.their_call} {self.ctx.callsign} R{snr:+03d}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "r_report")))
+
+    def _track_partner_snr(self, decodes: Iterable[DecodedMsg]) -> None:
+        """Update qso.their_snr_at_us auf den neuesten SNR den wir vom
+        Partner gemessen haben (= d.snr_db jedes Partner-Decodes diesen
+        Slot). Sebastian Audit-Action 5, v0.3.2. Mehrere Decodes pro
+        Slot: nimm den letzten (Slot-RX ist short window, alle Werte
+        sind ungefaehr aequivalent — Komplexitaet von Median-ueber-QSO
+        bringt fuer FT8-15s-Slots keinen Mehrwert).
+        """
+        if self.qso is None:
+            return
+        their = self.qso.their_call
+        for d in decodes:
+            if d.call_from == their and d.snr_db is not None:
+                self.qso.their_snr_at_us = d.snr_db
 
     def _emit_log_qso(self) -> None:
         assert self.qso is not None

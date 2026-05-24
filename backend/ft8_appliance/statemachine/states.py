@@ -61,8 +61,14 @@ class QsoContext:
 
     their_call: str
     their_grid: str | None = None
-    their_snr: int | None = None  # snr we send them
-    our_snr_received: int | None = None  # snr they send us
+    their_snr: int | None = None  # snr we send them (= rst_sent fuer Log)
+    our_snr_received: int | None = None  # snr they send us (= rst_rcvd fuer Log)
+    # SNR den WIR von IHM gemessen haben — Initialwert vom Pickup-Decode,
+    # dann bei jedem weiteren Decode des Partners im QSO-Verlauf auf
+    # den aktuellsten Wert getrackt. Sebastian 2026-05-24 Audit-Action 5:
+    # WSJT-X-Konformanz fuer R-Report (R + SNR-of-them-at-us statt Echo
+    # von our_snr_received). None bis erster Decode-mit-SNR vorliegt.
+    their_snr_at_us: int | None = None
     band: str = "20m"
     freq_offset_hz: int = 1500
     started: datetime = field(default_factory=lambda: datetime.now(UTC))
