@@ -153,7 +153,23 @@ Diese Queries sind im `scripts/pi-check.sh` integriert, so dass jeder Check eh d
 
 ---
 
-## 6. Sicherheits-Hinweis
+## 6. TX-Power Safety-Floor (seit v0.2.3)
+
+Bei jedem Reset-Event (Boot, Operator-Wechsel, Rig-Wechsel,
+Bandwechsel) wird die TX-Leistung **runter geclamped** auf
+`max(1, effective_max_power_w(band) // 2)` — aber nur wenn aktuell
+darüber. QRP-Settings darunter bleiben unangetastet (Variante B).
+
+Details + Edge-Cases: siehe `docs/tx_power_safety.md`.
+
+**Praktische Konsequenz für den Pi-Check:** wenn nach einem Restart
+die TX-Power im UI plötzlich auf 50 W steht obwohl du vorher 80 W
+hattest — das ist Absicht, nicht Bug. Im Log: `tx-power safety-floor
+(boot): clamp 80W -> 50W`.
+
+---
+
+## 7. Sicherheits-Hinweis
 
 - SSH-Key ist auf der **Workstation** zuhause. Im Feldeinsatz kommt Claude *eh nicht* drauf, da nicht im gleichen Netz.
 - Der Pi hat **kein** Internet-erreichbares SSH (kein Port-Forwarding, kein Tailscale, kein WireGuard im MVP).

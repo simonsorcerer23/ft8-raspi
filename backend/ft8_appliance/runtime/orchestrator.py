@@ -212,6 +212,13 @@ class Orchestrator:
     _active_antenna: str | None = field(default=None, init=False)
     # Currently configured TX power in watts (user-controllable via UI).
     _tx_power_w: int = field(default=10, init=False)
+    # Letztes bekanntes Band — fuer Bandwechsel-Trigger des Safety-Floor
+    # (Sebastian 2026-05-24, v0.2.3). Nur bei tatsaechlicher Aenderung
+    # X→Y wird der Safety-Floor neu evaluiert, nicht bei jedem status-Poll.
+    _last_active_band: str | None = field(default=None, init=False)
+    # Letzte bekannte Rig-Identifikation (hamlib_id) — fuer Rig-Wechsel-
+    # Detection in on_config_changed. None vor erstem Config-Load.
+    _last_rig_hamlib_id: int | None = field(default=None, init=False)
     # Tamper-Detection: Tracking der zuletzt von uns (App) ausgeloesten
     # CAT-Befehle. Wenn der Rig-Poll nachher denselben Wert zurueckliest,
     # ist das unser Echo — keine Push-Benachrichtigung. Wenn der Wert
@@ -375,6 +382,20 @@ class Orchestrator:
         self._rx_audio_dbfs_peak: float | None = None
         self._rx_audio_dbfs_peak_ts: float = 0.0
         self._load_runtime_state()
+        # TX-Power Safety-Floor bei Boot (Sebastian 2026-05-24, v0.2.3):
+        # Egal was die runtime_state.json oder operator.default_power_w
+        # vorgeben — wenn der Wert oberhalb effective_max/2 liegt, runter
+        # clampen. Variante B: QRP-Werte darunter bleiben unangetastet.
+        # Active-Band ist hier noch unbekannt (rig poll noch nicht gelaufen),
+        # daher faellt _compute_safe_default_power_w auf rig.effective_max
+        # zurueck — sicher und konservativ.
+        # _last_rig_hamlib_id setzen damit on_config_changed spaeter
+        # Rig-Wechsel detecten kann.
+        try:
+            self._last_rig_hamlib_id = self.config.rig.hamlib_id
+        except Exception:
+            self._last_rig_hamlib_id = None
+        await self._apply_tx_power_safety_floor("boot")
         # boot_mode wiederherstellen — auto_answer/auto_cq lebten bisher
         # nur in-memory und gingen bei jedem Service-Restart verloren.
         # Sebastians Beobachtung: "Hunting plötzlich aus".
@@ -609,6 +630,10 @@ class Orchestrator:
         # Integrations (QRZ, ntfy) neu mit den per-Operator-Credentials
         self._init_integrations()
         self._tx_power_w = new_op.default_power_w
+        # Safety-Floor auch beim Operator-Wechsel: wenn default_power_w
+        # des neuen Operators ueber effective_max/2 liegt, runter clampen.
+        # Sebastian 2026-05-24 (v0.2.3).
+        await self._apply_tx_power_safety_floor("operator_switch")
         log.info(
             "switch_operator done: active=%s worked=%d blacklist=%d",
             new_op.callsign, len(self._worked_calls),
@@ -702,6 +727,36 @@ class Orchestrator:
                     active_band = band.name
                     effective_max = self.config.effective_max_power_w(band.name)
                     break
+        # Bandwechsel-Detection (Sebastian 2026-05-24, v0.2.3): wenn das
+        # Band wechselt, Safety-Floor neu anwenden — Per-Band-Cap kann
+        # niedriger als rig-max sein. Wir feuern nur bei active_band !=
+        # _last_active_band UND active_band is not None (Skip wenn rig
+        # auf nicht-bekannter Frequenz parkt). Variante B clamp-down-only
+        # ehrt QRP-Settings darunter weiterhin. status() ist sync, daher
+        # Fire-and-Forget via create_task. Wenn kein Loop laeuft (Test-
+        # Context ohne asyncio) skippen wir leise.
+        if active_band is not None and active_band != self._last_active_band:
+            prev_band = self._last_active_band
+            # _last_active_band JETZT setzen, sonst spawnt jeder status-
+            # Poll bis der Task abgearbeitet ist erneut einen Task.
+            self._last_active_band = active_band
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(
+                    self._apply_tx_power_safety_floor(
+                        "band_change", band=active_band
+                    ),
+                    name=f"safety-floor-band-{active_band}",
+                )
+                log.info(
+                    "band change detected %s -> %s, scheduled tx-power safety-floor",
+                    prev_band or "?", active_band,
+                )
+            except RuntimeError:
+                # Kein laufender Loop (z.B. sync Test-Aufruf von status()).
+                # In dem Fall hat status() ohnehin nichts mit echtem Rig
+                # zu tun, also kein Safety-Issue.
+                pass
         # RX-Audio-Pegel aus dem ALSA-Capture-Stream — Workaround für
         # den IC-7300/Hamlib-STRENGTH-Bug. decode_source ist auf dem
         # Pi die DecodePipeline mit .slot_buffer; auf Dev/Tests-Maschine
@@ -1139,6 +1194,69 @@ class Orchestrator:
         # Slider bewegt hat.
         self._maybe_persist_runtime_state(force=True)
 
+    def _compute_safe_default_power_w(self, band: str | None = None) -> int:
+        """Effective-max / 2 als sicherer Default fuer das gegebene Band.
+
+        Sebastian 2026-05-24 (v0.2.3): Safety-Floor-Default. Bei
+        Reset-Events (Boot, Operator-Wechsel, Rig-Wechsel, Bandwechsel)
+        nehmen wir max(1, effective_max // 2) als Obergrenze.
+
+        Wenn ``band`` None ist oder nicht in der Config existiert, fallen
+        wir auf ``rig.effective_max_power_w`` zurueck (das ist der Hard-
+        Cap des Rigs unabhaengig vom Band — niemals None).
+        """
+        eff_max: int | None = None
+        if band is not None:
+            try:
+                eff_max = self.config.effective_max_power_w(band)
+            except Exception:
+                eff_max = None
+        if eff_max is None:
+            eff_max = self.config.rig.effective_max_power_w
+        return max(1, eff_max // 2)
+
+    async def _apply_tx_power_safety_floor(
+        self, reason: str, band: str | None = None
+    ) -> None:
+        """Clamp ``_tx_power_w`` auf safe-default WENN aktuell drueber.
+
+        Variante B (Sebastian 2026-05-24, v0.2.3): wir greifen nur ein
+        wenn die aktuelle Leistung ueber dem Safety-Floor liegt. QRP-
+        Settings darunter bleiben unangetastet.
+
+        Reasons (fuer Logs): "boot", "operator_switch", "rig_change",
+        "band_change".
+        """
+        active_band = band if band is not None else self._last_active_band
+        safe = self._compute_safe_default_power_w(active_band)
+        if self._tx_power_w <= safe:
+            log.info(
+                "tx-power safety-floor (%s): aktuell %dW <= safe %dW — keine Aenderung",
+                reason, self._tx_power_w, safe,
+            )
+            return
+        old = self._tx_power_w
+        log.info(
+            "tx-power safety-floor (%s): clamp %dW -> %dW (band=%s)",
+            reason, old, safe, active_band or "?",
+        )
+        # Best-effort: rig physisch auf den safe-Wert ziehen. Wenn das
+        # Rig nicht erreichbar ist (z.B. beim Boot bevor rigctld up
+        # ist), trotzdem den internen Wert setzen — der wird beim
+        # naechsten erfolgreichen Set-Befehl ans Rig synchronisiert.
+        max_w = self.config.rig.effective_max_power_w
+        try:
+            await self.rig.set_rfpower(safe / max_w)
+            self._register_app_command("rfpower_norm", safe / max_w)
+        except Exception as exc:
+            log.warning(
+                "tx-power safety-floor: set_rfpower failed: %s "
+                "(internal value gesetzt, sync beim naechsten erfolgreichen Set)",
+                exc,
+            )
+        self._tx_power_w = safe
+        self._maybe_persist_runtime_state(force=True)
+
     async def handle_set_antenna(self, name: str) -> None:
         """Select the active antenna profile (drives band-lockout guard)."""
         self._active_antenna = name
@@ -1174,6 +1292,26 @@ class Orchestrator:
         # Default TX power update too (if user changed it in the form)
         if new_cfg.operator.default_power_w != self._tx_power_w:
             self._tx_power_w = new_cfg.operator.default_power_w
+        # Rig-Wechsel-Detection (Sebastian 2026-05-24, v0.2.3): wenn der
+        # User in der Config einen anderen Rig-Typ (hamlib_id) gewaehlt
+        # hat, triggert das den Safety-Floor — Power-Cap des neuen Rigs
+        # koennte niedriger sein, und die User-Setting ist nicht mehr
+        # garantiert sicher.
+        try:
+            new_hamlib_id = new_cfg.rig.hamlib_id
+        except Exception:
+            new_hamlib_id = None
+        if (
+            new_hamlib_id is not None
+            and self._last_rig_hamlib_id is not None
+            and new_hamlib_id != self._last_rig_hamlib_id
+        ):
+            log.info(
+                "config hot-reload: rig change %s -> %s, applying tx-power safety-floor",
+                self._last_rig_hamlib_id, new_hamlib_id,
+            )
+            await self._apply_tx_power_safety_floor("rig_change")
+        self._last_rig_hamlib_id = new_hamlib_id
         # Online-integrations: tear down + rebuild
         self._init_integrations()
         # QRZ-Logbook-Drain-Loop bei Bedarf nachzünden — der ursprüngliche
