@@ -135,13 +135,12 @@
   <div class="header">
     <span class="badge">🎙️ {modelLabel} {rig.vfo && rig.vfo !== '0' && !rig.vfo.startsWith('RPRT') ? rig.vfo : ''}</span>
     <div class="meta">
-      {@const digMode = statusStore.value.mode ?? 'FT8'}
       <span class="tag mode-tag"
-            class:mode-ft4={digMode === 'FT4'}
-            title={digMode === 'FT4'
+            class:mode-ft4={(statusStore.value.mode ?? 'FT8') === 'FT4'}
+            title={(statusStore.value.mode ?? 'FT8') === 'FT4'
               ? 'FT4 active — 7.5s slots, schnellere QSOs, ~3 dB weniger Sensitivity als FT8'
               : 'FT8 active — 15s slots, Standard-Modus'}>
-        📡 {digMode}
+        📡 {statusStore.value.mode ?? 'FT8'}
       </span>
       {#if statusStore.value.cq_directed}
         <span class="tag directed-tag"
