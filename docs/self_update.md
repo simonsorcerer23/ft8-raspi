@@ -251,118 +251,91 @@ bleiben unberührt — alles außerhalb des git-Workdirs.
 | `update_in_progress=true` länger als 10 min | self-update.service hängt | `journalctl -u ft8-self-update -n 200`. TimeoutStartSec=600 würde killen. |
 | `repo_is_git=false` in UI | Pi noch rsync-Installation | Migration durchführen (oben) |
 | `latest_version` ändert sich nie | git fetch failed | `ssh <pi> 'cd ~/ft8-appliance && git fetch'` manuell. Letzter Fetch-Zeitpunkt steht im UI. |
-| Beide Pis im SIGABRT-Restart-Loop ~30s | systemd-Watchdog ohne sd_notify-Wiring | siehe „Watchdog NICHT aktiv" |
+| Service mehrfach pro Minute restartet, `NRestarts` wächst rapide | Echter Hang im event-loop ODER sd_notify-Heartbeat-Task stirbt | `journalctl -u ft8-controller --since "5 min ago"` nach Stack-Traces. Wenn die Heartbeat-Task selbst kaputt ist (`sd-heartbeat` Task-Name), ist's ein Code-Bug — `git checkout <bekannt-gut-Tag>` + restart |
+| `systemctl status ft8-controller` = `failed`, kein Auto-Restart mehr | `StartLimitBurst=5` in 120s erreicht — systemd hat aufgegeben | `sudo systemctl reset-failed ft8-controller && sudo systemctl start ft8-controller`. Falls's gleich wieder failed: Root-Cause finden, nicht blind retry |
 
-## Watchdog NICHT aktiv (Stand v0.1.4)
+## Watchdog (ab v0.2.0 aktiv)
 
-`ft8-controller.service` hat **kein** `WatchdogSec` mehr. Bis v0.1.3
-war's drin (`WatchdogSec=30`, `NotifyAccess=main`), aber das war eine
-**Copy-Paste-Falle** — im orchestrator-Code wird nirgends
-`sd_notify("WATCHDOG=1")` aufgerufen. Pre-Migration hatte das installierte
-unit-File die Zeile nicht (rsync-Snapshot von einer alten Version), die
-Migration hat sie blind mit-deployed. Pis liefen ~80 min lang in einer
-SIGABRT-Cascade alle ~30s, hätte ich beim Pi-Check nicht bemerkt.
+Seit v0.2.0 ist der systemd-Liveness-Watchdog wirklich wired. `ft8-
+controller.service` läuft mit `Type=notify` + `NotifyAccess=main` +
+`WatchdogSec=30`. Der orchestrator pingt alle 10 s per sd_notify
+("WATCHDOG=1") aus einer dedizierten asyncio-Heartbeat-Task. Wenn der
+event-loop hängt oder die Task stirbt, killt systemd den Prozess nach
+30 s und startet via `Restart=always` neu.
 
-Status: **Liveness wird derzeit nur via `Restart=always` + `RestartSec=5`
-abgesichert.** Wenn der Prozess crasht, kommt systemd in 5s wieder hoch.
-Wenn er hängt (nicht crasht, aber antwortet nicht), läuft er hängend
-weiter — kein liveness-watchdog.
+### Implementierung
 
-Das ist OK für jetzt. Wenn wir's wieder einbauen wollen → siehe nächster
-Abschnitt.
+| Datei | Aufgabe |
+|---|---|
+| `backend/pyproject.toml` | `sdnotify>=0.3.2` als dep (Pure-Python, kein native dep, no-op wenn `NOTIFY_SOCKET` env nicht da) |
+| `backend/ft8_appliance/runtime/orchestrator.py` | In `start()` ganz am Ende: wenn `NOTIFY_SOCKET` gesetzt → `SystemdNotifier`, READY=1, asyncio-Task `_sd_heartbeat_loop` (alle 10 s WATCHDOG=1) |
+| `deploy/systemd/ft8-controller.service` | `Type=notify`, `NotifyAccess=main`, `WatchdogSec=30`, `StartLimitIntervalSec=120` + `StartLimitBurst=5` (verhindert Endlos-Restart-Loop) |
 
-## Wie wir den echten Watchdog wieder einbauen
+### Design-Entscheidungen
 
-Plan in 5 Schritten — bewusst NICHT in v0.1.4 mit-erledigt damit der
-PTT-Cascade-Fix sauber isoliert ist. Sebastian entscheidet wann.
+- **Kein try/except um den Heartbeat-Loop.** Wenn diese Task selbst eine
+  Exception wirft oder hängt, MUSS systemd killen — genau das ist der
+  Zweck eines Liveness-Watchdogs. Defensives Catching würde die Detektion
+  blind machen.
+- **`NOTIFY_SOCKET`-Gate auf Workstation-Seite.** Wenn die env-var nicht
+  da ist (dev, Tests, manueller `uvicorn`-Start), wird weder Notifier
+  noch Heartbeat-Task instantiiert. sdnotify wäre eh no-op, aber wir
+  sparen uns auch den idlen Task.
+- **READY=1 erst nach allen bg-tasks scheduled.** systemd wartet auf
+  READY=1 bevor er "active" meldet. Vorher würde `systemctl start`
+  hängen / failed melden, obwohl uvicorn schon HTTP-Requests akzeptiert.
+- **`StartLimitBurst=5` in 120 s** — wenn der Watchdog ausreißt (Bug
+  der bei jedem Start direkt triggert), gibt systemd nach 5 Restarts
+  auf statt unendlich zu loopen. Mode-Watchdog im orchestrator + ntfy
+  würden via Decode-Funkstille-Detection ankündigen.
 
-### 1. Dependency
-`backend/pyproject.toml` um `sdnotify` ergänzen:
-```toml
-dependencies = [
-    ...
-    "sdnotify>=0.3.2",
-]
-```
+### Was real getestet wurde (Pre-v0.2.0)
 
-`sdnotify` ist Pure-Python, 200 Zeilen, keine native deps. Hört auf
-`NOTIFY_SOCKET` env-var — auf nicht-systemd-Hosts (dev-Workstation,
-Tests) wird's silent no-op.
+| Test | Erwartung | Resultat |
+|---|---|---|
+| READY=1 nach `start()` | systemd geht von "starting" → "active" | ✅ Log: `sd_notify: READY=1 (systemd liveness aktiv, WATCHDOG alle 10s)` |
+| Normaler Betrieb mit Heartbeat | keine Watchdog-Kills | ✅ 90 s ohne kill auf ft8-2 |
+| Stress: Heartbeat-Loop auf 120 s sleep | systemd killt nach 30 s | ✅ exakt 30 s nach READY: `Watchdog timeout (limit 30s)! Killing... SIGABRT` |
+| Auto-Restart nach kill | RestartSec=5 → neuer Prozess | ✅ counter=1 nach 5 s |
+| Revert + restart | wieder clean, kein kill | ✅ NRestarts=0 stabil |
 
-### 2. Notifier in orchestrator instanziieren
-In `Orchestrator.__init__` oder `start()`:
-```python
-import sdnotify
-self._sd = sdnotify.SystemdNotifier()  # liest NOTIFY_SOCKET
-```
+### Historische Notiz (v0.1.0 → v0.1.4)
 
-### 3. READY=1 nach erfolgreicher Initialisierung
-In `start()` ganz am Ende (nach allen `await self._wire_*`-Calls,
-nach decode-source-init, nach erstem GPS-Read):
-```python
-self._sd.notify("READY=1")
-log.info("sd_notify: READY")
-```
+Bis v0.1.3 hatte `ft8-controller.service` `WatchdogSec=30` aus dem
+Original-Repo blind übernommen, aber ohne sd_notify-Wiring im
+orchestrator. Resultat: Pis liefen ab Migration ~80 min lang in einer
+SIGABRT-Cascade alle ~30 s — beim Pi-Check entdeckt, in v0.1.4 erstmal
+komplett entfernt (Quick-Fix), in v0.2.0 jetzt richtig implementiert.
 
-systemd wird `Type=notify` erwarten, also Service-Unit muss
-`Type=notify` setzen (statt `Type=simple`). Das bedeutet auch: systemd
-wartet bis READY=1 vor dem "active"-Status. uvicorn-Startup dauert
-~3-5s, das ist OK.
+## Monitoring / Observation
 
-### 4. Heartbeat-Loop
-Eigene asyncio-Task in `start()`:
-```python
-asyncio.create_task(self._sd_heartbeat_loop(), name="sd-heartbeat")
-```
+Was nach v0.2.0-Deploy zu beobachten ist (über mehrere Tage):
 
-```python
-async def _sd_heartbeat_loop(self) -> None:
-    """Notifiy systemd jede ~10s (1/3 von WatchdogSec=30, Standard).
+| Indikator | Erwartung | Wenn nicht: |
+|---|---|---|
+| `systemctl show ft8-controller -p NRestarts` | 0 bzw. einstellig pro Tag | Mehrfach pro Stunde = echtes Liveness-Problem |
+| `journalctl -u ft8-controller \| grep -i "watchdog\|sigabrt"` | Leer im Normalbetrieb | Stack-Trace im Journal kurz vor dem kill ansehen |
+| ntfy `ft8-system-*` Topics | Nur Self-Update-Pushes (🟢 / 🟡 selten) | 🔴 sind echte Probleme |
+| ntfy Operator-Topics | QSO-Pushes wie üblich (Hunt-Antworten, CQ-Resends) | Stille = Pi macht nichts mehr |
+| `/api/system/info` Uptime im UI | wächst monoton | Reset = Restart, einmal ok, häufig = Loop |
+| pi-check.sh QSO-Counts | wächst tagsüber (Sebastian: ~100/Tag) | Stagnation → Pi tot / Band tot |
 
-    Wenn dieser Loop hängt, killt systemd den Prozess — genau das was
-    wir wollen (liveness-detection). Daher: NICHT in try/except packen,
-    nicht „defensive". Wenn was unten in der Pipeline asyncio blockt,
-    soll's hier auch hängen → systemd löst.
-    """
-    while True:
-        await asyncio.sleep(10)
-        self._sd.notify("WATCHDOG=1")
-```
+Sebastian's reguläres "Pi-Check"-Trigger-Phrase liefert das alles in
+einem Rutsch — daher: bei Zweifel `ssh ft8 'bash -s' < scripts/pi-check.sh`
+laufen lassen.
 
-**Wichtig:** kein try/except außen rum. Genau dann wenn der heartbeat
-selbst ein Problem hat (zB. event-loop hängt), MUSS systemd killen.
+**Worauf besonders achten in den nächsten 24-72 h:**
 
-### 5. Service-Unit reactivieren
-`deploy/systemd/ft8-controller.service`:
-```
-[Service]
-Type=notify          # (war: simple)
-NotifyAccess=main
-WatchdogSec=30
-```
-
-**Sebastian's UI/Restart-Risiko:** wenn Watchdog ausreißt, restartet
-Pi mehrfach. Wenn man mit `WatchdogSec=30` und `OnFailure`-actions wild
-wird, kann eine Endlos-Restart-Schleife entstehen. Mitigation:
-`StartLimitIntervalSec=120` + `StartLimitBurst=5` setzen — nach 5
-Restarts in 120s gibt systemd auf und setzt Service auf failed. Dann
-ntfy via mode-watchdog (decode-watchdog feuert wenn der Pi länger als
-mode_watchdog_min ohne Decodes ist).
-
-### 6. Testen vorm Release
-1. Lokal: `uvicorn ...` ohne NOTIFY_SOCKET → muss problemlos starten
-   (sdnotify silent no-op)
-2. Auf einem Pi VOR Tag-Cut manuell deployen (scp + systemd reload) und
-   30 min beobachten — KEINE Watchdog-Kills im Journal erwartet
-3. Stress-Test: bewusst eine `time.sleep(60)` in einer asyncio-Task
-   einbauen, deployen → Watchdog SOLL killen → reverten
-4. Dann erst Tag cutten
-
-### 7. Tag-Bundle
-Watchdog wieder zusammen mit ggf. anderen Themen in einen Release wie
-`v0.2.0` (Minor-Bump weil neues Dependency + Verhaltens-Änderung).
-Watchdog selbst ist kein Breaking Change für den User, aber semver-
-korrekt ist's ein Feature.
+1. **Erster Watchdog-False-Positive** — falls's einen gibt, wahrscheinlich
+   ein QRZ-Sync-Loop oder DB-Migration die >10 s asyncio-blockierend ist
+   und den Heartbeat verzögert. Lösungspfad: blocking-call in
+   `asyncio.to_thread()` wrappen.
+2. **NTfy-Push 🟢-Spam** — wenn Self-Update öfter als nötig fired (z.B.
+   bei jedem Boot wegen `OnBootSec=2min`-Race). Sollte stumm bleiben
+   bis nächste Tag-Push.
+3. **Memory creep** — sdnotify selbst ist trivial, aber neue task ist
+   neue task. `ssh ft8 'ps -o rss= -p $(pgrep -f uvicorn) | numfmt --to=iec --from-unit=K'`
+   sollte stabil bei ~150-200 MB bleiben.
 
 ## Was Self-Update NICHT macht
 

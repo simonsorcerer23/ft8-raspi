@@ -355,21 +355,39 @@ class StateMachine:
                 self.state = State.QSO_LOG
                 self._emit_log_qso()
             else:
-                # Kein RR73, aber sie schicken NOCHMAL ihren Report
-                # (ohne R-Prefix) -> sie haben unsere R-Report nicht
-                # decodiert. WSJT-X-Verhalten: R-Report 1× wiederholen
-                # bevor wir aufgeben. Sebastian 2026-05-24 nach
-                # UN7JO-QSO-Verlust.
+                # Kein RR73 — zwei Symptome dass sie unseren R-Report nicht
+                # decoded haben, und in beiden Fällen wollen wir nochmal
+                # senden (gleicher Cap qso_max_report_resends):
+                #
+                #  (a) Partner schickt nochmal seinen Report ohne R-Prefix
+                #      → er hat unser Grid decoded und gibt uns Report,
+                #      aber unser R-Report kam bei ihm nicht an.
+                #      Sebastian 2026-05-24 nach UN7JO-Verlust.
+                #
+                #  (b) Partner ruft wieder CQ → er ist gar nicht in den
+                #      QSO-Modus eingestiegen (Decode bei ihm war zu
+                #      schwach für unsere TX-Sequence). Auf seiner Seite
+                #      existiert das QSO nicht. Wir versuchen einen
+                #      R-Report-Resend; klappt's nicht, läuft Timeout.
+                #      Sebastian 2026-05-24 nach DO1BJF-Verlust.
+                their_call = self.qso.their_call
                 rep_again = _find_report_from_them(
-                    decodes, self.qso.their_call, self.ctx.callsign
+                    decodes, their_call, self.ctx.callsign
                 )
-                if rep_again is not None:
+                them_cq_again = any(
+                    d.call_from == their_call
+                    and (d.message or "").startswith("CQ")
+                    for d in decodes
+                )
+                if rep_again is not None or them_cq_again:
+                    reason = "repeated report" if rep_again is not None else "repeated CQ"
                     if self.qso.report_resends >= self.qso_max_report_resends:
                         # Schon resent — sie hoeren uns einfach nicht.
                         # In Timeout laufen lassen.
                         log.info(
-                            "QSO_REPORT: %s repeated report %d× (max %d) — kein R-Resend mehr",
-                            self.qso.their_call,
+                            "QSO_REPORT: %s %s %d× (max %d) — kein R-Resend mehr",
+                            their_call,
+                            reason,
                             self.qso.report_resends,
                             self.qso_max_report_resends,
                         )
@@ -378,8 +396,9 @@ class StateMachine:
                             return
                         self.qso.report_resends += 1
                         log.info(
-                            "QSO_REPORT: %s repeated report → R-Report Resend (%d/%d)",
-                            self.qso.their_call,
+                            "QSO_REPORT: %s %s → R-Report Resend (%d/%d)",
+                            their_call,
+                            reason,
                             self.qso.report_resends,
                             self.qso_max_report_resends,
                         )

@@ -502,6 +502,44 @@ def test_qso_report_partner_repeats_report_triggers_r_resend(
         "Kein weiterer Resend nach Limit"
 
 
+def test_qso_report_partner_repeats_cq_triggers_r_resend(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Partner fällt nach unserem R-Report zurück zu CQ statt RR73 → wir
+    resenden R-Report 1× (analog zum repeated-report-Pfad, weil Symptom
+    dasselbe ist: unser R-Report kam nicht an). Sebastian 2026-05-24
+    nach DO1BJF-Verlust — er drückte +04 ab, hörte unser R+04 nicht,
+    fiel zurück in CQ-Loop, und wir liefen in den 45-s-Timeout statt
+    nochmal zu senden."""
+    sm.qso_max_report_resends = 1
+    sm.qso_max_stale_slots = 6
+    cq = _decode("DO1BJF", None, "CQ DO1BJF JO42")
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    # Partner schickt Signal-Report → QSO_REPORT + R-Report TX
+    sm.on_decodes(good_hw, [_decode("DO1BJF", "DK9XR", "DK9XR DO1BJF +04", snr=-12)])
+    assert sm.state is State.QSO_REPORT
+    sm.drain_actions()
+    assert sm.qso.report_resends == 0
+
+    # Partner fällt zurück in CQ (statt RR73 zu schicken) — er hat
+    # unser R+04 nicht decoded
+    sm.on_decodes(good_hw, [_decode("DO1BJF", None, "CQ DO1BJF JO42")])
+    assert sm.state is State.QSO_REPORT, "Wir geben nicht direkt auf"
+    assert sm.qso.report_resends == 1, "Resend-Counter hochgezählt"
+    actions = sm.drain_actions()
+    assert any(a.kind == "TX_MESSAGE"
+               and "R+04" in a.payload.get("message", "")
+               for a in actions), "R-Report wurde erneut gesendet"
+
+    # Partner ruft ein DRITTES Mal CQ — am Limit, kein weiterer Send
+    sm.on_decodes(good_hw, [_decode("DO1BJF", None, "CQ DO1BJF JO42")])
+    assert sm.qso.report_resends == 1, "Counter bleibt am Limit"
+    actions = sm.drain_actions()
+    assert not any(a.kind == "TX_MESSAGE" for a in actions), \
+        "Kein weiterer Resend nach Limit"
+
+
 def test_qso_report_closing_after_resend_logs_qso(
     sm: StateMachine, good_hw: HardwareState,
 ) -> None:

@@ -117,7 +117,8 @@ mid-QSO-Station via Doppelklick) bei uns nicht entstehen.
 | Aspekt | WSJT-X | Unsere SM | Status |
 |---|---|---|---|
 | Erwartung | `Tx5` (RR73) oder `Tx6` (73) vom Partner | `_find_closing` matcht RR73/RRR/73 → QSO_LOG | ✅ Match |
-| Partner repeated Report (Tx3 statt Tx5) | AutoSeq: detect Tx3 in eingehender Message → "we're back at Tx3-state" → Tx4 (R-Report) wird WEITER gesendet (kein Reset) | **NEU 2026-05-24:** `report_resends`-Counter, 1× Resend, dann bail | ✅ Match (Verhalten WSJT-X-kompatibel, mit Bail-Schutz) |
+| Partner repeated Report (Tx3 statt Tx5) | AutoSeq: detect Tx3 in eingehender Message → "we're back at Tx3-state" → Tx4 (R-Report) wird WEITER gesendet (kein Reset) | **2026-05-24 (v0.1.x):** `report_resends`-Counter, 1× Resend, dann bail | ✅ Match (Verhalten WSJT-X-kompatibel, mit Bail-Schutz) |
+| Partner fällt zurück zu CQ (Tx1 statt Tx5) | AutoSeq: AlternativerWeg dass Partner unser R-Report nicht decoded. WSJT-X bleibt in Tx4, sendet R-Report weiter (bis Watchdog) | **2026-05-24 (v0.2.1)** nach DO1BJF-Verlust: gleicher `report_resends`-Counter wie repeated-report-Pfad, 1× Resend dann bail | ✅ Match (gleiches Symptom — "sie hörten R-Report nicht" — gleiche Reaktion) |
 | AP-Decoding (a priori) | RR73/73/RRR-Spezial-Decoder mit ~3 dB Vorteil (QEX Fig 8) | Nicht implementiert (Sweep B, deferred) | 🚫 Tier-Bloat — explizit verworfen |
 | Partner silent | Watchdog 6 min | `qso_max_stale_slots=6` → bail + cooldown (~90 s) | ⚠️ Schneller Bail |
 | Re-send Limit | unlimitiert bis Watchdog | `qso_max_report_resends=1` | ⚠️ Härter als WSJT-X |
@@ -189,6 +190,28 @@ mid-QSO-Station via Doppelklick) bei uns nicht entstehen.
    - **Aufwand:** 10-15 Zeilen, neue Mini-State `QSO_LOGGED_GRACE` oder
      einfach im `on_decodes` nach QSO_LOG noch 1 Slot zuhören.
    - **Priority:** low — funktional schon korrekt geloggt.
+   - **Erledigt (v0.1.x):** `QSO_GRACE`-State + repeated-RR73-Detection
+     + 73-Resend. Sebastian sah QSO_GRACE wenn Partner RR73 wiederholt.
+
+3. **R-Report-Resend wenn Partner zurück zu CQ statt RR73** *(Erledigt v0.2.1)*
+   - **Symptom:** Sebastian DO1BJF-QSO 2026-05-24 — wir sendeten R+04 1×,
+     DO1BJF decoded es nicht (SNR -12 dB marginal), fiel zurück in
+     `CQ DO1BJF JO42`-Loop. Unser code wartete 45 s auf RR73, kein
+     RR73 kam → bail + IDLE, QSO nicht geloggt.
+   - **WSJT-X-Referenz (QEX Fig 6):** AutoSeq bleibt in Tx4 solange
+     "for-us" Decode kein Tx5 enthält. Ein Tx1 (CQ) vom Partner ist
+     "for-us" wenn his_call match, aber kein Tx5 → bleibt in Tx4 →
+     R-Report wird im nächsten TX-Slot wiederholt.
+   - **Fix (v0.2.1):** im QSO_REPORT-Branch zusätzlich zu "repeated
+     report" auch "repeated CQ vom selben Partner" als R-Resend-Trigger.
+     Gleicher `report_resends`-Counter, gleicher Cap
+     `qso_max_report_resends=1`. Bei Match: stale_slots Reset +
+     R-Report-Resend genau wie im repeated-report-Pfad.
+   - **Test:** `test_qso_report_partner_repeats_cq_triggers_r_resend`
+     in `backend/tests/test_statemachine.py`.
+   - **Lessons:** Symptom „Partner hat unser R-Report nicht decoded"
+     hat zwei Manifestationen (repeated report + repeated CQ), gleiche
+     Reaktion. Refactor zu unified "they didn't hear R-Report"-Branch.
 
 ### Bewusste Abweichungen (würde NICHT ändern, dokumentieren)
 
