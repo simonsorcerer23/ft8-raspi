@@ -1,17 +1,46 @@
 # /etc/sudoers.d/ft8-self-update — installed by deploy/install.sh
 #
-# Erlaubt User `sebastian` exakt vier systemctl-Operationen ohne
-# Passwort. Scope ist absichtlich minimal: nur was Self-Update + der
-# Backend-Trigger des Self-Update-Services brauchen.
+# Erlaubt User `sebastian` einen sehr begrenzten Satz root-Operationen
+# ohne Passwort. Scope: nur was Self-Update + Backend-Trigger + System-
+# File-Sync (unit-files / sudoers) brauchen.
 #
 # WARUM:
 #  * self-update.sh muss nach erfolgreichem `git checkout` einen
 #    `systemctl restart ft8-controller` triggern.
 #  * Backend-Route `/api/system/self-update` (Button auf der Konfig-
 #    Seite) triggert `systemctl start ft8-self-update.service`.
-#  * Health-Check vor Restart prüft `systemctl is-active ft8-controller`.
+#  * Self-Update synchronisiert auch die systemd-unit-files und das
+#    sudoers-Snippet wenn sie sich im Repo geändert haben (sonst
+#    bleibt /etc/systemd/system/ permanent hinter dem git-Workdir
+#    zurück und Bugfixes an unit-files greifen nie).
 #
-# Diese Datei hat Mode 0440 (per `visudo -c` validiert in install.sh).
-# Syntax-Validierung bei jedem Edit zwingend, sonst lockt man sich aus.
+# Diese Datei hat Mode 0440 (per `visudo -c` validiert in install.sh
+# UND von self-update.sh vor jedem Re-Install validiert — broken
+# sudoers würde sonst zum permanenten Lockout).
 
-sebastian ALL=(root) NOPASSWD: /bin/systemctl restart ft8-controller, /bin/systemctl restart ft8-controller.service, /bin/systemctl start ft8-controller, /bin/systemctl start ft8-controller.service, /bin/systemctl is-active ft8-controller, /bin/systemctl is-active ft8-controller.service, /bin/systemctl start ft8-self-update, /bin/systemctl start ft8-self-update.service
+# --- systemctl: nur die Services die wir wirklich anfassen ---
+sebastian ALL=(root) NOPASSWD: \
+    /bin/systemctl restart ft8-controller, \
+    /bin/systemctl restart ft8-controller.service, \
+    /bin/systemctl start ft8-controller, \
+    /bin/systemctl start ft8-controller.service, \
+    /bin/systemctl is-active ft8-controller, \
+    /bin/systemctl is-active ft8-controller.service, \
+    /bin/systemctl start ft8-self-update, \
+    /bin/systemctl start ft8-self-update.service, \
+    /bin/systemctl daemon-reload
+
+# --- install: nur exakte src→dst-Pärchen aus dem git-Workdir ---
+# Wildcards in sudoers sind tricky, deshalb listen wir jedes File
+# einzeln. Wenn ein neues unit-file dazukommt, MUSS dieser Block
+# erweitert werden (sonst greift sudo nicht).
+sebastian ALL=(root) NOPASSWD: \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-controller.service /etc/systemd/system/ft8-controller.service, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-self-update.service /etc/systemd/system/ft8-self-update.service, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-self-update.timer /etc/systemd/system/ft8-self-update.timer, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-ap-fallback.service /etc/systemd/system/ft8-ap-fallback.service, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-rigctld.service /etc/systemd/system/ft8-rigctld.service, \
+    /usr/bin/install -m 440 /home/sebastian/ft8-appliance/deploy/sudoers.d/ft8-self-update /etc/sudoers.d/ft8-self-update
+
+# --- visudo: pre-install-Validierung des neuen sudoers-Files ---
+sebastian ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f /home/sebastian/ft8-appliance/deploy/sudoers.d/ft8-self-update, /usr/sbin/visudo -c -f /etc/sudoers.d/ft8-self-update

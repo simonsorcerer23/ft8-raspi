@@ -39,6 +39,33 @@ HEALTH_RETRY_DELAY_S=4
 log() { printf '[self-update] %s\n' "$*"; }
 die() { log "FATAL: $*"; ntfy "🔴" "Self-Update FATAL: $*" || true; exit 1; }
 
+# Best-effort panic call BEFORE systemctl restart.
+#
+# Hintergrund (2026-05-24, ft8 PTT-Cascade): self-update.sh hatte das
+# erste Mal mitten in einem TX-Burst restartet (Idle-Check verfehlt den
+# Slot-Übergang um Millisekunden). Folge: rigctld behielt PTT physisch
+# asserted obwohl der orchestrator weg war. Neuer Prozess sah PTT-on
+# für >18s, force-off zog länger als der systemd-Watchdog erlaubt,
+# SIGABRT-Cascade, 3 Restarts in Folge.
+#
+# Fix: /api/control/panic ruft handle_panic — stoppt state machine,
+# drain pending actions, set_ptt(False) via rigctld. handle_panic
+# persistiert KEIN boot_mode (anders als handle_stop), d.h. nach
+# restart resumed Hunt/CQ normal aus dem boot_mode-Feld.
+graceful_pre_restart() {
+    log "pre-restart: POST /api/control/panic (force PTT off, drain TX)"
+    if curl -fsS -m 5 -X POST "${API_BASE}/control/panic" >/dev/null 2>&1; then
+        log "  ✓ panic acked"
+        # 2 s Puffer damit rigctld den deassert-Befehl wirklich ans
+        # CAT-Interface schickt. Empirisch reicht <1s, wir geben 2.
+        sleep 2
+    else
+        # Controller dead/unreachable — restart wird ihn eh ersetzen.
+        # Kein Drama, kein ntfy.
+        log "  (kein panic-ack — controller scheint tot, restart trotzdem ok)"
+    fi
+}
+
 # Fire-and-forget ntfy post. Tolerant — wenn ntfy down ist, blockt es uns
 # nicht. (curl -m 5 max 5s, --silent + --show-error.)
 ntfy() {
@@ -178,6 +205,42 @@ if [ "${PYPROJECT_HASH_BEFORE}" != "${PYPROJECT_HASH_AFTER}" ]; then
 fi
 
 # -----------------------------------------------------------------------------
+# Sync /etc/systemd/system/ + /etc/sudoers.d/ from the repo when files
+# have changed. Best-effort: wenn das (alte) sudoers-Snippet die neuen
+# install-Befehle noch nicht erlaubt, schlägt sudo fehl — wir loggen und
+# machen weiter (der nächste Self-Update versucht's nochmal, oder
+# Sebastian installiert das Snippet einmalig manuell).
+#
+# Sudoers wird mit Validierung gehandhabt: NEUE Datei vor Install via
+# `visudo -c -f` prüfen — broken sudoers würde sonst zum Lockout führen.
+DAEMON_RELOAD_NEEDED=0
+SUDOERS_NEEDS_MANUAL_BOOTSTRAP=0
+
+sync_system_file() {
+    local src="$1"     # relativer Pfad im Repo
+    local dst="$2"     # absoluter Ziel-Pfad
+    local mode="$3"    # 644 / 440
+    [ -f "${src}" ] || return 0
+    if [ -f "${dst}" ] && cmp -s "${src}" "${dst}"; then
+        return 0  # identisch, nichts zu tun
+    fi
+    # Spezialbehandlung für sudoers: erst syntax-checken!
+    if [[ "${dst}" == /etc/sudoers.d/* ]]; then
+        if ! sudo -n /usr/sbin/visudo -c -f "$(readlink -f "${src}")" >/dev/null 2>&1; then
+            log "  ⚠ sudoers-Validierung schlug fehl für ${src} — install skipped"
+            return 1
+        fi
+    fi
+    if sudo -n /usr/bin/install -m "${mode}" "$(readlink -f "${src}")" "${dst}" 2>/dev/null; then
+        log "  ↻ reinstalled ${dst}"
+        DAEMON_RELOAD_NEEDED=1
+        return 0
+    fi
+    log "  ⚠ sudo install ${dst} fehlgeschlagen — sudoers-Snippet kennt diesen Pfad nicht"
+    [[ "${dst}" == /etc/sudoers.d/* ]] && SUDOERS_NEEDS_MANUAL_BOOTSTRAP=1
+    return 1
+}
+
 # Inner function so we can also call it during rollback.
 install_and_restart() {
     local label="$1"
@@ -202,6 +265,25 @@ install_and_restart() {
     (cd backend && .venv/bin/python -m ft8_appliance.decode._build_ft8) \
         >/dev/null 2>&1 \
         || { log "cffi _ft8_native build failed (${label})"; return 1; }
+
+    # System-Files synchronisieren BEVOR wir restart machen — sonst
+    # läuft der frisch-restartete Service noch mit altem unit-file und
+    # ein zweiter restart wäre nötig.
+    log "system-file sync (unit-files + sudoers)"
+    sync_system_file "deploy/sudoers.d/ft8-self-update"       "/etc/sudoers.d/ft8-self-update"                440 || true
+    sync_system_file "deploy/systemd/ft8-controller.service"  "/etc/systemd/system/ft8-controller.service"    644 || true
+    sync_system_file "deploy/systemd/ft8-self-update.service" "/etc/systemd/system/ft8-self-update.service"   644 || true
+    sync_system_file "deploy/systemd/ft8-self-update.timer"   "/etc/systemd/system/ft8-self-update.timer"     644 || true
+    sync_system_file "deploy/systemd/ft8-ap-fallback.service" "/etc/systemd/system/ft8-ap-fallback.service"   644 || true
+    sync_system_file "deploy/systemd/ft8-rigctld.service"     "/etc/systemd/system/ft8-rigctld.service"       644 || true
+    if [ "${DAEMON_RELOAD_NEEDED}" = "1" ]; then
+        sudo -n /bin/systemctl daemon-reload 2>/dev/null \
+            || log "  ⚠ daemon-reload fehlgeschlagen (alte sudoers?) — wirkt erst nach reboot"
+    fi
+
+    # Graceful pre-restart: panic stop um den PTT-Cascade-Bug zu vermeiden.
+    graceful_pre_restart
+
     log "systemctl restart ft8-controller (${label})"
     if ! sudo -n /bin/systemctl restart ft8-controller; then
         log "systemctl restart fehlgeschlagen — sudoers-snippet fehlt?"
@@ -266,4 +348,12 @@ fi
 ELAPSED=$(( $(date +%s) - T0 ))
 log "✓ Update ${CURRENT_DESC} → ${LATEST_TAG} erfolgreich (${ELAPSED}s)"
 ntfy "🟢" "Update ${CURRENT_DESC} → ${LATEST_TAG} ok (${ELAPSED}s)"
+
+# Wenn das sudoers-Snippet einen Bootstrap braucht (altes Snippet kennt
+# /usr/bin/install noch nicht), pushen wir EINMAL einen Hinweis. Bei
+# nächstem Self-Update versuchen wir's wieder.
+if [ "${SUDOERS_NEEDS_MANUAL_BOOTSTRAP}" = "1" ]; then
+    ntfy "⚙" "Self-Update: sudoers-Snippet hat sich geändert. Einmalig manuell installieren:  ssh $(hostname) 'sudo install -m 440 ~/ft8-appliance/deploy/sudoers.d/ft8-self-update /etc/sudoers.d/'"
+fi
+
 exit 0
