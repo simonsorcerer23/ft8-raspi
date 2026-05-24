@@ -52,7 +52,9 @@ run() {
     if [ "${DRY_RUN}" = "1" ]; then
         printf '  [dry-run] %s\n' "$*"
     else
-        eval "$@"
+        # Subshell — sonst persistiert ein „cd frontend" in den nächsten
+        # Aufruf und der zweite cd findet den Pfad nicht mehr.
+        ( eval "$@" )
     fi
 }
 
