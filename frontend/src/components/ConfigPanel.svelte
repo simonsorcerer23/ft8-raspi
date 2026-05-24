@@ -122,7 +122,10 @@
     s += `${ind(2)}qso_max_stale_slots: ${c.operating.qso_max_stale_slots}\n`;
     s += `${ind(2)}hunt_skip_worked: ${c.operating.hunt_skip_worked}\n`;
     s += `${ind(2)}hunt_dxcc_only: ${c.operating.hunt_dxcc_only}\n`;
-    s += `${ind(2)}boot_mode: ${c.operating.boot_mode || 'off'}\n`;
+    // YAML 1.1: "off"/"on"/"yes"/"no" sind Boolean-Keywords → ohne
+    // Quotes wird "off" als False geparst, Pydantic Literal-Check
+    // schlaegt fehl. Sebastian-Bug 2026-05-24 nach Mode-Switch im UI.
+    s += `${ind(2)}boot_mode: ${yq(c.operating.boot_mode || 'off')}\n`;
     s += `${ind(2)}mode_watchdog_min: ${c.operating.mode_watchdog_min}\n`;
     s += `${ind(2)}public_hostname: ${yq(c.operating.public_hostname || 'ft8')}\n`;
     s += `\nintegrations:\n`;
@@ -323,24 +326,45 @@
       <section>
         <h3>Bänder <button class="add" onclick={addBand}>+ Band</button></h3>
         <p class="hint">
-          Bänder mit FT8- und FT4-Dial-Frequenz in kHz. FT4 lässt sich
-          leer lassen — dann wird der Standard-Bandplan-Wert benutzt
-          (z.B. 21140 für 15m).
+          Pro Band eine Reihe je Mode (FT8 + FT4). Frequenz in kHz.
+          Beim Hinzufügen werden beide Modi mit den Standard-Bandplan-
+          Werten angelegt — du kannst die Frequenz pro Reihe anpassen
+          oder die FT4-Reihe entfernen wenn du das Band nur in FT8
+          fahren willst.
         </p>
-        <div class="row band-header">
-          <span style="max-width: 5rem">Name</span>
-          <span>FT8 (kHz)</span>
-          <span>FT4 (kHz)</span>
-          <span></span>
-        </div>
         {#each cfg.bands as b, i}
-          <div class="row">
-            <input type="text" bind:value={b.name} placeholder="20m" style="max-width: 5rem"/>
-            <input type="number" bind:value={b.freq_khz} placeholder="14074" min="1800"/>
-            <input type="number" bind:value={b.freq_khz_ft4}
-                   placeholder={FT4_DEFAULT_DIALS[b.name] ?? 'auto'} min="1800"/>
-            <button class="rm" onclick={() => removeBand(i)}>×</button>
+          {@const ft4Default = FT4_DEFAULT_DIALS[b.name]}
+          <!-- FT8-Reihe (immer vorhanden) -->
+          <div class="row band-row">
+            <input type="text" bind:value={b.name} placeholder="20m"
+                   class="band-name"/>
+            <span class="mode-badge ft8">FT8</span>
+            <input type="number" bind:value={b.freq_khz} placeholder="14074" min="1800"
+                   class="band-freq"/>
+            <button class="rm" onclick={() => removeBand(i)}
+                    title="Band entfernen (beide Modi)">×</button>
           </div>
+          <!-- FT4-Reihe (gleicher Band-Index, b.freq_khz_ft4) -->
+          {#if b.freq_khz_ft4 != null || ft4Default != null}
+            <div class="row band-row band-row-ft4">
+              <span class="band-name-mirror">↪ {b.name}</span>
+              <span class="mode-badge ft4">FT4</span>
+              <input type="number" bind:value={b.freq_khz_ft4}
+                     placeholder={ft4Default ?? 'auto'} min="1800"
+                     class="band-freq"/>
+              <button class="rm-ft4"
+                      onclick={() => { b.freq_khz_ft4 = null; cfg.bands = cfg.bands; }}
+                      title="FT4 für dieses Band entfernen">×&nbsp;FT4</button>
+            </div>
+          {:else}
+            <div class="row band-row band-row-ft4-add">
+              <span class="band-name-mirror">↪ {b.name}</span>
+              <button class="add-ft4"
+                      onclick={() => { b.freq_khz_ft4 = FT4_DEFAULT_DIALS[b.name] ?? null; cfg.bands = cfg.bands; }}>
+                + FT4 für {b.name} aktivieren
+              </button>
+            </div>
+          {/if}
         {/each}
       </section>
 
@@ -560,6 +584,43 @@
     background: transparent; color: var(--danger); border: 1px solid #334155;
     border-radius: 4px; width: 1.8rem; cursor: pointer; font-size: 1.1rem;
   }
+  /* Bänder-Tabelle: 2 Rows pro physisches Band (FT8 + FT4). Sebastian
+     v0.4.4 — vorher 2 Frequenz-Spalten, jetzt vertikal mit Mode-Badge. */
+  .band-row { align-items: center; }
+  .band-name { max-width: 5rem; flex: 0 0 5rem; }
+  .band-name-mirror {
+    max-width: 5rem; flex: 0 0 5rem;
+    color: #64748b; font-size: 0.85rem; padding-left: 0.4rem;
+    font-family: ui-monospace, monospace;
+  }
+  .band-freq { flex: 1; }
+  .mode-badge {
+    flex: 0 0 3.5rem; text-align: center;
+    padding: 0.1rem 0.4rem; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 700; font-family: ui-monospace, monospace;
+    border: 1px solid;
+  }
+  .mode-badge.ft8 {
+    color: var(--accent); border-color: rgba(56,189,248,0.4);
+    background: rgba(56,189,248,0.08);
+  }
+  .mode-badge.ft4 {
+    color: #fb923c; border-color: rgba(251,146,60,0.4);
+    background: rgba(251,146,60,0.10);
+  }
+  .band-row-ft4 { opacity: 0.85; margin-bottom: 0.6rem; }
+  .band-row-ft4-add { opacity: 0.7; margin-bottom: 0.6rem; }
+  .rm-ft4 {
+    background: transparent; color: #64748b; border: 1px solid #334155;
+    border-radius: 4px; padding: 0.1rem 0.4rem; cursor: pointer; font-size: 0.7rem;
+  }
+  .rm-ft4:hover { color: var(--danger); border-color: var(--danger); }
+  .add-ft4 {
+    background: transparent; color: #fb923c;
+    border: 1px dashed rgba(251,146,60,0.4); border-radius: 4px;
+    padding: 0.1rem 0.6rem; font-size: 0.75rem; cursor: pointer; flex: 1;
+  }
+  .add-ft4:hover { background: rgba(251,146,60,0.08); }
   /* Antennen-Block: Name + Band-Chips + Remove-Button */
   .ant-row {
     display: flex; gap: 0.5rem; align-items: flex-start;

@@ -151,10 +151,16 @@ else
     PTT="$(printf '%s' "${STATUS_JSON}" | jq -r '.rig.ptt // false')"
     log "state=${STATE} current_qso_call=${QSO_CALL:-<none>} ptt=${PTT}"
 
-    # Erlaubte Idle-States: IDLE, alles mit "WAIT" im Namen. Unsafe:
-    # QSO_RESPOND, QSO_REPORT, QSO_LOG, TX_LOCKED, GRACE, CQ (sendet aktiv).
+    # Erlaubte Restart-States:
+    #   - IDLE: alles ruhig
+    #   - TX_LOCKED: Guard hat TX gesperrt, wir senden NICHT (Sebastian-
+    #     Bugfix v0.4.4 — vorher skipte das Update + Pi sass im Lock
+    #     fest weil unser eigenes Bugfix sich nicht ausrollen konnte =
+    #     Catch-22). TX_LOCKED bedeutet das Gegenteil von "TX laeuft",
+    #     restart ist sicher.
+    # Unsafe: QSO_RESPOND/QSO_REPORT/QSO_LOG/GRACE/CQ_CALLING (sendet aktiv).
     case "${STATE}" in
-        IDLE|"")
+        IDLE|TX_LOCKED|"")
             : ;;
         *)
             log "not idle (state=${STATE}), skip — Timer feuert wieder in 10 min"
