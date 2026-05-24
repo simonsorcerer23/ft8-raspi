@@ -632,7 +632,13 @@ class StateMachine:
         self._pending.append(Action("STOP_TX", {}))
 
     def _emit_cq(self) -> None:
-        msg = f"CQ {self.ctx.callsign} {self.ctx.my_grid[:4]}"
+        # Directed-CQ (Audit F7, v0.3.4): "CQ DX/EU/POTA/TEST" prefix
+        # wenn ctx.cq_directed gesetzt ist. Leer = klassischer CQ.
+        directed = (self.ctx.cq_directed or "").strip().upper()
+        if directed:
+            msg = f"CQ {directed} {self.ctx.callsign} {self.ctx.my_grid[:4]}"
+        else:
+            msg = f"CQ {self.ctx.callsign} {self.ctx.my_grid[:4]}"
         freq = self._next_cq_freq_hz()
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "cq", freq_override_hz=freq)))
 
@@ -754,6 +760,18 @@ class StateMachine:
             and d.call_from not in self.ctx.blacklist
             and d.call_to is None
             and (d.message or "").startswith("CQ")
+            and not getattr(d, "is_freetext", False)  # Audit F8 v0.3.4
+        ]
+        # Contest-CQ-Deprio (Audit F9 v0.3.4): Stationen die "CQ TEST",
+        # "CQ RU", "CQ FD", "CQ WW" rufen erwarten ein Contest-Exchange
+        # (RST + Sektion/Class), nicht unsere Standard-Grid-Antwort.
+        # Wir wuerden 4-5 Slots verschwenden bis Bail. Filter sie raus.
+        # Sebastian operiert nicht im Contest — wenn das mal noetig wird,
+        # ist's per-Config togglebar (ctx.allow_contest_cq, default False).
+        contest_tokens = {"TEST", "RU", "FD", "WW", "WPX", "SS", "IARU", "CWT"}
+        cqs = [
+            d for d in cqs
+            if not _is_contest_cq(d.message or "", contest_tokens)
         ]
         # SNR-Floor: sehr schwache Decodes uebersprungen — die Station hoert
         # uns wahrscheinlich nicht. Sebastian 2026-05-22: rst_rcvd-Median
@@ -892,25 +910,67 @@ def _find_answer_with_report_to_us(
     return None
 
 
+def _is_contest_cq(message: str, contest_tokens: set[str]) -> bool:
+    """True wenn der CQ einen Contest-Token enthaelt (CQ TEST/RU/FD/WW/WPX/...)
+    — Sebastian Audit F9 v0.3.4. Pattern: "CQ <TOKEN> <call> <grid>"."""
+    parts = message.split()
+    if len(parts) < 2 or parts[0] != "CQ":
+        return False
+    return parts[1].upper() in contest_tokens
+
+
+def _hashed_match(field: str | None, expected: str) -> bool:
+    """Hashed-Call-Wildcard (Sebastian Audit F5, v0.3.4): FT8 hashes
+    Calls die nicht in 13 chars passen (compound calls wie DL/W1AW,
+    DK9XR/P, EK/RX3DPK). Decoder zeigt sie als ``<...>``. Wenn wir in
+    einer aktiven QSO mit *expected* sind und der andere Field-Slot der
+    Decode-Message korrekt zu uns passt, akzeptieren wir das ``<...>``
+    als Wildcard-Match. Ohne diese Erweiterung wuerden Antworten auf
+    unsere compound-Replies (siehe EK/RX3DPK-Case) verloren gehen.
+    """
+    if field is None:
+        return False
+    return field == expected or field == "<...>"
+
+
 def _find_report_from_them(
     decodes: Iterable[DecodedMsg], their_call: str, my_call: str
 ) -> int | None:
-    """Decode like ``DK9XR W1AW -12`` — them giving us a signal report."""
+    """Decode like ``DK9XR W1AW -12`` — them giving us a signal report.
+
+    Hashed-Call-tolerant seit v0.3.4: matched auch wenn unser Call oder
+    ihrer als ``<...>`` decoded wurde (compound-call-Hash). Beide
+    gleichzeitig als <...> waere mehrdeutig → mindestens eine Seite
+    muss exakt matchen.
+    """
     for d in decodes:
-        if d.call_to == my_call and d.call_from == their_call:
-            m = _SNR_RE.search(" " + d.message)
-            if m and not d.message.startswith(f"{my_call} {their_call} R"):
-                return int(m.group(1))
+        to_ok = _hashed_match(d.call_to, my_call)
+        from_ok = _hashed_match(d.call_from, their_call)
+        if not (to_ok and from_ok):
+            continue
+        # Ambiguity-Guard: beide als <...> waere wild guess
+        if d.call_to == "<...>" and d.call_from == "<...>":
+            continue
+        m = _SNR_RE.search(" " + d.message)
+        if m and not d.message.startswith(f"{d.call_to} {d.call_from} R"):
+            return int(m.group(1))
     return None
 
 
 def _find_closing(
     decodes: Iterable[DecodedMsg], their_call: str, my_call: str
 ) -> bool:
-    """Decode like ``DK9XR W1AW RR73`` / ``RRR`` / ``73``."""
+    """Decode like ``DK9XR W1AW RR73`` / ``RRR`` / ``73``.
+    Hashed-Call-tolerant seit v0.3.4 (siehe _find_report_from_them).
+    """
     for d in decodes:
-        if d.call_to == my_call and d.call_from == their_call:
-            tail = d.message.split()[-1].upper()
-            if tail in {"RR73", "RRR", "73"}:
-                return True
+        to_ok = _hashed_match(d.call_to, my_call)
+        from_ok = _hashed_match(d.call_from, their_call)
+        if not (to_ok and from_ok):
+            continue
+        if d.call_to == "<...>" and d.call_from == "<...>":
+            continue
+        tail = d.message.split()[-1].upper()
+        if tail in {"RR73", "RRR", "73"}:
+            return True
     return False

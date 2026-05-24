@@ -336,6 +336,7 @@ class Orchestrator:
             ctx=MachineContext(
                 callsign=self.config.operator.callsign,
                 my_grid=self.config.operator.default_locator or "AA00",
+                cq_directed=(self.config.operating.cq_directed or "").upper(),
             ),
             limits=GuardLimits(
                 swr_max=self.config.operating.swr_max,
@@ -1303,6 +1304,8 @@ class Orchestrator:
         self.state_machine.qso_failed_cooldown_s = float(
             new_cfg.operating.qso_failed_cooldown_min * 60
         )
+        # Directed-CQ aus Config in ctx (Audit F7 v0.3.4).
+        self.state_machine.ctx.cq_directed = (new_cfg.operating.cq_directed or "").upper()
         # Default TX power update too (if user changed it in the form)
         if new_cfg.operator.default_power_w != self._tx_power_w:
             self._tx_power_w = new_cfg.operator.default_power_w

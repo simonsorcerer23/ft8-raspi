@@ -239,6 +239,104 @@ def test_snr_clamped_to_ft8_spec_range(
     assert "R+49" in tx, f"clamp auf FT8_SNR_MAX=+49, got: {tx!r}"
 
 
+def test_hashed_call_receive_in_qso_report(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Audit F5 v0.3.4: wenn Partner UNS-Call hasht (compound own-call),
+    sehen wir `<...>` als call_to. Wir sollen den Decode trotzdem als
+    Partner-Antwort erkennen wenn wir in QSO mit `their_call` sind."""
+    cq = _decode("EK/RX3DPK", None, "CQ EK/RX3DPK LN30", snr=-12)
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    # Partner schickt uns Report, hat aber UNSEREN Call gehasht
+    # (z.B. weil wir mit "DO3XR/P" geantwortet haetten). Aus seinem
+    # Encoder kommt "<...> EK/RX3DPK -10".
+    sm.on_decodes(good_hw, [
+        _decode("EK/RX3DPK", "<...>", "<...> EK/RX3DPK -10", snr=-12),
+    ])
+    assert sm.state is State.QSO_REPORT, "hashed-our-call wird als Report erkannt"
+    assert sm.qso.our_snr_received == -10
+
+
+def test_hashed_call_closing_recognized(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Audit F5 v0.3.4: RR73-Closing mit hashed-our-call wird erkannt."""
+    cq = _decode("EK/RX3DPK", None, "CQ EK/RX3DPK LN30", snr=-12)
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    sm.on_decodes(good_hw, [_decode("EK/RX3DPK", "DK9XR", "DK9XR EK/RX3DPK -10", snr=-12)])
+    sm.drain_actions()
+    # Partner schickt RR73 mit unserem Call gehasht
+    sm.on_decodes(good_hw, [_decode("EK/RX3DPK", "<...>", "<...> EK/RX3DPK RR73")])
+    actions = sm.drain_actions()
+    assert any(a.kind == "LOG_QSO" for a in actions), \
+        "RR73 mit hashed-our-call schliesst das QSO"
+
+
+def test_double_hashed_message_ambiguous_no_match(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Wenn BEIDE Felder <...> sind, ist's mehrdeutig — kein Match."""
+    cq = _decode("EK/RX3DPK", None, "CQ EK/RX3DPK LN30", snr=-12)
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    sm.on_decodes(good_hw, [
+        _decode("<...>", "<...>", "<...> <...> -10", snr=-12),
+    ])
+    assert sm.state is State.QSO_RESPOND, \
+        "double-hashed = ambiguous, kein Report-Match, bleiben in RESPOND"
+
+
+def test_directed_cq_emit_dx(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Audit F7 v0.3.4: ctx.cq_directed='DX' → 'CQ DX <call> <grid>'."""
+    sm.ctx.cq_directed = "DX"
+    sm.on_user_start_cq(good_hw)
+    actions = sm.drain_actions()
+    tx = next(a.payload["message"] for a in actions if a.kind == "TX_MESSAGE")
+    assert tx == "CQ DX DK9XR JN58", f"directed CQ, got: {tx!r}"
+
+
+def test_directed_cq_empty_falls_back_to_plain(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """ctx.cq_directed='' → klassischer CQ ohne Direction."""
+    sm.ctx.cq_directed = ""
+    sm.on_user_start_cq(good_hw)
+    actions = sm.drain_actions()
+    tx = next(a.payload["message"] for a in actions if a.kind == "TX_MESSAGE")
+    assert tx == "CQ DK9XR JN58", f"plain CQ, got: {tx!r}"
+
+
+def test_picker_skips_contest_cq(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Audit F9 v0.3.4: 'CQ TEST <call>' im Picker geskippt — Contester
+    erwartet keine Standard-Grid-Antwort."""
+    decodes = [
+        _decode("K1ZZZ", None, "CQ TEST K1ZZZ FN42", snr=-5),
+        _decode("DL5XYZ", None, "CQ DL5XYZ JO42", snr=-8),
+    ]
+    pick = sm._pick_hunt_target(decodes)
+    assert pick is not None and pick.call_from == "DL5XYZ", \
+        "Contest-CQ wird geskippt, normales CQ wird gepickt"
+
+
+def test_picker_skips_freetext_marked_as_cq(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """Wenn ein Decode is_freetext=True hat, wird er nie als Hunt-Target
+    ausgewaehlt (auch nicht wenn message zufaellig mit 'CQ' anfangen
+    sollte)."""
+    fake_freetext = _decode("XYZ", None, "CQ XYZ TEXT", snr=-5)
+    fake_freetext.is_freetext = True
+    valid_cq = _decode("DL5XYZ", None, "CQ DL5XYZ JO42", snr=-15)
+    pick = sm._pick_hunt_target([fake_freetext, valid_cq])
+    assert pick is not None and pick.call_from == "DL5XYZ"
+
+
 def test_their_snr_at_us_tracks_latest_decode(
     sm: StateMachine, good_hw: HardwareState,
 ) -> None:

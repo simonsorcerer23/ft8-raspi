@@ -53,6 +53,11 @@ class DecodedMsg:
     dt_s: float | None
     freq_offset_hz: int | None
     band: str
+    # True wenn die Message keinem Standard-FT8-Pattern entspricht
+    # (Free-Text Tx5/Tx6 wie "73 GL", "TU JIM", "NAME RAY"). Audit F8
+    # v0.3.4. Hunting-Picker und Worked-Set ignorieren is_freetext-
+    # Decodes damit Junk-Tokens nicht als Calls behandelt werden.
+    is_freetext: bool = False
 
 
 @dataclass(slots=True)
@@ -155,3 +160,8 @@ class MachineContext:
     # spot. Default: 4 spread points across the FT8 passband.
     cq_freq_rotation: list[int] = field(default_factory=lambda: [1200, 1500, 1800, 2100])
     cq_freq_index: int = 0
+    # Directed-CQ-Target (Audit F7, v0.3.4): leer = klassischer CQ,
+    # sonst eines von "DX", "EU", "NA", "POTA", "TEST", ... — wird vor
+    # dem Callsign in die CQ-Message eingefuegt: "CQ DX DK9XR JN58".
+    # Aus OperatingConfig.cq_directed gehydratet.
+    cq_directed: str = ""

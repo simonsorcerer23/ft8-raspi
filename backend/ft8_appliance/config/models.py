@@ -102,6 +102,12 @@ class OperatingConfig(BaseModel):
     # (4-FSK, 105 symbols, ~20.83 Hz spacing). Switching this changes
     # the slot clock, decoder and TX synth in lock-step.
     mode: Literal["FT8", "FT4"] = "FT8"
+    # Directed CQ (Sebastian Audit F7, v0.3.4): wenn gesetzt, sendet der
+    # CQ-Loop "CQ <target> <call> <grid>" statt nur "CQ <call> <grid>".
+    # Standard-Targets: DX (nur DX-Stationen), EU/NA/SA/AS/AF/OC (Kontinent),
+    # POTA/SOTA (Park-Activator), TEST (Contest). Leer = klassischer CQ.
+    # WSJT-X-Spec erlaubt 1-4 alphanumerische Zeichen.
+    cq_directed: str = Field(default="", max_length=4, pattern=r"^[A-Z0-9]*$")
     auto_cq_interval_s: int = Field(default=30, ge=15, le=300)
     max_ptt_s: int = Field(default=18, ge=15, le=60)
     cq_idle_timeout_min: int = Field(default=10, ge=1)

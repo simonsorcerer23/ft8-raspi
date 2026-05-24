@@ -23,15 +23,19 @@ Dieser hier deckt **alles drumherum** ab.
 | F2 | ADIF-Filename hardcoded `dk9xr_ft8.adif` (multi-op broken) | medium | **Erledigt v0.3.3** |
 | F3 | ADIF fehlende Felder: OPERATOR, STATION_CALLSIGN, COUNTRY | medium | **Erledigt v0.3.3** |
 | F4 | SNR-Clamp auf FT8-Spec-Range (-50..+49) fehlte | low (defensiv) | **Erledigt v0.3.3** |
-| F5 | Hashed-Call-Receive für eigene compound calls | low | dokumentiert (latent) |
-| F6 | FT4-Mode nur teilweise verdrahtet | medium | dokumentiert + Warning |
-| F7 | Directed CQ (CQ DX/EU/POTA) — outgoing nicht unterstützt | low | dokumentiert (nice-to-have) |
-| F8 | Free-Text Tx5 wird stumm ignoriert | low | dokumentiert |
-| F9 | Contest-Messages (RU/FD/RTTY) im Picker nicht erkannt | low | dokumentiert |
+| F5 | Hashed-Call-Receive für eigene compound calls | low | **Erledigt v0.3.4** |
+| F6 | FT4-Mode nur teilweise verdrahtet | medium | dokumentiert + Warning (full-fix geplant v0.4.0) |
+| F7 | Directed CQ (CQ DX/EU/POTA) — outgoing nicht unterstützt | low | **Erledigt v0.3.4** |
+| F8 | Free-Text Tx5 wird stumm ignoriert | low | **Erledigt v0.3.4** |
+| F9 | Contest-Messages (RU/FD/RTTY) im Picker nicht erkannt | low | **Erledigt v0.3.4** |
 | F10 | AP-Decoding (a priori) | low | bereits ditched, verifiziert |
 
-**Bilanz:** 4 sofort-fixe in v0.3.3, 1 mit Runtime-Warning + Doku, 4
-dokumentiert als nice-to-have. **Keine kritischen Bugs offen.**
+**Bilanz:** 4 sofort-fixe in v0.3.3, 4 weitere in v0.3.4 nach Sebastian-
+Request „alles fixen". Nur F6 (FT4) offen — Recherche zeigte: die C-
+Shim-Layer hat FT4 schon implementiert (`ft4_shim_decode_slot`,
+`ft4_shim_synth_message`), es fehlt nur das Python-Wiring. Geplant
+fuer v0.4.0, **deutlich kleiner als initial gedacht** (~1-2h statt
+1-2 Personentage).
 
 ---
 
@@ -126,29 +130,40 @@ Decoder würde garbage sehen.
 Real-Welt-Auswirkung: gleich null (Decoder liefert nur Werte im
 realistischen -30..+30-Bereich), aber **defensive Code-Disziplin**.
 
-### F5 — Hashed-Call-Receive für eigene compound calls *(latent)*
+### F5 — Hashed-Call-Receive für eigene compound calls *(Erledigt v0.3.4)*
 
-**Symptom (theoretisch):** Wenn unser Pi je einen compound own-call
-verwendet (`DK9XR/P`, `DL/W1AW`), und Partner antwortet uns:
+**Symptom (vor Fix, theoretisch):** Wenn unser Pi je einen compound
+own-call verwendet (`DK9XR/P`, `DL/W1AW`), und Partner antwortet uns:
 - Partner-Tx muss unser Call hashen (passt nicht in 13-Char-Frame)
 - Decode bei uns: `<...> THEIR_CALL JN58` (oder R-Report)
-- `_find_*_to_us`-Check: `d.call_to == my_call` → **False** (call_to ist `<...>`)
-- → wir verpassen die Antwort, QSO timeoutet
+- Alte `_find_*_to_us`-Check: `d.call_to == my_call` → False → wir
+  verpassen die Antwort, QSO timeoutet
 
-**Real-Welt-Risiko aktuell:** **null**. Sebastians Pi hat nur
-DK9XR + DO3XR konfiguriert, beides kurze Calls ohne `/`. Hash-
-Frames werden nicht generiert.
+**Fix v0.3.4:** Helper `_hashed_match(field, expected)` matched sowohl
+exakten Call als auch `<...>`-Placeholder. In `_find_report_from_them`
+und `_find_closing` (beides Funktionen mit Kontext „wir wissen Partner-
+Call"): beide Felder werden gegen `_hashed_match` geprüft. Ambiguity-
+Guard: wenn beide Felder `<...>` sind, kein Match (wäre wild guess).
 
-**Was nötig wäre wenn Sebastian /P-Operation will:**
-1. Hash-Tabelle der recently-seen own-call-Pairs aufbauen
-2. `_find_*`-Funktionen prüfen `call_to in {my_call, "<...>"}` und im
-   Fall `<...>` zusätzlich `call_from == current_qso.their_call` als
-   Match (Kontext aus laufendem QSO)
-3. Test für `<...> EK/RX3DPK -10` → erkennt als R-Report von EK/RX3DPK
+**Tests:**
+- `test_hashed_call_receive_in_qso_report`: `<...> EK/RX3DPK -10`
+  wird als Report erkannt
+- `test_hashed_call_closing_recognized`: `<...> EK/RX3DPK RR73`
+  schließt QSO
+- `test_double_hashed_message_ambiguous_no_match`: `<...> <...>`
+  triggert nichts (Sicherheit)
 
-**Aufwand:** ~30 Zeilen + 2 Tests, ~30 min wenn er das je braucht.
+**Real-Welt-Beweis vor Fix:** in Sebastians Live-DB existieren
+mehrere Decodes wie `<...> EK/RX3DPK R-04` und `<...> CR7BUJ R-04` —
+sobald Sebastian (oder ein anderer Operator) mit compound-Call
+antwortet, würde der Partner-Tx so aussehen und ohne Fix verloren
+gehen.
 
-**Decision:** **defer bis Sebastian /P/MM operiert**.
+**Nicht abgedeckt (out-of-scope):** Initial-Pickup wenn ein Compound-
+Call uns ruft ohne dass wir vorher CQ ausgesandt haben — wir kennen
+ihren Call nicht und können den Hash nicht resolven. Wäre ein
+Hash-Table-Management-Problem (`ft8_lib` hat einen, wir nicht
+gewrappt). Real-Häufigkeit: minimal. Verbleibender Risk dokumentiert.
 
 ### F6 — FT4-Mode nur teilweise verdrahtet *(dokumentiert + Warning v0.3.3)*
 
@@ -184,67 +199,69 @@ is hardcoded to 15s + decoder is FT8-only. Use mode=FT8 in production.
 beim Boot reicht. UI-Dropdown bleibt drin (für späteres Enablement),
 Operator weiß durchs Warning Bescheid.
 
-### F7 — Directed CQ (CQ DX/EU/POTA) nicht im Tx-Pfad *(nice-to-have)*
+### F7 — Directed CQ (CQ DX/EU/POTA) *(Erledigt v0.3.4)*
 
-**Gap:** Unser `_emit_cq` sendet immer `CQ DK9XR JN58`. Real-Welt-
-Patterns die wir NICHT generieren:
-- `CQ DX K1ABC FN42` — möchte nur DX-Stationen
-- `CQ EU K1ABC FN42` — möchte nur EU-Stationen
-- `CQ POTA K1ABC FN42` — POTA-Activator-Spot
-- `CQ TEST K1ABC FN42` — Contest-CQ
+**Fix v0.3.4:** Neue Config-Option `operating.cq_directed: str` (max 4
+chars, regex `^[A-Z0-9]*$`). Leerwert = klassischer `CQ {us} {grid}`.
+Sonst prefix: z.B. `cq_directed: "DX"` → `CQ DX DK9XR JN58`, oder
+`"POTA"` → `CQ POTA DK9XR JN58`.
 
-**Receive-Pfad funktioniert:** `parse_message` erkennt directed-CQs
-(Code-Path mit `rest[0].isalpha()`-Check), call_from + grid werden
-korrekt extrahiert.
+**Code-Pfad:**
+- `OperatingConfig.cq_directed` neu in `config/models.py`
+- `MachineContext.cq_directed` neu in `statemachine/states.py`
+- Hydration: Boot (`Orchestrator.__init__`) + Hot-Reload (`on_config_changed`)
+- `_emit_cq`: wenn `ctx.cq_directed` gesetzt, prepend
 
-**Send-Pfad nicht implementiert.** Wenn Sebastian je „nur DX"
-ankündigen wollte: 1 String-Konfig + `_emit_cq` erweitern.
+**Tests:**
+- `test_directed_cq_emit_dx`: `cq_directed='DX'` → `CQ DX DK9XR JN58`
+- `test_directed_cq_empty_falls_back_to_plain`: `cq_directed=''` → klassisch
 
-**Decision:** **nicht jetzt bauen** — Sebastians Use-Case ist
-Standard-CQ, nicht Contest/POTA.
+### F8 — Free-Text Tx5 *(Erledigt v0.3.4)*
 
-### F8 — Free-Text Tx5 wird ignoriert *(nice-to-have)*
+**Fix v0.3.4:** Strikte Callsign-Heuristik im Parser. Wenn weder
+`tokens[0]` noch `tokens[1]` wie ein Callsign aussieht (Regex
+`^(?=.*[A-Z])(?=.*\d)[A-Z0-9/]{3,11}$`, also mind. 1 Buchstabe + 1
+Ziffer), klassifizieren wir die Message als Free-Text:
+- `ParsedMessage.is_freetext = True`
+- `call_from`/`call_to`/`grid`/`report` bleiben `None`
+- Downstream: `DecodedMsg.is_freetext` propagiert
+- `_pick_hunt_target` skippt Free-Text-Decodes (kein QSO-Versuch)
 
-**Spec:** FT8 erlaubt 13-char Free-Text als Tx5/Tx6. Beispiele:
-- `73 GL`
-- `TU 73 OM`
-- `5W ENDFED`
-- `NAME RAY`
+**Tests:**
+- `test_picker_skips_freetext_marked_as_cq` — Hunt-Picker ignoriert
+  Decodes mit `is_freetext=True` auch wenn message mit "CQ" beginnt
 
-**Unser Parser:** schlägt fehl (`parse_message` versucht
-`<to> <from> <tail>` Pattern → tail ist Free-Text-Token → keine
-Klassifizierung als Closing → fällt durch). Free-Text-Decodes
-landen in der DB mit `call_from = first_token`, `call_to = second_token`
-und `message = full_string` — kann zu False-Positives in der
-Worked-Liste führen wenn der erste Token zufällig wie ein Call aussieht.
+**Beispiele die jetzt korrekt klassifiziert sind:**
+- `73 GL` → is_freetext=True, kein call_from/call_to mehr
+- `TU JIM` → is_freetext=True
+- `5W ENDFED` → is_freetext=True
+- Hashed-Calls (`<...>`) bleiben gültig (separate Behandlung)
+- Standard-Calls `DK9XR W1AW JN58` unverändert geparst
 
-**Real-Welt-Häufigkeit:** in den 2346 Decodes der letzten 2h:
-**null Free-Text-Messages** (alle waren standard QSO-Patterns).
-FT8-Operatoren nutzen das praktisch nie — der Mode ist auf
-strukturierten Austausch optimiert.
+**Schutz vor Worked-Liste-Pollution:** Vorher konnten Free-Text-Token
+wie "73" oder "GL" als call_from in die `is_worked_before`-Map landen.
+Nach Fix ist call_from=None → kein worked-Eintrag mehr.
 
-**Decision:** **defer** — Real-Risiko gering, Komplexität nicht
-gerechtfertigt.
+### F9 — Contest-Messages im Picker *(Erledigt v0.3.4)*
 
-### F9 — Contest-Messages im Picker nicht erkannt *(nice-to-have)*
+**Fix v0.3.4:** Helper `_is_contest_cq(message, contest_tokens)` im
+state-machine-Modul. `_pick_hunt_target` skippt CQs deren 2. Token in
+folgendem Set ist: `{TEST, RU, FD, WW, WPX, SS, IARU, CWT}`.
 
-**Spec:** FT8 hat 4 Contest-Formate die andere Message-Strukturen
-verwenden:
-- **RU-Contest:** `<call> <call> RST EX` (EX = Sektion-Code)
-- **NA-VHF:** `<call> <call> R<grid>`
-- **ARRL-FD:** `<call> <call> CLASS SECTION`
-- **WW-Digi:** Standard FT8 mit Token-Suffix
+Sebastian operiert nicht im Contest — wenn das mal jemand braucht,
+ist `cqs = [d for d in cqs if not _is_contest_cq(...)]` per-Config
+togglebar zu machen (~1 Zeile + neues `ctx.allow_contest_cq`).
+Aktuell **fest off**.
 
-**Was wir tun:** wir antworten auf jede CQ, auch contest-CQ. Wenn ein
-Contester `CQ TEST K1ABC FN42` ruft, antworten wir mit Standard-Grid
-`K1ABC DO3XR JN58` — Contester ignoriert uns (er erwartet Class+Section).
+**Test:** `test_picker_skips_contest_cq` — gibt zwei CQs (TEST + plain)
+in den Picker, erwartet dass der plain gepickt wird.
 
-**Real-Welt-Häufigkeit:** in der letzten 2h **null Contest-Decodes**.
-Außerhalb von Contest-Wochenenden quasi nicht relevant.
-
-**Decision:** **defer** — Sebastian operiert nicht im Contest. Wenn
-ein Contest-Weekend kommt: Hunting-Picker könnte `CQ TEST`-Pattern
-deprioritisieren um Slot-Verschwendung zu vermeiden. ~10 Zeilen.
+**Beobachtung Real-Daten:** in den 2346 Decodes der letzten 2h **null
+Contest-Messages** — ausserhalb von Contest-Wochenenden quasi nicht
+relevant. Aber: wenn am Wochenende ein Contest läuft, würde der
+Pi sonst Slot-Verschwendung mit erfolglosen Standard-Antworten
+betreiben. Mit dem Filter: Pi pickt die nicht-Contest-Stationen
+weiter und macht echte QSOs.
 
 ### F10 — AP-Decoding (a priori) *(bereits ditched, verifiziert)*
 

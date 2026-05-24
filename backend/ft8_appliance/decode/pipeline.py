@@ -38,6 +38,24 @@ log = logging.getLogger(__name__)
 _GRID_RE = re.compile(r"[A-R]{2}[0-9]{2}([a-x]{2})?")
 _SIGNAL_REPORT_RE = re.compile(r"R?[+-]\d{1,2}")
 _CLOSING_TOKENS = {"RR73", "RRR", "73"}
+# Strikte Callsign-Heuristik (Audit F8 v0.3.4): mind. 1 Buchstabe und
+# mind. 1 Ziffer, 3-11 Zeichen, nur A-Z/0-9/`/`. Filtert "73", "GL",
+# "TU" etc. die in Free-Text-Messages wie "73 GL" als 1./2. Token
+# vorkommen wuerden und sonst faelschlich als Call interpretiert
+# wuerden. Erlaubt Compound-Calls (DL/W1AW, DK9XR/P) + Standard.
+# Hashed-Calls "<...>" werden separat behandelt (s. _is_callsign_like).
+_CALLSIGN_RE = re.compile(r"^(?=.*[A-Z])(?=.*\d)[A-Z0-9/]{3,11}$")
+
+
+def _is_callsign_like(token: str) -> bool:
+    """True wenn der Token wie ein Callsign aussieht oder ein Hashed-
+    Placeholder ist. Konservativ — bei False werden Tokens als Free-
+    Text-Indikator gewertet (Audit F8 v0.3.4)."""
+    if not token:
+        return False
+    if token == "<...>":
+        return True
+    return bool(_CALLSIGN_RE.fullmatch(token))
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +65,7 @@ class ParsedMessage:
     grid: str | None
     report: str | None  # e.g. "-10" or "R-10"
     is_cq: bool
+    is_freetext: bool = False
 
 
 def parse_message(text: str) -> ParsedMessage:
@@ -54,15 +73,22 @@ def parse_message(text: str) -> ParsedMessage:
 
     Recognises:
       * ``CQ <call> <grid>``      → call_from + grid, is_cq=True
-      * ``CQ DX <call> <grid>``   → same
+      * ``CQ DX <call> <grid>``   → same (directed CQ)
       * ``CQ EU <call> <grid>``   → same (continent CQ)
+      * ``CQ POTA <call> <grid>`` → same (award)
       * ``<to> <from> <grid>``    → call_to + call_from + grid
       * ``<to> <from> <report>``  → call_to + call_from + report
       * ``<to> <from> RR73 / 73`` → call_to + call_from
+
+    Free-Text Tx5/Tx6 (Audit F8 v0.3.4): Messages die nicht in diese
+    Patterns passen werden mit ``is_freetext=True`` markiert. Beispiele:
+    "73 GL", "TU JIM", "5W ENDFED". Die Tokens werden NICHT als
+    Callsign-Felder weitergeleitet damit Junk nicht in der worked-Liste
+    landet — call_from/call_to bleiben None.
     """
     tokens = text.strip().split()
     if not tokens:
-        return ParsedMessage(None, None, None, None, False)
+        return ParsedMessage(None, None, None, None, False, is_freetext=False)
 
     if tokens[0] == "CQ":
         # CQ <call> <grid> or CQ <REGION/AWARD> <call> <grid>.
@@ -87,6 +113,15 @@ def parse_message(text: str) -> ParsedMessage:
 
     if len(tokens) >= 2:
         call_to, call_from = tokens[0], tokens[1]
+        # Free-Text-Detection (Audit F8 v0.3.4): wenn weder call_to noch
+        # call_from wie ein Callsign aussehen, ist's Free-Text. Wir
+        # markieren is_freetext + lassen call_*/grid/report None damit
+        # Downstream (Picker, worked-set) den Junk nicht aufgreift.
+        if not (_is_callsign_like(call_to) or _is_callsign_like(call_from)):
+            return ParsedMessage(
+                call_from=None, call_to=None, grid=None, report=None,
+                is_cq=False, is_freetext=True,
+            )
         report = None
         grid = None
         if len(tokens) >= 3:
@@ -101,7 +136,7 @@ def parse_message(text: str) -> ParsedMessage:
             call_from=call_from, call_to=call_to, grid=grid, report=report, is_cq=False
         )
 
-    return ParsedMessage(None, None, None, None, False)
+    return ParsedMessage(None, None, None, None, False, is_freetext=True)
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +229,7 @@ def _to_decoded_msg(shim: ShimDecode, tick: SlotTick, band: str) -> DecodedMsg:
         dt_s=shim.dt_s,
         freq_offset_hz=int(round(shim.freq_hz)),
         band=band,
+        is_freetext=parsed.is_freetext,
     )
 
 
