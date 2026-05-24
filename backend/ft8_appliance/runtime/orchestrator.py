@@ -418,19 +418,9 @@ class Orchestrator:
         if isinstance(self.slot_clock, SlotClock) and self.config.operating.mode == "FT4":
             from .slot_clock import FT4_SLOT_SECONDS
             self.slot_clock = SlotClock(slot_seconds=FT4_SLOT_SECONDS)
-            # Sebastian-Audit v0.3.3: FT4-Mode ist nur halbwegs eingebaut.
-            # Der SlotClock wird umgestellt aber audio/slot_sync.py hat
-            # SAMPLES_PER_SLOT auf 180000 (15s) hartcodiert + ft8_lib
-            # decoded nur FT8-Frames. Effekt bei mode=FT4: TX-Timing
-            # falsch (Pi sendet alle 7.5s aber capture-window ist 15s →
-            # decode zerstoert) + Encoder produziert FT8-Frames nicht
-            # FT4 → Partner kann nicht decoden. Warnung damit der
-            # Operator weiss dass FT4 derzeit broken ist.
-            log.warning(
-                "FT4 mode is NOT fully supported (audit-finding v0.3.3): "
-                "SlotBuffer is hardcoded to 15s + decoder is FT8-only. "
-                "Decoder will see empty/garbage. Use mode=FT8 in production. "
-                "See docs/ft8_complete_audit.md Finding F6."
+            log.info(
+                "FT4 mode active (Audit F6 v0.4.0): 7.5s slots, "
+                "decode_slot_ft4 + synth_message_ft4 wired."
             )
         # rig.connect() can fail if rigctld isn't running yet (e.g. rig not
         # plugged in at boot). Don't crash the orchestrator over it — the
@@ -1306,6 +1296,19 @@ class Orchestrator:
         )
         # Directed-CQ aus Config in ctx (Audit F7 v0.3.4).
         self.state_machine.ctx.cq_directed = (new_cfg.operating.cq_directed or "").upper()
+        # FT8 ↔ FT4 Mode-Switch (Audit F6 v0.4.0): decode_source.mode
+        # live umstellen damit der naechste Slot mit dem richtigen
+        # Decoder + Window-Groesse arbeitet. Achtung: SlotClock-Tempo
+        # bleibt unveraendert (running async iter), Service-Restart
+        # ist fuer vollen Effekt noetig — bei Bedarf via ntfy melden.
+        new_mode = new_cfg.operating.mode if new_cfg.operating.mode in ("FT8", "FT4") else "FT8"
+        if hasattr(self.decode_source, "mode") and self.decode_source.mode != new_mode:
+            log.warning(
+                "FT8/FT4 mode switch detected: %s -> %s. Decoder live-switched; "
+                "slot_clock tempo requires service restart for full effect.",
+                self.decode_source.mode, new_mode,
+            )
+            self.decode_source.mode = new_mode
         # Default TX power update too (if user changed it in the form)
         if new_cfg.operator.default_power_w != self._tx_power_w:
             self._tx_power_w = new_cfg.operator.default_power_w

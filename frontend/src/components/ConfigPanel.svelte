@@ -105,6 +105,7 @@
     // Pydantic die fehlenden mit Defaults und überschreibt die
     // Werte des Operators bei jedem Speichern.
     s += `${ind(2)}mode: ${c.operating.mode}\n`;
+    s += `${ind(2)}cq_directed: ${yq(c.operating.cq_directed || '')}\n`;
     s += `${ind(2)}auto_cq_interval_s: ${c.operating.auto_cq_interval_s}\n`;
     s += `${ind(2)}max_ptt_s: ${c.operating.max_ptt_s}\n`;
     s += `${ind(2)}cq_idle_timeout_min: ${c.operating.cq_idle_timeout_min}\n`;
@@ -352,6 +353,17 @@
       <section>
         <h3>Operating</h3>
         <div class="grid">
+          <label><span>Mode (Digital-Slot-Tempo)</span>
+            <select bind:value={cfg.operating.mode}>
+              <option value="FT8">FT8 — 15 s Slots (Standard)</option>
+              <option value="FT4">FT4 — 7.5 s Slots (schneller, weniger DX)</option>
+            </select>
+          </label>
+          <label><span>Directed CQ (leer = klassisch)</span>
+            <input type="text" maxlength="4" placeholder="z.B. DX, EU, POTA"
+                   bind:value={cfg.operating.cq_directed}
+                   oninput={(e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); }}/>
+          </label>
           <label><span>Auto-CQ Intervall (s)</span>
             <input type="number" bind:value={cfg.operating.auto_cq_interval_s} min="15" max="300"/>
           </label>

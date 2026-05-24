@@ -24,7 +24,7 @@ Dieser hier deckt **alles drumherum** ab.
 | F3 | ADIF fehlende Felder: OPERATOR, STATION_CALLSIGN, COUNTRY | medium | **Erledigt v0.3.3** |
 | F4 | SNR-Clamp auf FT8-Spec-Range (-50..+49) fehlte | low (defensiv) | **Erledigt v0.3.3** |
 | F5 | Hashed-Call-Receive für eigene compound calls | low | **Erledigt v0.3.4** |
-| F6 | FT4-Mode nur teilweise verdrahtet | medium | dokumentiert + Warning (full-fix geplant v0.4.0) |
+| F6 | FT4-Mode nur teilweise verdrahtet | medium | **Erledigt v0.4.0** |
 | F7 | Directed CQ (CQ DX/EU/POTA) — outgoing nicht unterstützt | low | **Erledigt v0.3.4** |
 | F8 | Free-Text Tx5 wird stumm ignoriert | low | **Erledigt v0.3.4** |
 | F9 | Contest-Messages (RU/FD/RTTY) im Picker nicht erkannt | low | **Erledigt v0.3.4** |
@@ -165,39 +165,61 @@ ihren Call nicht und können den Hash nicht resolven. Wäre ein
 Hash-Table-Management-Problem (`ft8_lib` hat einen, wir nicht
 gewrappt). Real-Häufigkeit: minimal. Verbleibender Risk dokumentiert.
 
-### F6 — FT4-Mode nur teilweise verdrahtet *(dokumentiert + Warning v0.3.3)*
+### F6 — FT4-Mode voll unterstützt *(Erledigt v0.4.0)*
 
-**Status:**
-- `OperatingConfig.mode = "FT4"` ist in der Config-Definition wählbar
-- `Orchestrator.start()` swappt SlotClock auf 7.5s ✓
-- `audio/slot_sync.py` hat **`SAMPLES_PER_SLOT = SAMPLE_RATE_HZ × 15 = 180000`** hardcoded ✗
-- `decode/ft8_native.c` ist FT8-only ✗
-- TX-Synth produziert FT8-Costas-Array nicht FT4-Costas ✗
+**Sebastian-Request 2026-05-24 nach v0.3.3:** "alles fixen + ft4
+möglich machen!"
 
-**Konsequenz wenn `mode=FT4` gesetzt:**
-- SlotClock feuert alle 7.5s, aber Buffer extrahiert 15s → spans 2
-  FT4-Slots → Decoder sieht Mix aus 2 Slots → zerstörte Frames
-- TX würde FT8-Frames in 7.5s-Slots packen → Partner-FT4-Decoder
-  versteht's nicht
-- **Auf FT4 funktioniert nichts** (Hunt geht nicht, CQ geht nicht)
+**Status vor v0.4.0:**
+- `OperatingConfig.mode = "FT4"` Config-Feld vorhanden
+- `Orchestrator.start()` swappte SlotClock auf 7.5s
+- `audio/slot_sync.py` `SAMPLES_PER_SLOT` **hardcoded 180000 (15s)** ✗
+- `DecodePipeline` rief immer `decode_slot` (FT8-only) ✗
+- TX-Synth-Pfad wäre FT8-only ohne explizite Mode-Check ✗
 
-**Fix v0.3.3 (minimal):** Runtime-Log-WARNING beim Boot wenn
-mode=FT4 gesetzt:
-```
-FT4 mode is NOT fully supported (audit-finding v0.3.3): SlotBuffer
-is hardcoded to 15s + decoder is FT8-only. Use mode=FT8 in production.
-```
+**HUGE FINDING bei Code-Recherche:** der C-Shim
+(`decode/ft8_shim.c`) und Python-Binding (`decode/ft8_native.py`)
+hatten FT4 **vollständig implementiert** mit
+`ft4_shim_decode_slot`/`ft4_shim_synth_message`/`SAMPLES_PER_SLOT_FT4=90000`/
+`TX_SAMPLES_FT4=60480`. Es fehlte nur das High-Level-Wiring →
+F6 wurde damit von "1-2 Personentage" zu "~1-2h".
 
-**Vollständige FT4-Unterstützung** wäre eigenständiges Projekt:
-- SlotBuffer parametrisieren mit `slot_seconds`
-- ft8_lib FT4-Decoder einbinden (existiert in ft8_lib)
-- TX-Synth FT4-Symbol-Tabelle (4-FSK, 105 Symbole, 20.83 Hz Spacing)
-- Tests
-- → ~1-2 Personentage. Lohnt sich nicht solange Sebastian FT8 fährt.
+**Fix v0.4.0 (5 Code-Pfade):**
+1. `audio/slot_sync.py::SlotBuffer.extract_slot()` parametrisiert
+   mit `slot_seconds`-Argument (default 15s, backward-compatible).
+   `FT4_SLOT_SECONDS=7.5` + `FT4_SAMPLES_PER_SLOT=90000` als Konstanten.
+2. `decode/pipeline.py::DecodePipeline` neues Feld `mode: str = "FT8"`,
+   `__call__` routet basierend auf Mode zum richtigen Decoder
+   (`decode_slot` oder `decode_slot_ft4`) + Slot-Window.
+3. `runtime/production.py::_build_decode_source` liest
+   `config.operating.mode` und reicht's an `DecodePipeline` weiter.
+4. `runtime/orchestrator.py::on_config_changed` propagiert
+   Hot-Mode-Switch (z.B. User toggelt im UI) auf `decode_source.mode`
+   live; SlotClock-Tempo braucht für vollen Effekt Service-Restart
+   (Warning im Log).
+5. UI: `ConfigPanel.svelte` neuer `<select>` mit FT8/FT4-Optionen +
+   `cq_directed`-Input + YAML-Serialisierung von beiden Feldern.
 
-**Decision:** **FT4 als „experimentell/broken" deklariert**, Warning
-beim Boot reicht. UI-Dropdown bleibt drin (für späteres Enablement),
-Operator weiß durchs Warning Bescheid.
+**TX-Synth-Pfad war schon mode-aware** (Orchestrator-Zeile 2805ff:
+`synth_message` vs `synth_message_ft4` basierend auf
+`self.config.operating.mode`).
+
+**Tests:**
+- `test_slot_sync.py` neu: 4 Tests für SlotBuffer-Parametrisierung
+  (FT8-default, FT4-window, zero-pad, mode-switch)
+- `test_tx_synth.py::test_ft4_synth_roundtrips_through_decoder` bereits
+  vorhanden, läuft auf Pi mit gebauter C-Extension
+- Frontend-Build erfolgreich
+
+**Boot-Warning entfernt:** v0.3.3-Warning `"FT4 mode is NOT fully
+supported"` ersetzt durch `"FT4 mode active: 7.5s slots,
+decode_slot_ft4 + synth_message_ft4 wired."` als info-level Log.
+
+**Wann wirst du FT4 nutzen?** Spec-Wert: schnellere QSOs (~5-7 sec vs
+~12 sec für FT8), aber kürzere Bursts → weniger Sensitivity (≈3 dB
+weniger DX-Reichweite). Typisch für Inland-NA-VHF-Contest oder
+Conditions mit kurzem QSB. Sebastian kann jetzt **per UI-Toggle**
+zwischen FT8/FT4 wechseln, Mode-Switch wirkt nächste Slot-Iteration.
 
 ### F7 — Directed CQ (CQ DX/EU/POTA) *(Erledigt v0.3.4)*
 

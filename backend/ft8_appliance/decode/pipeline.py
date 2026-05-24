@@ -25,7 +25,12 @@ from datetime import UTC, datetime
 from ..audio.slot_sync import SlotBuffer, SlotExtraction
 from ..runtime.slot_clock import SlotTick
 from ..statemachine import DecodedMsg
-from .ft8_native import ShimDecode, decode_slot
+from .ft8_native import (
+    SAMPLES_PER_SLOT_FT4,
+    ShimDecode,
+    decode_slot,
+    decode_slot_ft4,
+)
 
 log = logging.getLogger(__name__)
 
@@ -172,11 +177,18 @@ class DecodePipelineMetrics:
 
 @dataclass
 class DecodePipeline:
-    """A :class:`DecodeSource` backed by ``ft8_lib``."""
+    """A :class:`DecodeSource` backed by ``ft8_lib``.
+
+    Audit F6 v0.4.0: mode-aware. ``mode="FT8"`` (default) verwendet
+    den 15s-Decoder, ``mode="FT4"`` den 7.5s-Decoder mit halber
+    Slot-Window. Beide Modi reichen denselben SlotBuffer, nur die
+    Window-Groesse + Decoder-Funktion variieren.
+    """
 
     slot_buffer: SlotBuffer
     band_hint: str = "20m"  # which band we're listening on (for DB rows)
     metrics: DecodePipelineMetrics = field(default_factory=DecodePipelineMetrics)
+    mode: str = "FT8"  # "FT8" oder "FT4"
     # USB-Audio kommt in 1024-sample-periods (~85 ms). Wenn der Slot
     # genau zum Wallclock-Boundary endet, ist die letzte Period oft noch
     # nicht in den SlotBuffer geflossen → "short by X samples"-Logs +
@@ -185,17 +197,25 @@ class DecodePipeline:
     extract_delay_s: float = 0.15
 
     async def __call__(self, tick: SlotTick) -> list[DecodedMsg]:
-        # The slot's nominal start is `tick.posix - SLOT_SECONDS` (the slot
-        # has just *ended*, we decode the audio captured during it).
-        from ..audio.slot_sync import SLOT_SECONDS
+        from ..audio.slot_sync import FT4_SLOT_SECONDS, SLOT_SECONDS
+
+        # Mode-aware Slot-Window + Decoder-Funktion (Audit F6 v0.4.0).
+        if self.mode == "FT4":
+            slot_seconds = FT4_SLOT_SECONDS
+            decoder = decode_slot_ft4
+        else:
+            slot_seconds = SLOT_SECONDS
+            decoder = decode_slot
 
         # Warte kurz damit die letzten Audio-Frames die Capture-Pipeline
         # erreichen — sonst zero-padden wir das Slot-Ende und der
         # Decoder sieht Stummheit wo eigentlich noch FT8-Symbole sind.
         if self.extract_delay_s > 0:
             await asyncio.sleep(self.extract_delay_s)
-        slot_start_posix = tick.posix - SLOT_SECONDS
-        extraction = self.slot_buffer.extract_slot(slot_start_posix)
+        slot_start_posix = tick.posix - slot_seconds
+        extraction = self.slot_buffer.extract_slot(
+            slot_start_posix, slot_seconds=slot_seconds
+        )
         self.metrics.last_drift_samples = extraction.drift_samples
 
         # decode_slot is a synchronous C call (~200-800 ms on a Pi). Running
@@ -204,9 +224,9 @@ class DecodePipeline:
         # the default ThreadPoolExecutor so the loop stays responsive.
         loop = asyncio.get_running_loop()
         try:
-            raw = await loop.run_in_executor(None, decode_slot, extraction.pcm_s16le)
+            raw = await loop.run_in_executor(None, decoder, extraction.pcm_s16le)
         except Exception as exc:
-            log.warning("decode_slot failed for tick %s: %s", tick.index, exc)
+            log.warning("%s decode_slot failed for tick %s: %s", self.mode, tick.index, exc)
             return []
 
         self.metrics.record_slot(len(raw))

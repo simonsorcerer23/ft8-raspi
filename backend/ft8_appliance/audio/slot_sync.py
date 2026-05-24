@@ -29,7 +29,13 @@ from dataclasses import dataclass
 
 SAMPLE_RATE_HZ = 12_000
 SLOT_SECONDS = 15
-SAMPLES_PER_SLOT = SAMPLE_RATE_HZ * SLOT_SECONDS  # 180 000
+SAMPLES_PER_SLOT = SAMPLE_RATE_HZ * SLOT_SECONDS  # 180 000 (FT8)
+# FT4-Spec: 7.5s Slot, 90000 samples @ 12 kHz. Audit F6 v0.4.0 —
+# SlotBuffer.extract_slot kann beide Window-Groessen ueber das
+# slot_seconds-Argument liefern, die Konstanten hier sind Default
+# (FT8) und Convenience.
+FT4_SLOT_SECONDS = 7.5
+FT4_SAMPLES_PER_SLOT = int(SAMPLE_RATE_HZ * FT4_SLOT_SECONDS)  # 90 000
 BYTES_PER_SAMPLE = 2  # int16
 
 log = logging.getLogger(__name__)
@@ -90,14 +96,24 @@ class SlotBuffer:
                 break
 
     # ------------------------------------------------------------------ extract
-    def extract_slot(self, slot_start_posix: float) -> SlotExtraction:
-        """Cut a 15-second window starting at *slot_start_posix*.
+    def extract_slot(
+        self,
+        slot_start_posix: float,
+        slot_seconds: float = SLOT_SECONDS,
+    ) -> SlotExtraction:
+        """Cut a ``slot_seconds``-window starting at *slot_start_posix*.
 
-        Samples whose timestamp falls inside ``[start, start + 15)`` are
-        emitted in order. Missing samples (gaps, late start) are
+        Samples whose timestamp falls inside ``[start, start + slot_seconds)``
+        are emitted in order. Missing samples (gaps, late start) are
         zero-padded at the *end* of the buffer.
+
+        Audit F6 v0.4.0: ``slot_seconds`` ist jetzt parametrisierbar
+        damit FT4 (7.5s) und FT8 (15s) den gleichen Buffer nutzen
+        koennen. Default = 15s = backward-compatible mit dem alten
+        Verhalten.
         """
-        slot_end_posix = slot_start_posix + SLOT_SECONDS
+        target_samples = int(round(slot_seconds * SAMPLE_RATE_HZ))
+        slot_end_posix = slot_start_posix + slot_seconds
 
         out = bytearray()
         out_samples = 0
@@ -124,8 +140,8 @@ class SlotBuffer:
             # samples available from the start of the relevant slice
             avail = chunk_samples - skip_samples
 
-            # samples we may still take to reach SAMPLES_PER_SLOT
-            need = SAMPLES_PER_SLOT - out_samples
+            # samples we may still take to reach target_samples
+            need = target_samples - out_samples
             take = min(avail, need)
 
             if take <= 0:
@@ -140,11 +156,11 @@ class SlotBuffer:
                 anchor_posix = chunk.posix_start + skip_samples / SAMPLE_RATE_HZ
                 anchor_found = True
 
-            if out_samples >= SAMPLES_PER_SLOT:
+            if out_samples >= target_samples:
                 break
 
         # Zero-pad any missing tail (late start, gap, premature audio loss)
-        missing = SAMPLES_PER_SLOT - out_samples
+        missing = target_samples - out_samples
         if missing > 0:
             out += b"\x00\x00" * missing
             log.warning(
@@ -154,7 +170,7 @@ class SlotBuffer:
                 1000.0 * missing / SAMPLE_RATE_HZ,
             )
 
-        drift = out_samples - SAMPLES_PER_SLOT
+        drift = out_samples - target_samples
         return SlotExtraction(
             pcm_s16le=bytes(out),
             requested_start_posix=slot_start_posix,
