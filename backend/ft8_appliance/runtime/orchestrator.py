@@ -439,6 +439,14 @@ class Orchestrator:
             await self._ensure_dial_matches_mode("boot")
         except Exception as exc:
             log.warning("boot ensure_dial_matches_mode failed: %s", exc)
+        # Sebastian-Bugfix v0.5.1: DecodePipeline-Band-Resolver wireup.
+        # Vorher war band_hint statisch auf config.bands[0].name gesetzt
+        # → bei Sebastian's Config (bands=[20m,15m,...]) wurden alle
+        # Decodes (und damit alle QSO-Log-Eintraege + ntfy-Pushes) als
+        # "20m" geloggt obwohl der Pi auf 15m FT4 stand. Resolver
+        # liefert live den aktiven Band-Namen aus rig.freq_hz.
+        if hasattr(self.decode_source, "band_resolver"):
+            self.decode_source.band_resolver = self._resolve_current_band_name
         self._bg_tasks.append(asyncio.create_task(self.gps.run_forever(), name="gpsd"))
         self._bg_tasks.append(asyncio.create_task(self._slot_loop(), name="slot-loop"))
         self._bg_tasks.append(asyncio.create_task(self._rig_poll_loop(), name="rig-poll"))
@@ -2848,6 +2856,18 @@ class Orchestrator:
             antenna_covers_band=antenna_ok,
             chrony_synced=chrony_synced,
         )
+
+    def _resolve_current_band_name(self) -> str | None:
+        """Live-Band-Name aus dem aktuellen Rig-Snapshot. Wird vom
+        DecodePipeline-Band-Resolver aufgerufen damit Decodes (und
+        downstream QSOs/ntfy) den korrekten Band-Tag bekommen.
+
+        Sebastian-Bug v0.5.1: vorher war band_hint statisch auf
+        config.bands[0].name -> "20m" obwohl Pi auf 15m FT4.
+        """
+        if self._last_rig.freq_hz is None:
+            return None
+        return _band_from_freq_hz(self._last_rig.freq_hz)
 
     def _band_for_rig_freq(self, hz: int):
         """Welcher konfigurierte BandConfig deckt diese On-Air-Frequenz ab?

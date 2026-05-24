@@ -183,10 +183,17 @@ class DecodePipeline:
     den 15s-Decoder, ``mode="FT4"`` den 7.5s-Decoder mit halber
     Slot-Window. Beide Modi reichen denselben SlotBuffer, nur die
     Window-Groesse + Decoder-Funktion variieren.
+
+    Sebastian-Bugfix v0.5.1: ``band_resolver`` (optional Callable)
+    erlaubt live-Bestimmung des aktuellen Bands aus dem Rig-Snapshot
+    statt statischer ``band_hint``-Konstante. Vorher fielen alle
+    QSOs auf bands[0].name zurueck (= "20m" weil das erste konfig-
+    Band 20m war) auch wenn das Rig auf 21.140 MHz (15m) stand.
     """
 
     slot_buffer: SlotBuffer
-    band_hint: str = "20m"  # which band we're listening on (for DB rows)
+    band_hint: str = "20m"  # static fallback wenn band_resolver None
+    band_resolver: callable | None = None  # () -> str | None, live-band-Lookup
     metrics: DecodePipelineMetrics = field(default_factory=DecodePipelineMetrics)
     mode: str = "FT8"  # "FT8" oder "FT4"
     # USB-Audio kommt in 1024-sample-periods (~85 ms). Wenn der Slot
@@ -231,7 +238,20 @@ class DecodePipeline:
 
         self.metrics.record_slot(len(raw))
 
-        out = [_to_decoded_msg(r, tick, self.band_hint) for r in raw]
+        # Live-Band-Resolve (Sebastian v0.5.1): falls Resolver konfiguriert,
+        # nimm den aktuellen Wert aus dem Rig-Snapshot. None-Fallback auf
+        # static band_hint damit Tests + Backward-Compat ohne Resolver
+        # weiter funktionieren.
+        band_for_decodes = self.band_hint
+        if self.band_resolver is not None:
+            try:
+                resolved = self.band_resolver()
+                if resolved:
+                    band_for_decodes = resolved
+            except Exception as exc:
+                log.debug("band_resolver failed: %s, fallback band_hint=%s", exc, self.band_hint)
+
+        out = [_to_decoded_msg(r, tick, band_for_decodes) for r in raw]
         return out
 
 
