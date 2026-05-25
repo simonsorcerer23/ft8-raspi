@@ -268,6 +268,8 @@ async def conversation(
     entries.sort(key=lambda e: e.ts or "", reverse=True)
 
     # Predict next action based on state
+    # Sebastian v0.5.3: QSO_GRACE-Branch ergaenzt (vorher hint=None,
+    # leer im UI) + IDLE differenziert auto_cq vs. komplett-off.
     hint = None
     if state == "CQ_CALLING":
         hint = f"sendet weiter CQ {my_call} bis jemand antwortet"
@@ -275,9 +277,19 @@ async def conversation(
         hint = f"erwartet Signal-Report von {qso.their_call}"
     elif state == "QSO_REPORT" and qso:
         hint = f"erwartet RR73 von {qso.their_call}"
+    elif state == "QSO_GRACE":
+        grace_partner = getattr(sm, "_grace_partner_call", None) or "Partner"
+        hint = (
+            f"QSO mit {grace_partner} abgeschlossen — lauscht noch einen Slot "
+            "ob er Wiederholung schickt"
+        )
     elif state == "IDLE":
-        if sm.ctx.auto_answer:
+        if sm.ctx.auto_answer and sm.ctx.auto_cq:
+            hint = "Hunt + CQ aktiv: hört auf CQs und ruft selber wenn nichts kommt"
+        elif sm.ctx.auto_answer:
             hint = "hört auf hörbare CQs zum Beantworten"
+        elif sm.ctx.auto_cq:
+            hint = "wartet auf naechsten Slot um CQ zu rufen"
         else:
             hint = "wartet — drücke CQ oder Antworten"
     elif state == "TX_LOCKED":
