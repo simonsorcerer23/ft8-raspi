@@ -783,6 +783,18 @@ class StateMachine:
                 d for d in cqs
                 if d.snr_db is None or d.snr_db >= self.ctx.hunt_snr_floor_db
             ]
+        # DT-Filter (Sebastian v0.5.4, Audit-Lücke 1 vs WSJT-X):
+        # Stationen mit |dt_s| > 2.5s sind zwar decodebar (FT8-Decoder
+        # toleriert mehr), aber ihr eigenes RX-Fenster ist schon zu
+        # Ende wenn unsere Reply ankommt — sie hoeren uns gar nicht.
+        # Wir vergeuden TX-Slots fuer Stationen die nicht zurueck
+        # koennen. Audit 2026-05-25: 0.6% der Decodes betroffen,
+        # darunter mehrere CQs die wir gepickt aber nie ne Reply
+        # bekommen haben (z.B. T48FCR dt=+3.1s, OH5C dt=+2.6s).
+        cqs = [
+            d for d in cqs
+            if d.dt_s is None or abs(d.dt_s) <= 2.5
+        ]
         # Audio-Frequenz-Filter: Decodes ausserhalb [min, max] uebersprungen,
         # weil unser Reply dort durch den Rig-Audio-Bandpass gedaempft
         # waere. Sebastian sah 2026-05-22 wie ein Reply auf 262 Hz (unter

@@ -21,7 +21,8 @@ from ft8_appliance.statemachine import (
 
 
 def _decode(call_from: str | None, call_to: str | None, message: str, *, grid: str | None = None,
-            snr: int | None = -10, band: str = "20m", freq: int = 1500) -> DecodedMsg:
+            snr: int | None = -10, band: str = "20m", freq: int = 1500,
+            dt_s: float | None = 0.2) -> DecodedMsg:
     return DecodedMsg(
         ts=datetime.now(UTC),
         call_from=call_from,
@@ -29,7 +30,7 @@ def _decode(call_from: str | None, call_to: str | None, message: str, *, grid: s
         grid=grid,
         message=message,
         snr_db=snr,
-        dt_s=0.2,
+        dt_s=dt_s,
         freq_offset_hz=freq,
         band=band,
     )
@@ -988,6 +989,39 @@ def test_snr_floor_accepts_decodes_without_snr(sm: StateMachine, good_hw: Hardwa
     no_snr = _decode("UNKNOWN", None, "CQ UNKNOWN AA00", snr=None)
     pick = sm._pick_hunt_target([no_snr])
     assert pick is not None and pick.call_from == "UNKNOWN"
+
+
+def test_dt_filter_drops_high_dt_decodes(sm: StateMachine, good_hw: HardwareState) -> None:
+    """Stationen mit |dt|>2.5s hoeren unsere Reply nicht mehr (ihr RX-Slot
+    ist schon vorbei). Picker uebergeht sie. v0.5.4 Audit-Lücke 1."""
+    late = _decode("LATE1", None, "CQ LATE1 AA00", snr=-5, dt_s=3.1)
+    ontime = _decode("FINE1", None, "CQ FINE1 BB00", snr=-12, dt_s=0.3)
+    pick = sm._pick_hunt_target([late, ontime])
+    assert pick is not None and pick.call_from == "FINE1"
+
+
+def test_dt_filter_picks_none_when_all_late(sm: StateMachine, good_hw: HardwareState) -> None:
+    """Wenn alle Decodes high-DT haben, picken wir niemanden."""
+    late1 = _decode("LATE1", None, "CQ LATE1 AA00", dt_s=3.0)
+    late2 = _decode("LATE2", None, "CQ LATE2 BB00", dt_s=-2.8)
+    pick = sm._pick_hunt_target([late1, late2])
+    assert pick is None
+
+
+def test_dt_filter_accepts_decodes_without_dt(sm: StateMachine, good_hw: HardwareState) -> None:
+    """Decode ohne dt_s (None) wird durchgelassen — fail-open analog zu SNR."""
+    no_dt = _decode("UNKNOWN", None, "CQ UNKNOWN AA00", dt_s=None)
+    pick = sm._pick_hunt_target([no_dt])
+    assert pick is not None and pick.call_from == "UNKNOWN"
+
+
+def test_dt_filter_boundary_2_5s_accepted(sm: StateMachine, good_hw: HardwareState) -> None:
+    """Genau 2.5s ist noch im Toleranz-Fenster (Grenze inklusive)."""
+    edge = _decode("EDGE1", None, "CQ EDGE1 AA00", dt_s=2.5)
+    edge_neg = _decode("EDGE2", None, "CQ EDGE2 BB00", dt_s=-2.5)
+    for d in (edge, edge_neg):
+        pick = sm._pick_hunt_target([d])
+        assert pick is not None and pick.call_from == d.call_from
 
 
 # ---------------------------------------------------------------------------
