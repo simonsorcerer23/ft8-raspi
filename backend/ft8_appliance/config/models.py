@@ -168,7 +168,10 @@ class OperatingConfig(BaseModel):
     # v0.7.0 erweitert: "extreme" = Subtract-and-Rerun + Hint-Pass.
     # Pi-5-Mode mit ~3x Standard-CPU, JTDX-Niveau. CPU-Adaptive faellt
     # bei Late-Slots auto auf "standard" zurueck.
-    decoder_mode: Literal["standard", "deep", "multi", "extreme"] = "multi"
+    # v0.7.1: Default "extreme" — Sebastian-Wunsch + Pi 5 verkraftet's.
+    # CPU-Adaptive Fallback bleibt aktiv (Late-Slots → auto-zurueck zu
+    # standard) damit der Default auch auf Pi 4 nicht hangs ist.
+    decoder_mode: Literal["standard", "deep", "multi", "extreme"] = "extreme"
     # v0.7.0 Build 3: Auto-Notch fuer lokale QRM-Linien. Default True
     # weil's bei sauberer Umgebung 0 Overhead hat (Detector findet keine
     # Peaks → apply_notches ist no-op).
