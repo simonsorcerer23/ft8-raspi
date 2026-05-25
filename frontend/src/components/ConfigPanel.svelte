@@ -116,6 +116,7 @@
     s += `${ind(2)}mode: ${c.operating.mode}\n`;
     s += `${ind(2)}cq_directed: ${yq(c.operating.cq_directed || '')}\n`;
     s += `${ind(2)}decoder_mode: ${yq(c.operating.decoder_mode || 'standard')}\n`;
+    s += `${ind(2)}auto_notch_enabled: ${c.operating.auto_notch_enabled === false ? 'false' : 'true'}\n`;
     s += `${ind(2)}auto_cq_interval_s: ${c.operating.auto_cq_interval_s}\n`;
     s += `${ind(2)}max_ptt_s: ${c.operating.max_ptt_s}\n`;
     s += `${ind(2)}cq_idle_timeout_min: ${c.operating.cq_idle_timeout_min}\n`;
@@ -422,7 +423,11 @@
               <option value="standard">Standard — schnellste (Pi 4 tauglich)</option>
               <option value="deep">Deep — JTDX-Niveau, 1.5-2× CPU</option>
               <option value="multi">Multi — Pass1+Pass2 Merge, 2-2.5× CPU (Pi 5)</option>
+              <option value="extreme">Extreme — Subtract+Hint, 3-4× CPU (Pi 5 only)</option>
             </select>
+          </label>
+          <label><span>Auto-Notch (lokale QRM-Linien automatisch ausfiltern)</span>
+            <input type="checkbox" bind:checked={cfg.operating.auto_notch_enabled}/>
           </label>
           <label><span>Directed CQ (leer = klassisch)</span>
             <input type="text" maxlength="4" placeholder="z.B. DX, EU, POTA"

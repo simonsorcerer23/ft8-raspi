@@ -104,13 +104,21 @@ def _build_decode_source(config: AppConfig):
     # Audit F6 v0.4.0: DecodePipeline mode-aware. Default FT8, FT4 nutzt
     # 7.5s-Slot + decode_slot_ft4.
     mode = config.operating.mode if config.operating.mode in ("FT8", "FT4") else "FT8"
-    # v0.6.0 Phase C: decoder_mode aus Config (standard|deep|multi).
+    # v0.6.0 Phase C: decoder_mode aus Config (standard|deep|multi|extreme).
     decoder_mode = getattr(config.operating, "decoder_mode", "standard")
+    # v0.7.0 Build 3: Auto-Notch (Default ON) — Detector findet stable
+    # QRM-Peaks im Audio-Spectrum, apply_notches strippt sie per Slot.
+    notch_detector = None
+    if getattr(config.operating, "auto_notch_enabled", True):
+        from ..audio.notch import NotchDetector
+        notch_detector = NotchDetector()
+        log.info("auto-notch enabled: rolling 30s spectrum analysis")
     pipeline = DecodePipeline(
         slot_buffer=slot_buffer,
         band_hint=band_hint,
         mode=mode,
         decoder_mode=decoder_mode,
+        notch_detector=notch_detector,
     )
     capture = AlsaCapture(sink=slot_buffer.feed, device=device)
     capture.start()

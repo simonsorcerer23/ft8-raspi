@@ -719,6 +719,22 @@ class Orchestrator:
                     select(Qso.call).where(Qso.user_callsign == my_call).distinct()
                 )).scalars()
                 self._worked_calls = {c.upper() for c in rows if c}
+                # v0.7.0 Build 2: Hint-Decoder profitiert von known-calls
+                # im C-Shim-Hash-Table. Pushe worked-Calls rein — dort
+                # werden sie als "known" benutzt fuer marginal-decode-
+                # validation. n22=0 weil wir nur als Validation-Set
+                # nutzen, nicht fuer Hash-Resolution.
+                try:
+                    from ..decode.ft8_native import lib
+                    for c in self._worked_calls:
+                        if c and len(c) <= 13:
+                            lib.ft8_shim_hash_table_save(c.encode("ascii"), 0)
+                    log.info(
+                        "Hint-Decoder: %d worked-Calls in C-Shim-Hash-Table gepusht",
+                        len(self._worked_calls),
+                    )
+                except Exception as exc:
+                    log.warning("Hint-Decoder hash-push failed: %s", exc)
                 # worked grids + grid-band combos
                 grid_rows = (
                     await s.execute(
@@ -1481,6 +1497,17 @@ class Orchestrator:
             )
             self.decode_source.decoder_mode = new_decoder_mode
             self.decode_source._consecutive_late_slots = 0
+        # v0.7.0 Build 3: auto_notch_enabled live-toggle
+        new_notch_enabled = getattr(new_cfg.operating, "auto_notch_enabled", True)
+        has_notch_now = getattr(self.decode_source, "notch_detector", None) is not None
+        if new_notch_enabled != has_notch_now:
+            if new_notch_enabled:
+                from ..audio.notch import NotchDetector
+                self.decode_source.notch_detector = NotchDetector()
+                log.info("auto-notch: ENABLED via config")
+            else:
+                self.decode_source.notch_detector = None
+                log.info("auto-notch: DISABLED via config")
         # Sebastian v0.4.2: nach Mode-Switch Rig-Dial auf das richtige
         # Sub-Band setzen (FT4 hat eigene Frequenzen pro Band, sonst
         # hoert der FT4-Decoder weiter auf FT8-Freq).

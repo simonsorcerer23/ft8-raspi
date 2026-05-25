@@ -162,7 +162,7 @@ def decode_slot_v2(pcm_s16le: bytes, mode: str = "standard") -> list[ShimDecode]
             f"need at least {expected_bytes} bytes ({SAMPLES_PER_SLOT} samples), "
             f"got {len(pcm_s16le)}"
         )
-    mode_int = {"standard": 0, "deep": 1, "multi": 2}.get(mode, 0)
+    mode_int = {"standard": 0, "deep": 1, "multi": 2, "extreme": 3}.get(mode, 0)
     pcm_buf = ffi.from_buffer("int16_t[]", pcm_s16le[:expected_bytes])
     out_buf = ffi.new(f"ft8_shim_result_t[{MAX_DECODES_PER_SLOT}]")
     n = lib.ft8_shim_decode_slot_v2(

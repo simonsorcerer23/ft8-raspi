@@ -507,6 +507,168 @@ static int _ft8_decode_one_pass(
 }
 
 
+/* v0.7.0 Anti-WSJT-X Build 1: Subtract helper. Synthesize the decoded
+ * message at its measured (freq, dt) and subtract from the signal in
+ * place. After all strong decodes are subtracted, a re-decode pass on
+ * the residual surfaces weaker signals that were previously masked by
+ * stronger ones in the same audio bin. This is the JTDX-style move.
+ *
+ * Amplitude estimate: we don't know the true RF amplitude, so we
+ * subtract a conservative 0.4. Over-subtract introduces phase ghosts;
+ * under-subtract leaves residual energy. 0.4 is a compromise that
+ * works empirically (WSPR-style decoder uses similar). */
+/* v0.7.0 Build 2: Hint-Decoder Helper.
+ *
+ * Prüft ob ein decoded Message-Text einen Call aus der s_hash_table
+ * enthält (= known via worked-set oder recent-decoded). Wird im hint-
+ * pass benutzt, um marginal-LDPC-Decodes (sehr niedriger Score) nur
+ * dann zu akzeptieren, wenn sie eine plausible Verbindung haben.
+ *
+ * JTDX-Style: erlaubt 4 zusätzliche Pässe mit niedriger min_score-
+ * Schwelle aber strenger Post-Validation. Hebt Decode-Sensitivity um
+ * ~1-2 dB ohne explosive False-Positive-Rate.
+ */
+static bool _ft8_text_has_known_call(const char* text) {
+    if (text == NULL) return false;
+    /* Tokenisiere — max 5 tokens, max 13 chars (FT8-Limit). */
+    char buf[FTX_MAX_MESSAGE_LENGTH];
+    strncpy(buf, text, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char* tok = strtok(buf, " ");
+    int n_checked = 0;
+    while (tok != NULL && n_checked < 8) {
+        /* nur Tokens die wie ein Callsign aussehen (>=3 chars, alphanumerisch + slash) */
+        size_t len = strlen(tok);
+        if (len >= 3 && len <= 13) {
+            for (int i = 0; i < HASH_TABLE_SIZE; ++i) {
+                if (!s_hash_table[i].used) continue;
+                if (strncmp(s_hash_table[i].call, tok, sizeof(s_hash_table[i].call)) == 0) {
+                    return true;
+                }
+            }
+        }
+        tok = strtok(NULL, " ");
+        n_checked++;
+    }
+    return false;
+}
+
+
+static int _ft8_hint_pass(
+    monitor_t*         mon,
+    ft8_shim_result_t* out,
+    int                max_out,
+    uint16_t*          seen,
+    int*               num_seen,
+    int                num_out_initial
+) {
+    ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
+    /* min_score=5 (vs 10 Standard): viel mehr Candidates */
+    int num_cand = ftx_find_candidates(
+        &mon->wf, FT8_SHIM_MAX_CANDIDATES, candidates, 5
+    );
+    int num_out = num_out_initial;
+    for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
+        const ftx_candidate_t* cand = &candidates[idx];
+        ftx_message_t       message;
+        ftx_decode_status_t status;
+        /* LDPC=120 (vs 25 Standard): mehr Iterationen für marginale Signale */
+        if (!ftx_decode_candidate(&mon->wf, cand, 120, &message, &status)) continue;
+
+        int dup = 0;
+        for (int j = 0; j < *num_seen; ++j) {
+            if (seen[j] == message.hash) { dup = 1; break; }
+        }
+        if (dup) continue;
+
+        char text[FTX_MAX_MESSAGE_LENGTH];
+        ftx_message_offsets_t offsets;
+        if (ftx_message_decode(&message, &s_hash_if, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
+
+        /* Hint-Gate: nur akzeptieren wenn known call drin */
+        if (!_ft8_text_has_known_call(text)) continue;
+
+        if (*num_seen < 50) seen[(*num_seen)++] = message.hash;
+
+        ft8_shim_result_t* r = &out[num_out];
+        strncpy(r->message, text, FT8_SHIM_MSG_LEN - 1);
+        r->message[FT8_SHIM_MSG_LEN - 1] = '\0';
+        r->snr_db_est = (cand->score / 2) - 24;
+        r->score      = cand->score;
+        r->dt_s = (cand->time_offset + (float)cand->time_sub / mon->wf.time_osr)
+                   * mon->symbol_period;
+        r->freq_hz = (mon->min_bin
+                      + cand->freq_offset
+                      + (float)cand->freq_sub / mon->wf.freq_osr)
+                     / mon->symbol_period;
+        ++num_out;
+    }
+    return num_out;
+}
+
+
+/* Helper für mode=3: Hint-Pass benötigt einen fertigen monitor_t aus
+ * dem letzten Decode-Schritt. Da `_ft8_decode_one_pass` den Monitor
+ * lokal allokiert + freed, wrappen wir Hint inline mit eigenem
+ * monitor in `_ft8_hint_pass_signal` (init + process + Hint-Pass). */
+static int _ft8_hint_pass_signal(
+    float*             signal,
+    int                signal_len,
+    int                time_osr,
+    int                freq_osr,
+    ft8_shim_result_t* out,
+    int                max_out,
+    uint16_t*          seen,
+    int*               num_seen,
+    int                num_out_initial
+) {
+    monitor_t mon;
+    monitor_config_t cfg;
+    cfg.f_min       = 200.0f;
+    cfg.f_max       = 3000.0f;
+    cfg.sample_rate = FT8_SAMPLE_RATE_HZ;
+    cfg.time_osr    = time_osr;
+    cfg.freq_osr    = freq_osr;
+    cfg.protocol    = FTX_PROTOCOL_FT8;
+    monitor_init(&mon, &cfg);
+    for (int pos = 0; pos + mon.block_size <= signal_len; pos += mon.block_size) {
+        monitor_process(&mon, signal + pos);
+    }
+    int n = _ft8_hint_pass(&mon, out, max_out, seen, num_seen, num_out_initial);
+    monitor_free(&mon);
+    return n;
+}
+
+
+static void _ft8_subtract_decoded(
+    float*      signal,
+    const char* text,
+    float       freq_hz,
+    float       dt_s
+) {
+    ftx_message_t msg;
+    if (ftx_message_encode(&msg, &s_hash_if, text) != FTX_MESSAGE_RC_OK) return;
+    uint8_t tones[FT8_NUM_SYMBOLS];
+    ft8_encode(msg.payload, tones);
+
+    float* sub_signal = (float*)malloc(sizeof(float) * FT8_TX_SAMPLES);
+    if (sub_signal == NULL) return;
+    _synth_gfsk(tones, freq_hz, sub_signal);
+
+    int start = (int)(dt_s * (float)FT8_SAMPLE_RATE_HZ);
+    if (start < 0) start = 0;
+    int end = start + FT8_TX_SAMPLES;
+    if (end > FT8_SLOT_SAMPLES) end = FT8_SLOT_SAMPLES;
+
+    const float amp = 0.4f;
+    for (int i = start; i < end; ++i) {
+        signal[i] -= amp * sub_signal[i - start];
+    }
+    free(sub_signal);
+}
+
+
 int ft8_shim_decode_slot_v2(
     const int16_t*     pcm,
     int                n_samples,
@@ -538,6 +700,41 @@ int ft8_shim_decode_slot_v2(
         if (num_out < max_out) {
             num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
                                             out, max_out, seen, &num_seen, num_out);
+        }
+    } else if (mode == 3) {
+        /* v0.7.0 Build 1: subtract-and-rerun. Pass1 standard + deep,
+         * subtract strong decodes (score>=20), re-decode residual with
+         * standard + deep. Pi-5-Power-Mode. */
+        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+                                        out, max_out, seen, &num_seen, 0);
+        if (num_out < max_out) {
+            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
+                                            out, max_out, seen, &num_seen, num_out);
+        }
+        int after_first = num_out;
+        /* Subtract strong decodes from signal */
+        for (int i = 0; i < after_first; ++i) {
+            if (out[i].score >= 20) {
+                _ft8_subtract_decoded(signal, out[i].message,
+                                       out[i].freq_hz, out[i].dt_s);
+            }
+        }
+        /* Re-decode residual (standard + deep) — new decodes only via dedupe */
+        if (num_out < max_out) {
+            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+                                            out, max_out, seen, &num_seen, num_out);
+        }
+        if (num_out < max_out) {
+            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
+                                            out, max_out, seen, &num_seen, num_out);
+        }
+        /* v0.7.0 Build 2: Hint-Pass am Ende — sehr permissive min_score
+         * (5) + hohe LDPC-Iterations (120), aber nur akzeptiert wenn
+         * decoded text einen known call aus s_hash_table enthaelt.
+         * JTDX-Style. Hebt Sensitivity um ~1-2 dB. */
+        if (num_out < max_out) {
+            num_out = _ft8_hint_pass_signal(signal, FT8_SLOT_SAMPLES, 2, 2,
+                                             out, max_out, seen, &num_seen, num_out);
         }
     } else {
         /* mode 0 / default: standard */

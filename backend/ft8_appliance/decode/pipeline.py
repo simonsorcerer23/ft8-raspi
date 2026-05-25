@@ -236,6 +236,12 @@ class DecodePipeline:
     band_resolver: callable | None = None  # () -> str | None, live-band-Lookup
     metrics: DecodePipelineMetrics = field(default_factory=DecodePipelineMetrics)
     mode: str = "FT8"  # "FT8" oder "FT4"
+    # v0.7.0 Build 3: Auto-Notch fuer lokale QRM-Traeger.
+    # NotchDetector wird per Slot mit Audio gefuettert + periodisch
+    # analysiert. apply_notches strippt erkannte QRM-Linien bevor
+    # decode_slot drueber laeuft. None = Auto-Notch deaktiviert
+    # (Default ON in production.py).
+    notch_detector: "NotchDetector | None" = None  # noqa: F821 — fwd ref
     # v0.6.0 Phase B/C: Decoder-Tuning. Standard = altes Verhalten (osr=2,
     # LDPC=25). Deep = osr=4/LDPC=50. Multi = Pass1+Pass2-Merge. FT4
     # nutzt immer Standard-Decoder (FT4-Decoder hat keine Deep-Variante).
@@ -259,7 +265,7 @@ class DecodePipeline:
             decoder = decode_slot_ft4
         else:
             slot_seconds = SLOT_SECONDS
-            if self.decoder_mode in ("deep", "multi"):
+            if self.decoder_mode in ("deep", "multi", "extreme"):
                 _mode = self.decoder_mode
                 decoder = lambda pcm: decode_slot_v2(pcm, mode=_mode)  # noqa: E731
             else:
@@ -276,6 +282,18 @@ class DecodePipeline:
         )
         self.metrics.last_drift_samples = extraction.drift_samples
 
+        # v0.7.0 Build 3: Auto-Notch — wenn Detector aktive QRM-Linien
+        # gefunden hat, strippe sie aus dem Slot bevor Decoder drueber
+        # laeuft. FFT-Spektral-Subtract, numpy-only, ~10ms pro Slot.
+        pcm_for_decode = extraction.pcm_s16le
+        if self.notch_detector is not None:
+            from ..audio.notch import apply_notches
+            self.notch_detector.feed(pcm_for_decode)
+            self.notch_detector.maybe_update()
+            notches = self.notch_detector.active_notches_hz
+            if notches:
+                pcm_for_decode = apply_notches(pcm_for_decode, notches)
+
         # decode_slot is a synchronous C call (~200-800 ms on a Pi). Running
         # it directly in the asyncio event loop would freeze the rig poll,
         # gpsd consumer, and SSE streams for the whole duration. Push it to
@@ -285,7 +303,7 @@ class DecodePipeline:
         import time as _time
         t0 = _time.monotonic()
         try:
-            raw = await loop.run_in_executor(None, decoder, extraction.pcm_s16le)
+            raw = await loop.run_in_executor(None, decoder, pcm_for_decode)
         except Exception as exc:
             log.warning("%s decode_slot failed for tick %s: %s", self.mode, tick.index, exc)
             return []

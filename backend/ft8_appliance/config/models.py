@@ -165,7 +165,14 @@ class OperatingConfig(BaseModel):
     # v0.6.1: Default "multi" (Sebastian-Entscheidung — Pi 5 verkraftet
     # 2-2.5x CPU locker, maximaler Yield als Standard). Wer auf
     # schwaecherer Hardware (Pi 4) deployt kann manuell zurueck.
-    decoder_mode: Literal["standard", "deep", "multi"] = "multi"
+    # v0.7.0 erweitert: "extreme" = Subtract-and-Rerun + Hint-Pass.
+    # Pi-5-Mode mit ~3x Standard-CPU, JTDX-Niveau. CPU-Adaptive faellt
+    # bei Late-Slots auto auf "standard" zurueck.
+    decoder_mode: Literal["standard", "deep", "multi", "extreme"] = "multi"
+    # v0.7.0 Build 3: Auto-Notch fuer lokale QRM-Linien. Default True
+    # weil's bei sauberer Umgebung 0 Overhead hat (Detector findet keine
+    # Peaks → apply_notches ist no-op).
+    auto_notch_enabled: bool = True
     auto_cq_interval_s: int = Field(default=30, ge=15, le=300)
     max_ptt_s: int = Field(default=18, ge=15, le=60)
     cq_idle_timeout_min: int = Field(default=10, ge=1)
