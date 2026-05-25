@@ -154,6 +154,15 @@ class OperatingConfig(BaseModel):
     # POTA/SOTA (Park-Activator), TEST (Contest). Leer = klassischer CQ.
     # WSJT-X-Spec erlaubt 1-4 alphanumerische Zeichen.
     cq_directed: str = Field(default="", max_length=4, pattern=r"^[A-Z0-9]*$")
+    # v0.6.0 Anti-WSJT-X-Audit Phase B: Decoder-Mode-Wahl.
+    #   "standard" = osr=2/2, LDPC=25 (Default, schnellste, Pi-4-tauglich)
+    #   "deep"     = osr=4/4, LDPC=50 (JTDX-Deep-Aequivalent, mehr Schwach-
+    #                 Signal-Decodes, 1.5-2x langsamer)
+    #   "multi"    = Pass1 standard + Pass2 deep, dedupe (maximum yield,
+    #                 2-2.5x langsamer als Standard, Pi 5 empfohlen)
+    # CPU-adaptive: bei wiederholten Late-Slots faellt der Pipeline-
+    # Watchdog automatisch auf "standard" zurueck (Phase A1 misst Timing).
+    decoder_mode: Literal["standard", "deep", "multi"] = "standard"
     auto_cq_interval_s: int = Field(default=30, ge=15, le=300)
     max_ptt_s: int = Field(default=18, ge=15, le=60)
     cq_idle_timeout_min: int = Field(default=10, ge=1)

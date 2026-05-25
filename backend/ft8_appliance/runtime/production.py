@@ -104,7 +104,14 @@ def _build_decode_source(config: AppConfig):
     # Audit F6 v0.4.0: DecodePipeline mode-aware. Default FT8, FT4 nutzt
     # 7.5s-Slot + decode_slot_ft4.
     mode = config.operating.mode if config.operating.mode in ("FT8", "FT4") else "FT8"
-    pipeline = DecodePipeline(slot_buffer=slot_buffer, band_hint=band_hint, mode=mode)
+    # v0.6.0 Phase C: decoder_mode aus Config (standard|deep|multi).
+    decoder_mode = getattr(config.operating, "decoder_mode", "standard")
+    pipeline = DecodePipeline(
+        slot_buffer=slot_buffer,
+        band_hint=band_hint,
+        mode=mode,
+        decoder_mode=decoder_mode,
+    )
     capture = AlsaCapture(sink=slot_buffer.feed, device=device)
     capture.start()
     log.info("ALSA capture started: device=%s band_hint=%s", device, band_hint)

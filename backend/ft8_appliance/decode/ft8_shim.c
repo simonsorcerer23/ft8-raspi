@@ -421,6 +421,136 @@ int ft8_shim_decode_slot_multipass(
 
 
 /* ========================================================================= *
+ * v0.6.0 Anti-WSJT-X-Audit Phase B: tunable decoder with optional deep mode
+ * and a Pass1+Pass2 multipass (standard + deep) with merge+dedupe.
+ * Replaces the no-op stubs above for new callers; old API stays for
+ * binary compatibility.
+ *
+ * mode:
+ *   0 = standard (time_osr=2, freq_osr=2, LDPC=25) — same as decode_slot
+ *   1 = deep     (time_osr=4, freq_osr=4, LDPC=50) — more CPU, ~1-3 extra
+ *                 decodes/slot near the -22..-24 dB sensitivity floor
+ *   2 = multi    Pass1 standard + Pass2 deep, dedupe → highest yield,
+ *                 ~1.5-2x the CPU of standard. JTDX-Niveau ohne Subtract.
+ *
+ * Returns count of unique decodes written to *out*, -1 on error.
+ * ========================================================================= */
+static int _ft8_decode_one_pass(
+    float*             signal,
+    int                signal_len,
+    int                time_osr,
+    int                freq_osr,
+    int                ldpc_iters,
+    ft8_shim_result_t* out,
+    int                max_out,
+    uint16_t*          seen,
+    int*               num_seen,
+    int                num_out_initial
+) {
+    monitor_t mon;
+    monitor_config_t cfg;
+    cfg.f_min       = 200.0f;
+    cfg.f_max       = 3000.0f;
+    cfg.sample_rate = FT8_SAMPLE_RATE_HZ;
+    cfg.time_osr    = time_osr;
+    cfg.freq_osr    = freq_osr;
+    cfg.protocol    = FTX_PROTOCOL_FT8;
+    monitor_init(&mon, &cfg);
+
+    for (int pos = 0; pos + mon.block_size <= signal_len; pos += mon.block_size) {
+        monitor_process(&mon, signal + pos);
+    }
+
+    ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
+    int num_cand = ftx_find_candidates(
+        &mon.wf, FT8_SHIM_MAX_CANDIDATES, candidates, FT8_SHIM_MIN_SCORE
+    );
+
+    int num_out = num_out_initial;
+    for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
+        const ftx_candidate_t* cand = &candidates[idx];
+
+        ftx_message_t       message;
+        ftx_decode_status_t status;
+        if (!ftx_decode_candidate(&mon.wf, cand, ldpc_iters, &message, &status)) {
+            continue;
+        }
+
+        int dup = 0;
+        for (int j = 0; j < *num_seen; ++j) {
+            if (seen[j] == message.hash) { dup = 1; break; }
+        }
+        if (dup) continue;
+        if (*num_seen < 50) seen[(*num_seen)++] = message.hash;
+
+        char                   text[FTX_MAX_MESSAGE_LENGTH];
+        ftx_message_offsets_t  offsets;
+        ftx_message_rc_t       rc = ftx_message_decode(&message, &s_hash_if, text, &offsets);
+        if (rc != FTX_MESSAGE_RC_OK) continue;
+
+        ft8_shim_result_t* r = &out[num_out];
+        strncpy(r->message, text, FT8_SHIM_MSG_LEN - 1);
+        r->message[FT8_SHIM_MSG_LEN - 1] = '\0';
+        r->snr_db_est = (cand->score / 2) - 24;
+        r->score      = cand->score;
+        r->dt_s = (cand->time_offset + (float)cand->time_sub / mon.wf.time_osr)
+                   * mon.symbol_period;
+        r->freq_hz = (mon.min_bin
+                      + cand->freq_offset
+                      + (float)cand->freq_sub / mon.wf.freq_osr)
+                     / mon.symbol_period;
+        ++num_out;
+    }
+
+    monitor_free(&mon);
+    return num_out;
+}
+
+
+int ft8_shim_decode_slot_v2(
+    const int16_t*     pcm,
+    int                n_samples,
+    int                mode,
+    ft8_shim_result_t* out,
+    int                max_out
+) {
+    if (pcm == NULL || out == NULL || max_out <= 0) return -1;
+    if (n_samples < FT8_SLOT_SAMPLES) return -1;
+
+    float* signal = (float*)malloc(sizeof(float) * FT8_SLOT_SAMPLES);
+    if (signal == NULL) return -1;
+    for (int i = 0; i < FT8_SLOT_SAMPLES; ++i) {
+        signal[i] = (float)pcm[i] / 32768.0f;
+    }
+
+    uint16_t seen[50];
+    int num_seen = 0;
+    int num_out = 0;
+
+    if (mode == 1) {
+        /* deep only */
+        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
+                                        out, max_out, seen, &num_seen, 0);
+    } else if (mode == 2) {
+        /* multi: standard then deep, accumulate */
+        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+                                        out, max_out, seen, &num_seen, 0);
+        if (num_out < max_out) {
+            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
+                                            out, max_out, seen, &num_seen, num_out);
+        }
+    } else {
+        /* mode 0 / default: standard */
+        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+                                        out, max_out, seen, &num_seen, 0);
+    }
+
+    free(signal);
+    return num_out;
+}
+
+
+/* ========================================================================= *
  * FT4 protocol — same toolchain, different tone count / spacing / slot.
  *
  * FT4 is 4-FSK with 105 channel symbols, 0.048 s symbol period

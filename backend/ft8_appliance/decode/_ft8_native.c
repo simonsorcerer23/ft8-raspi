@@ -631,6 +631,14 @@ static void (*_cffi_call_python_org)(struct _cffi_externpy_s *, char *);
         int            max_out
     );
 
+    int ft8_shim_decode_slot_v2(
+        const int16_t* pcm,
+        int            n_samples,
+        int            mode,
+        ft8_shim_result_t* out,
+        int            max_out
+    );
+
     int ft8_shim_hash_table_save(const char* callsign, uint32_t n22);
     int ft8_shim_hash_table_count(void);
     
@@ -1240,6 +1248,77 @@ _cffi_f_ft8_shim_decode_slot_multipass(PyObject *self, PyObject *args)
 #  define _cffi_f_ft8_shim_decode_slot_multipass _cffi_d_ft8_shim_decode_slot_multipass
 #endif
 
+static int _cffi_d_ft8_shim_decode_slot_v2(int16_t const * x0, int x1, int x2, ft8_shim_result_t * x3, int x4)
+{
+  return ft8_shim_decode_slot_v2(x0, x1, x2, x3, x4);
+}
+#ifndef PYPY_VERSION
+static PyObject *
+_cffi_f_ft8_shim_decode_slot_v2(PyObject *self, PyObject *args)
+{
+  int16_t const * x0;
+  int x1;
+  int x2;
+  ft8_shim_result_t * x3;
+  int x4;
+  Py_ssize_t datasize;
+  struct _cffi_freeme_s *large_args_free = NULL;
+  int result;
+  PyObject *pyresult;
+  PyObject *arg0;
+  PyObject *arg1;
+  PyObject *arg2;
+  PyObject *arg3;
+  PyObject *arg4;
+
+  if (!PyArg_UnpackTuple(args, "ft8_shim_decode_slot_v2", 5, 5, &arg0, &arg1, &arg2, &arg3, &arg4))
+    return NULL;
+
+  datasize = _cffi_prepare_pointer_call_argument(
+      _cffi_type(23), arg0, (char **)&x0);
+  if (datasize != 0) {
+    x0 = ((size_t)datasize) <= 640 ? (int16_t const *)alloca((size_t)datasize) : NULL;
+    if (_cffi_convert_array_argument(_cffi_type(23), arg0, (char **)&x0,
+            datasize, &large_args_free) < 0)
+      return NULL;
+  }
+
+  x1 = _cffi_to_c_int(arg1, int);
+  if (x1 == (int)-1 && PyErr_Occurred())
+    return NULL;
+
+  x2 = _cffi_to_c_int(arg2, int);
+  if (x2 == (int)-1 && PyErr_Occurred())
+    return NULL;
+
+  datasize = _cffi_prepare_pointer_call_argument(
+      _cffi_type(27), arg3, (char **)&x3);
+  if (datasize != 0) {
+    x3 = ((size_t)datasize) <= 640 ? (ft8_shim_result_t *)alloca((size_t)datasize) : NULL;
+    if (_cffi_convert_array_argument(_cffi_type(27), arg3, (char **)&x3,
+            datasize, &large_args_free) < 0)
+      return NULL;
+  }
+
+  x4 = _cffi_to_c_int(arg4, int);
+  if (x4 == (int)-1 && PyErr_Occurred())
+    return NULL;
+
+  Py_BEGIN_ALLOW_THREADS
+  _cffi_restore_errno();
+  { result = ft8_shim_decode_slot_v2(x0, x1, x2, x3, x4); }
+  _cffi_save_errno();
+  Py_END_ALLOW_THREADS
+
+  (void)self; /* unused */
+  pyresult = _cffi_from_c_int(result, int);
+  if (large_args_free != NULL) _cffi_free_array_arguments(large_args_free);
+  return pyresult;
+}
+#else
+#  define _cffi_f_ft8_shim_decode_slot_v2 _cffi_d_ft8_shim_decode_slot_v2
+#endif
+
 static int _cffi_d_ft8_shim_hash_table_count(void)
 {
   return ft8_shim_hash_table_count();
@@ -1574,6 +1653,7 @@ static const struct _cffi_global_s _cffi_globals[] = {
   { "ft8_shim_decode_slot", (void *)_cffi_f_ft8_shim_decode_slot, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 30), (void *)_cffi_d_ft8_shim_decode_slot },
   { "ft8_shim_decode_slot_ap", (void *)_cffi_f_ft8_shim_decode_slot_ap, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 22), (void *)_cffi_d_ft8_shim_decode_slot_ap },
   { "ft8_shim_decode_slot_multipass", (void *)_cffi_f_ft8_shim_decode_slot_multipass, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 36), (void *)_cffi_d_ft8_shim_decode_slot_multipass },
+  { "ft8_shim_decode_slot_v2", (void *)_cffi_f_ft8_shim_decode_slot_v2, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 36), (void *)_cffi_d_ft8_shim_decode_slot_v2 },
   { "ft8_shim_hash_table_count", (void *)_cffi_f_ft8_shim_hash_table_count, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 43), (void *)_cffi_d_ft8_shim_hash_table_count },
   { "ft8_shim_hash_table_save", (void *)_cffi_f_ft8_shim_hash_table_save, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 18), (void *)_cffi_d_ft8_shim_hash_table_save },
   { "ft8_shim_synth_message", (void *)_cffi_f_ft8_shim_synth_message, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 11), (void *)_cffi_d_ft8_shim_synth_message },
@@ -1641,7 +1721,7 @@ static const struct _cffi_type_context_s _cffi_type_context = {
   _cffi_struct_unions,
   _cffi_enums,
   _cffi_typenames,
-  19,  /* num_globals */
+  20,  /* num_globals */
   3,  /* num_struct_unions */
   1,  /* num_enums */
   5,  /* num_typenames */

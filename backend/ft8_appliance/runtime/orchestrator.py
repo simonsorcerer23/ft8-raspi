@@ -189,6 +189,16 @@ class Orchestrator:
     # obwohl in odd-Slots ständig dekodiert wurde. Persistenter Timestamp
     # statt Snapshot eliminiert den Phase-Lock-Bug.
     _last_decode_recv_at: float = field(default_factory=lambda: time.time(), init=False)
+    # v0.6.0 Anti-WSJT-X-Audit Phase A2: DT-Drift-Self-Diagnose.
+    # Sammelt die DT-Werte (dt_s) der letzten Decodes — wenn der
+    # Median systematisch um >0.5s offset ist, ist UNSERE Clock schuld
+    # (nicht alle Stationen weltweit gleichzeitig). WSJT-X kann das
+    # mehrmals pro Woche auf Windows-Default-7d-NTP-Sync passieren.
+    # Wir alerten dann statt still falsche Decodes zu produzieren.
+    _recent_dts: list[float] = field(default_factory=list, init=False)
+    _last_dt_drift_alert_at: float = field(default=0.0, init=False)
+    # v0.6.0 Phase A1: Decoder-Late-Slot-Watchdog-Push-Cooldown.
+    _last_late_slot_alert_at: float = field(default=0.0, init=False)
     # Sebastian v0.5.2: Single-Shot-Flag fuer Funkstille-Watchdog.
     # True = wir haben schon einen "Keine Decodes seit X min"-Push
     # rausgeschickt fuer diese Funkstille-Episode. Bleibt True bis der
@@ -1443,6 +1453,19 @@ class Orchestrator:
             )
             old_mode_for_dial = self.decode_source.mode
             self.decode_source.mode = new_mode
+        # v0.6.0 Phase C: decoder_mode (standard|deep|multi) live-switch
+        # auf der Pipeline ohne Restart. Pi-Last-adaptive Fallback bleibt
+        # aktiv — wenn deep zu hoch laufen sollte, faellt Pipeline-Watchdog
+        # selbst zurueck.
+        new_decoder_mode = getattr(new_cfg.operating, "decoder_mode", "standard")
+        if (hasattr(self.decode_source, "decoder_mode")
+                and self.decode_source.decoder_mode != new_decoder_mode):
+            log.info(
+                "decoder_mode switch: %s -> %s",
+                self.decode_source.decoder_mode, new_decoder_mode,
+            )
+            self.decode_source.decoder_mode = new_decoder_mode
+            self.decode_source._consecutive_late_slots = 0
         # Sebastian v0.4.2: nach Mode-Switch Rig-Dial auf das richtige
         # Sub-Band setzen (FT4 hat eigene Frequenzen pro Band, sonst
         # hoert der FT4-Decoder weiter auf FT8-Freq).
@@ -1554,6 +1577,14 @@ class Orchestrator:
             # sobald wieder echte Decodes reinkommen. Damit ist beim
             # naechsten Stille-Event wieder genau EIN Push erlaubt.
             self._funkstille_push_active = False
+            # v0.6.0 Phase A2: DT-Drift-Sample-Collector. Rolling-Fenster
+            # ueber die letzten ~200 dt-Werte. Wenn 90%+ der Decodes
+            # systematisch um >0.5s offset sind, ist unsere Clock schuld.
+            for d in decodes:
+                if d.dt_s is not None:
+                    self._recent_dts.append(d.dt_s)
+            if len(self._recent_dts) > 200:
+                del self._recent_dts[: len(self._recent_dts) - 200]
 
         # 3. push to SSE subscribers + persist to DB (rolling 7 days)
         for d in decodes:
@@ -1754,6 +1785,47 @@ class Orchestrator:
                     # damit beim naechsten CQ-Start frisch gemessen wird.
                     self._cq_count_zero_at = 0.0
                     self._cq_idle_alert_sent = False
+
+                # Fall 5 (v0.6.0 Phase A2): DT-Drift-Self-Diagnose. Wenn
+                # 90%+ der letzten ~200 Decodes systematisch >0.5s offset
+                # sind, ist UNSERE Clock schuld. WSJT-X kann das schweigend
+                # produzieren ("alle Stationen sind off bei mir" = du
+                # bist's). Push einmal pro Stunde — Re-Sync via chrony
+                # passiert hoffentlich automatisch.
+                if len(self._recent_dts) >= 50:
+                    sorted_dts = sorted(self._recent_dts)
+                    median_dt = sorted_dts[len(sorted_dts) // 2]
+                    if abs(median_dt) > 0.5 and (now_t - self._last_dt_drift_alert_at) > 3600:
+                        await ntfy.notify(
+                            f"Median-DT der letzten {len(self._recent_dts)} Decodes "
+                            f"= {median_dt:+.2f}s. Wahrscheinlich Pi-Clock-Drift, "
+                            "nicht alle Stationen weltweit. Check `chronyc tracking`.",
+                            title="⏱️ FT8 Pi: DT-Drift-Verdacht",
+                            priority="high",
+                            tags=["warning"],
+                        )
+                        self._last_dt_drift_alert_at = now_t
+                        last_alert_at = now_t
+
+                # Fall 6 (v0.6.0 Phase A1): Decoder-Late-Slot-Watchdog.
+                # Wenn die Pipeline 3+ konsekutive Slots >80% der Slot-
+                # Laenge braucht, ist die CPU am Limit. WSJT-X verliert
+                # in dem Fall stillschweigend Slots. Wir pushen.
+                pipeline_metrics = getattr(self.decode_source, "metrics", None)
+                if pipeline_metrics is not None and pipeline_metrics.late_slot_count >= 3:
+                    if (now_t - self._last_late_slot_alert_at) > 3600:
+                        await ntfy.notify(
+                            f"Decoder-Late: {pipeline_metrics.late_slot_count} Slots "
+                            f">80% Laufzeit (max {pipeline_metrics.max_decode_duration_s:.1f}s). "
+                            "CPU vermutlich am Limit — Deep-Mode aus, andere "
+                            "Loads reduzieren?",
+                            title="🐢 FT8 Pi: Decoder-Last hoch",
+                            priority="default",
+                            tags=["warning"],
+                        )
+                        self._last_late_slot_alert_at = now_t
+                        last_alert_at = now_t
+                        pipeline_metrics.late_slot_count = 0  # Reset
 
             except Exception as exc:
                 log.debug("mode watchdog hiccup: %s", exc)

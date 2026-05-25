@@ -142,6 +142,49 @@ def decode_slot(pcm_s16le: bytes) -> list[ShimDecode]:
     return results
 
 
+def decode_slot_v2(pcm_s16le: bytes, mode: str = "standard") -> list[ShimDecode]:
+    """v0.6.0 Anti-WSJT-X-Audit Phase B: tunable FT8 decoder.
+
+    Modes:
+      ``"standard"`` — osr=2, LDPC=25. Same as :func:`decode_slot`.
+      ``"deep"``     — osr=4, LDPC=50. JTDX-Deep-Aequivalent. 1.5-2x
+                       langsamer aber ~1-3 extra Decodes pro Slot
+                       im Schwach-Signal-Bereich (-22..-24 dB).
+      ``"multi"``    — Pass1 standard + Pass2 deep, dedupe. Maximum
+                       Yield. 2-2.5x langsamer als Standard.
+
+    Argument ``mode`` ist Pi-Last-aware vom Caller zu wählen
+    (siehe :class:`DecodePipeline` adaptive logic).
+    """
+    expected_bytes = SAMPLES_PER_SLOT * 2
+    if len(pcm_s16le) < expected_bytes:
+        raise ValueError(
+            f"need at least {expected_bytes} bytes ({SAMPLES_PER_SLOT} samples), "
+            f"got {len(pcm_s16le)}"
+        )
+    mode_int = {"standard": 0, "deep": 1, "multi": 2}.get(mode, 0)
+    pcm_buf = ffi.from_buffer("int16_t[]", pcm_s16le[:expected_bytes])
+    out_buf = ffi.new(f"ft8_shim_result_t[{MAX_DECODES_PER_SLOT}]")
+    n = lib.ft8_shim_decode_slot_v2(
+        pcm_buf, SAMPLES_PER_SLOT, mode_int, out_buf, MAX_DECODES_PER_SLOT
+    )
+    if n < 0:
+        raise RuntimeError("ft8_shim_decode_slot_v2 failed")
+    results: list[ShimDecode] = []
+    for i in range(n):
+        r = out_buf[i]
+        results.append(
+            ShimDecode(
+                message=ffi.string(r.message).decode("ascii", errors="replace").strip(),
+                snr_db_est=int(r.snr_db_est),
+                dt_s=float(r.dt_s),
+                freq_hz=float(r.freq_hz),
+                score=int(r.score),
+            )
+        )
+    return results
+
+
 def decode_slot_ap(
     pcm_s16le: bytes,
     ap_callsigns: list[str] | None = None,

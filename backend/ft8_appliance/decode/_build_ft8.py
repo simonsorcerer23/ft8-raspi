@@ -129,6 +129,18 @@ ffi.cdef(
         int            max_out
     );
 
+    /* v0.6.0 Anti-WSJT-X-Audit Phase B: tunable decoder.
+     *   mode=0: standard (osr=2, LDPC=25)
+     *   mode=1: deep     (osr=4, LDPC=50) — JTDX-Deep-Aequivalent
+     *   mode=2: multi    Pass1 standard + Pass2 deep, dedupe */
+    int ft8_shim_decode_slot_v2(
+        const int16_t* pcm,
+        int            n_samples,
+        int            mode,
+        ft8_shim_result_t* out,
+        int            max_out
+    );
+
     /* Callsign-Hash-Tabelle (v0.5.0): Python kann optional Calls
      * pre-populieren (z.B. aus DB worked-Calls) damit beim Boot die
      * <...>-Aufloesung sofort funktioniert. */
@@ -205,6 +217,14 @@ ffi.set_source(
         const int16_t* pcm,
         int            n_samples,
         int            num_passes,
+        ft8_shim_result_t* out,
+        int            max_out
+    );
+
+    int ft8_shim_decode_slot_v2(
+        const int16_t* pcm,
+        int            n_samples,
+        int            mode,
         ft8_shim_result_t* out,
         int            max_out
     );

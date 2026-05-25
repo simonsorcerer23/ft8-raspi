@@ -30,6 +30,7 @@ from .ft8_native import (
     ShimDecode,
     decode_slot,
     decode_slot_ft4,
+    decode_slot_v2,
 )
 
 log = logging.getLogger(__name__)
@@ -160,8 +161,18 @@ class DecodePipelineMetrics:
     # 4 Slots ≈ 60 s, ergibt direkt "Decodes/min" wenn man summiert.
     recent_counts: list[int] = field(default_factory=list)
     RECENT_WINDOW: int = 4  # 4 × 15 s = 1 min
+    # v0.6.0 Anti-WSJT-X-Audit Phase A1: Decoder-Timing.
+    # Misst wie lange decode_slot pro Tick brauchte. Wenn das
+    # konsistent gegen die Slot-Laenge laeuft (~12s bei FT8),
+    # ueberlaeuft der naechste Slot bevor wir fertig sind →
+    # WSJT-X-Aequivalent "decoder not keeping up". Late-Slot-
+    # Watchdog kann darauf alerten.
+    last_decode_duration_s: float = 0.0
+    max_decode_duration_s: float = 0.0
+    recent_durations_s: list[float] = field(default_factory=list)
+    late_slot_count: int = 0  # mehr als 80% der Slot-Laenge
 
-    def record_slot(self, count: int) -> None:
+    def record_slot(self, count: int, duration_s: float = 0.0) -> None:
         """Updater used by the pipeline after each decode pass."""
         self.slots_decoded += 1
         self.decodes_total += count
@@ -169,10 +180,23 @@ class DecodePipelineMetrics:
         self.recent_counts.append(count)
         if len(self.recent_counts) > self.RECENT_WINDOW:
             del self.recent_counts[: len(self.recent_counts) - self.RECENT_WINDOW]
+        # Timing-Stats
+        self.last_decode_duration_s = duration_s
+        if duration_s > self.max_decode_duration_s:
+            self.max_decode_duration_s = duration_s
+        self.recent_durations_s.append(duration_s)
+        if len(self.recent_durations_s) > self.RECENT_WINDOW:
+            del self.recent_durations_s[: len(self.recent_durations_s) - self.RECENT_WINDOW]
 
     @property
     def decodes_per_min(self) -> int:
         return sum(self.recent_counts)
+
+    @property
+    def avg_decode_duration_s(self) -> float:
+        if not self.recent_durations_s:
+            return 0.0
+        return sum(self.recent_durations_s) / len(self.recent_durations_s)
 
 
 @dataclass
@@ -196,6 +220,11 @@ class DecodePipeline:
     band_resolver: callable | None = None  # () -> str | None, live-band-Lookup
     metrics: DecodePipelineMetrics = field(default_factory=DecodePipelineMetrics)
     mode: str = "FT8"  # "FT8" oder "FT4"
+    # v0.6.0 Phase B/C: Decoder-Tuning. Standard = altes Verhalten (osr=2,
+    # LDPC=25). Deep = osr=4/LDPC=50. Multi = Pass1+Pass2-Merge. FT4
+    # nutzt immer Standard-Decoder (FT4-Decoder hat keine Deep-Variante).
+    decoder_mode: str = "standard"  # "standard" | "deep" | "multi"
+    _consecutive_late_slots: int = 0  # CPU-adaptive Fallback-Trigger
     # USB-Audio kommt in 1024-sample-periods (~85 ms). Wenn der Slot
     # genau zum Wallclock-Boundary endet, ist die letzte Period oft noch
     # nicht in den SlotBuffer geflossen → "short by X samples"-Logs +
@@ -207,12 +236,18 @@ class DecodePipeline:
         from ..audio.slot_sync import FT4_SLOT_SECONDS, SLOT_SECONDS
 
         # Mode-aware Slot-Window + Decoder-Funktion (Audit F6 v0.4.0).
+        # v0.6.0 Phase C: FT8-Pfad waehlt Decoder-Variante via decoder_mode.
+        # FT4 hat keine Deep-Variante (FT4-Decoder ist eigene C-Funktion).
         if self.mode == "FT4":
             slot_seconds = FT4_SLOT_SECONDS
             decoder = decode_slot_ft4
         else:
             slot_seconds = SLOT_SECONDS
-            decoder = decode_slot
+            if self.decoder_mode in ("deep", "multi"):
+                _mode = self.decoder_mode
+                decoder = lambda pcm: decode_slot_v2(pcm, mode=_mode)  # noqa: E731
+            else:
+                decoder = decode_slot
 
         # Warte kurz damit die letzten Audio-Frames die Capture-Pipeline
         # erreichen — sonst zero-padden wir das Slot-Ende und der
@@ -230,13 +265,42 @@ class DecodePipeline:
         # gpsd consumer, and SSE streams for the whole duration. Push it to
         # the default ThreadPoolExecutor so the loop stays responsive.
         loop = asyncio.get_running_loop()
+        # v0.6.0 Phase A1: Timing-Messung — kann der Decoder den Slot halten?
+        import time as _time
+        t0 = _time.monotonic()
         try:
             raw = await loop.run_in_executor(None, decoder, extraction.pcm_s16le)
         except Exception as exc:
             log.warning("%s decode_slot failed for tick %s: %s", self.mode, tick.index, exc)
             return []
+        duration_s = _time.monotonic() - t0
 
-        self.metrics.record_slot(len(raw))
+        self.metrics.record_slot(len(raw), duration_s=duration_s)
+        # Late-Slot-Detection: wenn der Decoder >80% der Slot-Laenge
+        # braucht, ist er nahe am Limit. Bei FT8: >12s von 15s.
+        # Bei FT4: >6s von 7.5s. Pi 5 sollte unter 1s bleiben, Pi 4
+        # 1-3s. Wenn wir Richtung 80%+ kriechen, ist die CPU am Limit
+        # und ggf. der naechste Slot wird verpasst.
+        late_threshold_s = 0.8 * slot_seconds
+        if duration_s > late_threshold_s:
+            self.metrics.late_slot_count += 1
+            self._consecutive_late_slots += 1
+            log.warning(
+                "%s decoder LATE: %.2fs (>%.0f%% von %ds Slot) — CPU am Limit?",
+                self.mode, duration_s, late_threshold_s / slot_seconds * 100,
+                slot_seconds,
+            )
+            # CPU-adaptive (Phase C): wenn 3+ Slots in Folge late UND
+            # wir laufen im teureren Modus, automatisch zurueck zu
+            # standard. Verhindert Slot-Drops bei wechselnder CPU-Last.
+            if self._consecutive_late_slots >= 3 and self.decoder_mode in ("deep", "multi"):
+                log.warning(
+                    "decoder auto-fallback: %s → standard (3+ late slots)",
+                    self.decoder_mode,
+                )
+                self.decoder_mode = "standard"
+        else:
+            self._consecutive_late_slots = 0
 
         # Live-Band-Resolve (Sebastian v0.5.1): falls Resolver konfiguriert,
         # nimm den aktuellen Wert aus dem Rig-Snapshot. None-Fallback auf
