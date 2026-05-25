@@ -67,10 +67,30 @@ async def save_config(
     # Persist before we swap the in-memory cache: if the disk write
     # fails we want to abort cleanly rather than leave the running
     # process disagreeing with the file on disk.
+    # v0.6.2 Anti-Corruption: atomic write via tempfile + rename,
+    # plus auto-backup der aktuellen Config nach ".bak" (single-slot,
+    # ueberschreibt vorigen). Verhindert korrupte Config bei Crash
+    # mid-write und gibt User immer einen Rollback-Punkt.
     path = get_current_path()
     if path is not None:
         try:
-            path.write_text(req.yaml_text, encoding="utf-8")
+            # 1. Backup (best-effort — kein hard-fail wenn Source fehlt)
+            if path.exists():
+                bak_path = path.with_suffix(path.suffix + ".bak")
+                try:
+                    bak_path.write_bytes(path.read_bytes())
+                except OSError as bak_exc:
+                    # Backup failure ist not fatal — log und weiter
+                    import logging
+                    logging.getLogger("ft8_appliance.config").warning(
+                        "auto-backup to %s failed: %s (continuing)",
+                        bak_path, bak_exc,
+                    )
+            # 2. Atomic write: tempfile in same dir, dann rename
+            #    (rename ist atomic auf POSIX-Filesystems)
+            tmp_path = path.with_suffix(path.suffix + ".tmp")
+            tmp_path.write_text(req.yaml_text, encoding="utf-8")
+            tmp_path.replace(path)  # atomic rename
         except OSError as exc:
             raise HTTPException(
                 status_code=500,
