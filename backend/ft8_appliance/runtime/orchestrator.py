@@ -1792,16 +1792,21 @@ class Orchestrator:
                 # produzieren ("alle Stationen sind off bei mir" = du
                 # bist's). Push einmal pro Stunde — Re-Sync via chrony
                 # passiert hoffentlich automatisch.
-                if len(self._recent_dts) >= 50:
+                # v0.6.1: Schwelle 0.5→1.5s erhoeht. USB-Audio + ALSA-Period-
+                # Boundary erzeugt systemisch ~0.5-0.8s DT-Offset auch bei
+                # perfekt sync'ter Clock (chrony <1ms). Push nur bei wirklich
+                # auffaelligen Werten (>1.5s) — FT8-Toleranz ist eh 2.5s.
+                # Text neutralisiert: "DT-Offset auffaellig" statt "Clock-Drift".
+                if len(self._recent_dts) >= 100:
                     sorted_dts = sorted(self._recent_dts)
                     median_dt = sorted_dts[len(sorted_dts) // 2]
-                    if abs(median_dt) > 0.5 and (now_t - self._last_dt_drift_alert_at) > 3600:
+                    if abs(median_dt) > 1.5 and (now_t - self._last_dt_drift_alert_at) > 3600:
                         await ntfy.notify(
                             f"Median-DT der letzten {len(self._recent_dts)} Decodes "
-                            f"= {median_dt:+.2f}s. Wahrscheinlich Pi-Clock-Drift, "
-                            "nicht alle Stationen weltweit. Check `chronyc tracking`.",
-                            title="⏱️ FT8 Pi: DT-Drift-Verdacht",
-                            priority="high",
+                            f"= {median_dt:+.2f}s. Innerhalb FT8-Toleranz (2.5s), "
+                            "aber ungewoehnlich — Audio-Buffer / Slot-Sync pruefen.",
+                            title="⏱️ FT8 Pi: DT-Offset auffaellig",
+                            priority="default",
                             tags=["warning"],
                         )
                         self._last_dt_drift_alert_at = now_t

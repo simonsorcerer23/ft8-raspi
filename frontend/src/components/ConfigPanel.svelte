@@ -63,9 +63,14 @@
     const yq = (v) => {
       if (v == null) return '""';
       const t = String(v).replace(/[\t\r\n]/g, '').trim();
+      // YAML-1.1-Magic-Booleans MUESSEN quoted werden sonst werden
+      // sie als bool false/true interpretiert (Sebastian-Bug v0.4.4
+      // wiedergekehrt v0.6.1: boot_mode: off → bool False → Pydantic-
+      // Literal-Error). Liste aus YAML 1.1 spec — alle case-insensitive.
+      const yamlMagicBool = /^(y|Y|yes|Yes|YES|n|N|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/;
       // Quote wenn leer oder Sonderzeichen drin — sonst lassen wir
       // den Default-Stil unangetastet (Lesbarkeit).
-      if (t === '' || /[:#&*!|>'"%@`,\[\]\{\}]/.test(t)) {
+      if (t === '' || /[:#&*!|>'"%@`,\[\]\{\}]/.test(t) || yamlMagicBool.test(t)) {
         return `"${t.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
       }
       return t;

@@ -162,7 +162,10 @@ class OperatingConfig(BaseModel):
     #                 2-2.5x langsamer als Standard, Pi 5 empfohlen)
     # CPU-adaptive: bei wiederholten Late-Slots faellt der Pipeline-
     # Watchdog automatisch auf "standard" zurueck (Phase A1 misst Timing).
-    decoder_mode: Literal["standard", "deep", "multi"] = "standard"
+    # v0.6.1: Default "multi" (Sebastian-Entscheidung — Pi 5 verkraftet
+    # 2-2.5x CPU locker, maximaler Yield als Standard). Wer auf
+    # schwaecherer Hardware (Pi 4) deployt kann manuell zurueck.
+    decoder_mode: Literal["standard", "deep", "multi"] = "multi"
     auto_cq_interval_s: int = Field(default=30, ge=15, le=300)
     max_ptt_s: int = Field(default=18, ge=15, le=60)
     cq_idle_timeout_min: int = Field(default=10, ge=1)
