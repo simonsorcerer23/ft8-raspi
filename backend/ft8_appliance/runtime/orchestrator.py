@@ -189,6 +189,19 @@ class Orchestrator:
     # obwohl in odd-Slots ständig dekodiert wurde. Persistenter Timestamp
     # statt Snapshot eliminiert den Phase-Lock-Bug.
     _last_decode_recv_at: float = field(default_factory=lambda: time.time(), init=False)
+    # Sebastian v0.5.2: Single-Shot-Flag fuer Funkstille-Watchdog.
+    # True = wir haben schon einen "Keine Decodes seit X min"-Push
+    # rausgeschickt fuer diese Funkstille-Episode. Bleibt True bis der
+    # naechste echte Decode reinkommt — dann False, und ein neuer Push
+    # ist beim naechsten Stille-Event wieder erlaubt. Verhindert alle-
+    # 15min-Spam wenn das Band nachts stundenlang tot ist.
+    _funkstille_push_active: bool = field(default=False, init=False)
+    # Sebastian v0.5.2: Timestamp des letzten Eigenstandig-gesetzten
+    # rig.set_freq (via _ensure_dial_matches_mode). Tamper-Detector
+    # darf in den ersten paar Sekunden danach KEINEN "extern verstellt"-
+    # Push feuern — der Set selbst rast oft als false-positive ein
+    # weil rig-poll die Aenderung sieht bevor das echo registered ist.
+    _dial_set_at: float = field(default=0.0, init=False)
     # CQ-Idle-Watchdog (Sebastian 2026-05-24, Audit-Finding 1):
     # Wann hat der State_Machine zuletzt cq_count=0 gemeldet (= QSO
     # gerade erfolgreich abgeschlossen ODER frischer CQ-Start)? Wenn
@@ -1161,6 +1174,12 @@ class Orchestrator:
         """Wrap rig.set_freq + Echo-Registration fuer Tamper-Detection."""
         await self.rig.set_freq(hz)
         self._register_app_command("freq_hz", int(hz))
+        # Sebastian v0.5.2: Race-Window markieren. Der naechste rig-poll
+        # sieht ggf. das Rig noch auf der ALTEN Freq (oder gerade
+        # mittendrin im Sprung) und wuerde sonst einen False-Positive-
+        # "Frequenz wurde verstellt"-Push feuern. Tamper-Check ignoriert
+        # die ersten paar Sekunden nach diesem Set.
+        self._dial_set_at = time.time()
         # SWR-Cache invalidieren: nach Band-Switch ist der gecachte
         # SWR-Wert vom alten Band stale. Sebastian 2026-05-24: nach
         # 20m-Test-Burst (SWR 2.88) hat der erste 15m-CQ den Wert
@@ -1531,6 +1550,10 @@ class Orchestrator:
         if decodes:
             # Persistenter Timestamp gegen Watchdog-Phase-Lock-Bug.
             self._last_decode_recv_at = time.time()
+            # Sebastian v0.5.2: Funkstille-Single-Shot zuruecksetzen,
+            # sobald wieder echte Decodes reinkommen. Damit ist beim
+            # naechsten Stille-Event wieder genau EIN Push erlaubt.
+            self._funkstille_push_active = False
 
         # 3. push to SSE subscribers + persist to DB (rolling 7 days)
         for d in decodes:
@@ -1686,7 +1709,13 @@ class Orchestrator:
                 # _last_decode_recv_at-Timestamp, der NUR beim Decode-
                 # Empfang upgedated wird — nicht slot-bezogen.
                 stale_min = (now_t - self._last_decode_recv_at) / 60
-                if is_active and stale_min > watchdog_min:
+                if is_active and stale_min > watchdog_min and not self._funkstille_push_active:
+                    # Single-Shot (Sebastian v0.5.2): pro Funkstille-
+                    # Episode genau EIN Push. Flag wird erst beim
+                    # naechsten echten Decode wieder zurueckgesetzt
+                    # (siehe slot_loop wo _last_decode_recv_at gesetzt
+                    # wird). Vorher: alle watchdog_min (=15min) Spam-
+                    # Push wenn das Band nachts stundenlang tot ist.
                     await ntfy.notify(
                         f"Keine Decodes seit {stale_min:.0f} min — Antenne / Audio prüfen?",
                         title="📡 FT8 Pi: Funkstille",
@@ -1694,9 +1723,7 @@ class Orchestrator:
                         tags=["warning"],
                     )
                     last_alert_at = now_t
-                    # Reset gegen Spam — naechster Push fruehestens
-                    # nach weiteren watchdog_min Minuten Funkstille.
-                    self._last_decode_recv_at = now_t
+                    self._funkstille_push_active = True
                     continue
 
                 # Fall 4: CQ-Idle-Watchdog. Wir rufen seit
@@ -2189,10 +2216,23 @@ class Orchestrator:
                             # ntfy-Push beim ERSTEN Verlassen des
                             # Toleranzfensters — nicht bei jedem Drift-
                             # Sprung (sonst Spam beim Tunen).
-                            if last is None:
+                            # Sebastian v0.5.2: Skippe Push wenn wir
+                            # selbst gerade per handle_set_freq die
+                            # Frequenz gesetzt haben (< 5s zurueck).
+                            # Der rig-poll sieht oft noch die ALTE
+                            # Freq und feuert sonst False-Positive
+                            # nach jedem Mode-Switch FT8<->FT4.
+                            self_set_age = time.time() - self._dial_set_at
+                            recently_self_set = self_set_age < 5.0
+                            if last is None and not recently_self_set:
                                 asyncio.create_task(self._notify_freq_tamper(
                                     actual_hz, expected_hz, band,
                                 ), name="freq-tamper-push")
+                            elif last is None and recently_self_set:
+                                log.info(
+                                    "freq-tamper-push skipped: self-set %.1fs ago",
+                                    self_set_age,
+                                )
                             self._last_logged_drift_hz = delta_hz
                     else:
                         if getattr(self, "_last_logged_drift_hz", None) is not None:
