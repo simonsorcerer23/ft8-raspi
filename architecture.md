@@ -678,6 +678,16 @@ hochgericht-ft8/
 | Audio-Slot-Sync | Phase-Lock zu GPS-Zeit, harter Cut pro Slot | Sample-Count, Resampling | Drift akkumuliert nicht, kein Echtzeit-DSP nötig |
 | Captive-Portal Connectivity-Check | 204-Antworten für Google/Ubuntu-Probes | nichts tun | Android koppelt sonst vom Pi-WLAN ab |
 | Online-Integrations-Resilience | Cache + Graceful Degrade + Circuit Breaker | Hard-Dependencies | Field-Tauglichkeit ohne Internet |
+| Decoder-Mode-Mix | standard / deep / multi / extreme (Default extreme seit v0.7.1) | nur 1 fixer Mode | Pi 5 hat CPU-Reserve, Subtract+Hint+Notch bringen ~5-6% mehr Decodes; CPU-Adaptive Fallback bei Überlast |
+| Decoder-Subtract-Pfad | echter Subtract-and-Rerun (synth → in-place subtract → re-decode) | nur Pass1+Pass2-Merge | JTDX-Style maskierte schwächere Signale werden sichtbar |
+| Hint-Pass-Validation | Decoded text muss known-call enthalten | AP-Decoding | False-Positive-Filter äquivalent zu JTDX Type-2; vermeidet AP-Phantome |
+| Auto-Notch-Pfad | FFT-Spektral-Notch pro Slot, numpy-only | scipy biquad-cascade | scipy 150MB Dep auf Pi vermieden |
+| Pass-Stats-Tracking | Per-Pass-Counts in `/api/status.decoder_pass_stats` | nur Gesamt-Counter | datengetriebene Insight welcher Pass real Mehrwert bringt |
+| DT-Offset-Korrektur | Auto-Kalibrierung via rolling-Median | nur Diagnose-Push | Self-correcting bei systematischen Audio-Buffer-Offsets |
+| PSK-Reporter | Upload aus Decode-Pfad aktiv (`upload_decode()` aus dem Slot-Handler) | Client implementiert aber unangetastet | Reziproker Community-Wert ohne PII |
+
+> **Detail-Doku zu allen Decoder-Releases v0.5.2 – v0.8.0**:
+> siehe [`docs/decoder_evolution.md`](docs/decoder_evolution.md)
 
 ---
 
