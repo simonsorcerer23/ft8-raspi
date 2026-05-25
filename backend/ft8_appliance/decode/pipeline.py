@@ -30,6 +30,7 @@ from .ft8_native import (
     ShimDecode,
     decode_slot,
     decode_slot_ft4,
+    decode_slot_ft4_v2,
     decode_slot_v2,
 )
 
@@ -242,6 +243,17 @@ class DecodePipeline:
     # decode_slot drueber laeuft. None = Auto-Notch deaktiviert
     # (Default ON in production.py).
     notch_detector: "NotchDetector | None" = None  # noqa: F821 — fwd ref
+    # v0.8.0 Build B: DT-Auto-Kalibrierung. Wenn der Orchestrator-Watchdog
+    # einen systemic Audio-Offset misst (Median-DT >0.3s ueber 100+ Decodes),
+    # wird der Wert hier gesetzt. Pipeline shiftet slot_start_posix beim
+    # extract um diesen Offset → Decoder sieht zentrierte DTs.
+    dt_calibration_s: float = 0.0
+    # v0.8.0 Build D: Adaptive LDPC-Iter-Factor. 1.0 = Standard. >1.0
+    # bei CPU-Reserve (mehr Iter → mehr marginal-decodes recovered).
+    # <1.0 bei CPU-Druck (weniger Iter → schneller, fewer marginal).
+    # Wert wird dynamisch von metrics.avg_decode_duration_s abgeleitet
+    # pro Slot (siehe __call__).
+    ldpc_factor: float = 1.0
     # v0.6.0 Phase B/C: Decoder-Tuning. Standard = altes Verhalten (osr=2,
     # LDPC=25). Deep = osr=4/LDPC=50. Multi = Pass1+Pass2-Merge. FT4
     # nutzt immer Standard-Decoder (FT4-Decoder hat keine Deep-Variante).
@@ -262,7 +274,13 @@ class DecodePipeline:
         # FT4 hat keine Deep-Variante (FT4-Decoder ist eigene C-Funktion).
         if self.mode == "FT4":
             slot_seconds = FT4_SLOT_SECONDS
-            decoder = decode_slot_ft4
+            # v0.8.0 Build I: FT4 mode-aware. Bei deep/multi/extreme
+            # nutzt die v2-Variante des FT4-Shim (osr=4, kein Subtract).
+            if self.decoder_mode in ("deep", "multi", "extreme"):
+                _mode = self.decoder_mode
+                decoder = lambda pcm: decode_slot_ft4_v2(pcm, mode=_mode)  # noqa: E731
+            else:
+                decoder = decode_slot_ft4
         else:
             slot_seconds = SLOT_SECONDS
             if self.decoder_mode in ("deep", "multi", "extreme"):
@@ -277,6 +295,11 @@ class DecodePipeline:
         if self.extract_delay_s > 0:
             await asyncio.sleep(self.extract_delay_s)
         slot_start_posix = tick.posix - slot_seconds
+        # v0.8.0 Build B: DT-Auto-Kalibrierung anwenden. Positive
+        # Kalibrierung (Audio kommt spaet) → wir extrahieren spaeter
+        # vom Slot-Boundary aus → Decoder sieht Symbole zentriert.
+        if self.dt_calibration_s != 0.0:
+            slot_start_posix += self.dt_calibration_s
         extraction = self.slot_buffer.extract_slot(
             slot_start_posix, slot_seconds=slot_seconds
         )
@@ -298,6 +321,26 @@ class DecodePipeline:
         # it directly in the asyncio event loop would freeze the rig poll,
         # gpsd consumer, and SSE streams for the whole duration. Push it to
         # the default ThreadPoolExecutor so the loop stays responsive.
+        # v0.8.0 Build D: Adaptive LDPC-Iter-Factor.
+        # Pi-5-Power-Mode: bei CPU-Reserve hoeher (mehr Iter, mehr
+        # marginal-decodes), bei CPU-Druck niedriger (Slot-Drop-Schutz).
+        # Basis: avg_decode_duration_s relativ zur Slot-Laenge.
+        if self.metrics.recent_durations_s:
+            avg_load = self.metrics.avg_decode_duration_s / max(slot_seconds, 1)
+            if avg_load < 0.15:    # <15% Slot-Last → CPU-frei
+                factor = 200       # 2x Iter
+            elif avg_load < 0.30:  # 15-30% → komfortabel
+                factor = 150
+            elif avg_load < 0.60:  # 30-60% → moderate
+                factor = 100
+            else:                  # >60% → CPU-Druck
+                factor = 60
+            try:
+                from .ft8_native import lib as _ft8_lib
+                _ft8_lib.ft8_shim_set_ldpc_factor(factor)
+            except Exception:
+                pass
+
         loop = asyncio.get_running_loop()
         # v0.6.0 Phase A1: Timing-Messung — kann der Decoder den Slot halten?
         import time as _time

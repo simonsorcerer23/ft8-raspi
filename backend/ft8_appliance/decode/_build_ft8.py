@@ -102,6 +102,14 @@ ffi.cdef(
         int            max_out
     );
 
+    int ft4_shim_decode_slot_v2(
+        const int16_t* pcm,
+        int            n_samples,
+        int            mode,
+        ft8_shim_result_t* out,
+        int            max_out
+    );
+
     int ft4_shim_synth_message(
         const char* text,
         float       audio_freq_hz,
@@ -140,6 +148,24 @@ ffi.cdef(
         ft8_shim_result_t* out,
         int            max_out
     );
+
+    /* v0.8.0 Build C: Per-Pass Stats — zaehlt decodes pro Pass-Type
+     * fuer mode=3 (extreme). Erlaubt Sebastian zu sehen welcher Pass
+     * tatsaechlich Mehrwert bringt. */
+    typedef struct {
+        uint64_t pass_standard;
+        uint64_t pass_deep;
+        uint64_t pass_subtract_residual;
+        uint64_t pass_hint;
+        uint64_t slots_decoded;
+    } ft8_shim_pass_stats_t;
+
+    void ft8_shim_pass_stats_reset(void);
+    void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out);
+
+    /* v0.8.0 Build D: Adaptive LDPC-Iter-Factor (100 = standard). */
+    void ft8_shim_set_ldpc_factor(int pct);
+    int  ft8_shim_get_ldpc_factor(void);
 
     /* Callsign-Hash-Tabelle (v0.5.0): Python kann optional Calls
      * pre-populieren (z.B. aus DB worked-Calls) damit beim Boot die
@@ -196,6 +222,14 @@ ffi.set_source(
         int            max_out
     );
 
+    int ft4_shim_decode_slot_v2(
+        const int16_t* pcm,
+        int            n_samples,
+        int            mode,
+        ft8_shim_result_t* out,
+        int            max_out
+    );
+
     int ft4_shim_synth_message(
         const char* text,
         float       audio_freq_hz,
@@ -228,6 +262,20 @@ ffi.set_source(
         ft8_shim_result_t* out,
         int            max_out
     );
+
+    typedef struct {
+        uint64_t pass_standard;
+        uint64_t pass_deep;
+        uint64_t pass_subtract_residual;
+        uint64_t pass_hint;
+        uint64_t slots_decoded;
+    } ft8_shim_pass_stats_t;
+
+    void ft8_shim_pass_stats_reset(void);
+    void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out);
+
+    void ft8_shim_set_ldpc_factor(int pct);
+    int  ft8_shim_get_ldpc_factor(void);
 
     int ft8_shim_hash_table_save(const char* callsign, uint32_t n22);
     int ft8_shim_hash_table_count(void);

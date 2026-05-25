@@ -142,6 +142,26 @@ def decode_slot(pcm_s16le: bytes) -> list[ShimDecode]:
     return results
 
 
+def get_pass_stats() -> dict[str, int]:
+    """v0.8.0 Build C: Per-Pass-Decoder-Statistics fuer mode=extreme.
+    Returns dict mit pass_standard/deep/subtract_residual/hint counts +
+    slots_decoded (kumulativ seit Service-Start).
+    """
+    stats = ffi.new("ft8_shim_pass_stats_t *")
+    lib.ft8_shim_pass_stats_get(stats)
+    return {
+        "pass_standard": int(stats.pass_standard),
+        "pass_deep": int(stats.pass_deep),
+        "pass_subtract_residual": int(stats.pass_subtract_residual),
+        "pass_hint": int(stats.pass_hint),
+        "slots_decoded": int(stats.slots_decoded),
+    }
+
+
+def reset_pass_stats() -> None:
+    lib.ft8_shim_pass_stats_reset()
+
+
 def decode_slot_v2(pcm_s16le: bytes, mode: str = "standard") -> list[ShimDecode]:
     """v0.6.0 Anti-WSJT-X-Audit Phase B: tunable FT8 decoder.
 
@@ -300,6 +320,41 @@ def decode_slot_ft4(pcm_s16le: bytes) -> list[ShimDecode]:
     if n < 0:
         raise RuntimeError("ft4_shim_decode_slot failed")
 
+    results: list[ShimDecode] = []
+    for i in range(n):
+        r = out_buf[i]
+        results.append(
+            ShimDecode(
+                message=ffi.string(r.message).decode("ascii", errors="replace").strip(),
+                snr_db_est=int(r.snr_db_est),
+                dt_s=float(r.dt_s),
+                freq_hz=float(r.freq_hz),
+                score=int(r.score),
+            )
+        )
+    return results
+
+
+def decode_slot_ft4_v2(pcm_s16le: bytes, mode: str = "standard") -> list[ShimDecode]:
+    """v0.8.0 Build I: FT4 mode-aware Decoder.
+    mode="standard" → osr=2,LDPC=25
+    mode="deep"     → osr=4,LDPC=50
+    mode="multi"/"extreme" → standard + deep, concat (kein Subtract
+                              weil FT4-Slot 7.5s zu kurz).
+    """
+    expected_bytes = SAMPLES_PER_SLOT_FT4 * 2
+    if len(pcm_s16le) < expected_bytes:
+        raise ValueError(
+            f"need {expected_bytes} bytes ({SAMPLES_PER_SLOT_FT4} samples)"
+        )
+    mode_int = {"standard": 0, "deep": 1, "multi": 2, "extreme": 3}.get(mode, 0)
+    pcm_buf = ffi.from_buffer("int16_t[]", pcm_s16le[:expected_bytes])
+    out_buf = ffi.new(f"ft8_shim_result_t[{MAX_DECODES_PER_SLOT}]")
+    n = lib.ft4_shim_decode_slot_v2(
+        pcm_buf, SAMPLES_PER_SLOT_FT4, mode_int, out_buf, MAX_DECODES_PER_SLOT,
+    )
+    if n < 0:
+        raise RuntimeError("ft4_shim_decode_slot_v2 failed")
     results: list[ShimDecode] = []
     for i in range(n):
         r = out_buf[i]

@@ -111,6 +111,16 @@ class LoggedAction:
 DecodeSource = Callable[[SlotTick], Awaitable[list[DecodedMsg]]]
 
 
+def _safe_get_pass_stats() -> dict | None:
+    """v0.8.0 Build C: best-effort pass-stats fetch. None bei Dev-
+    Maschine ohne ft8_lib oder bei build-mismatch."""
+    try:
+        from ..decode.ft8_native import get_pass_stats
+        return get_pass_stats()
+    except Exception:
+        return None
+
+
 @dataclass(slots=True)
 class OrchestratorStatus:
     """Snapshot for /api/status."""
@@ -166,6 +176,8 @@ class OrchestratorStatus:
     decoder_mode: str = "standard"  # was konfiguriert ist
     actual_decoder_mode: str = "standard"  # was die Pipeline gerade nutzt
     decoder_late_slot_count: int = 0  # zaehlt seit Service-Start
+    # v0.8.0 Build C: Per-Pass-Decoder-Statistics (extreme mode only)
+    decoder_pass_stats: dict | None = None
 
 
 @dataclass
@@ -207,6 +219,13 @@ class Orchestrator:
     _last_dt_drift_alert_at: float = field(default=0.0, init=False)
     # v0.6.0 Phase A1: Decoder-Late-Slot-Watchdog-Push-Cooldown.
     _last_late_slot_alert_at: float = field(default=0.0, init=False)
+    # v0.8.0 Build B: DT-Offset Auto-Kalibrierung. Rolling Median ueber
+    # die letzten 200 dt-Werte. Wenn |median| > 0.3s wird der Wert als
+    # negativ-Offset auf slot_start_posix appliziert — der Decoder sieht
+    # dann zentrierte DTs (~0) und findet mehr Decodes weil das Time-
+    # Window besser trifft. Update alle ~5 min.
+    _dt_calibration_offset_s: float = field(default=0.0, init=False)
+    _last_dt_calibration_at: float = field(default=0.0, init=False)
     # Sebastian v0.5.2: Single-Shot-Flag fuer Funkstille-Watchdog.
     # True = wir haben schon einen "Keine Decodes seit X min"-Push
     # rausgeschickt fuer diese Funkstille-Episode. Bleibt True bis der
@@ -893,6 +912,7 @@ class Orchestrator:
                 getattr(self.decode_source, "metrics", None),
                 "late_slot_count", 0,
             ) if hasattr(self.decode_source, "metrics") else 0,
+            decoder_pass_stats=_safe_get_pass_stats(),
         )
 
     def is_worked_before(self, call: str | None) -> bool:
@@ -1615,6 +1635,20 @@ class Orchestrator:
         if decodes:
             # Persistenter Timestamp gegen Watchdog-Phase-Lock-Bug.
             self._last_decode_recv_at = time.time()
+            # v0.8.0 Build A: Hint-Decoder Live-Queue. Pushe alle frisch
+            # decodierten Calls (auch unworked) in den C-Shim-Hash-Table
+            # damit der Hint-Pass im naechsten Slot diese als "recently
+            # active" boostet. JTDX-Recent-Decode-Bias.
+            try:
+                from ..decode.ft8_native import lib as _ft8_lib
+                for d in decodes:
+                    for c in (d.call_from, d.call_to):
+                        if c and len(c) >= 3 and len(c) <= 13 and not c.startswith("<"):
+                            _ft8_lib.ft8_shim_hash_table_save(
+                                c.upper().encode("ascii"), 0,
+                            )
+            except Exception:
+                pass
             # Sebastian v0.5.2: Funkstille-Single-Shot zuruecksetzen,
             # sobald wieder echte Decodes reinkommen. Damit ist beim
             # naechsten Stille-Event wieder genau EIN Push erlaubt.
@@ -1631,6 +1665,37 @@ class Orchestrator:
         # 3. push to SSE subscribers + persist to DB (rolling 7 days)
         for d in decodes:
             self._push_decode(d)
+
+        # v0.8.0 Build H: PSK-Reporter Upload (Community-Mehrwert).
+        # Existierender Client (integrations/psk_reporter.py) hat upload_decode
+        # bereits implementiert mit 5min-Flush — wir mussten ihn nur AUFRUFEN.
+        # config.integrations.psk_reporter.upload_decodes (Default True) gating.
+        psk = getattr(self.integrations, "psk_reporter", None)
+        if psk is not None and decodes:
+            try:
+                rig_freq = self._last_rig.freq_hz if self._last_rig else None
+                mode_str = self.config.operating.mode or "FT8"
+                for d in decodes:
+                    if not d.call_from or d.call_from.startswith("<"):
+                        continue
+                    # Reine Reception-Reports: nur Calls die wir GEHOERT
+                    # haben, nicht Konversations-Partner (call_to).
+                    band_hz = rig_freq if rig_freq else 0
+                    if d.freq_offset_hz is not None and band_hz:
+                        band_hz += int(d.freq_offset_hz)
+                    if band_hz <= 0:
+                        continue
+                    await psk.upload_decode(
+                        sender_call=d.call_from,
+                        sender_grid=d.grid,
+                        rx_callsign=self.config.operator.callsign,
+                        snr_db=d.snr_db if d.snr_db is not None else -10,
+                        band_hz=band_hz,
+                        mode=mode_str,
+                        decoded_at=d.ts,
+                    )
+            except Exception as exc:
+                log.debug("psk_reporter upload skipped: %s", exc)
         if self.db_enabled and decodes:
             try:
                 async with session_scope() as s:
@@ -1839,6 +1904,33 @@ class Orchestrator:
                 # perfekt sync'ter Clock (chrony <1ms). Push nur bei wirklich
                 # auffaelligen Werten (>1.5s) — FT8-Toleranz ist eh 2.5s.
                 # Text neutralisiert: "DT-Offset auffaellig" statt "Clock-Drift".
+                # v0.8.0 Build B: DT-Auto-Kalibrierung (vor Drift-Alert!).
+                # Wenn Median-DT der letzten 100+ Decodes systematic >0.3s
+                # ist, applizieren wir es als negativ-Offset im SlotClock.
+                # Update alle 5 min damit das Filter stabil ist.
+                if (len(self._recent_dts) >= 100
+                        and (now_t - self._last_dt_calibration_at) > 300):
+                    sorted_dts_cal = sorted(self._recent_dts)
+                    median_cal = sorted_dts_cal[len(sorted_dts_cal) // 2]
+                    if abs(median_cal) > 0.3:
+                        new_offset = self._dt_calibration_offset_s + median_cal
+                        # Clamp: max 2s offset insgesamt (sanity)
+                        new_offset = max(-2.0, min(2.0, new_offset))
+                        if abs(new_offset - self._dt_calibration_offset_s) > 0.05:
+                            log.info(
+                                "DT-Auto-Calibration: offset %+.3fs → %+.3fs "
+                                "(median_dt=%+.3fs)",
+                                self._dt_calibration_offset_s, new_offset, median_cal,
+                            )
+                            self._dt_calibration_offset_s = new_offset
+                            # Pipeline picken den Offset im naechsten Slot
+                            if hasattr(self.decode_source, "dt_calibration_s"):
+                                self.decode_source.dt_calibration_s = new_offset
+                    self._last_dt_calibration_at = now_t
+                    # Reset DT-Sample-Pool damit das naechste Fenster
+                    # die NEUE Position misst (sonst kreisst Kalibrierung)
+                    self._recent_dts.clear()
+
                 if len(self._recent_dts) >= 100:
                     sorted_dts = sorted(self._recent_dts)
                     median_dt = sorted_dts[len(sorted_dts) // 2]

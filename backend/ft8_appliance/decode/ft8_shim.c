@@ -435,6 +435,11 @@ int ft8_shim_decode_slot_multipass(
  *
  * Returns count of unique decodes written to *out*, -1 on error.
  * ========================================================================= */
+
+/* v0.8.0 Build D: Adaptive LDPC-Iter-Factor — fwd-declared HIER damit
+ * _ft8_decode_one_pass darauf zugreifen kann. Definition kommt unten. */
+static int s_ldpc_factor_pct;
+
 static int _ft8_decode_one_pass(
     float*             signal,
     int                signal_len,
@@ -466,13 +471,16 @@ static int _ft8_decode_one_pass(
         &mon.wf, FT8_SHIM_MAX_CANDIDATES, candidates, FT8_SHIM_MIN_SCORE
     );
 
+    /* v0.8.0 Build D: adaptive LDPC-Iter via global factor (Pipeline-set) */
+    int eff_ldpc_iters = (ldpc_iters * s_ldpc_factor_pct) / 100;
+    if (eff_ldpc_iters < 5) eff_ldpc_iters = 5;
     int num_out = num_out_initial;
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
         const ftx_candidate_t* cand = &candidates[idx];
 
         ftx_message_t       message;
         ftx_decode_status_t status;
-        if (!ftx_decode_candidate(&mon.wf, cand, ldpc_iters, &message, &status)) {
+        if (!ftx_decode_candidate(&mon.wf, cand, eff_ldpc_iters, &message, &status)) {
             continue;
         }
 
@@ -504,6 +512,60 @@ static int _ft8_decode_one_pass(
 
     monitor_free(&mon);
     return num_out;
+}
+
+
+/* v0.8.0 Build C: Per-Pass Decoder-Statistics.
+ *
+ * Wir tracken pro decoder-mode-call wieviele Decodes JEDER Pass-Type
+ * liefert. Hilft Sebastian zu sehen welcher Pass tatsaechlich Mehrwert
+ * bringt:
+ *   - standard / deep / multi / extreme: Pass-Type counts
+ *   - subtract_pass: Decodes nach subtract+rerun (mode=extreme only)
+ *   - hint_pass:     Decodes vom Hint-Decoder mit known-call match
+ *
+ * Cumulative seit Service-Start. Reset moeglich via _reset Funktion.
+ */
+typedef struct {
+    uint64_t pass_standard;
+    uint64_t pass_deep;
+    uint64_t pass_subtract_residual;
+    uint64_t pass_hint;
+    uint64_t slots_decoded;
+} ft8_shim_pass_stats_t;
+
+static ft8_shim_pass_stats_t s_pass_stats = {0, 0, 0, 0, 0};
+
+/* v0.8.0 Build D: Adaptive LDPC-Iter-Factor.
+ *
+ * Pipeline misst avg decoder-duration und setzt diesen Wert pro Slot.
+ *  100 = Standard (unchanged)
+ *  >100 = mehr Iter (CPU-Reserve, mehr marginal-decodes)
+ *  <100 = weniger Iter (CPU-Druck, schneller)
+ * Range geclamped 30..400 fuer Sanity. */
+/* s_ldpc_factor_pct: fwd-declared oben bei _ft8_decode_one_pass.
+ * Hier setzen wir den Default-Wert + die public-Setter/Getter. */
+static int s_ldpc_factor_pct = 100;
+
+void ft8_shim_set_ldpc_factor(int pct) {
+    if (pct < 30) pct = 30;
+    if (pct > 400) pct = 400;
+    s_ldpc_factor_pct = pct;
+}
+
+int ft8_shim_get_ldpc_factor(void) { return s_ldpc_factor_pct; }
+
+
+void ft8_shim_pass_stats_reset(void) {
+    s_pass_stats.pass_standard = 0;
+    s_pass_stats.pass_deep = 0;
+    s_pass_stats.pass_subtract_residual = 0;
+    s_pass_stats.pass_hint = 0;
+    s_pass_stats.slots_decoded = 0;
+}
+
+void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out) {
+    if (out != NULL) *out = s_pass_stats;
 }
 
 
@@ -702,24 +764,31 @@ int ft8_shim_decode_slot_v2(
                                             out, max_out, seen, &num_seen, num_out);
         }
     } else if (mode == 3) {
-        /* v0.7.0 Build 1: subtract-and-rerun. Pass1 standard + deep,
-         * subtract strong decodes (score>=20), re-decode residual with
-         * standard + deep. Pi-5-Power-Mode. */
+        /* v0.7.0 Build 1: subtract-and-rerun + v0.7.0 Build 2 Hint
+         * Pass-Stats v0.8.0: zaehle Decodes pro Pass-Type. */
+        int before;
+
+        before = num_out;
         num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
                                         out, max_out, seen, &num_seen, 0);
+        s_pass_stats.pass_standard += (num_out - before);
+
+        before = num_out;
         if (num_out < max_out) {
             num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
                                             out, max_out, seen, &num_seen, num_out);
         }
+        s_pass_stats.pass_deep += (num_out - before);
+
         int after_first = num_out;
-        /* Subtract strong decodes from signal */
         for (int i = 0; i < after_first; ++i) {
             if (out[i].score >= 20) {
                 _ft8_subtract_decoded(signal, out[i].message,
                                        out[i].freq_hz, out[i].dt_s);
             }
         }
-        /* Re-decode residual (standard + deep) — new decodes only via dedupe */
+
+        before = num_out;
         if (num_out < max_out) {
             num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
                                             out, max_out, seen, &num_seen, num_out);
@@ -728,14 +797,16 @@ int ft8_shim_decode_slot_v2(
             num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
                                             out, max_out, seen, &num_seen, num_out);
         }
-        /* v0.7.0 Build 2: Hint-Pass am Ende — sehr permissive min_score
-         * (5) + hohe LDPC-Iterations (120), aber nur akzeptiert wenn
-         * decoded text einen known call aus s_hash_table enthaelt.
-         * JTDX-Style. Hebt Sensitivity um ~1-2 dB. */
+        s_pass_stats.pass_subtract_residual += (num_out - before);
+
+        before = num_out;
         if (num_out < max_out) {
             num_out = _ft8_hint_pass_signal(signal, FT8_SLOT_SAMPLES, 2, 2,
                                              out, max_out, seen, &num_seen, num_out);
         }
+        s_pass_stats.pass_hint += (num_out - before);
+
+        s_pass_stats.slots_decoded++;
     } else {
         /* mode 0 / default: standard */
         num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
@@ -767,6 +838,99 @@ int ft8_shim_decode_slot_v2(
 #define FT4_SYMBOL_BT         1.0f
 
 extern void ft4_encode(const uint8_t *payload, uint8_t *tones);
+
+
+/* v0.8.0 Build I: FT4 mode-aware Decoder. Wir machen es einfacher als
+ * FT8 (kein Subtract weil 7.5s-Slot zu kurz fuer sinnvolle Residual-
+ * Decodes). mode=0/standard: osr=2, LDPC=25; mode=1/deep+higher: osr=4,
+ * LDPC=50. Adaptive LDPC-Factor wird auch hier respektiert. */
+static int _ft4_decode_one_pass(
+    int16_t const* pcm,
+    int            time_osr,
+    int            freq_osr,
+    int            ldpc_iters,
+    ft8_shim_result_t* out,
+    int                max_out
+) {
+    float* signal = (float*)malloc(sizeof(float) * FT4_SLOT_SAMPLES);
+    if (signal == NULL) return -1;
+    for (int i = 0; i < FT4_SLOT_SAMPLES; ++i) signal[i] = (float)pcm[i] / 32768.0f;
+
+    monitor_t mon;
+    monitor_config_t cfg;
+    cfg.f_min       = 200.0f;
+    cfg.f_max       = 3000.0f;
+    cfg.sample_rate = FT8_SAMPLE_RATE_HZ;
+    cfg.time_osr    = time_osr;
+    cfg.freq_osr    = freq_osr;
+    cfg.protocol    = FTX_PROTOCOL_FT4;
+    monitor_init(&mon, &cfg);
+    for (int pos = 0; pos + mon.block_size <= FT4_SLOT_SAMPLES; pos += mon.block_size) {
+        monitor_process(&mon, signal + pos);
+    }
+    free(signal);
+
+    ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
+    int num_cand = ftx_find_candidates(&mon.wf, FT8_SHIM_MAX_CANDIDATES, candidates, FT8_SHIM_MIN_SCORE);
+    int eff_ldpc = (ldpc_iters * s_ldpc_factor_pct) / 100;
+    if (eff_ldpc < 5) eff_ldpc = 5;
+
+    uint16_t seen[50];
+    int num_seen = 0, num_out = 0;
+    for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
+        const ftx_candidate_t* cand = &candidates[idx];
+        ftx_message_t message; ftx_decode_status_t status;
+        if (!ftx_decode_candidate(&mon.wf, cand, eff_ldpc, &message, &status)) continue;
+        int dup = 0;
+        for (int j = 0; j < num_seen; ++j) if (seen[j] == message.hash) { dup = 1; break; }
+        if (dup) continue;
+        if (num_seen < 50) seen[num_seen++] = message.hash;
+        char text[FTX_MAX_MESSAGE_LENGTH];
+        ftx_message_offsets_t offsets;
+        if (ftx_message_decode(&message, &s_hash_if, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
+        ft8_shim_result_t* r = &out[num_out++];
+        strncpy(r->message, text, FT8_SHIM_MSG_LEN - 1);
+        r->message[FT8_SHIM_MSG_LEN - 1] = '\0';
+        r->snr_db_est = (cand->score / 2) - 24;
+        r->score = cand->score;
+        r->dt_s = (cand->time_offset + (float)cand->time_sub / mon.wf.time_osr) * mon.symbol_period;
+        r->freq_hz = (mon.min_bin + cand->freq_offset + (float)cand->freq_sub / mon.wf.freq_osr) / mon.symbol_period;
+    }
+    monitor_free(&mon);
+    return num_out;
+}
+
+
+int ft4_shim_decode_slot_v2(
+    const int16_t* pcm,
+    int            n_samples,
+    int            mode,
+    ft8_shim_result_t* out,
+    int            max_out
+) {
+    if (pcm == NULL || out == NULL || max_out <= 0) return -1;
+    if (n_samples < FT4_SLOT_SAMPLES) return -1;
+    if (mode == 1) {
+        /* deep: osr=4 LDPC=50 */
+        return _ft4_decode_one_pass(pcm, 4, 4, 50, out, max_out);
+    } else if (mode == 2 || mode == 3) {
+        /* multi/extreme: pass1 standard + dedupe-skip handled inside;
+         * fuer FT4 nehmen wir nur deep weil 7.5s-Slot zu kurz fuer
+         * sinnvolle Subtract-Loops. Trotzdem hoehere LDPC-Iter bringt
+         * Mehrwert. */
+        int n = _ft4_decode_one_pass(pcm, 2, 2, 25, out, max_out);
+        if (n < 0) return n;
+        /* nochmal mit deep, in zweite Haelfte (Dedupe per Pi-Code im
+         * Picker — FT4 ist weniger congested, Dups selten) */
+        if (n < max_out) {
+            int n2 = _ft4_decode_one_pass(pcm, 4, 4, 50, out + n, max_out - n);
+            if (n2 > 0) n += n2;
+        }
+        return n;
+    }
+    /* mode=0 standard */
+    return _ft4_decode_one_pass(pcm, 2, 2, 25, out, max_out);
+}
 
 
 int ft4_shim_decode_slot(
