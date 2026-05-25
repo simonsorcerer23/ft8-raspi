@@ -158,6 +158,14 @@ class OrchestratorStatus:
     # Name des aktuell erkannten Bandes (Hz → Band-Lookup über
     # ±50 kHz Toleranz). None wenn Frequenz zu nichts passt.
     active_band: str | None = None
+    # v0.6.3: Decoder-Mode (standard|deep|multi) — was die Pipeline
+    # tatsaechlich JETZT nutzt. Bei CPU-Adaptive-Fallback weicht das
+    # ab vom config.operating.decoder_mode (User-gewollt) — beide
+    # zeigen damit Monitor + Frontend sofort sehen wenn der Pi
+    # automatisch zurueckgeschaltet hat.
+    decoder_mode: str = "standard"  # was konfiguriert ist
+    actual_decoder_mode: str = "standard"  # was die Pipeline gerade nutzt
+    decoder_late_slot_count: int = 0  # zaehlt seit Service-Start
 
 
 @dataclass
@@ -862,6 +870,13 @@ class Orchestrator:
             license_class=self.config.operator.license_class,
             effective_max_power_w=effective_max,
             active_band=active_band,
+            # v0.6.3: Decoder-Mode sichtbar fuer Monitor + UI
+            decoder_mode=getattr(self.config.operating, "decoder_mode", "standard"),
+            actual_decoder_mode=getattr(self.decode_source, "decoder_mode", "standard"),
+            decoder_late_slot_count=getattr(
+                getattr(self.decode_source, "metrics", None),
+                "late_slot_count", 0,
+            ) if hasattr(self.decode_source, "metrics") else 0,
         )
 
     def is_worked_before(self, call: str | None) -> bool:

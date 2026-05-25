@@ -90,6 +90,12 @@ class StatusResponse(BaseModel):
     # CQ-Direction-Tag (Audit F7 v0.3.4) — leer = klassischer CQ, sonst
     # "DX"/"EU"/"POTA"/... fuer Anzeige im RigPanel.
     cq_directed: str = ""
+    # v0.6.3: Decoder-Mode sichtbar. decoder_mode = was im Config
+    # gewuenscht; actual_decoder_mode = was die Pipeline jetzt wirklich
+    # benutzt (kann durch CPU-adaptive Fallback abweichen).
+    decoder_mode: str = "standard"
+    actual_decoder_mode: str = "standard"
+    decoder_late_slot_count: int = 0
 
 
 @router.get("/status", response_model=StatusResponse)
@@ -149,6 +155,10 @@ async def get_status(orch: Orchestrator = Depends(get_orchestrator)) -> StatusRe
               and orch.config.operating.mode or "FT8",
         cq_directed=(getattr(getattr(orch, "config", None), "operating", None)
                      and (orch.config.operating.cq_directed or "").upper() or ""),
+        # v0.6.3: Decoder-Mode (configured + actual)
+        decoder_mode=getattr(s, "decoder_mode", "standard"),
+        actual_decoder_mode=getattr(s, "actual_decoder_mode", "standard"),
+        decoder_late_slot_count=getattr(s, "decoder_late_slot_count", 0),
     )
 
 
