@@ -250,23 +250,24 @@ async def conversation(
             .limit(50)
         )
         rows = (await sess.execute(stmt)).all()
-    # Sebastian v0.5.2: Im IDLE-State zusaetzlich RX-Decodes von allen
-    # Stationen einbeziehen die wir in den letzten Minuten angesprochen
-    # haben. Sonst sieht der Operator im IDLE nur eine TX-only-Liste
-    # ohne die Partner-Antworten (Reports, RR73s) die nach unserem
-    # Hunting-Anstoss kamen. Mit dieser Liste wird die Conversation-
-    # Anzeige auch zwischen QSOs lesbar.
-    recent_tx_targets: set[str] = set()
-    for a in tx_actions:
-        msg = a.payload.get("message", "")
-        parts = msg.split()
-        if parts:
-            recent_tx_targets.add(parts[0])
+    # v0.8.1 Bug-Fix: Filter strikt — nur Decodes die UNS direkt betreffen.
+    # Vorherige v0.5.2-Logik bezog "recent_tx_targets" mit ein, was fremde
+    # Konversationen zwischen DEINEM Hunt-Target und EINER ANDEREN Station
+    # in die Live-Konversation einschleuste (z.B. "F1PBZ MM3RCR R+07" wo
+    # MM3RCR unser TX-Target war aber F1PBZ uns nichts angeht).
+    # Strikte Logik:
+    #   1. call_to == my_call  (irgendjemand antwortet AN UNS)
+    #   2. aktiver QSO-Partner: call_from == partner UND
+    #                            (call_to == my_call ODER call_to is None)
     for row in rows:
-        if (
-            row.call_to == my_call
-            or (partner and row.call_from == partner)
-            or (row.call_from and row.call_from in recent_tx_targets)
+        if row.call_to == my_call:
+            entries.append(ConvEntry(
+                direction="rx",
+                ts=row.ts.isoformat() if hasattr(row.ts, "isoformat") else str(row.ts),
+                message=row.message,
+            ))
+        elif partner and row.call_from == partner and (
+            row.call_to == my_call or row.call_to is None
         ):
             entries.append(ConvEntry(
                 direction="rx",
