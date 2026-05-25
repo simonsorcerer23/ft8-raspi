@@ -96,6 +96,22 @@ def parse_message(text: str) -> ParsedMessage:
     if not tokens:
         return ParsedMessage(None, None, None, None, False, is_freetext=False)
 
+    # v0.6.4: angle-brackets entfernen aus call-tokens — Display-Konvention
+    # vom Decoder fuer compound/hashed calls. State-Machine + Picker +
+    # TX-Synth brauchen den nackten Call. Aber: literal "<...>" (unresolvable)
+    # behalten wir damit Downstream-Logic weiss "Partner-Call ist hash,
+    # nicht decode-able".
+    def _strip_brackets(tok: str) -> str:
+        if tok.startswith("<") and tok.endswith(">") and len(tok) > 2:
+            inner = tok[1:-1]
+            # Echte Resolution: alphanumerisch+/ → strip
+            # Unresolvable "..." → behalten als "<...>"
+            if inner == "...":
+                return tok
+            return inner
+        return tok
+    tokens = [_strip_brackets(t) for t in tokens]
+
     if tokens[0] == "CQ":
         # CQ <call> <grid> or CQ <REGION/AWARD> <call> <grid>.
         # The second token is a region/award (DX, EU, NA, POTA, SOTA, WW,

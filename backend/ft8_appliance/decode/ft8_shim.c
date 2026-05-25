@@ -728,7 +728,9 @@ int ft4_shim_synth_message(
     if (amplitude > 1.0f)  amplitude = 1.0f;
 
     ftx_message_t msg;
-    ftx_message_rc_t rc = ftx_message_encode(&msg, NULL, text);
+    /* v0.6.4: gleicher Bug-Fix wie ft8_shim_synth_message — hash-if
+     * passieren damit compound-calls encoded werden koennen. */
+    ftx_message_rc_t rc = ftx_message_encode(&msg, &s_hash_if, text);
     if (rc != FTX_MESSAGE_RC_OK) return -1;
 
     uint8_t tones[FT4_NUM_SYMBOLS_C];
@@ -773,7 +775,13 @@ int ft8_shim_synth_message(
     if (amplitude > 1.0f)  amplitude = 1.0f;
 
     ftx_message_t msg;
-    ftx_message_rc_t rc = ftx_message_encode(&msg, NULL, text);
+    /* v0.6.4 Bug-Fix: hash-table-Interface passieren statt NULL.
+     * Sonst kann ftx_message_encode kein compound/hashed callsign
+     * "<RT25KR>" encoden — der Encoder muss save_callsign aufrufen
+     * koennen um den 22-bit Hash in die ftx_message_t zu schreiben.
+     * Vorher: synth failed beim QSO mit /P, /MM oder Sonderrufzeichen
+     * Stations, das QSO blieb bei R-Report haengen. */
+    ftx_message_rc_t rc = ftx_message_encode(&msg, &s_hash_if, text);
     if (rc != FTX_MESSAGE_RC_OK) {
         return -1;
     }
