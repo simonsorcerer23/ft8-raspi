@@ -469,52 +469,73 @@
       <!-- Operating -->
       <section>
         <h3>Operating</h3>
+
+        <h5 class="subgroup">Slot & Decoder</h5>
         <div class="grid">
-          <label><span>Mode (Digital-Slot-Tempo)</span>
+          <label class="field"><span>Mode</span>
             <select bind:value={cfg.operating.mode}>
               <option value="FT8">FT8 — 15 s Slots (Standard)</option>
               <option value="FT4">FT4 — 7.5 s Slots (schneller, weniger DX)</option>
             </select>
           </label>
-          <label><span>Decoder-Mode (CPU vs Empfindlichkeit)</span>
+          <label class="field"><span>Decoder-Mode</span>
             <select bind:value={cfg.operating.decoder_mode}>
-              <option value="standard">Standard — schnellste (Pi 4 tauglich)</option>
-              <option value="deep">Deep — JTDX-Niveau, 1.5-2× CPU</option>
-              <option value="multi">Multi — Pass1+Pass2 Merge, 2-2.5× CPU (Pi 5)</option>
-              <option value="extreme">Extreme — Subtract+Hint, 3-4× CPU (Pi 5 only)</option>
+              <option value="standard">Standard — schnellste (Pi 4)</option>
+              <option value="deep">Deep — JTDX-Niveau (1.5-2× CPU)</option>
+              <option value="multi">Multi — Pass1+Pass2 (2-2.5× CPU, Pi 5)</option>
+              <option value="extreme">Extreme — Subtract+Hint (3-4× CPU, Pi 5)</option>
             </select>
           </label>
-          <label><span>Auto-Notch (lokale QRM-Linien automatisch ausfiltern)</span>
-            <input type="checkbox" bind:checked={cfg.operating.auto_notch_enabled}/>
+          <label class="field toggle-field">
+            <span>Auto-Notch <small>(lokale QRM-Linien filtern)</small></span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.auto_notch_enabled}
+                    onclick={() => cfg.operating.auto_notch_enabled = !cfg.operating.auto_notch_enabled}
+                    aria-pressed={cfg.operating.auto_notch_enabled}>
+              <span class="toggle-knob"></span>
+            </button>
           </label>
-          <label><span>Directed CQ (leer = klassisch)</span>
+        </div>
+
+        <h5 class="subgroup">CQ-Verhalten</h5>
+        <div class="grid">
+          <label class="field"><span>Directed CQ <small>(leer = klassisch)</small></span>
             <input type="text" maxlength="4" placeholder="z.B. DX, EU, POTA"
                    bind:value={cfg.operating.cq_directed}
                    oninput={(e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); }}/>
           </label>
-          <label><span>Auto-CQ Intervall (s)</span>
+          <label class="field"><span>Auto-CQ Intervall <small>(s)</small></span>
             <input type="number" bind:value={cfg.operating.auto_cq_interval_s} min="15" max="300"/>
           </label>
-          <label><span>Max PTT (s)</span>
+        </div>
+
+        <h5 class="subgroup">Sicherheits-Limits</h5>
+        <div class="grid">
+          <label class="field"><span>Max PTT <small>(s)</small></span>
             <input type="number" bind:value={cfg.operating.max_ptt_s} min="15" max="60"/>
           </label>
-          <label><span>Max SWR</span>
+          <label class="field"><span>Max SWR</span>
             <input type="number" step="0.1" bind:value={cfg.operating.swr_max} min="1" max="5"/>
           </label>
-          <label><span>QSO-Cooldown (min) — Station nicht erneut anrufen</span>
+        </div>
+
+        <h5 class="subgroup">QSO-Verhalten</h5>
+        <div class="grid">
+          <label class="field"><span>QSO-Cooldown <small>(min, Station nicht erneut anrufen)</small></span>
             <input type="number" min="0" max="1440"
                    bind:value={cfg.operating.qso_cooldown_min}/>
           </label>
-          <label><span>QSO-Geduld (Slots) — wie oft bei Antwort-Ausbleiben wiederholen</span>
+          <label class="field"><span>QSO-Geduld <small>(Slots bei Antwort-Ausbleiben)</small></span>
             <input type="number" min="2" max="20"
                    bind:value={cfg.operating.qso_max_stale_slots}/>
           </label>
-          <p class="hint" style="grid-column: 1/-1">
-            Die Hunting-Filter (nur ungerufene / nur neue DXCC) findest du
-            jetzt direkt auf dem Funk-Dashboard unter dem Antworten-Button —
-            so kannst du sie live umschalten ohne hier rein zu müssen.
-          </p>
         </div>
+
+        <p class="hint">
+          Die Hunting-Filter (nur ungerufene / nur neue DXCC) findest du
+          jetzt direkt auf dem Funk-Dashboard unter dem Antworten-Button —
+          so kannst du sie live umschalten ohne hier rein zu müssen.
+        </p>
 
         <h4>Hunt-Priorität — wer wird zuerst gepickt?</h4>
         <p class="hint">
@@ -544,11 +565,19 @@
             </div>
           {/each}
         </div>
-        <div class="grid" style="margin-top:.5em">
-          <label><span>PSK-Reciprocity aktiv (pskreporter.info abfragen)</span>
-            <input type="checkbox" bind:checked={cfg.operating.psk_reciprocity_enabled}/>
+        <h5 class="subgroup">PSK-Reciprocity</h5>
+        <div class="grid">
+          <label class="field toggle-field">
+            <span>PSK-Reciprocity aktiv <small>(pskreporter.info)</small></span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.psk_reciprocity_enabled}
+                    onclick={() => cfg.operating.psk_reciprocity_enabled = !cfg.operating.psk_reciprocity_enabled}
+                    aria-pressed={cfg.operating.psk_reciprocity_enabled}>
+              <span class="toggle-knob"></span>
+            </button>
           </label>
-          <label><span>PSK-Refresh-Intervall (s) — Server-Last-freundlich ≥120</span>
+          <label class="field">
+            <span>Refresh-Intervall <small>(s, ≥120 empfohlen)</small></span>
             <input type="number" min="120" max="3600"
                    bind:value={cfg.operating.psk_reciprocity_refresh_s}/>
           </label>
@@ -779,6 +808,83 @@
   .status.ok { color: var(--ok); }
   .status.err { color: var(--danger); }
   .empty { color: #94a3b8; font-style: italic; }
+
+  /* v0.10.1: Sub-Group-Headers im Operating */
+  h5.subgroup {
+    margin: 1.4rem 0 0.5rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: #94a3b8;
+    font-size: 0.85em;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  h5.subgroup:first-of-type { margin-top: 0.5rem; }
+
+  /* v0.10.1: Konsistente Field-Wrapper — alle Inputs/Selects auf einer Höhe */
+  .field { display: flex; flex-direction: column; gap: 0.3rem; }
+  .field > span { font-size: 0.85em; color: #cbd5e1; font-weight: 500; }
+  .field > span small {
+    font-size: 0.9em; color: #64748b; font-weight: 400; margin-left: 0.3em;
+  }
+  .field > input[type="text"],
+  .field > input[type="number"],
+  .field > select {
+    height: 2.4em;
+    padding: 0 0.7em;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 0.95em;
+    transition: border-color 120ms;
+  }
+  .field > input:focus,
+  .field > select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .field > input::placeholder { color: #475569; font-style: italic; }
+
+  /* v0.10.1: Toggle-Switch (statt Checkbox) — iOS-style */
+  .toggle-field {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.5em 0;
+  }
+  .toggle-field > span { flex: 1; }
+  .toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    cursor: pointer;
+    padding: 0;
+    transition: background 180ms, border-color 180ms;
+    flex-shrink: 0;
+  }
+  .toggle.on {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: #f1f5f9;
+    border-radius: 50%;
+    transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+  .toggle.on .toggle-knob { transform: translateX(20px); }
+  .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* v0.10.0 Hunt-Priority-Tier-Liste */
   .hunt-tier-list {
