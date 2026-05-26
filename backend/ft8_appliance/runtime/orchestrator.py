@@ -866,6 +866,11 @@ class Orchestrator:
             # pro Slot via _tier_marine.
             self.state_machine.ctx.marine_calls = self._marine_calls_cache
             self.state_machine.ctx.worked_dxcc_band = self._worked_dxcc_band
+            # v0.10.2: VUCC-Tracking (worked grids) — Picker-Tiers new_grid +
+            # new_grid_band lesen das. Direkte Set-Referenz; updates fließen
+            # automatisch durch (worked_grids ist mutable shared).
+            self.state_machine.ctx.worked_grids = self._worked_grids
+            self.state_machine.ctx.worked_grid_band = self._worked_grid_band
         except Exception as exc:
             log.warning("hydrate_from_db failed: %s — starting with empty sets", exc)
 

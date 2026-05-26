@@ -90,6 +90,31 @@ def _tier_new_dxcc_band(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 1
 
 
+def _tier_new_grid(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Neues Grid-Quadrat überhaupt (Maidenhead Award).
+
+    Der CQ-Decoder hat das Grid bereits aus dem Message-Text extrahiert
+    ("CQ DK9XR JN58" → grid="JN58"). Wenn der CQ kein Grid trägt
+    (manche compound-Calls oder Free-Text-CQs), liefert der Tier 0.
+    """
+    if not d.grid:
+        return 0
+    g4 = d.grid[:4].upper()
+    if len(g4) != 4:
+        return 0
+    return 0 if g4 in ctx.worked_grids else 1
+
+
+def _tier_new_grid_band(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Grid haben wir, aber auf DIESEM Band noch nicht (VUCC-Band-Variation)."""
+    if not d.grid:
+        return 0
+    g4 = d.grid[:4].upper()
+    if len(g4) != 4:
+        return 0
+    return 0 if (g4, ctx.band) in ctx.worked_grid_band else 1
+
+
 def _tier_not_worked(d: "DecodedMsg", ctx: "MachineContext") -> int:
     """Call noch nie gearbeitet (allgemein, kein Band-Kriterium)."""
     if not d.call_from:
@@ -118,6 +143,8 @@ HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
     "new_dxcc":       _tier_new_dxcc,
     "psk_heard_us":   _tier_psk_heard_us,
     "new_dxcc_band":  _tier_new_dxcc_band,
+    "new_grid":       _tier_new_grid,
+    "new_grid_band":  _tier_new_grid_band,
     "not_worked":     _tier_not_worked,
     "dxcc_rarity":    _tier_dxcc_rarity,
     "snr":            _tier_snr,

@@ -27,6 +27,8 @@
     new_dxcc:      '🆕',
     psk_heard_us:  '📡',
     new_dxcc_band: '🌐',
+    new_grid:      '📍',
+    new_grid_band: '📍🌐',
     not_worked:    '❄️',
     dxcc_rarity:   '⭐',
     snr:           '📶',
@@ -38,6 +40,8 @@
     new_dxcc:      'Neues DXCC (auch ohne PSK)',
     psk_heard_us:  'PSK sagt "hört uns" (Asymmetrie ausnutzen)',
     new_dxcc_band: 'Neues Band für DXCC (5BWAS)',
+    new_grid:      'Neues Maidenhead-Grid (VUCC)',
+    new_grid_band: 'Neues Grid auf diesem Band',
     not_worked:    'Noch nie gearbeitet',
     dxcc_rarity:   'DXCC-Rarity-Bonus',
     snr:           'SNR (bestes Signal als Tie-Breaker)',
@@ -822,9 +826,30 @@
   }
   h5.subgroup:first-of-type { margin-top: 0.5rem; }
 
-  /* v0.10.1: Konsistente Field-Wrapper — alle Inputs/Selects auf einer Höhe */
-  .field { display: flex; flex-direction: column; gap: 0.3rem; }
-  .field > span { font-size: 0.85em; color: #cbd5e1; font-weight: 500; }
+  /* v0.10.2: Konsistente Field-Layout — Labels haben FESTE Höhe damit
+     Inputs IMMER auf gleicher Baseline sitzen, egal wie lang der
+     Label-Text wird. Long labels umbrechen lassen + clamp auf 2 Zeilen.
+     Sebastian-Feedback: "Überschriften und Eingabeboxen IMMER auf
+     derselben Höhe" — vorheriges flex column gap konnte das nicht
+     garantieren weil Spans verschiedene line-counts hatten. */
+  .field {
+    display: grid;
+    grid-template-rows: 2.6em 2.4em;  /* feste Höhen Label + Input */
+    gap: 0.3rem;
+    align-items: end;
+  }
+  .field > span {
+    font-size: 0.85em;
+    color: #cbd5e1;
+    font-weight: 500;
+    line-height: 1.25;
+    align-self: end;
+    /* 2-Zeilen-Clamp falls Label sehr lang — bleibt in der 2.6em-Zelle */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
   .field > span small {
     font-size: 0.9em; color: #64748b; font-weight: 400; margin-left: 0.3em;
   }
@@ -833,12 +858,34 @@
   .field > select {
     height: 2.4em;
     padding: 0 0.7em;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(15, 23, 42, 0.9);  /* dark statt rgba(white) damit
+                                            select-Dropdown nicht weiß
+                                            rendert (Sebastian-Bug v0.10.1) */
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 6px;
     color: #e2e8f0;
     font-size: 0.95em;
     transition: border-color 120ms;
+    /* Native select-styling soweit möglich entfernen — appearance:none
+       sorgt dafür dass option-Text auch die dark-Farben erbt */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2 4l4 4 4-4z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7em center;
+    background-size: 10px;
+    padding-right: 2em;
+  }
+  .field > input[type="text"],
+  .field > input[type="number"] {
+    /* Inputs sollen NICHT die select-Chevron-Background haben */
+    background-image: none;
+    padding-right: 0.7em;
+  }
+  .field > select option {
+    background: #0f172a;
+    color: #e2e8f0;
   }
   .field > input:focus,
   .field > select:focus {
@@ -847,15 +894,26 @@
   }
   .field > input::placeholder { color: #475569; font-style: italic; }
 
-  /* v0.10.1: Toggle-Switch (statt Checkbox) — iOS-style */
+  /* v0.10.1+v0.10.2: Toggle-Switch (statt Checkbox) — iOS-style.
+     Toggle-Field überschreibt das Field-Grid-Layout: Label LINKS, Toggle RECHTS
+     auf gleicher Baseline wie die anderen Inputs (Höhe 5em = 2.6em Label-
+     Block + 2.4em Input-Block der Geschwister-Fields). */
   .toggle-field {
+    display: flex;
     flex-direction: row;
-    align-items: center;
+    align-items: flex-end;
     justify-content: space-between;
     gap: 0.8rem;
-    padding: 0.5em 0;
+    height: 5em;
+    padding-bottom: 0.5em;  /* Toggle auf Höhe der Input-Mitte ausrichten */
+    grid-template-rows: none;  /* override des .field-Grids */
   }
-  .toggle-field > span { flex: 1; }
+  .toggle-field > span {
+    flex: 1;
+    align-self: center;
+    -webkit-line-clamp: unset;  /* override des Field-Span-Clamps */
+    overflow: visible;
+  }
   .toggle {
     position: relative;
     width: 44px;

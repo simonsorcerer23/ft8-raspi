@@ -310,13 +310,55 @@ def test_compute_score_snr_tiebreaker_added():
 
 
 def test_hunt_tiers_registry_complete():
-    """Alle 9 erwarteten Tier-Namen sind registriert."""
+    """Alle 11 erwarteten Tier-Namen sind registriert (v0.10.2: + new_grid, new_grid_band)."""
     expected = {
         "marine_psk", "marine", "new_dxcc_psk", "new_dxcc",
-        "psk_heard_us", "new_dxcc_band", "not_worked",
-        "dxcc_rarity", "snr",
+        "psk_heard_us", "new_dxcc_band", "new_grid", "new_grid_band",
+        "not_worked", "dxcc_rarity", "snr",
     }
     assert set(HUNT_TIERS.keys()) == expected
+
+
+def test_tier_new_grid():
+    """Decode mit grid, nicht in worked_grids → 1."""
+    from ft8_appliance.statemachine.machine import _tier_new_grid
+    ctx = _ctx(worked_grids={"JN58"})
+    d_new = DecodedMsg(
+        ts=datetime.now(timezone.utc), call_from="EA4XYZ", call_to=None,
+        grid="IM98", message="CQ EA4XYZ IM98", snr_db=-10, dt_s=0.1,
+        freq_offset_hz=1500, band="15m",
+    )
+    d_known = DecodedMsg(
+        ts=datetime.now(timezone.utc), call_from="DL5ABC", call_to=None,
+        grid="JN58", message="CQ DL5ABC JN58", snr_db=-10, dt_s=0.1,
+        freq_offset_hz=1500, band="15m",
+    )
+    d_nogrid = DecodedMsg(
+        ts=datetime.now(timezone.utc), call_from="W1AW", call_to=None,
+        grid=None, message="CQ W1AW", snr_db=-10, dt_s=0.1,
+        freq_offset_hz=1500, band="15m",
+    )
+    assert _tier_new_grid(d_new, ctx) == 1
+    assert _tier_new_grid(d_known, ctx) == 0
+    assert _tier_new_grid(d_nogrid, ctx) == 0
+
+
+def test_tier_new_grid_band():
+    """VUCC-Band: Grid haben wir, aber nicht auf diesem Band."""
+    from ft8_appliance.statemachine.machine import _tier_new_grid_band
+    ctx = _ctx(
+        band="15m",
+        worked_grid_band={("JN58", "20m")},  # JN58 auf 20m schon, aber nicht 15m
+    )
+    d = DecodedMsg(
+        ts=datetime.now(timezone.utc), call_from="DL5ABC", call_to=None,
+        grid="JN58", message="CQ DL5ABC JN58", snr_db=-10, dt_s=0.1,
+        freq_offset_hz=1500, band="15m",
+    )
+    assert _tier_new_grid_band(d, ctx) == 1
+    # Nach Logging auf 15m:
+    ctx.worked_grid_band.add(("JN58", "15m"))
+    assert _tier_new_grid_band(d, ctx) == 0
 
 
 # ---------------------------------------------------------------------------

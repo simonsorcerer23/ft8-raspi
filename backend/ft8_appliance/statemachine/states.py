@@ -181,6 +181,10 @@ class MachineContext:
     # bestätigt haben. Vom Orchestrator beim Boot aus DB rekonstruiert
     # und bei jedem LOG_QSO upgedated.
     worked_dxcc_band: set[tuple[str, str]] = field(default_factory=set)
+    # VUCC-Tracking (v0.10.2): worked 4-char grid squares + (grid, band) tuples.
+    # Wird vom Orchestrator aus _worked_grids / _worked_grid_band gespiegelt.
+    worked_grids: set[str] = field(default_factory=set)
+    worked_grid_band: set[tuple[str, str]] = field(default_factory=set)
     # DXCC-Rarity-Lookup: call_from → DXCC-Entity (für Tier 8). Vom
     # Orchestrator pro Slot mit den frisch geseten Calls befüllt.
     # Wert ist der Rarity-Score (0..100). Aus integrations.dxcc_rarity

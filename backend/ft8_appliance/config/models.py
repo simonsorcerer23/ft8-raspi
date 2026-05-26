@@ -347,6 +347,8 @@ class OperatingConfig(BaseModel):
             "new_dxcc",          # neues DXCC (auch ohne PSK)
             "psk_heard_us",      # PSK sagt "hört uns" (für routine-EU)
             "new_dxcc_band",     # 5BWAS — neues Band für DXCC
+            "new_grid",          # neues Maidenhead-Grid (VUCC-Award)
+            "new_grid_band",     # neues Grid auf diesem Band (VUCC-Band)
             "not_worked",        # nie gearbeitet überhaupt
             "dxcc_rarity",       # rare DXCC-Bonus
             "snr",               # Tie-Breaker — bestes Signal
