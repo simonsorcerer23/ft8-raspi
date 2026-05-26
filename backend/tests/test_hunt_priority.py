@@ -310,9 +310,10 @@ def test_compute_score_snr_tiebreaker_added():
 
 
 def test_hunt_tiers_registry_complete():
-    """Alle 11 erwarteten Tier-Namen sind registriert (v0.10.2: + new_grid, new_grid_band)."""
+    """Alle erwarteten Tier-Namen sind registriert (v0.11.0: + tail_end_target)."""
     expected = {
-        "marine_psk", "marine", "new_dxcc_psk", "new_dxcc",
+        "marine_psk", "marine", "tail_end_target",
+        "new_dxcc_psk", "new_dxcc",
         "psk_heard_us", "new_dxcc_band", "new_grid", "new_grid_band",
         "not_worked", "dxcc_rarity", "snr",
     }
@@ -355,6 +356,8 @@ def test_hunt_priority_auto_migration_adds_missing_tiers():
     cfg = OperatingConfig(hunt_priority=old)
     assert "new_grid" in cfg.hunt_priority
     assert "new_grid_band" in cfg.hunt_priority
+    # v0.11.0: tail_end_target wird ebenfalls reingemerged
+    assert "tail_end_target" in cfg.hunt_priority
     # snr bleibt am Ende
     assert cfg.hunt_priority[-1] == "snr"
     # User-Reihenfolge bleibt vorne erhalten
@@ -370,8 +373,8 @@ def test_hunt_priority_auto_migration_preserves_user_order():
     assert cfg.hunt_priority[0] == "new_dxcc"  # User-Sortierung erhalten
     assert cfg.hunt_priority[1] == "marine"
     assert cfg.hunt_priority[-1] == "snr"
-    # alle 11 known Tiers drin
-    assert len(cfg.hunt_priority) == 11
+    # alle 12 known Tiers drin (v0.11.0: + tail_end_target)
+    assert len(cfg.hunt_priority) == 12
 
 
 def test_hunt_priority_validator_keeps_unknown_tiers():
@@ -386,7 +389,7 @@ def test_hunt_priority_validator_empty_list_to_default():
     """Leere Liste in der Config → komplette Default-Liste."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 11
+    assert len(cfg.hunt_priority) == 12  # v0.11.0: + tail_end_target
     assert cfg.hunt_priority[0] == "marine_psk"
 
 

@@ -3266,6 +3266,11 @@ class Orchestrator:
         # spiegeln. User kann via UI permutieren — hier wird's pro Slot
         # frisch eingelesen damit Änderungen ohne Restart greifen.
         self.state_machine.ctx.hunt_priority = list(self.config.operating.hunt_priority)
+        # v0.11.0 Tail-End-Hunter: Toggle pro Slot spiegeln. Detection
+        # + Synth-Injection im State-Machine-Pfad sind no-op wenn aus.
+        self.state_machine.ctx.tail_end_hunter_enabled = (
+            self.config.operating.tail_end_hunter_enabled
+        )
         # New-DXCC-Set für den Hunting-Picker bauen: alle aktuell
         # dekodierten CQ-Calls deren Country wir noch nicht gearbeitet
         # haben. Plus call_to_dxcc-Mapping für 5BWAS-Tier (jeden CQ-Call

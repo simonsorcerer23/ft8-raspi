@@ -21,30 +21,32 @@
   // v0.10.0 Hunt-Priority-Tier-Labels (deutsch, kompakt) + Icons.
   // Muss synchron sein mit HUNT_TIERS in backend/statemachine/machine.py.
   const TIER_ICONS = {
-    marine_psk:    '⚓📡',
-    marine:        '⚓',
-    new_dxcc_psk:  '🆕📡',
-    new_dxcc:      '🆕',
-    psk_heard_us:  '📡',
-    new_dxcc_band: '🌐',
-    new_grid:      '📍',
-    new_grid_band: '📍🌐',
-    not_worked:    '❄️',
-    dxcc_rarity:   '⭐',
-    snr:           '📶',
+    marine_psk:      '⚓📡',
+    marine:          '⚓',
+    tail_end_target: '🎯',
+    new_dxcc_psk:    '🆕📡',
+    new_dxcc:        '🆕',
+    psk_heard_us:    '📡',
+    new_dxcc_band:   '🌐',
+    new_grid:        '📍',
+    new_grid_band:   '📍🌐',
+    not_worked:      '❄️',
+    dxcc_rarity:     '⭐',
+    snr:             '📶',
   };
   const TIER_LABELS = {
-    marine_psk:    'Marinefunker + PSK sagt "hört uns"',
-    marine:        'Marinefunker (auch ohne PSK)',
-    new_dxcc_psk:  'Neues DXCC + PSK sagt "hört uns"',
-    new_dxcc:      'Neues DXCC (auch ohne PSK)',
-    psk_heard_us:  'PSK sagt "hört uns" (Asymmetrie ausnutzen)',
-    new_dxcc_band: 'Neues Band für DXCC (5BWAS)',
-    new_grid:      'Neues Maidenhead-Grid (VUCC)',
-    new_grid_band: 'Neues Grid auf diesem Band',
-    not_worked:    'Noch nie gearbeitet',
-    dxcc_rarity:   'DXCC-Rarity-Bonus',
-    snr:           'SNR (bestes Signal als Tie-Breaker)',
+    marine_psk:      'Marinefunker + PSK sagt "hört uns"',
+    marine:          'Marinefunker (auch ohne PSK)',
+    tail_end_target: 'Tail-End: Station hat gerade QSO beendet',
+    new_dxcc_psk:    'Neues DXCC + PSK sagt "hört uns"',
+    new_dxcc:        'Neues DXCC (auch ohne PSK)',
+    psk_heard_us:    'PSK sagt "hört uns" (Asymmetrie ausnutzen)',
+    new_dxcc_band:   'Neues Band für DXCC (5BWAS)',
+    new_grid:        'Neues Maidenhead-Grid (VUCC)',
+    new_grid_band:   'Neues Grid auf diesem Band',
+    not_worked:      'Noch nie gearbeitet',
+    dxcc_rarity:     'DXCC-Rarity-Bonus',
+    snr:             'SNR (bestes Signal als Tie-Breaker)',
   };
 
   let cfg = $state(null);
@@ -164,6 +166,7 @@
         s += `${ind(4)}- ${yq(t)}\n`;
       }
     }
+    s += `${ind(2)}tail_end_hunter_enabled: ${c.operating.tail_end_hunter_enabled === true}\n`;
     s += `${ind(2)}psk_reciprocity_enabled: ${c.operating.psk_reciprocity_enabled === true}\n`;
     s += `${ind(2)}psk_reciprocity_refresh_s: ${c.operating.psk_reciprocity_refresh_s ?? 600}\n`;
     // YAML 1.1: "off"/"on"/"yes"/"no" sind Boolean-Keywords → ohne
@@ -568,6 +571,25 @@
                       onclick={() => moveTier(idx, +1)}>▼</button>
             </div>
           {/each}
+        </div>
+        <h5 class="subgroup">🎯 Tail-End-Hunter</h5>
+        <p class="hint">
+          Ruft Stationen direkt nach deren <strong>RR73</strong> an wie bei
+          einem CQ. WSJT-X kann das nicht automatisch — wir markieren bei
+          jedem Closing-Decode den Sender für 30 s (= 2 Slots) als
+          Candidate. Cooldown 24 h pro Station damit wir niemanden nerven.
+          Pi 5-only sinnvoll wegen Latenz.
+        </p>
+        <div class="grid">
+          <label class="field toggle-field">
+            <span>Tail-End-Hunter aktiv</span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.tail_end_hunter_enabled}
+                    onclick={() => cfg.operating.tail_end_hunter_enabled = !cfg.operating.tail_end_hunter_enabled}
+                    aria-pressed={cfg.operating.tail_end_hunter_enabled}>
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
         </div>
         <h5 class="subgroup">PSK-Reciprocity</h5>
         <div class="grid">

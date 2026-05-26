@@ -134,20 +134,48 @@ def _tier_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return d.snr_db if d.snr_db is not None else -99
 
 
+# v0.11.0 Tail-End-Hunter
+TAIL_END_COOLDOWN_S = 24 * 3600  # 24h pro Station
+
+
+def _tier_tail_end_target(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Station hat in den letzten 30 s ein Closing (RR73/RRR/73)
+    gesendet → sie ist gleich frei wie nach einem CQ. Wir koennen
+    sie direkt anrufen statt zu warten bis ihr naechster CQ kommt.
+
+    Cooldown 24h pro Station (Sebastian-Wunsch): wir wollen nicht
+    denselben Op an einem Tag mehrfach per Tail-End anrufen.
+    """
+    if not d.call_from:
+        return 0
+    norm = d.call_from.upper()
+    if norm not in ctx.tail_end_candidates:
+        return 0
+    # 24h-Cooldown — wenn wir den schon mal per Tail-End gepickt haben,
+    # nicht nochmal heute.
+    last = ctx.tail_end_last_pick.get(norm)
+    if last is not None:
+        now = datetime.now(UTC).timestamp()
+        if now - last < TAIL_END_COOLDOWN_S:
+            return 0
+    return 1
+
+
 # Registry: name → scoring function. Unbekannte Namen werden in
 # _compute_tier_score() ignoriert (defensive, kein KeyError bei Tippfehler).
 HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
-    "marine_psk":     _tier_marine_psk,
-    "marine":         _tier_marine,
-    "new_dxcc_psk":   _tier_new_dxcc_psk,
-    "new_dxcc":       _tier_new_dxcc,
-    "psk_heard_us":   _tier_psk_heard_us,
-    "new_dxcc_band":  _tier_new_dxcc_band,
-    "new_grid":       _tier_new_grid,
-    "new_grid_band":  _tier_new_grid_band,
-    "not_worked":     _tier_not_worked,
-    "dxcc_rarity":    _tier_dxcc_rarity,
-    "snr":            _tier_snr,
+    "marine_psk":      _tier_marine_psk,
+    "marine":          _tier_marine,
+    "tail_end_target": _tier_tail_end_target,
+    "new_dxcc_psk":    _tier_new_dxcc_psk,
+    "new_dxcc":        _tier_new_dxcc,
+    "psk_heard_us":    _tier_psk_heard_us,
+    "new_dxcc_band":   _tier_new_dxcc_band,
+    "new_grid":        _tier_new_grid,
+    "new_grid_band":   _tier_new_grid_band,
+    "not_worked":      _tier_not_worked,
+    "dxcc_rarity":     _tier_dxcc_rarity,
+    "snr":             _tier_snr,
 }
 
 
@@ -288,6 +316,14 @@ class StateMachine:
     def on_decodes(self, hw: HardwareState, decodes: Iterable[DecodedMsg]) -> None:
         decodes = list(decodes)
         self.last_decodes = decodes
+
+        # v0.11.0 Tail-End-Hunter: bei jedem Slot CQ-Tracking + Closing-
+        # Detection auffrischen. Laeuft VOR der State-Machine-Logik damit
+        # ein Closing das im selben Slot wie ein anderer CQ kommt sofort
+        # als Candidate verfuegbar ist falls wir in IDLE+auto_answer
+        # gerade in den Picker fallen.
+        if self.ctx.tail_end_hunter_enabled:
+            self._update_tail_end_state(decodes)
 
         # Hunting mode: when idle and auto_answer is on.
         if self.state is State.IDLE and self.ctx.auto_answer:
@@ -592,6 +628,13 @@ class StateMachine:
                         self._emit_send_r_report()
 
     def on_slot_tick(self, hw: HardwareState, tick: "SlotTick | None" = None) -> None:
+        # v0.11.0 — Tail-End-Candidates altert: jeder Slot pruefen ob
+        # die 30-s-Expiry abgelaufen ist. Laeuft auch wenn der Toggle
+        # aus ist (defensiv — falls jemand wechselt waehrend Candidates
+        # noch im Dict stehen).
+        if self.ctx.tail_end_candidates or self.ctx.tail_end_recent_cq:
+            self._prune_tail_end_state()
+
         # Boot-Auto-Resume (Sebastian 2026-05-23 nach Multi-Operator-
         # Refactor): wenn auto_cq beim Boot via boot_mode=cq gesetzt
         # wurde aber state noch IDLE (kein User-Event seit Restart),
@@ -888,6 +931,56 @@ class StateMachine:
             self.state = State.IDLE
 
     # ------------------------------------------------------------------ hunting helpers
+    def _build_synthetic_tail_end_decodes(
+        self, real_decodes: Iterable[DecodedMsg]
+    ) -> list[DecodedMsg]:
+        """Bauet synthetische CQ-Decodes fuer aktive Tail-End-Candidates.
+
+        Wir treten so auf als haetten sie gerade CQ gerufen — damit sie
+        durch den Standard-Filter-Stack (worked, blacklist, SNR-floor,
+        freq-bounds, cooldown) laufen und der Tier-Score sie via
+        _tier_tail_end_target hochzieht. Reuse: snr/freq/band/grid vom
+        letzten echten Decode des Closings.
+
+        Duplikat-Schutz: wenn dieselbe Station in real_decodes bereits
+        einen echten CQ-Decode hat, kein Synthetic — der echte hat
+        Vorrang und der Tier-Score gilt fuer ihn genauso.
+        """
+        if not self.ctx.tail_end_candidates:
+            return []
+        existing_cq_calls = {
+            d.call_from.upper() for d in real_decodes
+            if d.call_from and d.call_to is None
+            and (d.message or "").startswith("CQ")
+        }
+        now_ts = datetime.now(UTC)
+        synth: list[DecodedMsg] = []
+        for call, meta in self.ctx.tail_end_candidates.items():
+            if call in existing_cq_calls:
+                continue
+            grid = meta.get("grid") or ""
+            # Fake-CQ-Message: nutzt das Grid wenn bekannt (matched dann
+            # auch new_grid-Tier), sonst nur Call. Format kompatibel
+            # zum Standard-CQ-Parser (call_from = sender, call_to = None).
+            msg = f"CQ {call} {grid}".strip() if grid else f"CQ {call}"
+            synth.append(DecodedMsg(
+                ts=now_ts,
+                call_from=call,
+                call_to=None,
+                grid=grid or None,
+                message=msg,
+                snr_db=meta.get("snr_db"),
+                # dt_s=0.0 bypassed bewusst den DT-Filter — der Closing-
+                # Decode hat schon bewiesen dass die Station decodebar
+                # ist; ein moeglicher DT-Drift war im Original-Decode
+                # bereits gemessen und auf der RX-Seite ok.
+                dt_s=0.0,
+                freq_offset_hz=meta.get("freq_offset_hz"),
+                band=meta.get("band") or self.ctx.band,
+                is_freetext=False,
+            ))
+        return synth
+
     def _pick_hunt_target(self, decodes: Iterable[DecodedMsg]) -> DecodedMsg | None:
         """Pick the strongest non-blacklisted CQ from this slot's decodes.
 
@@ -897,7 +990,13 @@ class StateMachine:
           * call_from != our own callsign (don't reply to ourselves)
           * SNR >= hunt_snr_floor_db (kein "die wird uns eh nicht hoeren")
           * highest SNR wins
+
+        v0.11.0: zusaetzlich werden synthetische CQ-Decodes fuer aktive
+        Tail-End-Candidates injiziert — siehe _build_synthetic_tail_end_decodes.
         """
+        decodes = list(decodes)
+        if self.ctx.tail_end_hunter_enabled:
+            decodes = decodes + self._build_synthetic_tail_end_decodes(decodes)
         cqs = [
             d for d in decodes
             if d.call_from
@@ -999,13 +1098,123 @@ class StateMachine:
                 )
                 return (is_new, d.snr_db if d.snr_db is not None else -99)
 
-            return max(cqs, key=legacy_score)
+            winner = max(cqs, key=legacy_score)
+        else:
+            winner = max(cqs, key=lambda d: _compute_tier_score(d, self.ctx))
 
-        return max(cqs, key=lambda d: _compute_tier_score(d, self.ctx))
+        # v0.11.0: wenn Tail-End-Candidate gewonnen hat, 24h-Cooldown
+        # setzen. Auch wenn der Tier nicht in hunt_priority steht — wir
+        # wollen nicht mehrfach am Tag ueber den Tail-End-Pfad bei
+        # derselben Station landen.
+        if (
+            self.ctx.tail_end_hunter_enabled
+            and winner.call_from
+            and winner.call_from.upper() in self.ctx.tail_end_candidates
+        ):
+            self.ctx.tail_end_last_pick[winner.call_from.upper()] = (
+                datetime.now(UTC).timestamp()
+            )
+            log.info(
+                "Tail-End-Pick: %s (24h-Cooldown gesetzt)",
+                winner.call_from,
+            )
+        return winner
 
     def set_auto_answer(self, enabled: bool) -> None:
         """Toggle hunting mode. Active only while state is IDLE."""
         self.ctx.auto_answer = enabled
+
+    # ------------------------------------------------------------------ tail-end hunter
+    # v0.11.0 — siehe docstring im Picker und feature_completeness-Memory.
+    TAIL_END_EXPIRY_S = 30.0          # 2 FT8-Slots
+    TAIL_END_RECENT_CQ_S = 300.0      # 5 min — wer noch CQ ruft braucht keinen Tail-End
+    TAIL_END_RECENT_CQ_PRUNE_S = 600.0  # 10 min — Tracking-Dict-Hygiene
+
+    def _update_tail_end_state(self, decodes: Iterable[DecodedMsg]) -> None:
+        """Pflegt ctx.tail_end_candidates + ctx.tail_end_recent_cq.
+
+        - Jeder CQ-Decode aktualisiert tail_end_recent_cq[call] = now.
+        - Jeder Closing-Decode (RR73/RRR/73) macht den Sender zum
+          Candidate, sofern er nicht in den letzten 5 min selbst CQ
+          gerufen hat (sein naechster CQ kommt eh) UND er das Closing
+          nicht an UNS gesendet hat (das ist unser Partner, der kommt
+          via Standard-Cooldown).
+        - Expiry-Pflege geschieht in on_slot_tick (siehe dort).
+        """
+        now = datetime.now(UTC).timestamp()
+        # Index aller "echten CQs" dieses Slots — used both fuer recent_cq-
+        # Tracking und um zu wissen welcher Candidate gerade CQ ruft.
+        for d in decodes:
+            if not d.call_from:
+                continue
+            if getattr(d, "is_freetext", False):
+                continue
+            if d.call_to is not None:
+                continue
+            if not (d.message or "").startswith("CQ"):
+                continue
+            self.ctx.tail_end_recent_cq[d.call_from.upper()] = now
+
+        # Closings einsammeln. Eligibility-Filter direkt hier statt im
+        # Tier — sonst muessten wir die snr/freq vom letzten Decode auch
+        # noch durchschleusen.
+        for d in _iter_closings(decodes):
+            call = (d.call_from or "").upper()
+            if not call:
+                continue
+            # Wenn das Closing an UNS gerichtet ist: das ist unser
+            # Partner. Der kommt nach LOG_QSO eh in den Standard-Cooldown
+            # (qso_cooldown_min), kein Tail-End noetig.
+            if d.call_to == self.ctx.callsign:
+                continue
+            # 5-min-Filter: Station ruft sowieso noch CQ, kein Tail-End-
+            # Boost noetig — ihr naechster CQ-Slot kommt von selbst.
+            recent_cq_at = self.ctx.tail_end_recent_cq.get(call)
+            if recent_cq_at is not None and now - recent_cq_at < self.TAIL_END_RECENT_CQ_S:
+                log.debug(
+                    "Tail-End: %s ignoriert (selbst CQ vor %.0fs)",
+                    call, now - recent_cq_at,
+                )
+                continue
+            # Speichere Metadaten vom Closing-Decode — die brauchen wir
+            # spaeter um den synthetischen CQ-Decode im Picker zu bauen
+            # (freq_offset_hz fuer Reply-Frequenz, snr_db fuer SNR-Floor,
+            # band fuer den Filter-Stack).
+            self.ctx.tail_end_candidates[call] = {
+                "expiry": now + self.TAIL_END_EXPIRY_S,
+                "snr_db": d.snr_db,
+                "freq_offset_hz": d.freq_offset_hz,
+                "band": d.band,
+                "grid": d.grid,
+            }
+            log.info(
+                "Tail-End-Candidate: %s (Closing an %s, snr=%s freq=%s)",
+                call, d.call_to or "?", d.snr_db, d.freq_offset_hz,
+            )
+
+    def _prune_tail_end_state(self) -> None:
+        """Expirierte Candidates rauswerfen + recent_cq-Dict trimmen.
+
+        Wird im on_slot_tick aufgerufen. Pflicht damit der Tail-End-
+        Tier nicht ewig auf einem 5-min-alten Closing kleben bleibt.
+        """
+        now = datetime.now(UTC).timestamp()
+        expired = [
+            call for call, meta in self.ctx.tail_end_candidates.items()
+            if meta.get("expiry", 0) <= now
+        ]
+        for call in expired:
+            del self.ctx.tail_end_candidates[call]
+            log.debug("Tail-End-Candidate %s expired", call)
+        # recent_cq-Hygiene: alles aelter als 10 min ist eh nicht mehr
+        # filter-relevant (Filter-Fenster ist 5 min) — wegputzen damit
+        # das Dict nicht ewig waechst.
+        stale_cq = [
+            call for call, ts in self.ctx.tail_end_recent_cq.items()
+            if now - ts > self.TAIL_END_RECENT_CQ_PRUNE_S
+        ]
+        for call in stale_cq:
+            del self.ctx.tail_end_recent_cq[call]
 
     # ------------------------------------------------------------------ guard plumbing
     def _check_guards(self, hw: HardwareState) -> bool:
@@ -1121,6 +1330,26 @@ def _find_report_from_them(
         if m and not d.message.startswith(f"{d.call_to} {d.call_from} R"):
             return int(m.group(1))
     return None
+
+
+def _iter_closings(decodes: Iterable[DecodedMsg]) -> Iterable[DecodedMsg]:
+    """Liefert alle Decodes die ein QSO-Closing sind (RR73/RRR/73 als
+    letztes Wort der Message). Im Gegensatz zu _find_closing filtert
+    diese Funktion NICHT auf Partner/MyCall — sie sieht ALLE Closings
+    im Slot, damit der Tail-End-Hunter erkennen kann wer gerade ein
+    QSO mit irgendwem beendet hat.
+
+    is_freetext-Decodes werden uebersprungen (Tx5/Tx6 Free-Text wie
+    "73 GL" wuerde sonst false-positives ergeben).
+    """
+    for d in decodes:
+        if not d.message or not d.call_from:
+            continue
+        if getattr(d, "is_freetext", False):
+            continue
+        tail = d.message.split()[-1].upper() if d.message.split() else ""
+        if tail in {"RR73", "RRR", "73"}:
+            yield d
 
 
 def _find_closing(

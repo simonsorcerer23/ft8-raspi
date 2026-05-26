@@ -193,3 +193,25 @@ class MachineContext:
     # call_from → dxcc_entity_name (für 5BWAS-Check). Auch pro Slot
     # vom Orchestrator befüllt aus cty.dat-Lookup.
     call_to_dxcc: dict[str, str] = field(default_factory=dict)
+    # v0.11.0 Tail-End-Hunter
+    # ────────────────────────────────────────────────────────────────
+    # Toggle: aus OperatingConfig.tail_end_hunter_enabled gespiegelt.
+    # Wenn False: Detection läuft nicht, Candidates bleibt leer.
+    tail_end_hunter_enabled: bool = False
+    # Aktive Tail-End-Candidates: Stationen die in den letzten 30 s ein
+    # Closing (RR73/RRR/73) gesendet haben und damit jetzt frei sind
+    # für direkten Anruf wie nach CQ. Key: call_from (uppercase),
+    # Value: {"expiry": posix, "snr_db": int|None, "freq_offset_hz":
+    # int|None, "band": str, "grid": str|None}. Expiry-Pflege passiert
+    # im State-Machine-Slot-Tick.
+    tail_end_candidates: dict[str, dict] = field(default_factory=dict)
+    # 24h-Cooldown pro Station: verhindert dass wir denselben Op an
+    # einem Tag mehrfach per Tail-End anrufen — wäre nervig fuer ihn
+    # und uns. Key: call (uppercase), Value: posix-Timestamp des
+    # letzten Tail-End-Picks.
+    tail_end_last_pick: dict[str, float] = field(default_factory=dict)
+    # Letzter-CQ-Zeitstempel pro Call: wer in den letzten 5 min selber
+    # CQ ruft, braucht keinen Tail-End-Boost (sein naechster CQ kommt
+    # eh, wir koennen normal antworten). Verhindert dass routinemaessige
+    # CQ-Rufer mit jedem Closing in den Tail-End-Tier rutschen.
+    tail_end_recent_cq: dict[str, float] = field(default_factory=dict)

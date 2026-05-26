@@ -343,6 +343,7 @@ class OperatingConfig(BaseModel):
         default_factory=lambda: [
             "marine_psk",        # Marinefunker + PSK sagt "hört uns"
             "marine",            # Marinefunker (auch ohne PSK)
+            "tail_end_target",   # v0.11.0 — Station hat gerade QSO beendet
             "new_dxcc_psk",      # neues DXCC + PSK sagt "hört uns"
             "new_dxcc",          # neues DXCC (auch ohne PSK)
             "psk_heard_us",      # PSK sagt "hört uns" (für routine-EU)
@@ -373,9 +374,9 @@ class OperatingConfig(BaseModel):
         # Synchron mit statemachine.machine.HUNT_TIERS — der Test
         # test_hunt_tiers_registry_complete erzwingt das.
         known = [
-            "marine_psk", "marine", "new_dxcc_psk", "new_dxcc",
-            "psk_heard_us", "new_dxcc_band", "new_grid", "new_grid_band",
-            "not_worked", "dxcc_rarity", "snr",
+            "marine_psk", "marine", "tail_end_target", "new_dxcc_psk",
+            "new_dxcc", "psk_heard_us", "new_dxcc_band", "new_grid",
+            "new_grid_band", "not_worked", "dxcc_rarity", "snr",
         ]
         if not v:
             return list(known)  # leere Liste → komplette Default rein
@@ -389,6 +390,17 @@ class OperatingConfig(BaseModel):
             return existing[:snr_idx] + missing + existing[snr_idx:]
         except ValueError:
             return existing + missing
+
+    # v0.11.0 Tail-End-Hunter (Sebastian-Wunsch):
+    # Wenn aktiv, markiert die State-Machine bei jedem RR73/RRR/73-Decode
+    # den Sender als Tail-End-Candidate (= sein QSO ist beendet, er ist
+    # gleich frei wie nach CQ). Picker injiziert dann synthetische CQ-
+    # Decodes fuer diese Candidates, wodurch sie vom Tail-End-Tier
+    # priorisiert werden koennen. WSJT-X kann das nicht automatisch —
+    # etablierte FT8-Praxis von Hand.
+    # Default False weil Latenz-sensitiv (Pi 5 empfohlen) und manche
+    # Operator das nicht moegen (= "Kapern" eines fremden QSO-Endes).
+    tail_end_hunter_enabled: bool = False
 
     # PSK-Reciprocity-Toggle: wenn aktiv, fetcht der Orchestrator periodisch
     # pskreporter.info um zu wissen welche Stationen uns gerade hören.

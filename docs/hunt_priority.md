@@ -29,16 +29,19 @@ Das Score-Tuple wird **lexikographisch** verglichen — die erste Stelle
 dominiert, bei Gleichstand entscheidet die zweite usw. Letzte Stelle
 ist konventionell `snr` als Tie-Breaker.
 
-## Die 9 Tiers im Detail
+## Die Tiers im Detail
 
 | Name | Bedingung | Score | Datenquelle |
 |---|---|---|---|
 | `marine_psk` | Call ist Marinefunker **und** hat uns laut PSK Reporter recently gehört | 0/1 | `marinefunker.json` + PSK-Cache |
 | `marine` | Call ist Marinefunker (auch ohne PSK-Confirmation) | 0/1 | `marinefunker.json` |
+| `tail_end_target` | Station hat in den letzten 30 s ein RR73/RRR/73 gesendet (= QSO beendet, jetzt frei) — 24 h Cooldown pro Station | 0/1 | `tail_end_candidates` + Toggle `tail_end_hunter_enabled` |
 | `new_dxcc_psk` | Call ist aus neuem DXCC **und** PSK sagt „hört uns" | 0/1 | cty.dat + PSK-Cache |
 | `new_dxcc` | Call ist aus neuem DXCC (auch ohne PSK) | 0/1 | cty.dat + worked-Set |
 | `psk_heard_us` | PSK Reporter sagt: dieser Call hat uns recently gespottet | 0/1 | PSK-Cache |
 | `new_dxcc_band` | DXCC haben wir, aber NICHT auf diesem Band (5BWAS) | 0/1 | `worked_dxcc_band`-Set |
+| `new_grid` | Neues Maidenhead-Grid (VUCC-Award) | 0/1 | `worked_grids`-Set |
+| `new_grid_band` | Grid haben wir, aber NICHT auf diesem Band (VUCC-Band-Variation) | 0/1 | `worked_grid_band`-Set |
 | `not_worked` | Call wurde noch nie gearbeitet | 0/1 | `worked`-Set |
 | `dxcc_rarity` | DXCC-Rarity-Score aus Tabelle (P5=100, 9J=45, DE=0) | 0..100 | `dxcc_rarity.json` |
 | `snr` | Signal-to-Noise Ratio in dB | int | aus Decode-Pipeline |
@@ -49,13 +52,16 @@ Aus `OperatingConfig.hunt_priority`:
 
 1. `marine_psk` — Marinefunker mit PSK-Trust
 2. `marine` — Marinefunker (auch ohne PSK)
-3. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
-4. `new_dxcc` — Neues DXCC (auch ohne PSK)
-5. `psk_heard_us` — PSK-Asymmetrie für routine-EU-Stationen
-6. `new_dxcc_band` — 5BWAS-Award-Tracking
-7. `not_worked` — Neue Calls (auch routine)
-8. `dxcc_rarity` — Rarity-Bonus
-9. `snr` — Tie-Breaker (bestes Signal gewinnt)
+3. `tail_end_target` — Tail-End-Pick nach Closing-Detect (v0.11.0)
+4. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
+5. `new_dxcc` — Neues DXCC (auch ohne PSK)
+6. `psk_heard_us` — PSK-Asymmetrie für routine-EU-Stationen
+7. `new_dxcc_band` — 5BWAS-Award-Tracking
+8. `new_grid` — Neues Maidenhead-Grid (VUCC)
+9. `new_grid_band` — Grid auf diesem Band noch nicht (VUCC-Band)
+10. `not_worked` — Neue Calls (auch routine)
+11. `dxcc_rarity` — Rarity-Bonus
+12. `snr` — Tie-Breaker (bestes Signal gewinnt)
 
 **Begründung der Default-Reihenfolge** (Sebastian-Wunsch 2026-05-26):
 - Marinefunker top weil persönliche Community (Raymond ist Mitglied)
