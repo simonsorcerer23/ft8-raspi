@@ -354,6 +354,42 @@ class OperatingConfig(BaseModel):
             "snr",               # Tie-Breaker — bestes Signal
         ]
     )
+
+    @field_validator("hunt_priority", mode="after")
+    @classmethod
+    def _migrate_missing_tiers(cls, v: list[str]) -> list[str]:
+        """Auto-Migration: wenn neue Tier-Namen im Code dazukommen, ergänze
+        sie zur User-Liste — sonst sieht Sebastian sie nach Update nicht.
+
+        Sebastian-Feedback v0.10.2: "die Grids fehlen noch" — er hatte
+        die alte 9er-Liste in seiner config.yaml, neue Tiers wurden bei
+        Pydantic-Load nicht gemerged.
+
+        Strategie: fehlende known-Tiers werden VOR 'snr' eingefügt damit
+        der Tie-Breaker unten bleibt. Wenn 'snr' nicht in der Liste ist,
+        werden sie ans Ende angehängt. Unbekannte Namen die der User hat
+        bleiben drin (defensive forward-compat).
+        """
+        # Synchron mit statemachine.machine.HUNT_TIERS — der Test
+        # test_hunt_tiers_registry_complete erzwingt das.
+        known = [
+            "marine_psk", "marine", "new_dxcc_psk", "new_dxcc",
+            "psk_heard_us", "new_dxcc_band", "new_grid", "new_grid_band",
+            "not_worked", "dxcc_rarity", "snr",
+        ]
+        if not v:
+            return list(known)  # leere Liste → komplette Default rein
+        existing = list(v)
+        missing = [t for t in known if t not in existing]
+        if not missing:
+            return existing
+        # Vor 'snr' einfügen falls vorhanden, sonst hinten anhängen
+        try:
+            snr_idx = existing.index("snr")
+            return existing[:snr_idx] + missing + existing[snr_idx:]
+        except ValueError:
+            return existing + missing
+
     # PSK-Reciprocity-Toggle: wenn aktiv, fetcht der Orchestrator periodisch
     # pskreporter.info um zu wissen welche Stationen uns gerade hören.
     # Die "marine_psk", "new_dxcc_psk" und "psk_heard_us" Tiers brauchen das.

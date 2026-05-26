@@ -343,6 +343,53 @@ def test_tier_new_grid():
     assert _tier_new_grid(d_nogrid, ctx) == 0
 
 
+def test_hunt_priority_auto_migration_adds_missing_tiers():
+    """Wenn die User-Config eine alte Liste hat, ergänzt der Validator
+    fehlende known-Tiers vor 'snr'."""
+    from ft8_appliance.config.models import OperatingConfig
+    # Alte v0.10.0 9er-Liste — fehlen new_grid + new_grid_band
+    old = [
+        "marine_psk", "marine", "new_dxcc_psk", "new_dxcc",
+        "psk_heard_us", "new_dxcc_band", "not_worked", "dxcc_rarity", "snr",
+    ]
+    cfg = OperatingConfig(hunt_priority=old)
+    assert "new_grid" in cfg.hunt_priority
+    assert "new_grid_band" in cfg.hunt_priority
+    # snr bleibt am Ende
+    assert cfg.hunt_priority[-1] == "snr"
+    # User-Reihenfolge bleibt vorne erhalten
+    assert cfg.hunt_priority[0] == "marine_psk"
+
+
+def test_hunt_priority_auto_migration_preserves_user_order():
+    """User-Permutation bleibt erhalten, nur fehlende Tiers werden ergänzt."""
+    from ft8_appliance.config.models import OperatingConfig
+    # User hat new_dxcc nach oben gezogen
+    user = ["new_dxcc", "marine", "snr"]
+    cfg = OperatingConfig(hunt_priority=user)
+    assert cfg.hunt_priority[0] == "new_dxcc"  # User-Sortierung erhalten
+    assert cfg.hunt_priority[1] == "marine"
+    assert cfg.hunt_priority[-1] == "snr"
+    # alle 11 known Tiers drin
+    assert len(cfg.hunt_priority) == 11
+
+
+def test_hunt_priority_validator_keeps_unknown_tiers():
+    """Unbekannte (forward-compat) Tier-Namen werden nicht verworfen."""
+    from ft8_appliance.config.models import OperatingConfig
+    user = ["FUTURE_TIER_NAME", "marine", "snr"]
+    cfg = OperatingConfig(hunt_priority=user)
+    assert "FUTURE_TIER_NAME" in cfg.hunt_priority
+
+
+def test_hunt_priority_validator_empty_list_to_default():
+    """Leere Liste in der Config → komplette Default-Liste."""
+    from ft8_appliance.config.models import OperatingConfig
+    cfg = OperatingConfig(hunt_priority=[])
+    assert len(cfg.hunt_priority) == 11
+    assert cfg.hunt_priority[0] == "marine_psk"
+
+
 def test_tier_new_grid_band():
     """VUCC-Band: Grid haben wir, aber nicht auf diesem Band."""
     from ft8_appliance.statemachine.machine import _tier_new_grid_band
