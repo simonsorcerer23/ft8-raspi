@@ -44,7 +44,7 @@ async def stream_decodes(
                 # ODER call_to ein aktiver Marinefunker ist, mfnr ins
                 # Payload schreiben — Frontend rendert ⚓-Badge an der
                 # Zeile. Bei beiden Mitgliedern gewinnt call_from.
-                from ..integrations.mf_lookup import get_mf_lookup
+                from ...integrations.mf_lookup import get_mf_lookup
                 _mf = get_mf_lookup()
                 _from = payload.get("call_from")
                 _to = payload.get("call_to")

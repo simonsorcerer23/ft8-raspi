@@ -222,7 +222,7 @@ async def conversation(
     # Marinefunker-Lookup (Sebastian v0.9.0). Wir parsen message-Strings
     # nach Calls, also brauchen wir einen kleinen Helper der einen
     # Message-String gegen die MF-Liste matcht.
-    from ..integrations.mf_lookup import get_mf_lookup
+    from ...integrations.mf_lookup import get_mf_lookup
     _mf = get_mf_lookup()
 
     def _mfnr_in_message(msg: str) -> int | None:
