@@ -18,6 +18,30 @@
     E: 'Klasse E — Einsteiger (80/15/10/2/70cm, 100W HF)',
     N: 'Klasse N — Newcomer (160/2/70cm, 10W)',
   };
+  // v0.10.0 Hunt-Priority-Tier-Labels (deutsch, kompakt) + Icons.
+  // Muss synchron sein mit HUNT_TIERS in backend/statemachine/machine.py.
+  const TIER_ICONS = {
+    marine_psk:    '⚓📡',
+    marine:        '⚓',
+    new_dxcc_psk:  '🆕📡',
+    new_dxcc:      '🆕',
+    psk_heard_us:  '📡',
+    new_dxcc_band: '🌐',
+    not_worked:    '❄️',
+    dxcc_rarity:   '⭐',
+    snr:           '📶',
+  };
+  const TIER_LABELS = {
+    marine_psk:    'Marinefunker + PSK sagt "hört uns"',
+    marine:        'Marinefunker (auch ohne PSK)',
+    new_dxcc_psk:  'Neues DXCC + PSK sagt "hört uns"',
+    new_dxcc:      'Neues DXCC (auch ohne PSK)',
+    psk_heard_us:  'PSK sagt "hört uns" (Asymmetrie ausnutzen)',
+    new_dxcc_band: 'Neues Band für DXCC (5BWAS)',
+    not_worked:    'Noch nie gearbeitet',
+    dxcc_rarity:   'DXCC-Rarity-Bonus',
+    snr:           'SNR (bestes Signal als Tie-Breaker)',
+  };
 
   let cfg = $state(null);
   let error = $state(null);
@@ -129,6 +153,15 @@
     s += `${ind(2)}qso_max_stale_slots: ${c.operating.qso_max_stale_slots}\n`;
     s += `${ind(2)}hunt_skip_worked: ${c.operating.hunt_skip_worked}\n`;
     s += `${ind(2)}hunt_dxcc_only: ${c.operating.hunt_dxcc_only}\n`;
+    // v0.10.0 Hunt-Priority-Tiers — als YAML-Liste schreiben
+    if (c.operating.hunt_priority && c.operating.hunt_priority.length) {
+      s += `${ind(2)}hunt_priority:\n`;
+      for (const t of c.operating.hunt_priority) {
+        s += `${ind(4)}- ${yq(t)}\n`;
+      }
+    }
+    s += `${ind(2)}psk_reciprocity_enabled: ${c.operating.psk_reciprocity_enabled === true}\n`;
+    s += `${ind(2)}psk_reciprocity_refresh_s: ${c.operating.psk_reciprocity_refresh_s ?? 600}\n`;
     // YAML 1.1: "off"/"on"/"yes"/"no" sind Boolean-Keywords → ohne
     // Quotes wird "off" als False geparst, Pydantic Literal-Check
     // schlaegt fehl. Sebastian-Bug 2026-05-24 nach Mode-Switch im UI.
@@ -213,6 +246,31 @@
     cfg.antennas = [...(cfg.antennas || []), { name: 'new', bands: ['20m'] }];
   }
   function removeAntenna(i) { cfg.antennas = cfg.antennas.filter((_, j) => j !== i); }
+
+  // v0.10.0 Hunt-Priority-Tiers: Sortier-Logik
+  function moveTier(idx, delta) {
+    const list = [...(cfg.operating.hunt_priority ?? [])];
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= list.length) return;
+    [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
+    cfg.operating.hunt_priority = list;
+  }
+
+  // Drag&Drop für die Tier-Liste
+  let _tierDragFrom = null;
+  function onTierDragStart(e, idx) {
+    _tierDragFrom = idx;
+    e.dataTransfer.effectAllowed = 'move';
+  }
+  function onTierDrop(e, idx) {
+    e.preventDefault();
+    if (_tierDragFrom === null || _tierDragFrom === idx) return;
+    const list = [...(cfg.operating.hunt_priority ?? [])];
+    const [moved] = list.splice(_tierDragFrom, 1);
+    list.splice(idx, 0, moved);
+    cfg.operating.hunt_priority = list;
+    _tierDragFrom = null;
+  }
 </script>
 
 <div class="wrap">
@@ -457,6 +515,45 @@
             so kannst du sie live umschalten ohne hier rein zu müssen.
           </p>
         </div>
+
+        <h4>Hunt-Priorität — wer wird zuerst gepickt?</h4>
+        <p class="hint">
+          Reihenfolge per Drag&Drop ändern. Top der Liste = höchste Priorität.
+          Bei Gleichstand entscheidet immer das nächste Tier abwärts; ganz unten
+          gewinnt das bessere SNR-Signal.
+          <strong>PSK-Reciprocity</strong> (3 Tiers nutzen sie) muss separat
+          aktiviert werden — fetcht pskreporter.info um zu wissen wer uns hört.
+        </p>
+        <div class="hunt-tier-list">
+          {#each (cfg.operating.hunt_priority ?? []) as tier, idx (tier)}
+            <div class="hunt-tier-row"
+                 draggable="true"
+                 ondragstart={(e) => onTierDragStart(e, idx)}
+                 ondragover={(e) => e.preventDefault()}
+                 ondrop={(e) => onTierDrop(e, idx)}>
+              <span class="drag-handle" title="Drag um neu zu sortieren">☰</span>
+              <span class="tier-rank">#{idx + 1}</span>
+              <span class="tier-icon">{TIER_ICONS[tier] ?? '•'}</span>
+              <span class="tier-label">{TIER_LABELS[tier] ?? tier}</span>
+              <button type="button" class="tier-btn" title="Hoch"
+                      disabled={idx === 0}
+                      onclick={() => moveTier(idx, -1)}>▲</button>
+              <button type="button" class="tier-btn" title="Runter"
+                      disabled={idx === (cfg.operating.hunt_priority?.length ?? 0) - 1}
+                      onclick={() => moveTier(idx, +1)}>▼</button>
+            </div>
+          {/each}
+        </div>
+        <div class="grid" style="margin-top:.5em">
+          <label><span>PSK-Reciprocity aktiv (pskreporter.info abfragen)</span>
+            <input type="checkbox" bind:checked={cfg.operating.psk_reciprocity_enabled}/>
+          </label>
+          <label><span>PSK-Refresh-Intervall (s) — Server-Last-freundlich ≥120</span>
+            <input type="number" min="120" max="3600"
+                   bind:value={cfg.operating.psk_reciprocity_refresh_s}/>
+          </label>
+        </div>
+
         <h4>Auto-ALC (Audio-Gain-Regelung beim TX)</h4>
         <p class="hint">
           Der Controller misst während des Sendens die ALC-Anzeige des
@@ -682,4 +779,54 @@
   .status.ok { color: var(--ok); }
   .status.err { color: var(--danger); }
   .empty { color: #94a3b8; font-style: italic; }
+
+  /* v0.10.0 Hunt-Priority-Tier-Liste */
+  .hunt-tier-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+  }
+  .hunt-tier-row {
+    display: grid;
+    grid-template-columns: 24px 32px 32px 1fr 32px 32px;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.5rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    cursor: grab;
+    transition: background 120ms;
+  }
+  .hunt-tier-row:hover { background: rgba(255, 255, 255, 0.08); }
+  .hunt-tier-row:active { cursor: grabbing; }
+  .drag-handle {
+    font-size: 1.2em;
+    color: #64748b;
+    user-select: none;
+    text-align: center;
+  }
+  .tier-rank {
+    font-weight: 600;
+    color: var(--accent);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .tier-icon { font-size: 1.1em; text-align: center; }
+  .tier-label { color: #e2e8f0; }
+  .tier-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #94a3b8;
+    border-radius: 4px;
+    padding: 2px 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+  }
+  .tier-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+  }
+  .tier-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 </style>

@@ -27,6 +27,124 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# v0.10.0 Hunt-Priority-Tiers (Sebastian-Wunsch):
+# Jede Tier-Funktion bekommt (decoded_msg, ctx) und liefert einen Score ≥ 0.
+# Die Score-Tuples werden lexikographisch verglichen → erste Stelle dominiert,
+# bei Gleichstand zweite usw. Letzte Stelle ist typisch SNR als Tie-Breaker.
+# Reihenfolge wird per ctx.hunt_priority gesteuert (vom User editierbar).
+# ---------------------------------------------------------------------------
+
+def _tier_marine_psk(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Marinefunker AND PSK sagt 'hört uns' — beste kombi."""
+    if not d.call_from:
+        return 0
+    norm = d.call_from.upper()
+    in_marine = norm in ctx.marine_calls
+    in_psk = norm in ctx.psk_heard_us
+    return 1 if (in_marine and in_psk) else 0
+
+
+def _tier_marine(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Marinefunker (egal ob PSK-Bestätigung)."""
+    if not d.call_from:
+        return 0
+    return 1 if d.call_from.upper() in ctx.marine_calls else 0
+
+
+def _tier_new_dxcc_psk(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Neues DXCC + PSK sagt 'hört uns'."""
+    if not d.call_from:
+        return 0
+    norm = d.call_from.upper()
+    is_new = norm in ctx.new_dxcc_calls
+    in_psk = norm in ctx.psk_heard_us
+    return 1 if (is_new and in_psk) else 0
+
+
+def _tier_new_dxcc(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Neues DXCC (auch ohne PSK)."""
+    if not d.call_from:
+        return 0
+    return 1 if d.call_from.upper() in ctx.new_dxcc_calls else 0
+
+
+def _tier_psk_heard_us(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Reine PSK-Reciprocity (egal welches Land)."""
+    if not d.call_from:
+        return 0
+    return 1 if d.call_from.upper() in ctx.psk_heard_us else 0
+
+
+def _tier_new_dxcc_band(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """5BWAS: DXCC haben wir, aber auf DIESEM Band noch nicht."""
+    if not d.call_from:
+        return 0
+    norm = d.call_from.upper()
+    entity = ctx.call_to_dxcc.get(norm)
+    if not entity:
+        return 0
+    if (entity, ctx.band) in ctx.worked_dxcc_band:
+        return 0
+    return 1
+
+
+def _tier_not_worked(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Call noch nie gearbeitet (allgemein, kein Band-Kriterium)."""
+    if not d.call_from:
+        return 0
+    return 0 if d.call_from.upper() in ctx.worked else 1
+
+
+def _tier_dxcc_rarity(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Rarity-Score 0..100 aus dxcc_rarity-Tabelle (höher = seltener)."""
+    if not d.call_from:
+        return 0
+    return ctx.rarity_scores.get(d.call_from.upper(), 0)
+
+
+def _tier_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """SNR als Tie-Breaker — bestes Signal gewinnt."""
+    return d.snr_db if d.snr_db is not None else -99
+
+
+# Registry: name → scoring function. Unbekannte Namen werden in
+# _compute_tier_score() ignoriert (defensive, kein KeyError bei Tippfehler).
+HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
+    "marine_psk":     _tier_marine_psk,
+    "marine":         _tier_marine,
+    "new_dxcc_psk":   _tier_new_dxcc_psk,
+    "new_dxcc":       _tier_new_dxcc,
+    "psk_heard_us":   _tier_psk_heard_us,
+    "new_dxcc_band":  _tier_new_dxcc_band,
+    "not_worked":     _tier_not_worked,
+    "dxcc_rarity":    _tier_dxcc_rarity,
+    "snr":            _tier_snr,
+}
+
+
+def _compute_tier_score(d: "DecodedMsg", ctx: "MachineContext") -> tuple[int, ...]:
+    """Kaskadierender Score nach ctx.hunt_priority-Reihenfolge.
+
+    Unbekannte Tier-Namen werden übersprungen (kein Crash). Wenn die
+    Liste leer ist (oder nur Unbekanntes enthält), fällt der Score auf
+    (snr,) zurück — sonst gibt's keinen Tie-Breaker.
+    """
+    priority = ctx.hunt_priority or []
+    parts: list[int] = []
+    for name in priority:
+        fn = HUNT_TIERS.get(name)
+        if fn is not None:
+            parts.append(fn(d, ctx))
+    # Sicherer Fallback: wenn niemand SNR als Tie-Breaker drin hatte,
+    # häng's hinten an — wir wollen nicht zufällig den ersten Decode
+    # aus einer gleich-priorisierten Gruppe nehmen.
+    if "snr" not in priority:
+        parts.append(_tier_snr(d, ctx))
+    return tuple(parts)
+
+
 # ---------------------------------------------------------------------------
 # Outgoing actions the controller has to execute
 ActionKind = Literal["TX_MESSAGE", "STOP_TX", "LOG_QSO", "TX_LOCKED"]
@@ -832,22 +950,31 @@ class StateMachine:
             ]
         if not cqs:
             return None
-        # Priorisierung: zuerst neue-DXCC, dann SNR. Sortier-Key liefert
-        # (is_new_dxcc, snr_db) absteigend — Python-tuple-compare macht
-        # den Rest. Sebastian's Wunsch: lieber den ZP6CW aus Paraguay
-        # mit -18 dB anrufen statt den vierten EA4 aus Spanien mit -8 dB.
-        prefer_dxcc = (
-            self.ctx.prefer_new_dxcc and bool(self.ctx.new_dxcc_calls)
-        )
-
-        def score(d: DecodedMsg) -> tuple[int, int]:
-            is_new = (
-                1 if prefer_dxcc and (d.call_from or "") in self.ctx.new_dxcc_calls
-                else 0
+        # v0.10.0 Hunt-Priority-Tiers: kaskadierender Score nach ctx.
+        # hunt_priority. Default-Reihenfolge ist aus OperatingConfig
+        # gehydratet. User kann via UI permutieren. Siehe HUNT_TIERS-
+        # Registry oben + docs/hunt_priority.md.
+        #
+        # Edge-case: wenn ctx.hunt_priority leer ist (z.B. alte Config
+        # ohne Migration durchgelaufen), fällt _compute_tier_score auf
+        # reines SNR-Ranking zurück — kein Crash, just less smart.
+        if not self.ctx.hunt_priority:
+            # Backward-compat: alte prefer_new_dxcc-Logik wenn neue Liste
+            # nicht gesetzt ist.
+            prefer_dxcc = (
+                self.ctx.prefer_new_dxcc and bool(self.ctx.new_dxcc_calls)
             )
-            return (is_new, d.snr_db if d.snr_db is not None else -99)
 
-        return max(cqs, key=score)
+            def legacy_score(d: DecodedMsg) -> tuple[int, int]:
+                is_new = (
+                    1 if prefer_dxcc and (d.call_from or "") in self.ctx.new_dxcc_calls
+                    else 0
+                )
+                return (is_new, d.snr_db if d.snr_db is not None else -99)
+
+            return max(cqs, key=legacy_score)
+
+        return max(cqs, key=lambda d: _compute_tier_score(d, self.ctx))
 
     def set_auto_answer(self, enabled: bool) -> None:
         """Toggle hunting mode. Active only while state is IDLE."""

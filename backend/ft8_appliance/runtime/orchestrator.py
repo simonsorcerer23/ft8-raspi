@@ -270,6 +270,18 @@ class Orchestrator:
     # working ZL on 40m is a different award point than ZL on 20m.
     _worked_grids: set[str] = field(default_factory=set, init=False)
     _worked_grid_band: set[tuple[str, str]] = field(default_factory=set, init=False)
+    # v0.10.0: 5BWAS-Tracking (DXCC-Entity-Name, Band-Kuerzel) Tuples.
+    # Aus DB beim Boot rekonstruiert, bei jedem LOG_QSO inkrementiert.
+    _worked_dxcc_band: set[tuple[str, str]] = field(default_factory=set, init=False)
+    # v0.10.0: Set normalisierter Calls die uns laut PSK Reporter recently
+    # gehört haben. Vom Background-Refresh-Loop _psk_reciprocity_refresh
+    # alle paar Minuten upgedated. Leer wenn psk_reciprocity_enabled=False.
+    _psk_heard_us_cache: set[str] = field(default_factory=set, init=False)
+    _psk_last_refresh_at: float = field(default=0.0, init=False)
+    _psk_last_refresh_ok: bool = field(default=False, init=False)
+    # v0.10.0: Set normalisierter Marinefunker-Calls. Beim Boot aus
+    # marinefunker.json geladen — statisch außer beim Refresh.
+    _marine_calls_cache: set[str] = field(default_factory=set, init=False)
     # Currently active antenna profile name; drives the band-lockout guard.
     _active_antenna: str | None = field(default=None, init=False)
     # Currently configured TX power in watts (user-controllable via UI).
@@ -536,6 +548,18 @@ class Orchestrator:
             self._bg_tasks.append(asyncio.create_task(
                 self._qrz_logbook_sync_loop(), name="qrz-logbook-sync"
             ))
+        # v0.10.0: PSK-Reciprocity-Refresh — alle paar Minuten fetchen
+        # wer uns recently gehört hat. Nur wenn explizit aktiviert (Default
+        # aus) UND PSK-Client überhaupt enabled ist (kein Punkt zu fetchen
+        # ohne Upload-Counterpart).
+        if (
+            self.config.operating.psk_reciprocity_enabled
+            and self.integrations.psk_reporter is not None
+            and self.integrations.psk_reporter.enabled
+        ):
+            self._bg_tasks.append(asyncio.create_task(
+                self._psk_reciprocity_refresh_loop(), name="psk-reciprocity-refresh"
+            ))
 
         # systemd liveness-watchdog: nur schedulen wenn unter systemd
         # mit NotifyAccess+WatchdogSec gestartet (NOTIFY_SOCKET env).
@@ -742,6 +766,9 @@ class Orchestrator:
         # aktuellen Session geloggt wurde. Sebastian 2026-05-23: jetzt aus
         # der DB rehydratisiert, gefiltert auf den aktiven Operator.
         self._worked_dxccs = set()
+        # v0.10.0 Hunt-Priority-Tier "new_dxcc_band" (5BWAS) — wird beim
+        # Hydrate aus der DB rekonstruiert (siehe unten).
+        self._worked_dxcc_band = set()
         my_call = self.config.operator.callsign
         try:
             async with session_scope() as s:
@@ -792,15 +819,53 @@ class Orchestrator:
             # die DB-Connection nicht so lang halten wollen.
             cty = getattr(self.integrations, "cty", None)
             if cty is not None:
-                for call in self._worked_calls:
+                # v0.10.0: gleichzeitig 5BWAS-Set bauen (DXCC × Band).
+                # Wir brauchen die call→band-Verknüpfung — dafür nochmal
+                # die Qso-Rows mit (call, band) holen.
+                try:
+                    async with session_scope() as s2:
+                        dxcc_band_rows = (await s2.execute(
+                            select(Qso.call, Qso.band).where(
+                                Qso.user_callsign == my_call,
+                                Qso.call.isnot(None),
+                                Qso.band.isnot(None),
+                            )
+                        )).all()
+                except Exception:
+                    dxcc_band_rows = []
+                for call_, band_ in dxcc_band_rows:
+                    if not (call_ and band_):
+                        continue
                     try:
-                        rec = cty.lookup(call)
+                        rec = cty.lookup(call_)
                         if rec is not None and rec.entity is not None:
-                            self._worked_dxccs.add(rec.entity.name)
+                            entity_name = rec.entity.name
+                            self._worked_dxccs.add(entity_name)
+                            self._worked_dxcc_band.add((entity_name, band_))
                     except Exception:
                         # cty.dat-Lookup-Fehler einzelner Calls darf den
                         # gesamten Hydrate nicht killen — skip silently
                         pass
+                log.info(
+                    "Worked-Sets: %d Calls, %d DXCC, %d DXCC-Band combos (5BWAS)",
+                    len(self._worked_calls),
+                    len(self._worked_dxccs),
+                    len(self._worked_dxcc_band),
+                )
+            # v0.10.0: Marinefunker-Set laden für Tier "marine"/"marine_psk"
+            try:
+                from ..integrations.mf_lookup import all_members
+                self._marine_calls_cache = {
+                    m.call.upper() for m in all_members() if getattr(m, "active", True)
+                }
+                log.info("Marinefunker-Set: %d aktive Mitglieder geladen", len(self._marine_calls_cache))
+            except Exception as exc:
+                log.warning("mf_lookup load failed: %s — marine tier disabled", exc)
+                self._marine_calls_cache = set()
+            # In den State-Machine-Context spiegeln — der Picker liest's
+            # pro Slot via _tier_marine.
+            self.state_machine.ctx.marine_calls = self._marine_calls_cache
+            self.state_machine.ctx.worked_dxcc_band = self._worked_dxcc_band
         except Exception as exc:
             log.warning("hydrate_from_db failed: %s — starting with empty sets", exc)
 
@@ -2189,6 +2254,59 @@ class Orchestrator:
             except Exception as exc:
                 log.debug("dx-cluster-hint loop hiccup: %s", exc)
 
+    async def _psk_reciprocity_refresh_loop(self) -> None:
+        """v0.10.0: Periodisch pskreporter.info abfragen — wer hat uns gehört?
+
+        Befüllt ``self._psk_heard_us_cache`` mit normalisierten Calls aus
+        den letzten ~1h Reception-Reports. Der Hunting-Picker liest das
+        pro Slot in den ctx (siehe Z. 3170-ish) und nutzt die Tiers
+        "marine_psk", "new_dxcc_psk", "psk_heard_us".
+
+        Schedule: erstmal 30s nach Boot (PSK-Server etwas warmlaufen
+        lassen + nicht zur selben Sekunde wie 100 andere Pis anfragen),
+        danach im konfigurierten Intervall (Default 600s = 10 min).
+        Fehler werden geloggt + alter Cache behalten — Picker arbeitet
+        weiter mit den letzten bekannten Spots (fail-open).
+        """
+        await asyncio.sleep(30)
+        psk_client = self.integrations.psk_reporter
+        if psk_client is None:
+            log.info("psk-reciprocity: client not configured, exiting refresh loop")
+            return
+        # Operator-Calls die wir abfragen — Multi-Op-Setup berücksichtigen
+        operator_calls: list[str] = []
+        if self.config.operator.callsign:
+            operator_calls.append(self.config.operator.callsign)
+        for op in self.config.operator.operators or []:
+            if op.callsign and op.callsign not in operator_calls:
+                operator_calls.append(op.callsign)
+        while True:
+            try:
+                all_callsets: set[str] = set()
+                for call in operator_calls:
+                    try:
+                        reports = await psk_client.who_heard_me(call, hours=1)
+                    except Exception as exc:  # network/parse — log+skip
+                        log.warning("psk-reciprocity: fetch failed for %s: %s", call, exc)
+                        continue
+                    for r in reports:
+                        if r.rx_call:
+                            all_callsets.add(r.rx_call.upper())
+                # In-place swap — Picker liest atomar
+                self._psk_heard_us_cache = all_callsets
+                self._psk_last_refresh_at = time.time()
+                self._psk_last_refresh_ok = True
+                log.info(
+                    "psk-reciprocity: %d unique stations heard us (across %d operator-call(s))",
+                    len(all_callsets), len(operator_calls),
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("psk-reciprocity refresh-loop hiccup: %s", exc)
+                self._psk_last_refresh_ok = False
+            await asyncio.sleep(self.config.operating.psk_reciprocity_refresh_s)
+
     async def _qrz_logbook_sync_loop(self) -> None:
         """Holt Dads komplettes QRZ-Logbook und füllt die Worked-Sets.
 
@@ -2229,6 +2347,9 @@ class Orchestrator:
                     # cty.dat-Lookup. Wir lookup'en immer selbst über
                     # cty.dat damit Konsistenz mit der Live-Klassifikation
                     # gewahrt bleibt.
+                    # Band extrahieren BEVOR DXCC-Lookup damit wir's für
+                    # 5BWAS-Tracking nutzen können (v0.10.0)
+                    band = rec.get("band", "").lower().strip()
                     if self.integrations.cty is not None:
                         ctyrec = self.integrations.cty.lookup(call)
                         if ctyrec is not None:
@@ -2236,9 +2357,13 @@ class Orchestrator:
                             if country not in self._worked_dxccs:
                                 self._worked_dxccs.add(country)
                                 added_dxccs.add(country)
+                            # 5BWAS: DXCC-Band-Combo immer adden, auch
+                            # wenn das Land schon worked ist (jetzt vielleicht
+                            # auf neuem Band).
+                            if band:
+                                self._worked_dxcc_band.add((country, band))
                     # Grids: 4-Char-Normalisierung
                     grid = rec.get("gridsquare", "").upper().strip()
-                    band = rec.get("band", "").lower().strip()
                     if len(grid) >= 4:
                         g4 = grid[:4]
                         self._worked_grids.add(g4)
@@ -3111,21 +3236,51 @@ class Orchestrator:
         self.state_machine.ctx.hunt_audio_freq_min_hz = self.config.operating.hunt_audio_freq_min_hz
         self.state_machine.ctx.hunt_audio_freq_max_hz = self.config.operating.hunt_audio_freq_max_hz
         self.state_machine.ctx.cq_tx_slot_parity = self.config.operating.cq_tx_slot_parity
+        # v0.10.0 Hunt-Priority-Tiers: Reihenfolge aus Config in den ctx
+        # spiegeln. User kann via UI permutieren — hier wird's pro Slot
+        # frisch eingelesen damit Änderungen ohne Restart greifen.
+        self.state_machine.ctx.hunt_priority = list(self.config.operating.hunt_priority)
         # New-DXCC-Set für den Hunting-Picker bauen: alle aktuell
         # dekodierten CQ-Calls deren Country wir noch nicht gearbeitet
-        # haben. Der Picker bevorzugt diese vor SNR.
+        # haben. Plus call_to_dxcc-Mapping für 5BWAS-Tier (jeden CQ-Call
+        # auf seine DXCC-Entität mappen) und rarity_scores für den
+        # DXCC-Rarity-Tier.
         new_dxcc: set[str] = set()
+        call_to_dxcc: dict[str, str] = {}
+        rarity_scores: dict[str, int] = {}
         if self.integrations.cty is not None:
+            # Lazy-Import damit Tests ohne dxcc_rarity-Daten nicht failen
+            try:
+                from ..integrations.dxcc_rarity import rarity_for
+            except ImportError:
+                rarity_for = lambda _c: 0  # type: ignore[assignment]
             for d in self._last_decodes:
                 call = d.call_from
                 if not call or d.call_to is not None:
                     continue
                 if not (d.message or "").startswith("CQ"):
                     continue
+                norm = call.upper()
                 rec = self.integrations.cty.lookup(call)
-                if rec is not None and rec.entity.name not in self._worked_dxccs:
-                    new_dxcc.add(call)
+                if rec is not None:
+                    call_to_dxcc[norm] = rec.entity.name
+                    if rec.entity.name not in self._worked_dxccs:
+                        new_dxcc.add(call)
+                # Rarity-Score (0..100) per Call — basiert auf cty-prefix
+                # fallback, daher unabhängig vom cty-Lookup verfügbar.
+                score = rarity_for(call)
+                if score > 0:
+                    rarity_scores[norm] = score
         self.state_machine.ctx.new_dxcc_calls = new_dxcc
+        self.state_machine.ctx.call_to_dxcc = call_to_dxcc
+        self.state_machine.ctx.rarity_scores = rarity_scores
+        # PSK-Reciprocity: aktueller Set "wer hat uns recently gehört".
+        # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;
+        # hier nur in den ctx kopieren damit der Picker O(1) lookup hat.
+        self.state_machine.ctx.psk_heard_us = set(self._psk_heard_us_cache)
+        # marine_calls + worked_dxcc_band werden beim Boot/Operator-Switch
+        # gesetzt — siehe _refresh_worked_sets. Hier nicht jeden Slot
+        # neu laden (statische Daten).
 
         # chrony reports an Offset only when it has reached at least one
         # upstream peer (stratum < 16). We accept any stratum-tracked
@@ -3300,6 +3455,11 @@ class Orchestrator:
                     if country not in self._worked_dxccs:
                         is_new_dxcc = True
                         self._worked_dxccs.add(country)
+                    # v0.10.0: 5BWAS-Tracking. Auch wenn das DXCC schon
+                    # gearbeitet ist, kann's auf diesem Band noch neu sein.
+                    band_for_5bwas = payload.get("band")
+                    if band_for_5bwas:
+                        self._worked_dxcc_band.add((country, band_for_5bwas))
             self._worked_calls.add(call)
             # Cooldown registrieren — Hunting-Picker überspringt diesen
             # Call solange das Fenster läuft. 0 = aus.

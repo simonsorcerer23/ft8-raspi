@@ -165,3 +165,27 @@ class MachineContext:
     # dem Callsign in die CQ-Message eingefuegt: "CQ DX DK9XR JN58".
     # Aus OperatingConfig.cq_directed gehydratet.
     cq_directed: str = ""
+    # v0.10.0 Hunt-Priority-Tiers
+    # ────────────────────────────────────────────────────────────────
+    # Reihenfolge der Picker-Tiers. Aus OperatingConfig.hunt_priority
+    # gehydratet. Leerstring-Namen werden vom Picker ignoriert.
+    hunt_priority: list[str] = field(default_factory=list)
+    # Marinefunker-Mitglieds-Set (normalisierte Calls). Vom Orchestrator
+    # beim Boot aus marinefunker.json befüllt.
+    marine_calls: set[str] = field(default_factory=set)
+    # PSK-Reciprocity: Set normalisierter Calls die uns recently gehört
+    # haben (laut pskreporter.info). Vom Orchestrator alle paar Minuten
+    # aktualisiert. Leer wenn psk_reciprocity_enabled=False.
+    psk_heard_us: set[str] = field(default_factory=set)
+    # 5BWAS-Tracking: (dxcc_entity_name, band) Tuples die wir bereits
+    # bestätigt haben. Vom Orchestrator beim Boot aus DB rekonstruiert
+    # und bei jedem LOG_QSO upgedated.
+    worked_dxcc_band: set[tuple[str, str]] = field(default_factory=set)
+    # DXCC-Rarity-Lookup: call_from → DXCC-Entity (für Tier 8). Vom
+    # Orchestrator pro Slot mit den frisch geseten Calls befüllt.
+    # Wert ist der Rarity-Score (0..100). Aus integrations.dxcc_rarity
+    # geladen.
+    rarity_scores: dict[str, int] = field(default_factory=dict)
+    # call_from → dxcc_entity_name (für 5BWAS-Check). Auch pro Slot
+    # vom Orchestrator befüllt aus cty.dat-Lookup.
+    call_to_dxcc: dict[str, str] = field(default_factory=dict)

@@ -332,6 +332,33 @@ class OperatingConfig(BaseModel):
     # (Award-Hunter-Modus).
     hunt_skip_worked: bool = False
     hunt_dxcc_only: bool = False
+    # v0.10.0 Hunt-Priority-Tiers (Sebastian-Wunsch):
+    # Mehrstufige Priorisierung beim Picker statt nur "DXCC zuerst, dann SNR".
+    # Reihenfolge der Liste = Reihenfolge der Tiers (top-priority zuerst).
+    # Mögliche Tier-Namen siehe statemachine.machine.HUNT_TIERS — beliebige
+    # Permutation erlaubt. Unbekannte Namen werden im Picker ignoriert
+    # (defensiv — wenn jemand einen Tier-Namen tippt, kracht's nicht).
+    # Default-Reihenfolge ist Sebastian's "was am meisten Sinn macht"-Vote.
+    hunt_priority: list[str] = Field(
+        default_factory=lambda: [
+            "marine_psk",        # Marinefunker + PSK sagt "hört uns"
+            "marine",            # Marinefunker (auch ohne PSK)
+            "new_dxcc_psk",      # neues DXCC + PSK sagt "hört uns"
+            "new_dxcc",          # neues DXCC (auch ohne PSK)
+            "psk_heard_us",      # PSK sagt "hört uns" (für routine-EU)
+            "new_dxcc_band",     # 5BWAS — neues Band für DXCC
+            "not_worked",        # nie gearbeitet überhaupt
+            "dxcc_rarity",       # rare DXCC-Bonus
+            "snr",               # Tie-Breaker — bestes Signal
+        ]
+    )
+    # PSK-Reciprocity-Toggle: wenn aktiv, fetcht der Orchestrator periodisch
+    # pskreporter.info um zu wissen welche Stationen uns gerade hören.
+    # Die "marine_psk", "new_dxcc_psk" und "psk_heard_us" Tiers brauchen das.
+    # Default False — User schaltet aktiv ein wenn er den Pfad nutzen will.
+    psk_reciprocity_enabled: bool = False
+    # Refresh-Intervall für PSK-Lookup (Sekunden). 10 min ist Server-freundlich.
+    psk_reciprocity_refresh_s: int = Field(default=600, ge=120, le=3600)
     # Watchdog: wenn boot_mode != "off" aber state seit X min in IDLE
     # ohne Hunting-Aktivität hängt, schickt der Pi eine ntfy-Push mit
     # Action-Buttons zum Wieder-Aktivieren. 0 = aus.
