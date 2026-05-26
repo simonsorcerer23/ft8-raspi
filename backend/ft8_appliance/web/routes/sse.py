@@ -40,15 +40,26 @@ async def stream_decodes(
                 # ts is a datetime — make it JSON-serialisable
                 if "ts" in payload and hasattr(payload["ts"], "isoformat"):
                     payload["ts"] = payload["ts"].isoformat()
-                # Marinefunker-Badge (Sebastian v0.9.0): wenn call_from
-                # ODER call_to ein aktiver Marinefunker ist, mfnr ins
-                # Payload schreiben — Frontend rendert ⚓-Badge an der
-                # Zeile. Bei beiden Mitgliedern gewinnt call_from.
+                # Marinefunker-Badge (Sebastian v0.9.0): wenn FREMDER
+                # call_from oder call_to ein aktiver Marinefunker ist,
+                # mfnr ins Payload schreiben. Eigene Operator-Calls
+                # (DK9XR, DO3XR…) werden ausgefiltert — sonst zeigt das
+                # Badge auch bei Decodes die AN UNS gerichtet sind weil
+                # DK9XR selbst MF #1039 ist (v0.9.2 Sebastian-Wunsch).
                 from ...integrations.mf_lookup import get_mf_lookup
                 _mf = get_mf_lookup()
-                _from = payload.get("call_from")
-                _to = payload.get("call_to")
-                _hit = (_mf.lookup(_from) if _from else None) or (_mf.lookup(_to) if _to else None)
+                _my_calls = {
+                    op.callsign.upper()
+                    for op in orch.config.operators
+                    if op.callsign
+                } if orch.config.operators else {orch.config.operator.callsign.upper()}
+                _from = (payload.get("call_from") or "").upper()
+                _to = (payload.get("call_to") or "").upper()
+                _hit = None
+                if _from and _from not in _my_calls:
+                    _hit = _mf.lookup(_from)
+                if _hit is None and _to and _to not in _my_calls:
+                    _hit = _mf.lookup(_to)
                 payload["mf_mfnr"] = _hit.mfnr if _hit else None
                 yield {"event": "decode", "data": json.dumps(payload, default=str)}
         finally:

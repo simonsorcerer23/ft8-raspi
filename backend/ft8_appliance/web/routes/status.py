@@ -221,14 +221,23 @@ async def conversation(
     # neben den echten RX-Decode-Timestamps standen.
     # Marinefunker-Lookup (Sebastian v0.9.0). Wir parsen message-Strings
     # nach Calls, also brauchen wir einen kleinen Helper der einen
-    # Message-String gegen die MF-Liste matcht.
+    # Message-String gegen die MF-Liste matcht. v0.9.2: eigene Operator-
+    # Calls ausfiltern, sonst leuchtet das Badge auch bei TX-Zeilen
+    # weil DK9XR selbst MF #1039 ist.
     from ...integrations.mf_lookup import get_mf_lookup
     _mf = get_mf_lookup()
+    _my_calls = {
+        op.callsign.upper()
+        for op in orch.config.operators
+        if op.callsign
+    } if orch.config.operators else {orch.config.operator.callsign.upper()}
 
     def _mfnr_in_message(msg: str) -> int | None:
         if not msg:
             return None
         for tok in msg.replace("<", " ").replace(">", " ").split():
+            if tok.upper() in _my_calls:
+                continue
             m = _mf.lookup(tok)
             if m:
                 return m.mfnr
