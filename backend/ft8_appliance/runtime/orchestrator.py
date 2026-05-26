@@ -2273,18 +2273,29 @@ class Orchestrator:
         Fehler werden geloggt + alter Cache behalten — Picker arbeitet
         weiter mit den letzten bekannten Spots (fail-open).
         """
-        await asyncio.sleep(30)
-        psk_client = self.integrations.psk_reporter
-        if psk_client is None:
-            log.info("psk-reciprocity: client not configured, exiting refresh loop")
+        log.info("psk-reciprocity: refresh-loop started, first fetch in 30s")
+        try:
+            await asyncio.sleep(30)
+            psk_client = self.integrations.psk_reporter
+            if psk_client is None:
+                log.info("psk-reciprocity: client not configured, exiting refresh loop")
+                return
+            # Operator-Calls die wir abfragen — Multi-Op-Setup berücksichtigen.
+            # Hinweis v0.10.4: AppConfig hat operators auf TOP-Level, nicht
+            # unter config.operator. Vorheriger Pfad self.config.operator.
+            # operators → AttributeError → silent task death (keine logs).
+            operator_calls: list[str] = []
+            if self.config.operator.callsign:
+                operator_calls.append(self.config.operator.callsign)
+            for op in (self.config.operators or []):
+                if op.callsign and op.callsign not in operator_calls:
+                    operator_calls.append(op.callsign)
+            log.info("psk-reciprocity: monitoring %d operator-call(s): %s",
+                     len(operator_calls), operator_calls)
+        except Exception as exc:
+            log.error("psk-reciprocity: setup failed, refresh-loop dead: %s",
+                      exc, exc_info=True)
             return
-        # Operator-Calls die wir abfragen — Multi-Op-Setup berücksichtigen
-        operator_calls: list[str] = []
-        if self.config.operator.callsign:
-            operator_calls.append(self.config.operator.callsign)
-        for op in self.config.operator.operators or []:
-            if op.callsign and op.callsign not in operator_calls:
-                operator_calls.append(op.callsign)
         while True:
             try:
                 all_callsets: set[str] = set()
