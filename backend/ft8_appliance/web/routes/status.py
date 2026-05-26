@@ -172,6 +172,9 @@ class ConvEntry(BaseModel):
     ts: str | None   # ISO timestamp (None for "next" predictions)
     message: str
     kind: str | None = None  # cq | respond_grid | respond_report | r_report | rr73 | log | …
+    # Marinefunker-MFNr falls in der Zeile ein aktives MF-Mitglied vorkommt
+    # (Sebastian v0.9.0). UI rendert ⚓-Badge an der Zeile.
+    mf_mfnr: int | None = None
 
 
 class ConversationResponse(BaseModel):
@@ -216,6 +219,21 @@ async def conversation(
     # Eintraege ``now_iso`` (API-Call-Zeit), wodurch im UI 7 verschiedene
     # TX-Slots alle die gleiche Uhrzeit zeigten und chronologisch falsch
     # neben den echten RX-Decode-Timestamps standen.
+    # Marinefunker-Lookup (Sebastian v0.9.0). Wir parsen message-Strings
+    # nach Calls, also brauchen wir einen kleinen Helper der einen
+    # Message-String gegen die MF-Liste matcht.
+    from ..integrations.mf_lookup import get_mf_lookup
+    _mf = get_mf_lookup()
+
+    def _mfnr_in_message(msg: str) -> int | None:
+        if not msg:
+            return None
+        for tok in msg.replace("<", " ").replace(">", " ").split():
+            m = _mf.lookup(tok)
+            if m:
+                return m.mfnr
+        return None
+
     tx_actions = [a for a in orch._action_log[-30:] if a.kind == "TX_MESSAGE"]
     seen_last: tuple[str, str | None] | None = None
     for a in tx_actions:
@@ -226,6 +244,7 @@ async def conversation(
         seen_last = (msg, kind)
         entries.append(ConvEntry(
             direction="tx", ts=a.ts.isoformat(), message=msg, kind=kind,
+            mf_mfnr=_mfnr_in_message(msg),
         ))
 
     # RX-Decodes für die Konversation. Wechsel von In-Memory-Cache
@@ -265,6 +284,7 @@ async def conversation(
                 direction="rx",
                 ts=row.ts.isoformat() if hasattr(row.ts, "isoformat") else str(row.ts),
                 message=row.message,
+                mf_mfnr=_mfnr_in_message(row.message),
             ))
         elif partner and row.call_from == partner and (
             row.call_to == my_call or row.call_to is None
@@ -273,6 +293,7 @@ async def conversation(
                 direction="rx",
                 ts=row.ts.isoformat() if hasattr(row.ts, "isoformat") else str(row.ts),
                 message=row.message,
+                mf_mfnr=_mfnr_in_message(row.message),
             ))
 
     # Sort newest-first so the operator sees the latest exchange at the top

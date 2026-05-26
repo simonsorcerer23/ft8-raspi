@@ -89,6 +89,7 @@
           <span class="freq">{d.freq_offset_hz ?? ''}</span>
           <span class="msg">
             {#if d.flag}<span class="flag" title={d.call_from ?? ''}>{d.flag}</span>{/if}
+            {#if d.mf_mfnr}<span class="badge mf" title="Marinefunker MF #{d.mf_mfnr}">⚓MF</span>{/if}
             {#if d.is_new_dxcc}<span class="badge ndxcc" title="Neue DXCC-Entity">🏆DXCC</span>{/if}
             {#if d.is_new_grid && !d.is_new_dxcc}<span class="badge ngrid" title="Neuer Grid">🆕Grid</span>{/if}
             {#if d.is_new_grid_on_band && !d.is_new_grid && !d.is_new_dxcc}<span class="badge ngridb" title="Neuer Grid auf diesem Band">🎯Band</span>{/if}
@@ -157,6 +158,7 @@
   .badge.ndxcc  { background: rgba(217, 70, 239, 0.30); color: #f0abfc; }
   .badge.ngrid  { background: rgba(251, 191, 36, 0.30); color: #fbbf24; }
   .badge.ngridb { background: rgba(56, 189, 248, 0.30); color: #38bdf8; }
+  .badge.mf     { background: rgba(20, 184, 166, 0.30); color: #5eead4; }
   .actions { display: flex; gap: 0.25rem; }
   .reply {
     background: var(--accent); color: #0f172a; border: none;

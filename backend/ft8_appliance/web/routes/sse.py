@@ -40,6 +40,16 @@ async def stream_decodes(
                 # ts is a datetime — make it JSON-serialisable
                 if "ts" in payload and hasattr(payload["ts"], "isoformat"):
                     payload["ts"] = payload["ts"].isoformat()
+                # Marinefunker-Badge (Sebastian v0.9.0): wenn call_from
+                # ODER call_to ein aktiver Marinefunker ist, mfnr ins
+                # Payload schreiben — Frontend rendert ⚓-Badge an der
+                # Zeile. Bei beiden Mitgliedern gewinnt call_from.
+                from ..integrations.mf_lookup import get_mf_lookup
+                _mf = get_mf_lookup()
+                _from = payload.get("call_from")
+                _to = payload.get("call_to")
+                _hit = (_mf.lookup(_from) if _from else None) or (_mf.lookup(_to) if _to else None)
+                payload["mf_mfnr"] = _hit.mfnr if _hit else None
                 yield {"event": "decode", "data": json.dumps(payload, default=str)}
         finally:
             orch.unsubscribe_decodes(queue)

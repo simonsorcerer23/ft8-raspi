@@ -125,6 +125,7 @@
             <td class="ts">{shortTs(q.qso_start)}</td>
             <td class="call-col">
               {#if q.flag}<span class="flag" title={q.call}>{q.flag}</span>{/if}
+              {#if q.mf_mfnr}<span class="mf-badge" title="Marinefunker MF #{q.mf_mfnr}">⚓</span>{/if}
               <span class="call" style="color: {COLOURS.worked}">{q.call}</span>
             </td>
             <td>{q.band}</td>
@@ -201,6 +202,7 @@
   .call-col { min-width: 8.5rem; white-space: nowrap; }
   .call { font-weight: 700; }
   .flag { display: inline-block; margin-right: 0.3em; vertical-align: middle; }
+  .mf-badge { display: inline-block; margin-right: 0.3em; color: #5eead4; cursor: help; }
   .mode-tag {
     display: inline-block; padding: 0.05em 0.4em; border-radius: 3px;
     font-size: 0.7rem; font-weight: 700; font-family: ui-monospace, monospace;

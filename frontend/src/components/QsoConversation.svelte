@@ -56,6 +56,7 @@
           <span class="time">{shortTime(e.ts)}</span>
           <span class="arrow">{e.direction === 'tx' ? '↑' : '↓'}</span>
           <span class="icon">{kindIcon(e.kind)}</span>
+          {#if e.mf_mfnr}<span class="mf-badge" title="Marinefunker MF #{e.mf_mfnr}">⚓</span>{/if}
           <span class="msg">{e.message}</span>
         </div>
       {/each}
@@ -103,6 +104,7 @@
   .entry.rx .arrow { color: #fbbf24; font-weight: 700; }
   .entry.tx .msg { color: #cbd5e1; }
   .entry.rx .msg { color: var(--fg); font-weight: 600; }
+  .mf-badge { color: #5eead4; margin-right: 0.25em; cursor: help; }
   .time { color: #64748b; font-size: 0.75rem; }
   .icon { text-align: center; }
 

@@ -43,6 +43,9 @@ class QsoOut(BaseModel):
     # Callsign via cty.dat → ISO2 → Flag. Leerer String wenn unbekannt
     # oder Sonder-DXCC ohne Flag-Mapping (ITU/UN/Antarktis).
     flag: str = ""
+    # Marinefunker-Mitgliedsnummer ZUM QSO-Zeitpunkt eingefroren
+    # (Sebastian v0.9.0). Null wenn Partner kein MF-Mitglied war.
+    mf_mfnr: int | None = None
 
 
 class LogResponse(BaseModel):

@@ -59,6 +59,18 @@ from ..integrations import (
     PskReporterClient,
     QrzClient,
 )
+from ..integrations.mf_lookup import get_mf_lookup
+
+
+def _mf_snapshot_mfnr(call: str | None) -> int | None:
+    """Marinefunker-Snapshot-Helper (v0.9.0): liefert die aktuelle MFNr
+    eines aktiven Mitglieds oder None. Verwendet im LOG_QSO-Insert um
+    den MF-Status zum QSO-Zeitpunkt einzufrieren.
+    """
+    if not call:
+        return None
+    m = get_mf_lookup().lookup(call)
+    return m.mfnr if m else None
 from ..util.bandplan import (
     band_from_freq_hz as _band_from_freq_hz,
     iaru_region_from_latlon,
@@ -3334,10 +3346,15 @@ class Orchestrator:
         # Push to ntfy.sh (fire-and-forget, must not block)
         if self.integrations.ntfy and self.integrations.ntfy.enabled:
             from ..integrations.flags import flag_for_call
+            from ..integrations.mf_lookup import get_mf_lookup
             band = payload.get("band", "?")
             grid = payload.get("grid_rcvd", "?")
             qso_flag = flag_for_call(call, self.integrations.cty)
-            title = ("🆕 New DXCC! " if is_new_dxcc else "📡 QSO complete: ") + (call or "?")
+            # Marinefunker-Lookup (Sebastian v0.9.0): wenn Partner aktives
+            # MF-Mitglied → Badge ⚓ + MFNr in den Push einbauen
+            mf_member = get_mf_lookup().lookup(call) if call else None
+            mf_suffix = f" ⚓ Marinefunker MF #{mf_member.mfnr}" if mf_member else ""
+            title = ("🆕 New DXCC! " if is_new_dxcc else "📡 QSO complete: ") + (call or "?") + mf_suffix
             # Action-Buttons damit Dad nach jedem QSO direkt vom
             # Lockscreen aus den Modus wechseln kann ohne in die
             # Web-UI rein zu müssen. Tap = HTTP POST gegen Pi-Tailnet.
@@ -3403,6 +3420,10 @@ class Orchestrator:
                     my_lon=gps.lon,
                     # Multi-Operator-Tracking: welcher Operator hat diesen QSO?
                     user_callsign=self.config.operator.callsign,
+                    # Marinefunker-Snapshot (Sebastian v0.9.0): MFNr zum
+                    # QSO-Zeitpunkt einfrieren — bleibt stabil ueber spaetere
+                    # PDF-Updates. Null wenn Partner kein aktives Mitglied.
+                    mf_mfnr=_mf_snapshot_mfnr(payload["call"]),
                 )
         except Exception as exc:
             log.warning("LOG_QSO db write failed: %s", exc)

@@ -70,6 +70,7 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_qrz_columns(conn)
         await _migrate_user_callsign_columns(conn, default_user_callsign)
+        await _migrate_mf_columns(conn)
 
 
 async def _migrate_qrz_columns(conn) -> None:
@@ -85,6 +86,47 @@ async def _migrate_qrz_columns(conn) -> None:
     for name, ddl in additions:
         if name not in existing:
             await conn.exec_driver_sql(f"ALTER TABLE qso ADD COLUMN {name} {ddl}")
+
+
+async def _migrate_mf_columns(conn) -> None:
+    """Add Marinefunker mf_mfnr snapshot column + backfill existing rows.
+
+    Sebastian 2026-05-26 v0.9.0: spiegelt qso.mf_mfnr Snapshot — beim
+    Migrieren gehen wir durch alle existierenden QSOs, machen einen
+    Live-Lookup gegen die aktuelle marinefunker.json und setzen mf_mfnr
+    auf die aktuelle MFNr falls Match. Backfill ist einmalig pro DB —
+    spaetere PDF-Updates aendern nichts mehr an den bereits gelogten
+    Rows (Snapshot-Semantik).
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(qso)")
+    existing = {row[1] for row in res.fetchall()}
+    if "mf_mfnr" in existing:
+        return
+    await conn.exec_driver_sql("ALTER TABLE qso ADD COLUMN mf_mfnr INTEGER")
+    await conn.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_qso_mf_mfnr ON qso(mf_mfnr)"
+    )
+    # Backfill: alle existierenden QSOs gegen die aktuelle MF-Liste
+    # matchen. Single-shot, idempotent.
+    from ..integrations.mf_lookup import get_mf_lookup
+    mf = get_mf_lookup()
+    if len(mf) == 0:
+        return
+    res = await conn.exec_driver_sql("SELECT id, call FROM qso WHERE mf_mfnr IS NULL")
+    matched = 0
+    for row in res.fetchall():
+        qso_id, call = row[0], row[1]
+        if not call:
+            continue
+        member = mf.lookup(call)
+        if member:
+            await conn.exec_driver_sql(
+                "UPDATE qso SET mf_mfnr = ? WHERE id = ?",
+                (member.mfnr, qso_id),
+            )
+            matched += 1
+    if matched > 0:
+        print(f"[mf-backfill] markiert {matched} historische QSOs als Marinefunker")
 
 
 async def _migrate_user_callsign_columns(conn, default_user_callsign: str | None) -> None:

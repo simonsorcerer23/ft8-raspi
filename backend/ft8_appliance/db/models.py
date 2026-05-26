@@ -58,6 +58,12 @@ class Qso(Base):
     qrz_last_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Marinefunker-Snapshot (Sebastian 2026-05-26 v0.9.0).
+    # mf_mfnr ist die Mitgliedsnummer aus der MF-Dipl.Such-Abhakliste
+    # ZUM ZEITPUNKT DES QSO eingefroren — bleibt korrekt auch wenn die
+    # PDF/JSON spaeter aktualisiert wird (Mitglied tritt aus / stirbt).
+    # Null = Partner war zum QSO-Zeitpunkt kein aktiver Marinefunker.
+    mf_mfnr: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
 
 # ---------------------------------------------------------------------------
