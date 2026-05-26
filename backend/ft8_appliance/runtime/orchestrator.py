@@ -1004,6 +1004,16 @@ class Orchestrator:
     def is_blacklisted(self, call: str | None) -> bool:
         return bool(call) and call.upper() in self.state_machine.ctx.blacklist
 
+    def is_psk_heard_us(self, call: str | None) -> bool:
+        """Quick check used to annotate decodes with the PSK-Reciprocity-Badge.
+
+        Returns True if the given call appears in the PSK-Reporter cache —
+        i.e. pskreporter.info has the station listed as having heard our
+        callsign in the last refresh window. Used by the decode-list UI to
+        show the 📡-badge (Sebastian v0.10.4).
+        """
+        return bool(call) and call.upper() in self._psk_heard_us_cache
+
     # ------------------------------------------------------------------ multi-color helpers
     def is_new_dxcc_for(self, call: str | None) -> bool:
         """Would working *call* count as a new DXCC entity?

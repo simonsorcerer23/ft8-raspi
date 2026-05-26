@@ -203,6 +203,9 @@ class DecodeOut(BaseModel):
     is_new_dxcc: bool = False
     is_new_grid: bool = False
     is_new_grid_on_band: bool = False
+    # PSK-Reciprocity: laut pskreporter.info hat die Station uns in
+    # den letzten Stunden gehört → Asymmetrie-Pfad lohnt sich. v0.10.4.
+    psk_heard_us: bool = False
     # Flag-Emoji des Senders (call_from) — Sebastian-Request v0.3.0.
     flag: str = ""
 
@@ -231,6 +234,7 @@ async def get_decodes(
         item.is_new_dxcc = orch.is_new_dxcc_for(d.call_from)
         item.is_new_grid = orch.is_new_grid(d.grid)
         item.is_new_grid_on_band = orch.is_new_grid_on_band(d.grid, d.band)
+        item.psk_heard_us = orch.is_psk_heard_us(d.call_from)
         item.flag = flag_for_call(d.call_from, cty)
         out.append(item)
     return DecodesResponse(decodes=out)

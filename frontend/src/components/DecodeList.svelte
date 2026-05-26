@@ -93,6 +93,7 @@
             {#if d.is_new_dxcc}<span class="badge ndxcc" title="Neue DXCC-Entity">🏆DXCC</span>{/if}
             {#if d.is_new_grid && !d.is_new_dxcc}<span class="badge ngrid" title="Neuer Grid">🆕Grid</span>{/if}
             {#if d.is_new_grid_on_band && !d.is_new_grid && !d.is_new_dxcc}<span class="badge ngridb" title="Neuer Grid auf diesem Band">🎯Band</span>{/if}
+            {#if d.psk_heard_us}<span class="badge psk" title="laut PSK Reporter hat diese Station uns gehört → Asymmetrie-Pfad lohnt">📡PSK</span>{/if}
             {#if d.worked_before}<span class="badge worked" title="schon gearbeitet">B4</span>{/if}
             {#if d.blacklisted}<span class="badge bl" title="auf Blacklist">⛔</span>{/if}
             {d.message}
@@ -159,6 +160,7 @@
   .badge.ngrid  { background: rgba(251, 191, 36, 0.30); color: #fbbf24; }
   .badge.ngridb { background: rgba(56, 189, 248, 0.30); color: #38bdf8; }
   .badge.mf     { background: rgba(20, 184, 166, 0.30); color: #5eead4; }
+  .badge.psk    { background: rgba(16, 185, 129, 0.30); color: #6ee7b7; }
   .actions { display: flex; gap: 0.25rem; }
   .reply {
     background: var(--accent); color: #0f172a; border: none;
