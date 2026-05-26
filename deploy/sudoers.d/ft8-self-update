@@ -30,6 +30,14 @@ sebastian ALL=(root) NOPASSWD: \
     /bin/systemctl start ft8-self-update.service, \
     /bin/systemctl daemon-reload
 
+# --- Power: shutdown + reboot via UI-Buttons (Sebastian 2026-05-26 v0.8.2) ---
+# handle_shutdown ruft `sudo /sbin/shutdown -h +0 ...`
+# handle_reboot  ruft `sudo /sbin/shutdown -r +0 ...`
+# `*` am Ende ist sudoers-Wildcard fuer die freie Reason-Message.
+sebastian ALL=(root) NOPASSWD: \
+    /sbin/shutdown -h +0 *, \
+    /sbin/shutdown -r +0 *
+
 # --- install: nur exakte src→dst-Pärchen aus dem git-Workdir ---
 # Wildcards in sudoers sind tricky, deshalb listen wir jedes File
 # einzeln. Wenn ein neues unit-file dazukommt, MUSS dieser Block

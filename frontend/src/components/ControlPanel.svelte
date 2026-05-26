@@ -208,9 +208,14 @@
   </div>
 
   <button class="panic" onclick={() => call(api.panic)} disabled={busy}>PANIC</button>
-  <button class="shutdown"
-          onclick={() => { if (confirm('Pi wirklich herunterfahren?')) call(api.shutdown); }}
-          disabled={busy}>🌙 Pi herunterfahren</button>
+  <div class="power-row">
+    <button class="reboot"
+            onclick={() => { if (confirm('Pi wirklich neu starten? (~30 s Downtime)')) call(api.reboot); }}
+            disabled={busy}>🔁 Pi neu starten</button>
+    <button class="shutdown"
+            onclick={() => { if (confirm('Pi wirklich herunterfahren?')) call(api.shutdown); }}
+            disabled={busy}>🌙 Pi herunterfahren</button>
+  </div>
   {#if lastError}<div class="err">⚠ {lastError}</div>{/if}
 </div>
 
@@ -251,10 +256,14 @@
     padding: 1rem; font-size: 1.3rem; font-weight: 700; cursor: pointer;
     letter-spacing: 0.1em;
   }
-  .shutdown {
+  .power-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .reboot, .shutdown {
     background: transparent; color: #94a3b8; border: 1px solid #334155;
     border-radius: 8px; padding: 0.6rem; font-size: 0.95rem;
-    cursor: pointer; margin-top: 0.5rem;
+    cursor: pointer;
   }
   .hunt-filters {
     display: flex; gap: 1rem; flex-wrap: wrap;
@@ -270,7 +279,7 @@
     cursor: pointer; user-select: none;
   }
   .hunt-filters input { margin: 0; cursor: pointer; }
-  .shutdown:hover:not(:disabled) { background: rgba(148,163,184,0.1); }
+  .reboot:hover:not(:disabled), .shutdown:hover:not(:disabled) { background: rgba(148,163,184,0.1); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .lock-banner {
     background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger);

@@ -30,6 +30,7 @@ export const api = {
   stop:         () => request('/control/stop',       { method: 'POST' }),
   panic:        () => request('/control/panic',      { method: 'POST' }),
   shutdown:     () => request('/control/shutdown',   { method: 'POST' }),
+  reboot:       () => request('/control/reboot',     { method: 'POST' }),
   setHuntFilter:(opts) => request('/control/hunt-filter', { method: 'POST', body: opts }),
   resetLock:    () => request('/control/reset-lock', { method: 'POST' }),
   setAutoAnswer:(enabled) => request('/control/auto-answer', {

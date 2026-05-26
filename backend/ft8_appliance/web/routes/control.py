@@ -123,6 +123,17 @@ async def shutdown(orch: Orchestrator = Depends(get_orchestrator)) -> ControlRes
     return ControlResponse(ok=True, state=orch.status().state, detail="shutdown")
 
 
+@router.post("/reboot", response_model=ControlResponse)
+async def reboot(orch: Orchestrator = Depends(get_orchestrator)) -> ControlResponse:
+    """Sauberer System-Reboot: STOP_TX, PTT off, ntfy-Push, dann reboot.
+
+    Sebastian 2026-05-26 v0.8.2: gleiche Sicherheitskette wie shutdown,
+    aber Pi kommt nach ~30 s automatisch wieder hoch.
+    """
+    await orch.handle_reboot()
+    return ControlResponse(ok=True, state=orch.status().state, detail="reboot")
+
+
 @router.post("/reset-lock", response_model=ControlResponse)
 async def reset_lock(orch: Orchestrator = Depends(get_orchestrator)) -> ControlResponse:
     await orch.handle_reset_lock()

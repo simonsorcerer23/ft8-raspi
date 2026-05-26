@@ -1041,6 +1041,36 @@ class Orchestrator:
             close_fds=True,
         )
 
+    async def handle_reboot(self) -> None:
+        """Sauberer System-Reboot via systemd. Identisches Pre-Cleanup
+        wie handle_shutdown (STOP_TX, PTT off, ntfy-Push), dann `shutdown -r`.
+
+        Sebastian 2026-05-26 v0.8.2: UI-Button neben Shutdown, gleicher
+        Sicherheitspfad, aber Pi kommt nach ~30 s automatisch wieder
+        hoch (kein Vor-Ort-Eingriff noetig).
+        """
+        import subprocess
+        self.state_machine.on_user_stop()
+        await self._drain_actions()
+        try:
+            await self.rig.set_ptt(False)
+        except Exception:
+            pass
+        if self.integrations.ntfy and self.integrations.ntfy.enabled:
+            try:
+                await self.integrations.ntfy.notify(
+                    "Pi wird neu gestartet — kommt in ca. 30 s zurück",
+                    title="🔁 FT8 Pi: reboot",
+                    priority="default",
+                    tags=["arrows_counterclockwise"],
+                )
+            except Exception:
+                pass
+        subprocess.Popen(
+            ["sudo", "/sbin/shutdown", "-r", "+0", "FT8-Appliance reboot via UI"],
+            close_fds=True,
+        )
+
     async def handle_set_auto_answer(self, enabled: bool) -> None:
         """Toggle hunting / auto-answer mode."""
         self.state_machine.set_auto_answer(enabled)

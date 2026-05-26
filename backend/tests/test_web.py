@@ -106,6 +106,12 @@ class FakeOrchestrator:
     async def handle_reset_lock(self) -> None:
         self.actions.append("reset")
 
+    async def handle_shutdown(self) -> None:
+        self.actions.append("shutdown")
+
+    async def handle_reboot(self) -> None:
+        self.actions.append("reboot")
+
     async def handle_reply_to(self, decoded) -> None:  # type: ignore[no-untyped-def]
         self.actions.append(f"reply:{decoded.call_from}")
 
@@ -171,7 +177,9 @@ def test_control_endpoints(client: TestClient, fake_orch) -> None:
     assert client.post("/api/control/stop").json()["state"] == "IDLE"
     assert client.post("/api/control/panic").json()["ok"] is True
     assert client.post("/api/control/reset-lock").json()["ok"] is True
-    assert fake_orch.actions == ["cq", "stop", "panic", "reset"]
+    assert client.post("/api/control/shutdown").json()["detail"] == "shutdown"
+    assert client.post("/api/control/reboot").json()["detail"] == "reboot"
+    assert fake_orch.actions == ["cq", "stop", "panic", "reset", "shutdown", "reboot"]
 
 
 def test_control_reply_endpoint(client: TestClient, fake_orch) -> None:
