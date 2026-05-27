@@ -137,6 +137,11 @@ class BlitzortungStatus(BaseModel):
     alarm_radius_km: int
     nearest_km: float | None = None
     alarm: bool = False
+    # v0.13.0 — Live-WS-Stats damit der User im Status sieht ob der
+    # Stream tatsaechlich Daten liefert (oder ob die Integration zwar
+    # an aber kein Strike seit Boot reinkam = Diagnose-Hinweis).
+    total_strikes_seen: int = 0
+    last_strike_at: str | None = None
 
 
 @router.get("/blitzortung", response_model=BlitzortungStatus)
@@ -146,15 +151,23 @@ async def blitzortung_status(
     bz = orch.integrations.blitzortung
     if bz is None or not bz.enabled:
         return BlitzortungStatus(enabled=False, alarm_radius_km=30)
+    last_iso = bz.last_strike_at.isoformat() if bz.last_strike_at else None
     gps = orch.gps.snapshot
     if gps.lat is None or gps.lon is None:
-        return BlitzortungStatus(enabled=True, alarm_radius_km=bz.alarm_radius_km)
+        return BlitzortungStatus(
+            enabled=True,
+            alarm_radius_km=bz.alarm_radius_km,
+            total_strikes_seen=bz.total_strikes_seen,
+            last_strike_at=last_iso,
+        )
     nearest = bz.nearest_strike_km((gps.lat, gps.lon))
     return BlitzortungStatus(
         enabled=True,
         alarm_radius_km=bz.alarm_radius_km,
         nearest_km=nearest,
         alarm=bz.is_storm_nearby((gps.lat, gps.lon)),
+        total_strikes_seen=bz.total_strikes_seen,
+        last_strike_at=last_iso,
     )
 
 

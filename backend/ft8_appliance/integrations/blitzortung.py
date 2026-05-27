@@ -49,6 +49,9 @@ class BlitzortungClient(Integration):
         self.alarm_radius_km = alarm_radius_km
         self.retention = timedelta(minutes=retention_minutes)
         self._strikes: deque[Strike] = deque(maxlen=10_000)
+        # v0.13.0 — Stats fuer das Status-API.
+        self.total_strikes_seen: int = 0
+        self.last_strike_at: datetime | None = None
 
     def ingest(self, strike: Strike) -> None:
         """Called by the websocket consumer once we wire it up."""
@@ -56,6 +59,11 @@ class BlitzortungClient(Integration):
             return
         self._prune()
         self._strikes.append(strike)
+        self.total_strikes_seen += 1
+        # last_strike_at trackt das *Ereignis*, nicht den Empfang —
+        # bei Backlog-Bursts auf Reconnect sind die ts weiter zurueck.
+        if self.last_strike_at is None or strike.ts > self.last_strike_at:
+            self.last_strike_at = strike.ts
 
     def nearest_strike_km(self, here: tuple[float, float]) -> float | None:
         if not self._strikes:

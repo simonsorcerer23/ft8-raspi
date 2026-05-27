@@ -279,6 +279,15 @@ class Orchestrator:
     _psk_heard_us_cache: set[str] = field(default_factory=set, init=False)
     _psk_last_refresh_at: float = field(default=0.0, init=False)
     _psk_last_refresh_ok: bool = field(default=False, init=False)
+    # v0.13.0 — Blitzortung-Storm-Alert Throttle.
+    # _last_storm_alert_at: monotonic-Zeit des letzten ntfy-Pushes
+    # (egal welche Distanz). Verhindert Spam wenn ein Gewitter eine
+    # Stunde lang in der Naehe hin- und herhuepft.
+    # _last_storm_alert_km: Distanz die wir zuletzt gemeldet haben —
+    # ermoeglicht "Storm kommt naeher"-Re-Push noch innerhalb des
+    # Throttle-Fensters wenn er deutlich naeher gerueckt ist.
+    _last_storm_alert_at: float = field(default=0.0, init=False)
+    _last_storm_alert_km: float | None = field(default=None, init=False)
     # v0.10.0: Set normalisierter Marinefunker-Calls. Beim Boot aus
     # marinefunker.json geladen — statisch außer beim Refresh.
     _marine_calls_cache: set[str] = field(default_factory=set, init=False)
@@ -559,6 +568,22 @@ class Orchestrator:
         ):
             self._bg_tasks.append(asyncio.create_task(
                 self._psk_reciprocity_refresh_loop(), name="psk-reciprocity-refresh"
+            ))
+
+        # v0.13.0 — Blitzortung: WS-Reader + Storm-Watchdog. Beide nur
+        # wenn der User die Integration aktiviert hat. WS-Reader feedet
+        # das in-memory Strike-Ringbuffer im BlitzortungClient, der
+        # Watchdog pollt periodisch is_storm_nearby(gps) und schickt
+        # ntfy bei Treffer (mit Throttle).
+        if (
+            self.config.integrations.blitzortung.enabled
+            and self.integrations.blitzortung is not None
+        ):
+            self._bg_tasks.append(asyncio.create_task(
+                self._blitzortung_ws_loop(), name="blitzortung-ws"
+            ))
+            self._bg_tasks.append(asyncio.create_task(
+                self._blitzortung_watchdog_loop(), name="blitzortung-watchdog"
             ))
 
         # systemd liveness-watchdog: nur schedulen wenn unter systemd
@@ -2338,6 +2363,99 @@ class Orchestrator:
                 log.warning("psk-reciprocity refresh-loop hiccup: %s", exc)
                 self._psk_last_refresh_ok = False
             await asyncio.sleep(self.config.operating.psk_reciprocity_refresh_s)
+
+    async def _blitzortung_ws_loop(self) -> None:
+        """v0.13.0: Liest den Blitzortung.org Live-WS und ingestiert Strikes
+        in den ``BlitzortungClient``-Ringbuffer.
+
+        Bewusst KEIN try/except am aeusseren Rand — der Generator selbst
+        haelt sich am Leben (Reconnect-Loop intern). Wenn dieser Task
+        stirbt, ist der Storm-Watchdog blind — das wollen wir in den Logs
+        sehen.
+        """
+        from ..integrations.blitzortung_ws import stream_strikes
+        bz = self.integrations.blitzortung
+        if bz is None:
+            return
+        log.info("blitzortung: ws-reader started")
+        async for strike in stream_strikes():
+            bz.ingest(strike)
+
+    async def _blitzortung_watchdog_loop(self) -> None:
+        """v0.13.0: pollt is_storm_nearby alle 60s und schickt ntfy-Push
+        wenn ein Strike innerhalb von ``alarm_radius_km`` liegt.
+
+        Throttle: maximal 1 Push pro 15 min — ausser das Gewitter ist
+        deutlich naeher gerueckt (>= 5 km Annaeherung), dann darf re-pushed
+        werden ("Sturm kommt naeher").
+
+        Schedule: erst 30 s nach Boot starten damit der WS-Reader etwas
+        Daten sammeln kann + GPS warm wird.
+        """
+        log.info("blitzortung: watchdog started, first check in 30s")
+        await asyncio.sleep(30)
+        bz = self.integrations.blitzortung
+        if bz is None:
+            return
+        while True:
+            try:
+                self._blitzortung_check_and_alert(bz)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("blitzortung watchdog hiccup: %s", exc)
+            await asyncio.sleep(60)
+
+    # Push-Throttle: 15 min Fenster. Frueher re-push nur wenn Strike um
+    # mindestens 5 km naeher gerueckt ist.
+    _STORM_THROTTLE_S = 15 * 60
+    _STORM_CLOSER_KM = 5.0
+
+    def _blitzortung_check_and_alert(self, bz) -> None:
+        """Ein-Tick-Check des Storm-Watchdogs. Ausgelagert damit's testbar
+        ist ohne den ganzen 60-s-Loop zu fahren.
+        """
+        if not bz.enabled:
+            return
+        gps = self.gps.snapshot
+        if gps.lat is None or gps.lon is None:
+            # Ohne GPS kein Distance-Check moeglich. Auch nicht meckern —
+            # GPS-Loss hat eigenen Pfad.
+            return
+        here = (gps.lat, gps.lon)
+        nearest_km = bz.nearest_strike_km(here)
+        if nearest_km is None or nearest_km > bz.alarm_radius_km:
+            return
+        # Throttle-Check
+        now = time.time()
+        since_last = now - self._last_storm_alert_at
+        if since_last < self._STORM_THROTTLE_S:
+            prev = self._last_storm_alert_km
+            # "Deutlich naeher" = aktuelles minimum ist >= 5 km dichter
+            # als das letzte gemeldete. Sonst skip — kein Spam wenn die
+            # Front in derselben Distanz hin- und herwackelt.
+            if prev is not None and nearest_km > prev - self._STORM_CLOSER_KM:
+                return
+        # Push!
+        ntfy = self.integrations.ntfy
+        if ntfy is None or not ntfy.enabled:
+            return
+        # Distanz auf int runden — 27.3 km macht im Push keinen Mehrwert.
+        km = int(round(nearest_km))
+        if since_last < self._STORM_THROTTLE_S and self._last_storm_alert_km is not None:
+            msg = f"Gewitter rueckt naeher — {km} km Entfernung"
+        else:
+            msg = f"Gewitter in {km} km Entfernung (Radius {bz.alarm_radius_km} km)"
+        log.warning("blitzortung: storm alert — %s", msg)
+        # Fire-and-forget — Push darf nicht den Watchdog blockieren.
+        asyncio.create_task(ntfy.push(
+            message=msg,
+            title="Gewitterwarnung",
+            priority="high",
+            tags=["thunder_cloud", "warning"],
+        ))
+        self._last_storm_alert_at = now
+        self._last_storm_alert_km = nearest_km
 
     async def _qrz_logbook_sync_loop(self) -> None:
         """Holt Dads komplettes QRZ-Logbook und füllt die Worked-Sets.

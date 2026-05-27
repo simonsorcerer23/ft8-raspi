@@ -16,6 +16,10 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0",
     "alembic>=1.13",
     "httpx>=0.27",
+    # Blitzortung-Live-Stream (v0.13.0). uvicorn[standard] zieht
+    # websockets ohnehin als transitive — explizit pinned damit der
+    # Lockstep ueber Releases sichtbar bleibt.
+    "websockets>=12",
     "cffi>=1.17",
     "numpy>=2.1",
     "structlog>=24.4",

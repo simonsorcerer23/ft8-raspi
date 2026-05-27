@@ -618,16 +618,16 @@
           (0–100). FT8 mag <strong>ALC = 0–5 %</strong> — alles darüber
           ist Verzerrung am Sender.
         </p>
-        <div class="grid">
-          <label><span>ALC-Ziel unten (% — Audio rauf wenn ALC darunter)</span>
+        <div class="grid grid-bottom">
+          <label><span>ALC-Ziel unten <small>(%, Audio rauf wenn drunter)</small></span>
             <input type="number" min="0" max="50"
                    bind:value={cfg.operating.alc_target_low}/>
           </label>
-          <label><span>ALC-Ziel oben (% — Audio runter wenn ALC darüber)</span>
+          <label><span>ALC-Ziel oben <small>(%, Audio runter wenn drüber)</small></span>
             <input type="number" min="0" max="80"
                    bind:value={cfg.operating.alc_target_high}/>
           </label>
-          <label><span>Start-Audio-Gain (0.0–1.0)</span>
+          <label><span>Start-Audio-Gain <small>(0.0–1.0, Boot-Default)</small></span>
             <input type="number" step="0.05" min="0.1" max="1.0"
                    bind:value={cfg.operating.audio_gain}/>
           </label>
@@ -660,7 +660,7 @@
           </label>
           <label class="check">
             <input type="checkbox" bind:checked={cfg.integrations.blitzortung.enabled}/>
-            <span>Blitzortung-Warnung</span>
+            <span>Blitzortung-Warnung 🌩️</span>
           </label>
           {#if cfg.integrations.dx_cluster}
             <label class="check">
@@ -669,6 +669,20 @@
             </label>
           {/if}
         </div>
+        {#if cfg.integrations.blitzortung.enabled}
+          <p class="hint">
+            Live-Stream von blitzortung.org. Bei Strike innerhalb des
+            Alarmradius (Default 30 km) gibt's eine ntfy-Push-Warnung —
+            Throttle 15 min, frueher nur wenn der Sturm deutlich naeher
+            ruckt (≥5 km). Braucht aktive ntfy-Integration und GPS-Fix.
+          </p>
+          <div class="grid">
+            <label><span>Alarm-Radius <small>(km um QTH)</small></span>
+              <input type="number" min="1" max="500"
+                     bind:value={cfg.integrations.blitzortung.alarm_radius_km}/>
+            </label>
+          </div>
+        {/if}
         {#if cfg.integrations.qrz.enabled}
           <div class="grid">
             <label><span>QRZ User</span>
@@ -735,11 +749,18 @@
     display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
     gap: 0.5rem;
   }
+  /* Variante fuer Reihen mit ungleich langen Labels — Inputs unten
+     bündig statt Top-Aligned. So sitzen die Eingabefelder auf
+     gleicher Höhe egal ob das Label 1- oder 2-zeilig umbricht.
+     Sebastian-Hinweis 2026-05-27 zu Auto-ALC-Block. */
+  .grid-bottom { align-items: end; }
   label { display: flex; flex-direction: column; gap: 0.2rem;
           font-size: 0.85rem; color: #cbd5e1; }
   label.check { flex-direction: row; align-items: center; gap: 0.4rem; }
   label span { color: #94a3b8; font-size: 0.75rem; text-transform: uppercase;
                letter-spacing: 0.05em; }
+  label span small { text-transform: none; font-size: 0.9em; color: #64748b;
+                     font-weight: 400; margin-left: 0.3em; letter-spacing: 0; }
   input[type=text], input[type=number], input[type=password], select {
     background: #0b1220; color: var(--fg); border: 1px solid #334155;
     border-radius: 4px; padding: 0.35rem 0.5rem; font-size: 0.9rem;
