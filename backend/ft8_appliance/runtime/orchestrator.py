@@ -3999,10 +3999,17 @@ class Orchestrator:
         audio_freq_hz = float(payload.get("freq_offset_hz", 1500))
         amplitude = 0.9 * max(0.0, min(1.0, self._audio_gain))
         payload["audio_gain"] = self._audio_gain
-        # v0.18.0 Freq-Reputation: bei CQ-Bursts den (band, bin) tracken.
+        # v0.18.0 Freq-Reputation: bei CQ-Bursts (kind="cq") UND bei der
+        # ersten Hunt-Antwort (kind="respond_grid") den (band, bin) tracken.
+        # Bei reinem Hunting (Sebastian's typischer Modus) waere die Tabelle
+        # sonst dauerhaft leer weil "cq" nie feuert. Bei respond_grid messen
+        # wir effektiv "auf welchen Audio-Bins haben wir am ehesten ein QSO
+        # eingetuetet" — nuetzlich auch ohne CQ-Mode.
+        # Mid-QSO-Kinds (respond_report, r_report, ack73, rr73) zaehlen
+        # NICHT — die wuerden den attempt-Counter pro QSO mehrfach hochziehen.
         # Erfolge werden im LOG_QSO-Handler verbucht via _last_cq_band_bin.
         kind = payload.get("kind") or ""
-        if kind == "cq":
+        if kind in ("cq", "respond_grid"):
             band_now = self._current_band() or self.state_machine.ctx.band
             bin_hz = int(audio_freq_hz // 100) * 100
             key = (band_now, bin_hz)

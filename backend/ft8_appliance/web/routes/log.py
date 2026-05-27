@@ -18,7 +18,7 @@ from sqlalchemy import desc, func, select
 from ...db import session_scope
 from ...db.models import (
     Blacklist, CallReputation, Decode, DxpeditionSchedule,
-    Heard, Qso, Watchlist,
+    FreqReputation, Heard, Qso, Watchlist,
 )
 from ...integrations.flags import flag_for_call
 from ...runtime import Orchestrator
@@ -399,6 +399,99 @@ async def get_dxpedition_schedule(
         )
     return DxpeditionResponse(
         entries=[DxpeditionEntry.model_validate(r, from_attributes=True) for r in rows]
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.20.2 Read-Only-Endpunkte fuer interne Picker-State (Debug + UI-Kacheln).
+# Alle Pi-weit (nicht pro Operator) — die Pile-Up-Detection,
+# Freq-Reputation und Active-Hours haengen am Standort/Antenne, nicht am
+# einzelnen Op.
+
+class PileUpResponse(BaseModel):
+    calls: list[str]
+    count: int
+
+
+@router.get("/pile-up", response_model=PileUpResponse)
+async def get_pile_up(
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> PileUpResponse:
+    """Aktuell als Pile-Up markierte Calls. Wird vom Picker als
+    Filter genutzt (tier `not_in_pileup` liefert 0)."""
+    calls = sorted(orch.state_machine.ctx.pile_up_calls)
+    return PileUpResponse(calls=calls, count=len(calls))
+
+
+class FreqReputationEntry(BaseModel):
+    band: str
+    audio_bin_hz: int
+    attempts: int
+    successes: int
+    success_rate: float
+    last_used_at: datetime | None
+
+
+class FreqReputationResponse(BaseModel):
+    entries: list[FreqReputationEntry]
+
+
+@router.get("/freq-reputation", response_model=FreqReputationResponse)
+async def get_freq_reputation(
+    band: str | None = Query(None, description="Optional auf ein Band filtern"),
+    min_attempts: int = Query(1, ge=0, description="Nur Bins mit >= N attempts"),
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> FreqReputationResponse:
+    """v0.18.0 Audio-Bin-Erfolgsstatistik. Pro (Band, 100Hz-Bin) wird
+    attempts (= CQ- oder erster Hunt-Respond-Burst) + successes
+    (= LOG_QSO nach so einem Burst) getrackt.
+
+    Sortiert nach success_rate absteigend (beste Bins oben), bei
+    Gleichstand nach attempts (verlaesslichere Daten zuerst).
+    """
+    async with session_scope() as s:
+        q = select(FreqReputation).where(FreqReputation.attempts >= min_attempts)
+        if band:
+            q = q.where(FreqReputation.band == band)
+        rows = list((await s.execute(q)).scalars())
+    entries = []
+    for r in rows:
+        att = r.attempts or 0
+        succ = r.successes or 0
+        rate = (succ / att) if att > 0 else 0.0
+        entries.append(FreqReputationEntry(
+            band=r.band,
+            audio_bin_hz=r.audio_bin_hz,
+            attempts=att,
+            successes=succ,
+            success_rate=round(rate, 3),
+            last_used_at=r.last_used_at,
+        ))
+    entries.sort(key=lambda e: (-e.success_rate, -e.attempts))
+    return FreqReputationResponse(entries=entries)
+
+
+class ActiveHoursResponse(BaseModel):
+    by_continent: dict[str, list[int]]  # continent -> sorted list of active UTC hours
+    current_utc_hour: int
+    total_active_buckets: int
+
+
+@router.get("/active-hours", response_model=ActiveHoursResponse)
+async def get_active_hours(
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> ActiveHoursResponse:
+    """v0.16.0 Hour-of-Day-Predictor. Welche UTC-Stunden sind laut
+    eigener QSO-Historie typisch produktiv pro Continent (Top-50%)."""
+    by_continent: dict[str, list[int]] = {}
+    for (cont, hour) in orch.state_machine.ctx.active_continent_hours:
+        by_continent.setdefault(cont, []).append(hour)
+    for cont in by_continent:
+        by_continent[cont].sort()
+    return ActiveHoursResponse(
+        by_continent=by_continent,
+        current_utc_hour=datetime.now(UTC).hour,
+        total_active_buckets=len(orch.state_machine.ctx.active_continent_hours),
     )
 
 

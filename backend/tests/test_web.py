@@ -29,6 +29,8 @@ class _FakeStateMachine:
     class _Ctx:
         last_lock_reason = None
         cq_count = 0
+        pile_up_calls: set = set()
+        active_continent_hours: set = set()
     state = _State()
     ctx = _Ctx()
 
@@ -225,3 +227,113 @@ def test_captive_host_based_match(client: TestClient) -> None:
         headers={"Host": "connectivitycheck.gstatic.com"},
     )
     assert r.status_code == 204
+
+
+# ------------------------------------------------------------------ v0.20.2 read-only debug endpoints
+def test_pile_up_endpoint_empty(client: TestClient) -> None:
+    """Leeres Set → leere Liste, count=0."""
+    r = client.get("/api/pile-up")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["calls"] == []
+    assert data["count"] == 0
+
+
+def test_pile_up_endpoint_with_calls(client: TestClient, fake_orch) -> None:
+    """Calls aus ctx werden sortiert geliefert."""
+    fake_orch.state_machine.ctx.pile_up_calls = {"ZL9HR", "P5RYL", "BS7H"}
+    r = client.get("/api/pile-up")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["count"] == 3
+    assert data["calls"] == ["BS7H", "P5RYL", "ZL9HR"]  # sortiert
+
+
+def test_active_hours_endpoint_empty(client: TestClient) -> None:
+    r = client.get("/api/active-hours")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["by_continent"] == {}
+    assert data["total_active_buckets"] == 0
+    assert 0 <= data["current_utc_hour"] < 24
+
+
+def test_active_hours_endpoint_grouped_by_continent(client: TestClient, fake_orch) -> None:
+    """Tuples aus ctx werden nach Continent gruppiert + sortiert."""
+    fake_orch.state_machine.ctx.active_continent_hours = {
+        ("EU", 8), ("EU", 19), ("EU", 14),
+        ("AS", 6), ("AS", 22),
+    }
+    r = client.get("/api/active-hours")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total_active_buckets"] == 5
+    assert data["by_continent"]["EU"] == [8, 14, 19]
+    assert data["by_continent"]["AS"] == [6, 22]
+
+
+@pytest.fixture
+def db_initialized():
+    """Initialisiert eine In-Memory-DB + Tables fuer Endpoint-Tests
+    die session_scope() nutzen."""
+    import asyncio
+    from ft8_appliance.db.session import init_engine, create_all
+    init_engine(":memory:")
+    asyncio.run(create_all())
+    yield
+
+
+def test_freq_reputation_endpoint_empty(
+    client: TestClient, db_initialized
+) -> None:
+    """Endpoint antwortet 200 auch wenn DB leer ist."""
+    r = client.get("/api/freq-reputation")
+    assert r.status_code == 200
+    data = r.json()
+    assert "entries" in data
+    assert isinstance(data["entries"], list)
+    assert data["entries"] == []
+
+
+def test_freq_reputation_endpoint_band_filter(
+    client: TestClient, db_initialized
+) -> None:
+    """Band-Filter wird akzeptiert (kein 422)."""
+    r = client.get("/api/freq-reputation?band=15m&min_attempts=5")
+    assert r.status_code == 200
+
+
+def test_freq_reputation_endpoint_sorts_by_success_rate(
+    client: TestClient, db_initialized
+) -> None:
+    """Bins werden nach success_rate absteigend sortiert geliefert."""
+    import asyncio
+    from datetime import UTC, datetime
+    from ft8_appliance.db import session_scope
+    from ft8_appliance.db.models import FreqReputation
+
+    async def seed():
+        async with session_scope() as s:
+            s.add(FreqReputation(
+                band="15m", audio_bin_hz=1500,
+                attempts=10, successes=5, last_used_at=datetime.now(UTC),
+            ))
+            s.add(FreqReputation(
+                band="15m", audio_bin_hz=2000,
+                attempts=10, successes=8, last_used_at=datetime.now(UTC),
+            ))
+            s.add(FreqReputation(
+                band="20m", audio_bin_hz=1500,
+                attempts=10, successes=2, last_used_at=datetime.now(UTC),
+            ))
+    asyncio.run(seed())
+
+    r = client.get("/api/freq-reputation")
+    assert r.status_code == 200
+    entries = r.json()["entries"]
+    assert len(entries) == 3
+    # bestes Bin (success_rate 0.8) zuerst
+    assert entries[0]["audio_bin_hz"] == 2000
+    assert entries[0]["band"] == "15m"
+    assert entries[0]["success_rate"] == 0.8
+    assert entries[-1]["success_rate"] == 0.2
