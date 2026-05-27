@@ -310,8 +310,9 @@ def test_compute_score_snr_tiebreaker_added():
 
 
 def test_hunt_tiers_registry_complete():
-    """Alle erwarteten Tier-Namen sind registriert (v0.14.0: + grayline + band_open)."""
+    """Alle erwarteten Tier-Namen sind registriert (v0.15.0: + not_bad_reputation, not_his_tx_slot)."""
     expected = {
+        "not_bad_reputation", "not_his_tx_slot",
         "marine_psk", "marine", "tail_end_target",
         "grayline", "band_open",
         "new_dxcc_psk", "new_dxcc",
@@ -374,8 +375,8 @@ def test_hunt_priority_auto_migration_preserves_user_order():
     assert cfg.hunt_priority[0] == "new_dxcc"  # User-Sortierung erhalten
     assert cfg.hunt_priority[1] == "marine"
     assert cfg.hunt_priority[-1] == "snr"
-    # v0.14.0: 14 known Tiers (+ grayline + band_open)
-    assert len(cfg.hunt_priority) == 14
+    # v0.15.0: 16 known Tiers (+ not_bad_reputation, not_his_tx_slot)
+    assert len(cfg.hunt_priority) == 16
 
 
 def test_hunt_priority_validator_keeps_unknown_tiers():
@@ -390,8 +391,8 @@ def test_hunt_priority_validator_empty_list_to_default():
     """Leere Liste in der Config → komplette Default-Liste."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 14  # v0.14.0: + grayline + band_open
-    assert cfg.hunt_priority[0] == "marine_psk"
+    assert len(cfg.hunt_priority) == 16  # v0.15.0
+    assert cfg.hunt_priority[0] == "not_bad_reputation"
 
 
 def test_tier_new_grid_band():
@@ -418,13 +419,20 @@ def test_tier_new_grid_band():
 
 
 def test_no_call_from_returns_zero():
-    """DecodedMsg ohne call_from → alle Tiers liefern 0 (kein Crash)."""
+    """DecodedMsg ohne call_from → boost-Tiers liefern 0 (kein Crash)."""
     ctx = _ctx()
     d = DecodedMsg(
         ts=datetime.now(timezone.utc), call_from=None, call_to=None, grid=None,
         message="CQ test", snr_db=-10, dt_s=0.1, freq_offset_hz=1500, band="15m",
     )
+    # snr ist der Tie-Breaker (numerisch, kein Boost).
+    # not_bad_reputation + not_his_tx_slot sind INVERSE Filter (default 1
+    # fuer alle "nicht-schlecht", nur Bad-Calls bekommen 0) — die liefern
+    # auch ohne call_from defensiv 1 statt 0.
+    inverse_tiers = {"not_bad_reputation", "not_his_tx_slot"}
     for name, fn in HUNT_TIERS.items():
         if name == "snr":
-            continue  # snr braucht kein call_from
+            continue
+        if name in inverse_tiers:
+            continue
         assert fn(d, ctx) == 0, f"tier {name} should be 0 for empty call_from"

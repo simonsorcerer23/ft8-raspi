@@ -21,6 +21,8 @@
   // v0.10.0 Hunt-Priority-Tier-Labels (deutsch, kompakt) + Icons.
   // Muss synchron sein mit HUNT_TIERS in backend/statemachine/machine.py.
   const TIER_ICONS = {
+    not_bad_reputation: '✋',
+    not_his_tx_slot:    '⏱️',
     marine_psk:      '⚓📡',
     marine:          '⚓',
     tail_end_target: '🎯',
@@ -37,6 +39,8 @@
     snr:             '📶',
   };
   const TIER_LABELS = {
+    not_bad_reputation: 'Soft-Blacklist meiden (Bail-Reason-aware)',
+    not_his_tx_slot:    'Nicht in SEINEM TX-Slot anrufen',
     marine_psk:      'Marinefunker + PSK sagt "hört uns"',
     marine:          'Marinefunker (auch ohne PSK)',
     tail_end_target: 'Tail-End: Station hat gerade QSO beendet',

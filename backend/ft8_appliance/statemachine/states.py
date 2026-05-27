@@ -231,3 +231,16 @@ class MachineContext:
     # dict {"day": "Good", "night": "Poor"}. Leer wenn hamqsl nicht erreichbar.
     band_conditions_day: dict[str, str] = field(default_factory=dict)
     band_conditions_night: dict[str, str] = field(default_factory=dict)
+    # v0.15.0 Soft-Blacklist — Calls die nach Reason-Aware-Scoring
+    # systematisch nicht reagieren (Score >= 5 nach >=3 Versuchen).
+    # picked_another zaehlt NICHT — das ist Propagation-Pech, nicht
+    # Operator-Verhalten. Vom Orchestrator gepflegt, hier nur Read-Set.
+    soft_blacklist: set[str] = field(default_factory=set)
+    # v0.15.0 Slot-Parity-Predictor — Op → "even" | "odd" | None (unknown).
+    # Aus Beobachtung der TX-Slots in Decodes. Picker meidet Calls deren
+    # Slot-Parity gerade SEIN TX-Slot ist (er hoert uns nicht waehrend
+    # seinem eigenen Senden).
+    op_slot_parity: dict[str, str] = field(default_factory=dict)
+    # Aktuelle Slot-Parity dieses Slots — vom Orchestrator pro Slot
+    # gesetzt aus SlotTick. "even" oder "odd".
+    current_slot_parity: str = ""

@@ -198,6 +198,41 @@ def _tier_band_open(d: "DecodedMsg", ctx: "MachineContext") -> int:
         return 0
 
 
+def _tier_not_bad_reputation(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """v0.15.0 — Soft-Blacklist-Aware: 0 fuer Calls die wir mehrfach
+    erfolglos angerufen haben (Reputation-Score >= 5), sonst 1.
+
+    Da andere Tiers bei Match 1 liefern, wirkt der 0-Wert hier wie ein
+    Filter: bad-reputation Calls landen IMMER schlechter im lex-Score
+    als ein neutraler Call. Ohne ihn als Tier ganz oben in
+    hunt_priority zu legen, kann der User entscheiden ob der Effekt
+    hart (oben) oder weich (mittig) wirkt.
+    """
+    if not d.call_from:
+        return 1  # unknown → kein Filter
+    return 0 if d.call_from.upper() in ctx.soft_blacklist else 1
+
+
+def _tier_not_his_tx_slot(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """v0.15.0 — Slot-Parity-Awareness: 0 wenn der Op gerade in SEINEM
+    eigenen TX-Slot ist (= er sendet, er hoert uns nicht), sonst 1.
+
+    Wir tracken pro Call welche Slot-Parity er typischerweise zum
+    Senden nutzt (siehe Orchestrator). Wenn unser aktueller Slot SEIN
+    TX-Slot ist und wir antworten wollen, ist das verschwendete TX-
+    Energie. Wir warten lieber einen Slot.
+    """
+    if not d.call_from or not ctx.current_slot_parity:
+        return 1
+    his_parity = ctx.op_slot_parity.get(d.call_from.upper())
+    if his_parity is None or his_parity == "":
+        return 1  # unknown → kein Filter
+    # Wenn unser aktueller Slot SEIN TX-Slot ist → er sendet jetzt,
+    # er hoert uns nicht. Picker soll ihn nicht jetzt picken — wir
+    # wuerden in den naechsten Slot antworten waehrend er noch sendet.
+    return 0 if his_parity == ctx.current_slot_parity else 1
+
+
 def _tier_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
     """SNR als Tie-Breaker — bestes Signal gewinnt."""
     return d.snr_db if d.snr_db is not None else -99
@@ -233,6 +268,8 @@ def _tier_tail_end_target(d: "DecodedMsg", ctx: "MachineContext") -> int:
 # Registry: name → scoring function. Unbekannte Namen werden in
 # _compute_tier_score() ignoriert (defensive, kein KeyError bei Tippfehler).
 HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
+    "not_bad_reputation": _tier_not_bad_reputation,  # v0.15.0
+    "not_his_tx_slot":    _tier_not_his_tx_slot,     # v0.15.0
     "marine_psk":      _tier_marine_psk,
     "marine":          _tier_marine,
     "tail_end_target": _tier_tail_end_target,
@@ -273,7 +310,11 @@ def _compute_tier_score(d: "DecodedMsg", ctx: "MachineContext") -> tuple[int, ..
 
 # ---------------------------------------------------------------------------
 # Outgoing actions the controller has to execute
-ActionKind = Literal["TX_MESSAGE", "STOP_TX", "LOG_QSO", "TX_LOCKED"]
+ActionKind = Literal[
+    "TX_MESSAGE", "STOP_TX", "LOG_QSO", "TX_LOCKED",
+    # v0.15.0 — Bail-Notification fuer Reputation-Tracking + Slot-Parity-Tracking
+    "QSO_BAIL",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -936,6 +977,14 @@ class StateMachine:
         self.qso = None
         self.state = State.IDLE
         self._pending.append(Action("STOP_TX", {}))
+        # v0.15.0 — Reputation/Slot-Parity-Hook: Orchestrator updated
+        # CallReputation basierend auf Reason. Wir liefern den Grund
+        # mit (picked_another zaehlt anders als max_resends).
+        if their_call:
+            self._pending.append(Action(
+                "QSO_BAIL",
+                {"call": their_call, "reason": reason},
+            ))
 
     def _emit_cq(self) -> None:
         # Directed-CQ (Audit F7, v0.3.4): "CQ DX/EU/POTA/TEST" prefix

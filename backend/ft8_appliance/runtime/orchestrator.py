@@ -24,6 +24,7 @@ import contextlib
 import json
 import logging
 import os
+import typing
 
 import sdnotify
 import time
@@ -38,6 +39,7 @@ from sqlalchemy import select
 from ..config import AppConfig, OperatorConfig
 from ..db import repository, session_scope
 from ..db.models import Blacklist as DbBlacklist
+from ..db.models import CallReputation as DbCallReputation
 from ..db.models import Qso
 from ..db.models import Watchlist as DbWatchlist
 from ..gps import GpsdClient, GpsSnapshot
@@ -295,6 +297,18 @@ class Orchestrator:
     _band_conditions_day: dict[str, str] = field(default_factory=dict, init=False)
     _band_conditions_night: dict[str, str] = field(default_factory=dict, init=False)
     _solar_last_refresh_at: float = field(default=0.0, init=False)
+    # v0.15.0 — Soft-Blacklist-Cache aus call_reputation-DB-Tabelle.
+    # Set normalisierter Calls die ueber Threshold sind. Beim Boot
+    # rekonstruiert, bei jedem QSO_BAIL/LOG_QSO inkrementell aktualisiert.
+    _soft_blacklist: set[str] = field(default_factory=set, init=False)
+    # v0.15.0 — Slot-Parity-Tracking pro Op (Call → "even"|"odd"|"").
+    # Aus Decode-Beobachtungen: wenn wir mehrere Decodes von call X in
+    # konsistenten Slot-Parities sehen, koennen wir seinen TX-Slot
+    # raten und vermeiden im selben Slot zu antworten.
+    _op_slot_parity_votes: dict[str, dict[str, int]] = field(
+        default_factory=dict, init=False
+    )
+    _op_slot_parity: dict[str, str] = field(default_factory=dict, init=False)
     # v0.13.0 — Blitzortung-Storm-Alert Throttle.
     # _last_storm_alert_at: monotonic-Zeit des letzten ntfy-Pushes
     # (egal welche Distanz). Verhindert Spam wenn ein Gewitter eine
@@ -453,6 +467,7 @@ class Orchestrator:
             "STOP_TX": self._do_stop_tx,
             "LOG_QSO": self._do_log_qso,
             "TX_LOCKED": self._do_tx_locked,
+            "QSO_BAIL": self._do_qso_bail,  # v0.15.0
         }
 
     # ------------------------------------------------------------------ public API
@@ -870,6 +885,24 @@ class Orchestrator:
                     select(DbWatchlist.call).where(DbWatchlist.user_callsign == my_call)
                 )).scalars()
                 self._watchlist_calls = {c.upper() for c in wl_rows if c}
+                # v0.15.0 Soft-Blacklist aus call_reputation rekonstruieren
+                self._soft_blacklist = set()
+                rep_rows = (await s.execute(
+                    select(
+                        DbCallReputation.call,
+                        DbCallReputation.score,
+                        DbCallReputation.attempts,
+                    ).where(DbCallReputation.user_callsign == my_call)
+                )).all()
+                for c_, score, attempts in rep_rows:
+                    if (c_ and (score or 0) >= self._SOFT_BLACKLIST_THRESHOLD
+                            and (attempts or 0) >= self._MIN_ATTEMPTS_FOR_BLACKLIST):
+                        self._soft_blacklist.add(c_.upper())
+                if self._soft_blacklist:
+                    log.info(
+                        "Soft-Blacklist hydratisiert: %d Calls",
+                        len(self._soft_blacklist),
+                    )
             # DXCC-Set aus den geloggten Calls ableiten. Wir queryen die
             # DB *ausserhalb* des session_scope, weil der cty-Lookup
             # synchron + potenziell langsam (4500 Eintraege) ist und wir
@@ -1889,7 +1922,30 @@ class Orchestrator:
             log.warning("decode_source failed for slot %s: %s", tick.index, exc)
             decodes = []
         self._last_decodes = decodes
+        # v0.15.0 Slot-Parity-Tracking: aktuelle Parity dieses Slots
+        # in ctx setzen, dann pro Decode mit call_from die Vote-Tally
+        # erhoehen. Bei klarer Praeferenz (>=3 Votes, eine Seite >=70%)
+        # in _op_slot_parity einsetzen.
+        slot_parity = self._compute_slot_parity(tick)
+        self.state_machine.ctx.current_slot_parity = slot_parity
         if decodes:
+            for d in decodes:
+                if not d.call_from or d.call_from == self.config.operator.callsign:
+                    continue
+                # Nur "TX-Decodes" zaehlen — also nur wenn der Op tatsaechlich
+                # in diesem Slot gesendet hat. Standard FT8 = jeder Decode = TX
+                # in diesem Slot (RX-Slots haben keine Decodes vom selben Op).
+                norm = d.call_from.upper()
+                votes = self._op_slot_parity_votes.setdefault(
+                    norm, {"even": 0, "odd": 0}
+                )
+                votes[slot_parity] = votes.get(slot_parity, 0) + 1
+                total = votes["even"] + votes["odd"]
+                if total >= 3:
+                    if votes["even"] / total >= 0.7:
+                        self._op_slot_parity[norm] = "even"
+                    elif votes["odd"] / total >= 0.7:
+                        self._op_slot_parity[norm] = "odd"
             # Persistenter Timestamp gegen Watchdog-Phase-Lock-Bug.
             self._last_decode_recv_at = time.time()
             # v0.14.0 Watchlist-Check: feuere ntfy-Push wenn ein
@@ -3467,6 +3523,21 @@ class Orchestrator:
 
     _chrony: ChronyStatus | None = field(default=None, init=False)
 
+    def _compute_slot_parity(self, tick) -> str:
+        """v0.15.0 — Slot-Parity ('even' oder 'odd') aus SlotTick ableiten.
+
+        Robust gegen die +/-0.0005s-Boundary-Jitter der SlotClock (siehe
+        state_machine.on_slot_tick fuer den round()-Workaround).
+        """
+        if tick is None:
+            return "even"
+        slot_seconds = getattr(tick, "slot_seconds", None) or 15.0
+        try:
+            n = round(tick.posix / slot_seconds)
+        except Exception:
+            return "even"
+        return "even" if n % 2 == 0 else "odd"
+
     def _current_band(self) -> str | None:
         """Welches Band aus self.config.bands trifft auf rig.freq_hz zu?
 
@@ -3594,6 +3665,9 @@ class Orchestrator:
         self.state_machine.ctx.band_conditions_night = dict(self._band_conditions_night)
         # Watchlist-Mirror
         self.state_machine.ctx.watchlist_calls = set(self._watchlist_calls)
+        # v0.15.0 Soft-Blacklist + Slot-Parity in ctx spiegeln
+        self.state_machine.ctx.soft_blacklist = set(self._soft_blacklist)
+        self.state_machine.ctx.op_slot_parity = dict(self._op_slot_parity)
         # PSK-Reciprocity: aktueller Set "wer hat uns recently gehört".
         # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;
         # hier nur in den ctx kopieren damit der Picker O(1) lookup hat.
@@ -3781,6 +3855,12 @@ class Orchestrator:
                     if band_for_5bwas:
                         self._worked_dxcc_band.add((country, band_for_5bwas))
             self._worked_calls.add(call)
+            # v0.15.0 Reputation: erfolgreiches QSO vergibt Bail-Score.
+            # Fire-and-forget — DB-Schreiben darf kein QSO blockieren.
+            try:
+                asyncio.create_task(self._record_qso_success(call))
+            except Exception:
+                pass
             # Cooldown registrieren — Hunting-Picker überspringt diesen
             # Call solange das Fenster läuft. 0 = aus.
             #
@@ -3907,6 +3987,100 @@ class Orchestrator:
                 )
         except Exception as exc:
             log.warning("LOG_QSO db write failed: %s", exc)
+
+    # ------------------------------------------------------------------ v0.15.0 reputation
+    # Bail-Reason → Score-Delta. picked_another zaehlt NICHT (das ist
+    # Pech, nicht Verhalten der Station). ClassVar damit der dataclass
+    # die nicht als Field interpretiert.
+    _BAIL_SCORE_WEIGHTS: typing.ClassVar[dict[str, int]] = {
+        "picked_another": 0,
+        "max_resends": 2,
+        "went_silent": 1,
+        "report_never_closed": 1,
+    }
+    _SOFT_BLACKLIST_THRESHOLD: typing.ClassVar[int] = 5
+    _MIN_ATTEMPTS_FOR_BLACKLIST: typing.ClassVar[int] = 3
+    _SUCCESS_SCORE_DELTA: typing.ClassVar[int] = -5
+
+    async def _do_qso_bail(self, payload: dict) -> None:
+        """Reputation-Update bei jedem Bail aus dem State-Machine.
+
+        Updated DB-Eintrag (attempts +1, score += weight, last_reason).
+        Triggert ggf. Soft-Blacklist-Aufnahme.
+        """
+        call = (payload.get("call") or "").upper().strip()
+        reason = payload.get("reason") or "unknown"
+        if not call:
+            return
+        weight = self._BAIL_SCORE_WEIGHTS.get(reason, 0)
+        my_user = self.config.operator.callsign
+        try:
+            async with session_scope() as s:
+                row = await s.get(DbCallReputation, call)
+                now = datetime.now(UTC)
+                if row is None:
+                    row = DbCallReputation(
+                        call=call,
+                        user_callsign=my_user,
+                        score=weight,
+                        attempts=1,
+                        successes=0,
+                        last_attempt_at=now,
+                        last_reason=reason,
+                    )
+                    s.add(row)
+                else:
+                    row.score = (row.score or 0) + weight
+                    row.attempts = (row.attempts or 0) + 1
+                    row.last_attempt_at = now
+                    row.last_reason = reason
+                    if row.user_callsign is None:
+                        row.user_callsign = my_user
+                # In-Memory-Set updaten falls jetzt ueber Threshold
+                if (row.score >= self._SOFT_BLACKLIST_THRESHOLD
+                        and row.attempts >= self._MIN_ATTEMPTS_FOR_BLACKLIST):
+                    self._soft_blacklist.add(call)
+                    log.info(
+                        "Soft-Blacklist: %s (score=%d, attempts=%d, reason=%s)",
+                        call, row.score, row.attempts, reason,
+                    )
+        except Exception as exc:
+            log.warning("reputation bail-update failed for %s: %s", call, exc)
+
+    async def _record_qso_success(self, call: str) -> None:
+        """Erfolg vergibt — Score Richtung 0 ziehen, ggf. Soft-Blacklist
+        verlassen."""
+        call = (call or "").upper().strip()
+        if not call:
+            return
+        my_user = self.config.operator.callsign
+        try:
+            async with session_scope() as s:
+                row = await s.get(DbCallReputation, call)
+                now = datetime.now(UTC)
+                if row is None:
+                    row = DbCallReputation(
+                        call=call,
+                        user_callsign=my_user,
+                        score=self._SUCCESS_SCORE_DELTA,
+                        attempts=0,
+                        successes=1,
+                        last_attempt_at=now,
+                        last_reason="success",
+                    )
+                    s.add(row)
+                else:
+                    row.score = (row.score or 0) + self._SUCCESS_SCORE_DELTA
+                    row.successes = (row.successes or 0) + 1
+                    row.last_attempt_at = now
+                    row.last_reason = "success"
+                    if row.user_callsign is None:
+                        row.user_callsign = my_user
+                # Aus Soft-Blacklist raus wenn unter Threshold
+                if row.score < self._SOFT_BLACKLIST_THRESHOLD:
+                    self._soft_blacklist.discard(call)
+        except Exception as exc:
+            log.warning("reputation success-update failed for %s: %s", call, exc)
 
     async def _do_tx_locked(self, payload: dict) -> None:
         reason = payload.get("reason") or "unbekannt"

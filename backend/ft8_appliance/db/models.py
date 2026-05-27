@@ -137,6 +137,37 @@ class Blacklist(Base):
 
 
 # ---------------------------------------------------------------------------
+class CallReputation(Base):
+    """v0.15.0 — Bail-Reason-aware Soft-Blacklist-Tracking.
+
+    Pro Call ein Score-Bucket. Bail-Reasons werden mit Gewichten
+    verbucht:
+
+    * ``picked_another`` → +0  (Pech — er hat staerkeren Caller gepickt)
+    * ``max_resends``    → +2  (er hoert uns systematisch nicht)
+    * ``went_silent``    → +1  (ambivalent — QSB / abgehauen)
+    * ``report_never_closed`` → +1 (ambivalent — Decode-Fehler)
+    * Erfolgreiches QSO   → −5 (Vergebung, Reset Richtung 0)
+
+    Score >= ``SOFT_BLACKLIST_THRESHOLD`` (Default 5) UND
+    ``attempts >= MIN_ATTEMPTS`` (Default 3) → Soft-Blacklist.
+
+    Multi-Operator-Isolation via user_callsign.
+    """
+    __tablename__ = "call_reputation"
+
+    call: Mapped[str] = mapped_column(String, primary_key=True)
+    user_callsign: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    successes: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 class Watchlist(Base):
     """v0.14.0 — Calls die wir aktiv beobachten. Bei jedem Decode eines
     Watchlist-Calls feuert der Orchestrator eine ntfy-Push mit Action-

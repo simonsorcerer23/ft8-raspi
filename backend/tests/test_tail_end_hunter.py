@@ -368,16 +368,15 @@ def test_operating_config_tail_end_can_be_enabled():
 
 
 def test_default_hunt_priority_includes_tail_end_at_position_3():
-    """tail_end_target ist Position 3 (Index 2) im Default — nach
-    marine_psk + marine. v0.14.0: danach grayline + band_open
-    bevor new_dxcc_psk kommt."""
+    """tail_end_target ist im Default vor new_dxcc_psk. v0.15.0 setzt
+    not_bad_reputation + not_his_tx_slot davor."""
     cfg = OperatingConfig()
-    assert cfg.hunt_priority[0] == "marine_psk"
-    assert cfg.hunt_priority[1] == "marine"
-    assert cfg.hunt_priority[2] == "tail_end_target"
-    # v0.14.0 schiebt grayline + band_open dazwischen
+    assert "tail_end_target" in cfg.hunt_priority
     assert "new_dxcc_psk" in cfg.hunt_priority
     assert cfg.hunt_priority.index("tail_end_target") < cfg.hunt_priority.index("new_dxcc_psk")
+    # marine_psk + marine bleiben am Anfang (nach den Filter-Tiers)
+    assert "marine_psk" in cfg.hunt_priority
+    assert cfg.hunt_priority.index("marine_psk") < cfg.hunt_priority.index("tail_end_target")
 
 
 def test_hunt_tiers_registry_contains_tail_end():

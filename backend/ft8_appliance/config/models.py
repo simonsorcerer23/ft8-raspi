@@ -341,6 +341,8 @@ class OperatingConfig(BaseModel):
     # Default-Reihenfolge ist Sebastian's "was am meisten Sinn macht"-Vote.
     hunt_priority: list[str] = Field(
         default_factory=lambda: [
+            "not_bad_reputation",  # v0.15.0 — Soft-Blacklist (filter)
+            "not_his_tx_slot",     # v0.15.0 — Slot-Parity-Awareness (filter)
             "marine_psk",        # Marinefunker + PSK sagt "hört uns"
             "marine",            # Marinefunker (auch ohne PSK)
             "tail_end_target",   # v0.11.0 — Station hat gerade QSO beendet
@@ -376,6 +378,7 @@ class OperatingConfig(BaseModel):
         # Synchron mit statemachine.machine.HUNT_TIERS — der Test
         # test_hunt_tiers_registry_complete erzwingt das.
         known = [
+            "not_bad_reputation", "not_his_tx_slot",
             "marine_psk", "marine", "tail_end_target",
             "grayline", "band_open",
             "new_dxcc_psk", "new_dxcc", "psk_heard_us", "new_dxcc_band",

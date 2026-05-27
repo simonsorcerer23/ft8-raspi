@@ -283,8 +283,11 @@ def test_migration_adds_new_tiers_to_old_config():
     assert cfg.hunt_priority[-1] == "snr"
 
 
-def test_migration_len_is_14():
-    """v0.14.0: 14 known Tiers total."""
+def test_migration_includes_v014_tiers():
+    """v0.14.0 hat min. die grayline + band_open Tiers drin."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 14
+    assert "grayline" in cfg.hunt_priority
+    assert "band_open" in cfg.hunt_priority
+    # Mind. 14 (v0.14.0); aber v0.15.0+ erweitert.
+    assert len(cfg.hunt_priority) >= 14
