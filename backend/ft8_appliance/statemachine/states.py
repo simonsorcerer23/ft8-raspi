@@ -215,3 +215,19 @@ class MachineContext:
     # eh, wir koennen normal antworten). Verhindert dass routinemaessige
     # CQ-Rufer mit jedem Closing in den Tail-End-Tier rutschen.
     tail_end_recent_cq: dict[str, float] = field(default_factory=dict)
+    # v0.14.0 Watchlist — Calls die wir aktiv beobachten (DXpeditions etc.).
+    # Bei jedem Decode eines Watchlist-Calls feuert der Orchestrator eine
+    # ntfy-Push mit Action-Buttons. In-memory-Mirror der DB-Watchlist-
+    # Tabelle, vom Orchestrator pro Slot aus DB synchronisiert.
+    watchlist_calls: set[str] = field(default_factory=set)
+    # v0.14.0 Grayline-Tier — pro Slot vom Orchestrator befuellt: call_from
+    # (uppercase) → (lat, lon) aus cty.dat-Lookup. Nur Calls deren DXCC-
+    # Entity wir mit Lat/Lon kennen sind drin (compound calls ohne klares
+    # Land fallen raus).
+    call_to_latlon: dict[str, tuple[float, float]] = field(default_factory=dict)
+    # v0.14.0 Propagation-Tier — hamqsl-Conditions pro Band ("Good"/"Fair"/
+    # "Poor"). Vom Orchestrator alle 30 min aus HamQslClient.solar() befuellt.
+    # Key: Band-Bucket ("80m-40m", "30m-20m", "17m-15m", "12m-10m"); Value:
+    # dict {"day": "Good", "night": "Poor"}. Leer wenn hamqsl nicht erreichbar.
+    band_conditions_day: dict[str, str] = field(default_factory=dict)
+    band_conditions_night: dict[str, str] = field(default_factory=dict)

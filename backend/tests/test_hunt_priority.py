@@ -310,9 +310,10 @@ def test_compute_score_snr_tiebreaker_added():
 
 
 def test_hunt_tiers_registry_complete():
-    """Alle erwarteten Tier-Namen sind registriert (v0.11.0: + tail_end_target)."""
+    """Alle erwarteten Tier-Namen sind registriert (v0.14.0: + grayline + band_open)."""
     expected = {
         "marine_psk", "marine", "tail_end_target",
+        "grayline", "band_open",
         "new_dxcc_psk", "new_dxcc",
         "psk_heard_us", "new_dxcc_band", "new_grid", "new_grid_band",
         "not_worked", "dxcc_rarity", "snr",
@@ -373,8 +374,8 @@ def test_hunt_priority_auto_migration_preserves_user_order():
     assert cfg.hunt_priority[0] == "new_dxcc"  # User-Sortierung erhalten
     assert cfg.hunt_priority[1] == "marine"
     assert cfg.hunt_priority[-1] == "snr"
-    # alle 12 known Tiers drin (v0.11.0: + tail_end_target)
-    assert len(cfg.hunt_priority) == 12
+    # v0.14.0: 14 known Tiers (+ grayline + band_open)
+    assert len(cfg.hunt_priority) == 14
 
 
 def test_hunt_priority_validator_keeps_unknown_tiers():
@@ -389,7 +390,7 @@ def test_hunt_priority_validator_empty_list_to_default():
     """Leere Liste in der Config → komplette Default-Liste."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 12  # v0.11.0: + tail_end_target
+    assert len(cfg.hunt_priority) == 14  # v0.14.0: + grayline + band_open
     assert cfg.hunt_priority[0] == "marine_psk"
 
 

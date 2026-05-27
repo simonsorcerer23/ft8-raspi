@@ -248,6 +248,35 @@ async def blacklist_remove(
     return ControlResponse(ok=True, state=orch.status().state, detail=f"removed {call.upper()}")
 
 
+# ---------------------------------------------------------------------------
+# v0.14.0 Watchlist add/remove
+class WatchlistAddRequest(BaseModel):
+    call: str
+    note: str | None = None
+
+
+@router.post("/watchlist", response_model=ControlResponse)
+async def watchlist_add(
+    req: WatchlistAddRequest, orch: Orchestrator = Depends(get_orchestrator)
+) -> ControlResponse:
+    await orch.handle_watchlist_add(req.call, req.note)
+    return ControlResponse(
+        ok=True, state=orch.status().state,
+        detail=f"watching {req.call.upper()}",
+    )
+
+
+@router.delete("/watchlist/{call}", response_model=ControlResponse)
+async def watchlist_remove(
+    call: str, orch: Orchestrator = Depends(get_orchestrator)
+) -> ControlResponse:
+    await orch.handle_watchlist_remove(call)
+    return ControlResponse(
+        ok=True, state=orch.status().state,
+        detail=f"unwatched {call.upper()}",
+    )
+
+
 class TxPowerRequest(BaseModel):
     watts: int
 

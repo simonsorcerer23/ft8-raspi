@@ -39,6 +39,7 @@ from ..config import AppConfig, OperatorConfig
 from ..db import repository, session_scope
 from ..db.models import Blacklist as DbBlacklist
 from ..db.models import Qso
+from ..db.models import Watchlist as DbWatchlist
 from ..gps import GpsdClient, GpsSnapshot
 from ..rig import RigctldClient, RigSnapshot
 from ..statemachine import (
@@ -279,6 +280,21 @@ class Orchestrator:
     _psk_heard_us_cache: set[str] = field(default_factory=set, init=False)
     _psk_last_refresh_at: float = field(default=0.0, init=False)
     _psk_last_refresh_ok: bool = field(default=False, init=False)
+    # v0.14.0 — Watchlist + Band-Conditions + Solar-Refresh-Throttle.
+    # _watchlist_calls: set normalisierter Calls die der User beobachtet
+    # (DXpeditions etc.). Beim Boot aus DB rekonstruiert, dann via
+    # handle_watchlist_add/remove aktualisiert. Wird pro Slot in den
+    # state-machine-ctx gespiegelt.
+    _watchlist_calls: set[str] = field(default_factory=set, init=False)
+    # Throttle pro Watchlist-Call (POSIX-Zeit des letzten ntfy-Pushes).
+    # Default-Fenster: 1h damit DXpedition-Calls die im selben Slot
+    # 30x decoden nicht in Push-Spam ausarten.
+    _watchlist_last_alert: dict[str, float] = field(default_factory=dict, init=False)
+    # Band-Conditions aus hamqsl-Solar — periodisch via _solar_refresh_loop
+    # aktualisiert, pro Slot in den ctx kopiert.
+    _band_conditions_day: dict[str, str] = field(default_factory=dict, init=False)
+    _band_conditions_night: dict[str, str] = field(default_factory=dict, init=False)
+    _solar_last_refresh_at: float = field(default=0.0, init=False)
     # v0.13.0 — Blitzortung-Storm-Alert Throttle.
     # _last_storm_alert_at: monotonic-Zeit des letzten ntfy-Pushes
     # (egal welche Distanz). Verhindert Spam wenn ein Gewitter eine
@@ -586,6 +602,15 @@ class Orchestrator:
                 self._blitzortung_watchdog_loop(), name="blitzortung-watchdog"
             ))
 
+        # v0.14.0 — Solar-Refresh-Loop. hamqsl-Cache hat 30 min TTL, wir
+        # holen alle 30 min frisch und spiegeln in _band_conditions_*.
+        # Wenn hamqsl-Integration aus → leere Conditions → Tier `band_open`
+        # liefert 0 (no boost), kein Crash.
+        if self.integrations.hamqsl is not None and self.integrations.hamqsl.enabled:
+            self._bg_tasks.append(asyncio.create_task(
+                self._solar_refresh_loop(), name="solar-refresh"
+            ))
+
         # systemd liveness-watchdog: nur schedulen wenn unter systemd
         # mit NotifyAccess+WatchdogSec gestartet (NOTIFY_SOCKET env).
         # In Tests / Workstation-runs ist die env nicht da → wir sparen
@@ -838,6 +863,13 @@ class Orchestrator:
                     select(DbBlacklist.call).where(DbBlacklist.user_callsign == my_call)
                 )).scalars()
                 self.state_machine.ctx.blacklist = {c.upper() for c in bl_rows if c}
+                # v0.14.0 Watchlist — pro Operator isoliert. Sets im
+                # Orchestrator und in ctx; In-Memory-Sync, DB ist die
+                # Wahrheit.
+                wl_rows = (await s.execute(
+                    select(DbWatchlist.call).where(DbWatchlist.user_callsign == my_call)
+                )).scalars()
+                self._watchlist_calls = {c.upper() for c in wl_rows if c}
             # DXCC-Set aus den geloggten Calls ableiten. Wir queryen die
             # DB *ausserhalb* des session_scope, weil der cty-Lookup
             # synchron + potenziell langsam (4500 Eintraege) ist und wir
@@ -1286,6 +1318,78 @@ class Orchestrator:
                     await s.delete(row)
         except Exception as exc:
             log.warning("blacklist DB delete failed: %s", exc)
+
+    # ------------------------------------------------------------------ watchlist (v0.14.0)
+    async def handle_watchlist_add(self, call: str, note: str | None = None) -> None:
+        """Add a callsign to the watchlist (in-memory + DB persist).
+
+        Operator-Isolation: row.user_callsign = aktiver Op. Bei Hot-Switch
+        sieht ein anderer Op die nicht.
+        """
+        call = call.upper().strip()
+        if not call:
+            return
+        my_call = self.config.operator.callsign
+        self._watchlist_calls.add(call)
+        try:
+            async with session_scope() as s:
+                exists = await s.get(DbWatchlist, call)
+                if exists is None:
+                    s.add(DbWatchlist(
+                        call=call,
+                        user_callsign=my_call,
+                        added=datetime.now(UTC),
+                        note=note,
+                    ))
+                else:
+                    # Note aktualisieren falls neuer Wert mitkam.
+                    if note is not None:
+                        exists.note = note
+                    # Operator-Pflege falls Eintrag global verwaist war.
+                    if exists.user_callsign is None:
+                        exists.user_callsign = my_call
+        except Exception as exc:
+            log.warning("watchlist DB persist failed: %s", exc)
+
+    async def handle_watchlist_remove(self, call: str) -> None:
+        call = call.upper().strip()
+        self._watchlist_calls.discard(call)
+        self._watchlist_last_alert.pop(call, None)
+        try:
+            async with session_scope() as s:
+                row = await s.get(DbWatchlist, call)
+                if row is not None:
+                    await s.delete(row)
+        except Exception as exc:
+            log.warning("watchlist DB delete failed: %s", exc)
+
+    async def _fire_watchlist_alert(self, call: str, decoded) -> None:
+        """ntfy-Push wenn ein Watchlist-Call decoded wurde, mit 1h-Throttle.
+
+        Wird aus dem Decode-Loop aufgerufen. Decoded ist eine DecodedMsg.
+        """
+        ntfy = self.integrations.ntfy
+        if ntfy is None or not ntfy.enabled:
+            return
+        norm = call.upper()
+        now = time.time()
+        last = self._watchlist_last_alert.get(norm, 0.0)
+        if now - last < 3600:  # 1h throttle pro Call
+            return
+        self._watchlist_last_alert[norm] = now
+        try:
+            band_tag = decoded.band or self.state_machine.ctx.band
+            snr_str = f"{decoded.snr_db:+d} dB" if decoded.snr_db is not None else "?"
+            msg_kind = "CQ" if decoded.call_to is None else f"→ {decoded.call_to}"
+            await ntfy.push(
+                title=f"👀 Watchlist: {norm}",
+                message=f"{msg_kind} auf {band_tag} ({snr_str})",
+                priority="default",
+                tags="eyes",
+            )
+            log.info("Watchlist-Alert: %s decoded on %s (%s)", norm, band_tag, snr_str)
+        except Exception as exc:
+            log.warning("watchlist ntfy push failed for %s: %s", norm, exc)
 
     # ------------------------------------------------------------------ tamper detection helpers
     _ECHO_WINDOW_S = 3.0
@@ -1788,6 +1892,23 @@ class Orchestrator:
         if decodes:
             # Persistenter Timestamp gegen Watchdog-Phase-Lock-Bug.
             self._last_decode_recv_at = time.time()
+            # v0.14.0 Watchlist-Check: feuere ntfy-Push wenn ein
+            # beobachteter Call drin ist. Throttle 1h pro Call —
+            # _fire_watchlist_alert ignoriert Wiederholungen.
+            if self._watchlist_calls:
+                seen_in_slot: set[str] = set()
+                for d in decodes:
+                    for c in (d.call_from, d.call_to):
+                        if not c:
+                            continue
+                        norm = c.upper()
+                        if norm in seen_in_slot:
+                            continue
+                        if norm in self._watchlist_calls:
+                            seen_in_slot.add(norm)
+                            asyncio.create_task(
+                                self._fire_watchlist_alert(norm, d)
+                            )
             # v0.8.0 Build A: Hint-Decoder Live-Queue. Pushe alle frisch
             # decodierten Calls (auch unworked) in den C-Shim-Hash-Table
             # damit der Hint-Pass im naechsten Slot diese als "recently
@@ -2363,6 +2484,36 @@ class Orchestrator:
                 log.warning("psk-reciprocity refresh-loop hiccup: %s", exc)
                 self._psk_last_refresh_ok = False
             await asyncio.sleep(self.config.operating.psk_reciprocity_refresh_s)
+
+    async def _solar_refresh_loop(self) -> None:
+        """v0.14.0 — Periodischer hamqsl-Refresh fuer Band-Conditions.
+
+        hamqsl-Cache hat 30 min TTL (siehe HamQslClient.cache_ttl_s) →
+        wir poll'en alle 30 min damit ctx.band_conditions_day/night
+        aktuell bleibt fuer den `band_open`-Tier.
+        """
+        await asyncio.sleep(5)  # Boot-grace
+        while True:
+            try:
+                hamqsl = self.integrations.hamqsl
+                if hamqsl is None or not hamqsl.enabled:
+                    await asyncio.sleep(1800)
+                    continue
+                sd = await hamqsl.solar()
+                if sd is not None:
+                    self._band_conditions_day = dict(sd.band_conditions_day or {})
+                    self._band_conditions_night = dict(sd.band_conditions_night or {})
+                    self._solar_last_refresh_at = time.time()
+                    log.info(
+                        "solar-refresh: %d day-conditions, %d night-conditions",
+                        len(self._band_conditions_day),
+                        len(self._band_conditions_night),
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("solar-refresh hiccup: %s", exc)
+            await asyncio.sleep(1800)
 
     async def _blitzortung_ws_loop(self) -> None:
         """v0.13.0: Liest den Blitzortung.org Live-WS und ingestiert Strikes
@@ -3402,6 +3553,7 @@ class Orchestrator:
         # DXCC-Rarity-Tier.
         new_dxcc: set[str] = set()
         call_to_dxcc: dict[str, str] = {}
+        call_to_latlon: dict[str, tuple[float, float]] = {}
         rarity_scores: dict[str, int] = {}
         if self.integrations.cty is not None:
             # Lazy-Import damit Tests ohne dxcc_rarity-Daten nicht failen
@@ -3421,6 +3573,10 @@ class Orchestrator:
                     call_to_dxcc[norm] = rec.entity.name
                     if rec.entity.name not in self._worked_dxccs:
                         new_dxcc.add(call)
+                    # v0.14.0 Grayline-Tier: Lat/Lon der DXCC-Entity
+                    # cachen damit der Tier ohne weiteren Lookup auskommt.
+                    if rec.entity.lat is not None and rec.entity.lon is not None:
+                        call_to_latlon[norm] = (rec.entity.lat, rec.entity.lon)
                 # Rarity-Score (0..100) per Call — basiert auf cty-prefix
                 # fallback, daher unabhängig vom cty-Lookup verfügbar.
                 score = rarity_for(call)
@@ -3428,7 +3584,16 @@ class Orchestrator:
                     rarity_scores[norm] = score
         self.state_machine.ctx.new_dxcc_calls = new_dxcc
         self.state_machine.ctx.call_to_dxcc = call_to_dxcc
+        self.state_machine.ctx.call_to_latlon = call_to_latlon
         self.state_machine.ctx.rarity_scores = rarity_scores
+        # v0.14.0 Band-Conditions aus hamqsl-Cache spiegeln. Daten werden
+        # vom HamQslClient mit 30-min-TTL gecached, hier ist's also ein
+        # billiger Memory-Read. Wenn Client gerade keine Daten hat → leere
+        # Dicts → Tier liefert 0.
+        self.state_machine.ctx.band_conditions_day = dict(self._band_conditions_day)
+        self.state_machine.ctx.band_conditions_night = dict(self._band_conditions_night)
+        # Watchlist-Mirror
+        self.state_machine.ctx.watchlist_calls = set(self._watchlist_calls)
         # PSK-Reciprocity: aktueller Set "wer hat uns recently gehört".
         # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;
         # hier nur in den ctx kopieren damit der Picker O(1) lookup hat.

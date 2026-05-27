@@ -129,6 +129,75 @@ def _tier_dxcc_rarity(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return ctx.rarity_scores.get(d.call_from.upper(), 0)
 
 
+def _maidenhead_to_latlon(grid: str) -> tuple[float, float]:
+    """4-stelliges Maidenhead → (lat, lon) Center.
+
+    Locator JN58 → ~48.5N, 9.0E (Square-Center).
+    """
+    g = grid.upper().strip()
+    if len(g) < 4:
+        raise ValueError(f"grid too short: {grid!r}")
+    lon = (ord(g[0]) - ord("A")) * 20 - 180
+    lat = (ord(g[1]) - ord("A")) * 10 - 90
+    lon += int(g[2]) * 2
+    lat += int(g[3])
+    if len(g) >= 6:
+        lon += (ord(g[4]) - ord("A")) * 5 / 60 + 2.5 / 60
+        lat += (ord(g[5]) - ord("A")) * 2.5 / 60 + 1.25 / 60
+    else:
+        lon += 1
+        lat += 0.5
+    return lat, lon
+
+
+def _tier_grayline(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """v0.14.0 — CQ-Rufer ist gerade im eigenen Grayline-Fenster.
+
+    Lat/Lon kommt aus ctx.call_to_latlon (vom Orchestrator pro Slot
+    gefuellt aus cty.dat-Lookup). Wenn unbekannt → 0. Grayline via
+    util.propagation.is_in_grayline mit ±6° Civil-Twilight-Fenster.
+
+    Effekt: 80m/40m/15m-DX-Calls die in ihrer eigenen Daemmerung sind
+    bekommen Pickup-Vorrang. Klassische Grayline-Propagation.
+    """
+    if not d.call_from:
+        return 0
+    pos = ctx.call_to_latlon.get(d.call_from.upper())
+    if pos is None:
+        return 0
+    from ..util.propagation import is_in_grayline
+    lat, lon = pos
+    try:
+        return 1 if is_in_grayline(lat, lon, datetime.now(UTC)) else 0
+    except Exception:
+        return 0
+
+
+def _tier_band_open(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """v0.14.0 — hamqsl meldet aktuell "Good"-Conditions auf dem Band.
+
+    Day/Night-Auswahl basiert auf der Sonne ueber UNSEREM QTH (my_grid).
+    Effekt: bei offenem Band kriegen ALLE CQ-Calls +1, was sich
+    aufaddiert mit anderen Tiers. Bei Fair/Poor → 0.
+    """
+    if not ctx.band_conditions_day and not ctx.band_conditions_night:
+        return 0
+    try:
+        my_lat, my_lon = _maidenhead_to_latlon(ctx.my_grid)
+    except Exception:
+        return 0
+    from ..util.propagation import is_band_open_for_dx
+    try:
+        return 1 if is_band_open_for_dx(
+            ctx.band,
+            ctx.band_conditions_day,
+            ctx.band_conditions_night,
+            my_lat=my_lat, my_lon=my_lon, when=datetime.now(UTC),
+        ) else 0
+    except Exception:
+        return 0
+
+
 def _tier_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
     """SNR als Tie-Breaker — bestes Signal gewinnt."""
     return d.snr_db if d.snr_db is not None else -99
@@ -167,6 +236,8 @@ HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
     "marine_psk":      _tier_marine_psk,
     "marine":          _tier_marine,
     "tail_end_target": _tier_tail_end_target,
+    "grayline":        _tier_grayline,
+    "band_open":       _tier_band_open,
     "new_dxcc_psk":    _tier_new_dxcc_psk,
     "new_dxcc":        _tier_new_dxcc,
     "psk_heard_us":    _tier_psk_heard_us,

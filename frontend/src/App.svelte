@@ -9,6 +9,7 @@
   import ConfigPanel    from './components/ConfigPanel.svelte';
   import WifiManager    from './components/WifiManager.svelte';
   import BlacklistPanel from './components/BlacklistPanel.svelte';
+  import WatchlistPanel from './components/WatchlistPanel.svelte';
   import SolarWidget    from './components/SolarWidget.svelte';
   import StatusBar      from './components/StatusBar.svelte';
   import StatsDashboard from './components/StatsDashboard.svelte';
@@ -128,6 +129,7 @@
     <button class:active={tab === 'log'}   onclick={() => tab = 'log'}>📒 Log</button>
     <button class:active={tab === 'who'}   onclick={() => tab = 'who'}>📡 Empfänger</button>
     <button class:active={tab === 'bl'}    onclick={() => tab = 'bl'}>🚫 Blacklist</button>
+    <button class:active={tab === 'watch'} onclick={() => tab = 'watch'}>👀 Watchlist</button>
     <button class:active={tab === 'wifi'}  onclick={() => tab = 'wifi'}>📶 WLAN</button>
     <button class:active={tab === 'cfg'}   onclick={() => tab = 'cfg'}>⚙️ Konfig</button>
     <button class="sound" onclick={toggleSound}
@@ -175,6 +177,8 @@
     <WhoHeardMe />
   {:else if tab === 'bl'}
     <BlacklistPanel />
+  {:else if tab === 'watch'}
+    <WatchlistPanel />
   {:else if tab === 'wifi'}
     <WifiManager />
   {:else if tab === 'cfg'}

@@ -137,6 +137,28 @@ class Blacklist(Base):
 
 
 # ---------------------------------------------------------------------------
+class Watchlist(Base):
+    """v0.14.0 — Calls die wir aktiv beobachten. Bei jedem Decode eines
+    Watchlist-Calls feuert der Orchestrator eine ntfy-Push mit Action-
+    Buttons "Anrufen / Ignorieren". Throttle 1× pro Call pro 1h damit
+    DXpedition-Calls die im selben Slot 30× decoden nicht in Push-Spam
+    ausarten.
+
+    Multi-Operator: pro user_callsign isoliert (DK9XR's Watchlist ist
+    nicht DO3XR's).
+    """
+    __tablename__ = "watchlist"
+
+    call: Mapped[str] = mapped_column(String, primary_key=True)
+    user_callsign: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    added: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_alert_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
 class ConfigHistory(Base):
     __tablename__ = "config_history"
 

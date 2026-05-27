@@ -8,7 +8,7 @@ Reference: https://www.hamqsl.com/solarxml.php
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 
 from .base import Integration
@@ -25,6 +25,12 @@ class SolarData:
     x_ray: str | None
     aurora: int | None
     updated: str | None
+    # v0.14.0 — per-Band-Conditions aus <calculatedconditions>. Keys
+    # sind die hamqsl-Bucket-Namen ("80m-40m", "30m-20m", "17m-15m",
+    # "12m-10m"); Werte "Good"/"Fair"/"Poor". Leer wenn hamqsl-XML
+    # die Sektion nicht enthielt.
+    band_conditions_day: dict[str, str] = field(default_factory=dict)
+    band_conditions_night: dict[str, str] = field(default_factory=dict)
 
 
 class HamQslClient(Integration):
@@ -82,6 +88,27 @@ def _parse(xml_text: str) -> SolarData | None:
         except ValueError:
             return None
 
+    # v0.14.0 — calculatedconditions: per-band day/night condition strings.
+    # XML-Struktur:
+    #   <calculatedconditions>
+    #     <band name="80m-40m" time="day">Good</band>
+    #     <band name="80m-40m" time="night">Fair</band>
+    #     ...
+    band_day: dict[str, str] = {}
+    band_night: dict[str, str] = {}
+    cc = sdata.find("calculatedconditions")
+    if cc is not None:
+        for band_el in cc.findall("band"):
+            name = band_el.get("name")
+            time_attr = band_el.get("time")
+            value = (band_el.text or "").strip()
+            if not name or not value:
+                continue
+            if time_attr == "day":
+                band_day[name] = value
+            elif time_attr == "night":
+                band_night[name] = value
+
     return SolarData(
         sfi=i("solarflux"),
         a_index=i("aindex"),
@@ -90,4 +117,6 @@ def _parse(xml_text: str) -> SolarData | None:
         x_ray=text("xray"),
         aurora=i("aurora"),
         updated=text("updated"),
+        band_conditions_day=band_day,
+        band_conditions_night=band_night,
     )

@@ -344,6 +344,8 @@ class OperatingConfig(BaseModel):
             "marine_psk",        # Marinefunker + PSK sagt "hört uns"
             "marine",            # Marinefunker (auch ohne PSK)
             "tail_end_target",   # v0.11.0 — Station hat gerade QSO beendet
+            "grayline",          # v0.14.0 — CQ-Rufer in eigenem Grayline-Fenster
+            "band_open",         # v0.14.0 — hamqsl: Band aktuell "Good"
             "new_dxcc_psk",      # neues DXCC + PSK sagt "hört uns"
             "new_dxcc",          # neues DXCC (auch ohne PSK)
             "psk_heard_us",      # PSK sagt "hört uns" (für routine-EU)
@@ -374,9 +376,10 @@ class OperatingConfig(BaseModel):
         # Synchron mit statemachine.machine.HUNT_TIERS — der Test
         # test_hunt_tiers_registry_complete erzwingt das.
         known = [
-            "marine_psk", "marine", "tail_end_target", "new_dxcc_psk",
-            "new_dxcc", "psk_heard_us", "new_dxcc_band", "new_grid",
-            "new_grid_band", "not_worked", "dxcc_rarity", "snr",
+            "marine_psk", "marine", "tail_end_target",
+            "grayline", "band_open",
+            "new_dxcc_psk", "new_dxcc", "psk_heard_us", "new_dxcc_band",
+            "new_grid", "new_grid_band", "not_worked", "dxcc_rarity", "snr",
         ]
         if not v:
             return list(known)  # leere Liste → komplette Default rein

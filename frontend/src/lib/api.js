@@ -72,6 +72,13 @@ export const api = {
   blacklistRemove: (call) => request(`/control/blacklist/${encodeURIComponent(call)}`, {
                               method: 'DELETE'
                             }),
+  watchlist:    ()       => request('/watchlist'),
+  watchlistAdd: (call, note) => request('/control/watchlist', {
+                              method: 'POST', body: { call, note }
+                            }),
+  watchlistRemove: (call) => request(`/control/watchlist/${encodeURIComponent(call)}`, {
+                              method: 'DELETE'
+                            }),
   log:          (opts)   => request('/log',     { query: opts }),
   heard:        (opts)   => request('/heard',   { query: opts }),
   decodes:      (opts)   => request('/decodes', { query: opts }),

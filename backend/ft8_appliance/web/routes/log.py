@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 
 from ...db import session_scope
-from ...db.models import Blacklist, Decode, Heard, Qso
+from ...db.models import Blacklist, Decode, Heard, Qso, Watchlist
 from ...integrations.flags import flag_for_call
 from ...runtime import Orchestrator
 from ..deps import get_orchestrator
@@ -267,6 +267,38 @@ async def get_blacklist(
         )
     return BlacklistResponse(
         entries=[BlacklistEntry.model_validate(r, from_attributes=True) for r in rows]
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.14.0 Watchlist — Calls die der Op aktiv beobachtet (DXpeditions etc.)
+class WatchlistEntry(BaseModel):
+    call: str
+    added: datetime
+    note: str | None
+    last_alert_at: datetime | None
+
+
+class WatchlistResponse(BaseModel):
+    entries: list[WatchlistEntry]
+
+
+@router.get("/watchlist", response_model=WatchlistResponse)
+async def get_watchlist(
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> WatchlistResponse:
+    """Watchlist des aktiven Operators."""
+    my_call = orch.config.operator.callsign
+    async with session_scope() as s:
+        rows = list(
+            (await s.execute(
+                select(Watchlist)
+                .where(Watchlist.user_callsign == my_call)
+                .order_by(desc(Watchlist.added))
+            )).scalars()
+        )
+    return WatchlistResponse(
+        entries=[WatchlistEntry.model_validate(r, from_attributes=True) for r in rows]
     )
 
 
