@@ -90,6 +90,12 @@ class QsoContext:
     # Antworten — jeder ein 15-s-TX-Burst der woanders besser angelegt
     # gewesen waere.
     cq_resends: int = 0
+    # v0.18.0 — TX-Audio-Freq Smart-Hop. Wenn der Partner uns nach
+    # max_resends nicht hoert ODER went_silent: einmalig die TX-Freq
+    # +/-200 Hz wechseln und nochmal versuchen statt sofort zu bailen.
+    # Vielleicht haben wir gerade QRM auf der Freq bei IHM. Set wird
+    # gesetzt sobald der Hop passiert; danach normaler Bail-Pfad.
+    freq_hopped_once: bool = False
     # Analog zu cq_resends, aber fuer QSO_REPORT: Partner sendet uns
     # in einem Slot R-Report zurueck (er hat unsere R-Report nicht
     # gehoert) -> wir senden R-Report erneut, statt direkt in den
@@ -263,3 +269,9 @@ class MachineContext:
     # ABER (call, band) NICHT gearbeitet → "wir wissen er hoert uns,
     # nur Band ist neu".
     worked_call_band: set[tuple[str, str]] = field(default_factory=set)
+    # v0.18.0 — Freq-Reputation: pro (band, audio_bin_hz) ein Tuple
+    # (attempts, successes). Vom Orchestrator pro Slot gespiegelt.
+    # Smart-CQ-Picker biased zu erfolgreichen Bins.
+    freq_reputation: dict[tuple[str, int], tuple[int, int]] = field(
+        default_factory=dict
+    )

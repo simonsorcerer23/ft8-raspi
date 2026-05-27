@@ -40,6 +40,7 @@ from ..config import AppConfig, OperatorConfig
 from ..db import repository, session_scope
 from ..db.models import Blacklist as DbBlacklist
 from ..db.models import CallReputation as DbCallReputation
+from ..db.models import FreqReputation as DbFreqReputation
 from ..db.models import Qso
 from ..db.models import Watchlist as DbWatchlist
 from ..gps import GpsdClient, GpsSnapshot
@@ -322,6 +323,15 @@ class Orchestrator:
     _worked_call_band: set[tuple[str, str]] = field(
         default_factory=set, init=False
     )
+    # v0.18.0 — Freq-Reputation: (band, bin) → (attempts, successes).
+    # In-memory aus DB hydratisiert; Smart-CQ-Picker biast zu hoch-
+    # erfolgreichen Bins. Updates fire-and-forget zu DB.
+    _freq_reputation: dict[tuple[str, int], tuple[int, int]] = field(
+        default_factory=dict, init=False
+    )
+    # Letzter CQ-Burst pro (band, bin) — wird beim LOG_QSO ausgewertet
+    # um den Success dem richtigen Bin zuzuschreiben.
+    _last_cq_band_bin: tuple[str, int] | None = field(default=None, init=False)
     # v0.13.0 — Blitzortung-Storm-Alert Throttle.
     # _last_storm_alert_at: monotonic-Zeit des letzten ntfy-Pushes
     # (egal welche Distanz). Verhindert Spam wenn ein Gewitter eine
@@ -941,6 +951,27 @@ class Orchestrator:
                 # (continent, hour) und nimmt die Top-50% Stunden je
                 # Continent als "aktiv".
                 self._active_continent_hours = await self._aggregate_active_hours(s, my_call)
+                # v0.18.0 — Freq-Reputation aus DB hydratisieren (kein
+                # Operator-Filter, das Set ist Pi-global).
+                self._freq_reputation = {}
+                fr_rows = (await s.execute(
+                    select(
+                        DbFreqReputation.band,
+                        DbFreqReputation.audio_bin_hz,
+                        DbFreqReputation.attempts,
+                        DbFreqReputation.successes,
+                    )
+                )).all()
+                for band_, bin_, att, succ in fr_rows:
+                    if band_ and bin_ is not None:
+                        self._freq_reputation[(band_, int(bin_))] = (
+                            int(att or 0), int(succ or 0),
+                        )
+                if self._freq_reputation:
+                    log.info(
+                        "Freq-Reputation hydratisiert: %d (band, bin) tracked",
+                        len(self._freq_reputation),
+                    )
             # DXCC-Set aus den geloggten Calls ableiten. Wir queryen die
             # DB *ausserhalb* des session_scope, weil der cty-Lookup
             # synchron + potenziell langsam (4500 Eintraege) ist und wir
@@ -3726,6 +3757,8 @@ class Orchestrator:
         self.state_machine.ctx.op_slot_parity = dict(self._op_slot_parity)
         # v0.17.0 Buddy-Seen: (call, band) Set in ctx spiegeln
         self.state_machine.ctx.worked_call_band = set(self._worked_call_band)
+        # v0.18.0 Freq-Reputation in ctx spiegeln fuer Smart-CQ-Picker
+        self.state_machine.ctx.freq_reputation = dict(self._freq_reputation)
         # PSK-Reciprocity: aktueller Set "wer hat uns recently gehört".
         # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;
         # hier nur in den ctx kopieren damit der Picker O(1) lookup hat.
@@ -3832,6 +3865,20 @@ class Orchestrator:
         audio_freq_hz = float(payload.get("freq_offset_hz", 1500))
         amplitude = 0.9 * max(0.0, min(1.0, self._audio_gain))
         payload["audio_gain"] = self._audio_gain
+        # v0.18.0 Freq-Reputation: bei CQ-Bursts den (band, bin) tracken.
+        # Erfolge werden im LOG_QSO-Handler verbucht via _last_cq_band_bin.
+        kind = payload.get("kind") or ""
+        if kind == "cq":
+            band_now = self._current_band() or self.state_machine.ctx.band
+            bin_hz = int(audio_freq_hz // 100) * 100
+            key = (band_now, bin_hz)
+            self._last_cq_band_bin = key
+            att, succ = self._freq_reputation.get(key, (0, 0))
+            self._freq_reputation[key] = (att + 1, succ)
+            try:
+                asyncio.create_task(self._persist_freq_reputation_attempt(key))
+            except Exception:
+                pass
         # Mark that we're actually radiating right now. _observe_alc_during_tx
         # gates upward gain adjustments by recency of this timestamp — without
         # this gate, ALC=0% during inter-burst gaps gets misread as "too quiet"
@@ -3917,6 +3964,19 @@ class Orchestrator:
             band_for_buddy = payload.get("band")
             if band_for_buddy:
                 self._worked_call_band.add((call, band_for_buddy))
+            # v0.18.0 Freq-Reputation: wenn dieser QSO Resultat unseres
+            # letzten CQ-Bursts ist (= jemand hat geantwortet, kein
+            # Hunting-Pick), Success in den Bin verbuchen.
+            if self._last_cq_band_bin is not None:
+                key = self._last_cq_band_bin
+                att, succ = self._freq_reputation.get(key, (0, 0))
+                self._freq_reputation[key] = (att, succ + 1)
+                try:
+                    asyncio.create_task(self._persist_freq_reputation_success(key))
+                except Exception:
+                    pass
+                # Verbraucht — nicht doppelt zaehlen
+                self._last_cq_band_bin = None
             # v0.15.0 Reputation: erfolgreiches QSO vergibt Bail-Score.
             # Fire-and-forget — DB-Schreiben darf kein QSO blockieren.
             try:
@@ -4191,6 +4251,42 @@ class Orchestrator:
                 len(active), len(rows),
             )
         return active
+
+    async def _persist_freq_reputation_attempt(self, key: tuple[str, int]) -> None:
+        """v0.18.0 — Inkrementiere attempts-Counter im DB-Eintrag."""
+        band, bin_hz = key
+        try:
+            async with session_scope() as s:
+                row = await s.get(DbFreqReputation, (band, bin_hz))
+                now = datetime.now(UTC)
+                if row is None:
+                    s.add(DbFreqReputation(
+                        band=band, audio_bin_hz=bin_hz,
+                        attempts=1, successes=0, last_used_at=now,
+                    ))
+                else:
+                    row.attempts = (row.attempts or 0) + 1
+                    row.last_used_at = now
+        except Exception as exc:
+            log.debug("freq-rep attempt persist failed: %s", exc)
+
+    async def _persist_freq_reputation_success(self, key: tuple[str, int]) -> None:
+        """v0.18.0 — Inkrementiere successes-Counter im DB-Eintrag."""
+        band, bin_hz = key
+        try:
+            async with session_scope() as s:
+                row = await s.get(DbFreqReputation, (band, bin_hz))
+                now = datetime.now(UTC)
+                if row is None:
+                    s.add(DbFreqReputation(
+                        band=band, audio_bin_hz=bin_hz,
+                        attempts=0, successes=1, last_used_at=now,
+                    ))
+                else:
+                    row.successes = (row.successes or 0) + 1
+                    row.last_used_at = now
+        except Exception as exc:
+            log.debug("freq-rep success persist failed: %s", exc)
 
     async def handle_reputation_reset(self, call: str) -> None:
         """v0.15.0 — User-triggered Soft-Blacklist-Removal.

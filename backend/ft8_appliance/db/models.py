@@ -137,6 +137,30 @@ class Blacklist(Base):
 
 
 # ---------------------------------------------------------------------------
+class FreqReputation(Base):
+    """v0.18.0 — Erfolgsrate pro (Band, 100Hz-Audio-Bin) tracken.
+
+    Beim CQ wechseln wir die Audio-Freq laut Smart-Picker. Ueber die
+    Zeit lernen wir welche Bins erfolgreicher sind (mehr LOG_QSOs nach
+    CQ in dem Bin). Picker biased dann zu den erfolgreichen Bins
+    (Bayesian-Bandit-style, mit kleinem Exploration-Anteil).
+
+    KEINE Operator-Isolation: die Antenne/Rig/Standort-Eigenschaften
+    sind pro Pi, nicht pro Op. Wenn DK9XR und DO3XR sich denselben
+    Pi teilen, profitieren beide vom selben Reputation-Set.
+    """
+    __tablename__ = "freq_reputation"
+
+    band: Mapped[str] = mapped_column(String, primary_key=True)
+    audio_bin_hz: Mapped[int] = mapped_column(Integer, primary_key=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    successes: Mapped[int] = mapped_column(Integer, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
 class CallReputation(Base):
     """v0.15.0 — Bail-Reason-aware Soft-Blacklist-Tracking.
 

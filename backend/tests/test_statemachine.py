@@ -622,9 +622,14 @@ def test_repeated_cq_resend_limit_then_bail(sm: StateMachine, good_hw: HardwareS
     sm.on_decodes(good_hw, [_decode("SV9TLU", None, "CQ SV9TLU KM25")])
     assert sm.qso is not None and sm.qso.cq_resends == 2
 
-    # 3. repeated CQ → bail
+    # 3. repeated CQ → v0.18.0 Freq-Hop statt sofort Bail
     sm.on_decodes(good_hw, [_decode("SV9TLU", None, "CQ SV9TLU KM25")])
-    assert sm.state is State.IDLE, "muss nach max_resends bailen"
+    assert sm.state is State.QSO_RESPOND, "v0.18.0 Freq-Hop vor finalem Bail"
+    assert sm.qso is not None and sm.qso.freq_hopped_once is True
+
+    # 4. nach Freq-Hop nochmal repeated CQ → JETZT bail
+    sm.on_decodes(good_hw, [_decode("SV9TLU", None, "CQ SV9TLU KM25")])
+    assert sm.state is State.IDLE, "muss nach Freq-Hop bailen"
     assert sm.qso is None
     # Cooldown ist gesetzt
     assert "SV9TLU" in sm.ctx.recent_until

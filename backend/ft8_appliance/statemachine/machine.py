@@ -704,6 +704,23 @@ class StateMachine:
                     # SV9TLU 12x ignoriert wurde und wir 12 TX-Slots
                     # verschwendeten.
                     if self.qso.cq_resends >= self.qso_max_cq_resends:
+                        # v0.18.0 — vor finalem Bail einmalig Audio-Freq
+                        # hopen. Vielleicht haben wir QRM bei IHM auf
+                        # unserer Freq; auf ±200 Hz funkt's vielleicht.
+                        if not self.qso.freq_hopped_once:
+                            if not self._check_guards(hw):
+                                return
+                            old_freq = self.qso.freq_offset_hz
+                            self.qso.freq_offset_hz = self._hop_audio_freq(old_freq)
+                            self.qso.freq_hopped_once = True
+                            self.qso.stale_slots = 0
+                            log.info(
+                                "QSO_RESPOND: %s ignored us %d× — Freq-Hop %d → %d Hz",
+                                their_call, self.qso.cq_resends,
+                                old_freq, self.qso.freq_offset_hz,
+                            )
+                            self._emit_respond_with_grid()
+                            return
                         log.info(
                             "QSO_RESPOND: %s ignored us %d× (max %d) — bailing",
                             their_call, self.qso.cq_resends, self.qso_max_cq_resends,
@@ -976,11 +993,28 @@ class StateMachine:
                         hist[nb] += 1
             # Kandidaten in unserem Sende-Bereich
             candidates = list(range(min_hz, max_hz + 1, bin_hz))
-            # Sort by (occupancy, distance to mid-band) — ruhigster bin
-            # gewinnt, bei Gleichstand möglichst Bandmitte (geringere
-            # Drift-Empfindlichkeit beim Decoder).
+            # Sort by (occupancy, -reputation_score, distance to mid-band).
+            # v0.18.0: reputation_score = successes/attempts (Wilson-Lower-
+            # Bound waere fancy, fuer den Anfang reicht success-rate mit
+            # Laplace-Smoothing). Hoch-erfolgreiche Bins gewinnen bei
+            # gleicher Belegung.
             mid = (min_hz + max_hz) // 2
-            candidates.sort(key=lambda b: (hist.get(b, 0), abs(b - mid)))
+            freq_rep = self.ctx.freq_reputation
+            band_now = self.ctx.band
+
+            def reputation_score(b: int) -> float:
+                att, succ = freq_rep.get((band_now, b), (0, 0))
+                # Laplace-Smoothing: (succ + 1) / (att + 2) damit
+                # ungetestete Bins nicht 0 sind und ueberschaetzte
+                # 1-Treffer-Bins nicht 100% bekommen.
+                return (succ + 1) / (att + 2)
+
+            # Sort: (occupancy ASC, reputation DESC, distance ASC).
+            # Negative reputation damit sort ASC die hoechste Reputation
+            # vorne hat.
+            candidates.sort(
+                key=lambda b: (hist.get(b, 0), -reputation_score(b), abs(b - mid))
+            )
             # Top-3 Kandidaten mischen damit zwei Pis nicht denselben
             # picken — pseudo-random via cq_freq_index als seed.
             top = candidates[:3]
@@ -994,6 +1028,21 @@ class StateMachine:
         idx = self.ctx.cq_freq_index % len(rot)
         self.ctx.cq_freq_index = (idx + 1) % len(rot)
         return rot[idx]
+
+    def _hop_audio_freq(self, current_hz: int) -> int:
+        """v0.18.0 — Audio-Freq +/-200 Hz hopen, innerhalb FT8-Passband.
+
+        Richtung: nach oben wenn current < 1500, sonst nach unten.
+        Konsistent + reproduzierbar, kein Random.
+        """
+        hop_hz = 200
+        if current_hz < 1500:
+            new = current_hz + hop_hz
+        else:
+            new = current_hz - hop_hz
+        # Clamp ins FT8-Passband (300..2400 Hz)
+        new = max(self.CQ_AUDIO_MIN_HZ + 50, min(self.CQ_AUDIO_MAX_HZ - 50, new))
+        return new
 
     def _bail_qso_with_cooldown(self, their_call: str, reason: str) -> None:
         """Abbrechen eines QSO-Versuchs + Cooldown-Eintrag fuer den Partner.
