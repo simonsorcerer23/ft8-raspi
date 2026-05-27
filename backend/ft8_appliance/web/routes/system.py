@@ -338,10 +338,18 @@ async def trigger_self_update() -> SelfUpdateResponse:
         return SelfUpdateResponse(triggered=False, detail="already in progress")
 
     # sudoers.d/ft8-self-update erlaubt diesen Aufruf NOPASSWD.
+    #
+    # --no-block: systemctl returnt sobald der Job in der Queue ist —
+    # wartet NICHT bis die Service tatsaechlich durch ist. Sebastian sah
+    # 2026-05-27 einen 500-Timeout im UI weil ohne --no-block der Call
+    # bis zur Service-Completion blockte (git fetch + pip install +
+    # restart koennen >5s dauern). Fortschritt verfolgt das Frontend
+    # ueber update_in_progress() polling.
     try:
         r = subprocess.run(
-            ["sudo", "-n", "/bin/systemctl", "start", "ft8-self-update.service"],
-            capture_output=True, text=True, timeout=5,
+            ["sudo", "-n", "/bin/systemctl", "start", "--no-block",
+             "ft8-self-update.service"],
+            capture_output=True, text=True, timeout=10,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         raise HTTPException(status_code=500, detail=f"systemctl call failed: {e}") from e

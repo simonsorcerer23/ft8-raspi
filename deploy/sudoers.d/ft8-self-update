@@ -28,6 +28,7 @@ sebastian ALL=(root) NOPASSWD: \
     /bin/systemctl is-active ft8-controller.service, \
     /bin/systemctl start ft8-self-update, \
     /bin/systemctl start ft8-self-update.service, \
+    /bin/systemctl start --no-block ft8-self-update.service, \
     /bin/systemctl daemon-reload
 
 # --- Power: shutdown + reboot via UI-Buttons (Sebastian 2026-05-26 v0.8.2) ---

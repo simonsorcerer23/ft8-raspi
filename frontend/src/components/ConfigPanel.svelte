@@ -670,12 +670,6 @@
           {/if}
         </div>
         {#if cfg.integrations.blitzortung.enabled}
-          <p class="hint">
-            Live-Stream von blitzortung.org. Bei Strike innerhalb des
-            Alarmradius (Default 30 km) gibt's eine ntfy-Push-Warnung —
-            Throttle 15 min, frueher nur wenn der Sturm deutlich naeher
-            ruckt (≥5 km). Braucht aktive ntfy-Integration und GPS-Fix.
-          </p>
           <div class="grid">
             <label><span>Alarm-Radius <small>(km um QTH)</small></span>
               <input type="number" min="1" max="500"
