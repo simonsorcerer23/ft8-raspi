@@ -25,7 +25,7 @@
 </script>
 
 <div class="wrap">
-  <h3>Beste Zeit für {band} <small>(letzte 30 Tage UTC)</small></h3>
+  <h3>Beste Zeit für {band}</h3>
   {#if buckets.every(b => b.count === 0)}
     <p class="empty">Noch keine QSOs auf {band} in den letzten 30 Tagen.</p>
   {:else}

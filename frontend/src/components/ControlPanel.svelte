@@ -132,11 +132,6 @@
               disabled={busy || huntActive}
               onclick={toggleCq}>
         <span class="label">{cqActive ? 'STOP CQ' : 'CQ'}</span>
-        <small>{cqActive
-                  ? (isInQso ? 'QSO läuft' : 'CQ läuft — wartet auf Anruf')
-                  : huntActive
-                    ? 'inaktiv während Antworten-Mode'
-                    : 'CQ rufen bis jemand antwortet'}</small>
       </button>
       <button class="big hunt"
               class:active={huntActive}
@@ -144,11 +139,6 @@
               disabled={busy || cqActive}
               onclick={toggleHunting}>
         <span class="label">{huntActive ? 'STOP Antworten' : 'Antworten'}</span>
-        <small>{huntActive
-                  ? (isInQso ? 'QSO läuft' : 'Hunting läuft — rufe gehörte CQs der Reihe nach')
-                  : cqActive
-                    ? 'inaktiv während CQ-Mode'
-                    : 'Stationen rufen die selbst CQ rufen'}</small>
       </button>
     </div>
   {/if}

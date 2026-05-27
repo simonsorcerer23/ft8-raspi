@@ -66,7 +66,6 @@
 
   {#if suggestions.length > 0}
     <h3>Band-Vorschlag</h3>
-    <small class="hint">Empfehlung anhand SFI/K/Tageszeit/Aktivität — kein Auto-Wechsel.</small>
     <div class="bands">
       {#each suggestions.slice(0, 5) as s}
         <button

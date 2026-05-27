@@ -153,10 +153,6 @@
       <button class="primary" onclick={addConnection} disabled={!newSsid || saving}>
         {saving ? 'Speichere…' : 'Hinzufügen'}
       </button>
-      <small class="hint">
-        Höhere Priorität = wird beim Boot zuerst probiert. Heim-WLAN typisch 100,
-        Backup-WLAN typisch 50, Test-/Hotspot 10.
-      </small>
     </section>
   {/if}
 

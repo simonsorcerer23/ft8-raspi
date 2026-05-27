@@ -496,7 +496,7 @@
             </select>
           </label>
           <label class="field toggle-field">
-            <span>Auto-Notch <small>(lokale QRM-Linien filtern)</small></span>
+            <span>Auto-Notch</span>
             <button type="button" class="toggle"
                     class:on={cfg.operating.auto_notch_enabled}
                     onclick={() => cfg.operating.auto_notch_enabled = !cfg.operating.auto_notch_enabled}
@@ -525,11 +525,11 @@
 
         <h5 class="subgroup">QSO-Verhalten</h5>
         <div class="grid">
-          <label class="field"><span>QSO-Cooldown <small>(min, Station nicht erneut anrufen)</small></span>
+          <label class="field"><span>QSO-Cooldown <small>(min)</small></span>
             <input type="number" min="0" max="1440"
                    bind:value={cfg.operating.qso_cooldown_min}/>
           </label>
-          <label class="field"><span>QSO-Geduld <small>(Slots bei Antwort-Ausbleiben)</small></span>
+          <label class="field"><span>QSO-Geduld <small>(Slots)</small></span>
             <input type="number" min="2" max="20"
                    bind:value={cfg.operating.qso_max_stale_slots}/>
           </label>
@@ -580,7 +580,7 @@
             </button>
           </label>
           <label class="field">
-            <span>Rarity-Schwellwert <small>(0–100, höher = nur rare DX)</small></span>
+            <span>Rarity-Schwellwert <small>(0–100)</small></span>
             <input type="number" min="0" max="100" step="5"
                    bind:value={cfg.operating.dxped_ng3k_push_min_rarity}/>
           </label>
@@ -588,7 +588,7 @@
         <h5 class="subgroup">PSK-Reciprocity</h5>
         <div class="grid">
           <label class="field toggle-field">
-            <span>PSK-Reciprocity aktiv <small>(pskreporter.info)</small></span>
+            <span>PSK-Reciprocity aktiv</span>
             <button type="button" class="toggle"
                     class:on={cfg.operating.psk_reciprocity_enabled}
                     onclick={() => cfg.operating.psk_reciprocity_enabled = !cfg.operating.psk_reciprocity_enabled}
@@ -597,7 +597,7 @@
             </button>
           </label>
           <label class="field">
-            <span>Refresh-Intervall <small>(s, ≥120 empfohlen)</small></span>
+            <span>Refresh-Intervall <small>(s)</small></span>
             <input type="number" min="120" max="3600"
                    bind:value={cfg.operating.psk_reciprocity_refresh_s}/>
           </label>
@@ -605,15 +605,15 @@
 
         <h4>Auto-ALC (Audio-Gain-Regelung beim TX)</h4>
         <div class="grid grid-bottom">
-          <label><span>ALC-Ziel unten <small>(%, Audio rauf wenn drunter)</small></span>
+          <label><span>ALC-Ziel unten <small>(%)</small></span>
             <input type="number" min="0" max="50"
                    bind:value={cfg.operating.alc_target_low}/>
           </label>
-          <label><span>ALC-Ziel oben <small>(%, Audio runter wenn drüber)</small></span>
+          <label><span>ALC-Ziel oben <small>(%)</small></span>
             <input type="number" min="0" max="80"
                    bind:value={cfg.operating.alc_target_high}/>
           </label>
-          <label><span>Start-Audio-Gain <small>(0.0–1.0, Boot-Default)</small></span>
+          <label><span>Start-Audio-Gain <small>(0.0–1.0)</small></span>
             <input type="number" step="0.05" min="0.1" max="1.0"
                    bind:value={cfg.operating.audio_gain}/>
           </label>
@@ -659,7 +659,7 @@
             <span>Live-Stream + ntfy-Push aktiv</span>
           </label>
           {#if cfg.integrations.blitzortung.enabled}
-            <label><span>Alarm-Radius <small>(km um QTH)</small></span>
+            <label><span>Alarm-Radius <small>(km)</small></span>
               <input type="number" min="1" max="500"
                      bind:value={cfg.integrations.blitzortung.alarm_radius_km}/>
             </label>

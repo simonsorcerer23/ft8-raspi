@@ -114,7 +114,6 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
 
   {#if step === 1}
     <h2>1/2 — Operator + Rig</h2>
-    <p>Rufzeichen und welches Gerät hängt am Pi?</p>
     <div class="form">
       <label>
         <span>Rufzeichen</span>
@@ -158,7 +157,6 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
 
   {:else if step === 2}
     <h2>2/2 — Antenne (+ optional QRZ)</h2>
-    <p>Welche Antenne, welche Bänder?</p>
     <div class="form">
       <label>
         <span>Antennen-Name</span>
@@ -184,12 +182,9 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
                }}
                placeholder="20m, 40m"/>
       </label>
-      <small class="hint">
-        FT8-Standardfrequenzen werden automatisch zugeordnet (14074 für 20m etc.).
-      </small>
 
       <hr style="border: 0; border-top: 1px solid #334155; margin: 0.6rem 0 0.2rem;"/>
-      <p class="qrz-hint">QRZ.com (optional — falls leer wird's nicht aktiviert):</p>
+      <p class="qrz-hint">QRZ.com (optional):</p>
       <label>
         <span>QRZ User</span>
         <input type="text" bind:value={cfg.qrz.user} placeholder="dk9xr"/>
@@ -198,9 +193,6 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
         <span>QRZ Passwort</span>
         <input type="password" bind:value={cfg.qrz.password}/>
       </label>
-      <small class="hint">
-        PSK Reporter ist immer aktiv (keine Anmeldung nötig).
-      </small>
     </div>
     <div class="nav">
       <button onclick={back}>← Zurück</button>
