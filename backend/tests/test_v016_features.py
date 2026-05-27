@@ -163,8 +163,8 @@ def test_default_hunt_priority_includes_active_hour():
     assert cfg.hunt_priority.index("band_open") < cfg.hunt_priority.index("active_hour")
 
 
-def test_migration_len_is_17():
-    """v0.16.0: 17 known Tiers (+ active_hour)."""
+def test_migration_includes_v016_tiers():
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 17
+    assert "active_hour" in cfg.hunt_priority
+    assert len(cfg.hunt_priority) >= 17

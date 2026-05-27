@@ -198,6 +198,25 @@ def _tier_band_open(d: "DecodedMsg", ctx: "MachineContext") -> int:
         return 0
 
 
+def _tier_buddy_seen(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """v0.17.0 — Call ist global worked (wir wissen er hoert uns) ABER
+    nicht auf DIESEM Band gearbeitet → +Boost.
+
+    Begruendung: ein bestehendes QSO ist Beweis dass der RX-Pfad
+    bilateral funktioniert. Bei anderem Band ist nur die Propagation
+    anders, das Equipment auf beiden Seiten bleibt gleich. Hoehere
+    Erfolgsrate als Cold-Calls aus dem gleichen DXCC.
+    """
+    if not d.call_from:
+        return 0
+    norm = d.call_from.upper()
+    if norm not in ctx.worked:
+        return 0
+    if (norm, ctx.band) in ctx.worked_call_band:
+        return 0  # auf diesem Band bereits → kein Buddy-Seen-Boost
+    return 1
+
+
 def _tier_active_hour(d: "DecodedMsg", ctx: "MachineContext") -> int:
     """v0.16.0 — Aktuelle UTC-Stunde ist historisch aktiv fuer den
     Continent des CQ-Rufers.
@@ -296,6 +315,7 @@ HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
     "grayline":        _tier_grayline,
     "band_open":       _tier_band_open,
     "active_hour":     _tier_active_hour,   # v0.16.0
+    "buddy_seen":      _tier_buddy_seen,    # v0.17.0
     "new_dxcc_psk":    _tier_new_dxcc_psk,
     "new_dxcc":        _tier_new_dxcc,
     "psk_heard_us":    _tier_psk_heard_us,

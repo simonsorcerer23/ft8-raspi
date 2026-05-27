@@ -258,3 +258,8 @@ class MachineContext:
     # bei RR73 im naechsten Slot die Detection schon "warm" ist und der
     # 5-min-CQ-Filter uebersteuert wird.
     pre_staged_tail_ends: dict[str, dict] = field(default_factory=dict)
+    # v0.17.0 Buddy-Seen-Tier — set von (call, band) die wir bereits
+    # gearbeitet haben. Tier `buddy_seen` liefert 1 wenn call in worked
+    # ABER (call, band) NICHT gearbeitet → "wir wissen er hoert uns,
+    # nur Band ist neu".
+    worked_call_band: set[tuple[str, str]] = field(default_factory=set)

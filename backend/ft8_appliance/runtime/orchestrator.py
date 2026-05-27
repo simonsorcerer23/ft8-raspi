@@ -316,6 +316,12 @@ class Orchestrator:
         default_factory=set, init=False
     )
     _hod_last_refresh_at: float = field(default=0.0, init=False)
+    # v0.17.0 — Buddy-Seen-Tier: (call, band) Set fuer "schon auf dem
+    # Band gearbeitet". Beim Boot aus DB rekonstruiert, bei jedem
+    # LOG_QSO inkrementiert.
+    _worked_call_band: set[tuple[str, str]] = field(
+        default_factory=set, init=False
+    )
     # v0.13.0 — Blitzortung-Storm-Alert Throttle.
     # _last_storm_alert_at: monotonic-Zeit des letzten ntfy-Pushes
     # (egal welche Distanz). Verhindert Spam wenn ein Gewitter eine
@@ -833,6 +839,7 @@ class Orchestrator:
         self._worked_calls = set()
         self._worked_grids = set()
         self._worked_grid_band = set()
+        self._worked_call_band = set()  # v0.17.0
         # _worked_dxccs wurde frueher nur in-Session aufgebaut → nach Restart
         # zeigte der DXCC-Only-Filter alles als "neu" bis ein Land in der
         # aktuellen Session geloggt wurde. Sebastian 2026-05-23: jetzt aus
@@ -892,6 +899,24 @@ class Orchestrator:
                     select(DbWatchlist.call).where(DbWatchlist.user_callsign == my_call)
                 )).scalars()
                 self._watchlist_calls = {c.upper() for c in wl_rows if c}
+                # v0.17.0 — Watchlist-Calls in den Hint-Decoder-Hash-Table
+                # pushen damit marginal-decodes (z.B. -22 dB SNR fuer
+                # DXpeditions) eher mit-gefunden werden. Selbe Logik wie
+                # fuer worked-Calls, nur fuer die wirklich-wichtigen.
+                try:
+                    from ..decode.ft8_native import lib as _ft8_lib
+                    for c in self._watchlist_calls:
+                        if c and len(c) <= 13:
+                            _ft8_lib.ft8_shim_hash_table_save(
+                                c.encode("ascii"), 0,
+                            )
+                    if self._watchlist_calls:
+                        log.info(
+                            "Hint-Decoder: %d Watchlist-Calls in Hash-Table gepusht",
+                            len(self._watchlist_calls),
+                        )
+                except Exception as exc:
+                    log.warning("watchlist hint-push failed: %s", exc)
                 # v0.15.0 Soft-Blacklist aus call_reputation rekonstruieren
                 self._soft_blacklist = set()
                 rep_rows = (await s.execute(
@@ -939,6 +964,9 @@ class Orchestrator:
                 for call_, band_ in dxcc_band_rows:
                     if not (call_ and band_):
                         continue
+                    # v0.17.0 Buddy-Seen-Tier: (call, band) Set unabhaengig
+                    # vom cty-Lookup — direkt aus den QSO-Rows.
+                    self._worked_call_band.add((call_.upper(), band_))
                     try:
                         rec = cty.lookup(call_)
                         if rec is not None and rec.entity is not None:
@@ -1377,6 +1405,14 @@ class Orchestrator:
             return
         my_call = self.config.operator.callsign
         self._watchlist_calls.add(call)
+        # v0.17.0 — sofort in den Hint-Decoder-Hash-Table pushen damit
+        # ab dem naechsten Slot marginal-Decodes des Calls funktionieren.
+        try:
+            from ..decode.ft8_native import lib as _ft8_lib
+            if len(call) <= 13:
+                _ft8_lib.ft8_shim_hash_table_save(call.encode("ascii"), 0)
+        except Exception:
+            pass
         try:
             async with session_scope() as s:
                 exists = await s.get(DbWatchlist, call)
@@ -3688,6 +3724,8 @@ class Orchestrator:
         # v0.15.0 Soft-Blacklist + Slot-Parity in ctx spiegeln
         self.state_machine.ctx.soft_blacklist = set(self._soft_blacklist)
         self.state_machine.ctx.op_slot_parity = dict(self._op_slot_parity)
+        # v0.17.0 Buddy-Seen: (call, band) Set in ctx spiegeln
+        self.state_machine.ctx.worked_call_band = set(self._worked_call_band)
         # PSK-Reciprocity: aktueller Set "wer hat uns recently gehört".
         # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;
         # hier nur in den ctx kopieren damit der Picker O(1) lookup hat.
@@ -3875,6 +3913,10 @@ class Orchestrator:
                     if band_for_5bwas:
                         self._worked_dxcc_band.add((country, band_for_5bwas))
             self._worked_calls.add(call)
+            # v0.17.0 Buddy-Seen: (call, band) inkremental pflegen
+            band_for_buddy = payload.get("band")
+            if band_for_buddy:
+                self._worked_call_band.add((call, band_for_buddy))
             # v0.15.0 Reputation: erfolgreiches QSO vergibt Bail-Score.
             # Fire-and-forget — DB-Schreiben darf kein QSO blockieren.
             try:
@@ -3892,7 +3934,22 @@ class Orchestrator:
             cd_min = self.config.operating.qso_cooldown_min
             if cd_min > 0:
                 import time as _time
-                # is_new_dxcc wurde oben gesetzt
+                # v0.17.0 — Adaptive Cooldown basiert auf Rarity:
+                #   * Rare DXCC (rarity_score >= 70: P5, 3Y, etc.) → 4× cd_min
+                #     (= ~2h Default). Nach erstem QSO ist Award-Punkt
+                #     im Sack, wir wollen nicht 30 min spaeter nochmal
+                #     den selben rare Op picken — andere brauchen auch
+                #     eine Chance, und wir picken andere wichtigere DX.
+                #   * Routine-Op (rarity_score < 20, kein new DXCC, kein
+                #     new Grid) → 1/3 cd_min (=~10 min). Confirms via
+                #     Mehrfachkontakt sind erlaubt, andere Ops auf
+                #     anderem Band sollen schnell wieder pickbar sein.
+                #   * Sonst → cd_min Default.
+                try:
+                    from ..integrations.dxcc_rarity import rarity_for
+                    rarity = rarity_for(call)
+                except Exception:
+                    rarity = 0
                 grid_full = payload.get("grid_rcvd")
                 g4 = grid_full[:4].upper() if grid_full else None
                 band = payload.get("band")
@@ -3901,17 +3958,23 @@ class Orchestrator:
                     and band is not None
                     and (g4, band) not in self._worked_grid_band
                 )
-                # Bewusst NICHT skaliert: der frisch-gearbeitete Call
-                # selbst kriegt immer vollen Cooldown. Sebastians Wunsch
-                # "nicht 3× hintereinander selbe Station". Adaptiv ist
-                # nur die Priorisierung der DXCC-/Grid-Bonus-Heuristik
-                # im Hunting-Picker (die liegt im state_machine), nicht
-                # die Per-Call-Sperre.
-                # (Historische Variante reduzierte hier auf 25-50 % bei
-                # neuem DXCC. Folge: R6AR + IZ5CMG kamen 9 min später
-                # nochmal dran. Behoben.)
+                if rarity >= 70:
+                    effective_min = cd_min * 4
+                    cd_kind = "rare-DXCC"
+                elif (rarity < 20
+                        and not is_new_dxcc
+                        and not is_new_grid):
+                    effective_min = max(1, cd_min // 3)
+                    cd_kind = "routine"
+                else:
+                    effective_min = cd_min
+                    cd_kind = "default"
                 self.state_machine.ctx.recent_until[call] = (
-                    _time.time() + cd_min * 60
+                    _time.time() + effective_min * 60
+                )
+                log.debug(
+                    "QSO-Cooldown %s: %s = %d min (rarity=%d, new_dxcc=%s, new_grid=%s)",
+                    call, cd_kind, effective_min, rarity, is_new_dxcc, is_new_grid,
                 )
         # Also update the grid + grid-band sets so future decodes from
         # the same grid stop pulsing "new grid" in the UI.
