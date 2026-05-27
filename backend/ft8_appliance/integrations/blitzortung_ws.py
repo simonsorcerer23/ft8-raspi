@@ -1,6 +1,8 @@
 """WebSocket-Consumer fuer den oeffentlichen Blitzortung.org Live-Stream.
 
-Endpunkt: ``wss://ws1.blitzortung.org/`` (Round-Robin gibt's auch ws3/7/8).
+Endpunkt: ``wss://ws1.blitzortung.org/`` (Round-Robin gibt's auch ws7/ws8;
+ws3 ist 2026-05-27 raus weil das Server-Cert nicht fuer den Hostname
+ausgestellt ist → TLS-Hostname-Mismatch).
 Nach Connect sendet der Client ``{"a":111}`` als Subscribe-Token; der
 Server schickt fortlaufend Text-Frames mit LZW-komprimiertem JSON
 (je ein Strike-Event pro Frame).
@@ -40,7 +42,7 @@ log = logging.getLogger(__name__)
 
 # Default-Round-Robin der oeffentlichen Server. Bei Connect-Fail
 # wechseln wir den naechsten an.
-DEFAULT_WS_HOSTS = ("ws1.blitzortung.org", "ws3.blitzortung.org",
+DEFAULT_WS_HOSTS = ("ws1.blitzortung.org",
                     "ws7.blitzortung.org", "ws8.blitzortung.org")
 SUBSCRIBE_FRAME = '{"a":111}'
 
