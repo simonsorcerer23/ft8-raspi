@@ -1,3 +1,3 @@
 # Auto-generiert von scripts/release.sh — NICHT manuell editieren.
-__version__ = "0.19.0"
-__tag__ = "v0.19.0"
+__version__ = "0.19.1"
+__tag__ = "v0.19.1"
