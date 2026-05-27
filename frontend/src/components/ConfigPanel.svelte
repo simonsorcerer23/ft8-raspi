@@ -432,11 +432,6 @@
       <!-- Antennen (verweisen auf Bänder die sie abdecken) -->
       <section>
         <h3>Antennen <button class="add" onclick={addAntenna}>+ Antenne</button></h3>
-        <p class="hint">
-          Pro Antenne ankreuzen welche der oben definierten Bänder sie
-          resonant abdeckt. Der TX-Lockout greift wenn das aktuelle Band
-          von keiner Antenne abgedeckt ist.
-        </p>
         {#each cfg.antennas as a, i}
           <div class="ant-row">
             <input type="text" bind:value={a.name} placeholder="endfed_2040"
