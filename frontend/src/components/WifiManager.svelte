@@ -214,11 +214,6 @@
   <!-- AP-Fallback (Notfall-Hotspot) -->
   <section class="ap-fallback">
     <h3>📡 Notfall-Hotspot</h3>
-    <p class="hint">
-      Wenn der Pi kein bekanntes WLAN findet, öffnet er nach ca. 60s
-      ein eigenes WLAN unter diesem Namen. Du verbindest dich per Handy
-      damit und kannst über das Captive-Portal das Heim-WLAN neu setzen.
-    </p>
     <div class="grid">
       <label><span>SSID</span>
         <input type="text" bind:value={apFb.ssid} placeholder="ft8-hochgericht"

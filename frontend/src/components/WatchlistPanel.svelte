@@ -40,9 +40,6 @@
 <div class="wrap">
   <header>
     <h2>👀 Watchlist</h2>
-    <small>Calls die der Pi beobachtet. Bei jedem Decode kommt eine
-      ntfy-Push (Throttle 1h pro Call). Ideal für DXpeditions die du
-      nicht verpassen willst.</small>
   </header>
 
   <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>

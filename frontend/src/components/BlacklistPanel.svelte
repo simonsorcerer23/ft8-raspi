@@ -40,8 +40,6 @@
 <div class="wrap">
   <header>
     <h2>Blacklist</h2>
-    <small>Stationen die der Pi nicht mehr anrufen soll. Decodes mit
-      diesen Calls werden im Live-Stream durchgestrichen.</small>
   </header>
 
   <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>

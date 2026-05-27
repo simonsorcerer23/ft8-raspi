@@ -508,11 +508,6 @@
 
         <h5 class="subgroup">CQ-Verhalten</h5>
         <div class="grid">
-          <label class="field"><span>Directed CQ <small>(leer = klassisch)</small></span>
-            <input type="text" maxlength="4" placeholder="z.B. DX, EU, POTA"
-                   bind:value={cfg.operating.cq_directed}
-                   oninput={(e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); }}/>
-          </label>
           <label class="field"><span>Auto-CQ Intervall <small>(s)</small></span>
             <input type="number" bind:value={cfg.operating.auto_cq_interval_s} min="15" max="300"/>
           </label>

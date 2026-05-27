@@ -53,12 +53,6 @@
 <div class="wrap">
   <header>
     <h2>✋ Soft-Blacklist (Call-Reputation)</h2>
-    <small>
-      Bail-Reason-aware Tracking. <strong>"Andere stärker"</strong>
-      (picked_another) zählt nicht — das ist Pech, nicht Verhalten.
-      Score ≥ {threshold} nach ≥ {minAttempts} Versuchen → Soft-Blacklist
-      (Picker liefert 0). Erfolgreiches QSO vergibt -5 Punkte.
-    </small>
   </header>
 
   <div class="stats">

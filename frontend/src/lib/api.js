@@ -64,6 +64,7 @@ export const api = {
                               },
                             }),
   setTxPower:   (watts)  => request('/control/tx-power', { method: 'POST', body: { watts } }),
+  setCqDirected: (value) => request('/control/cq-directed', { method: 'POST', body: { value } }),
   setAntenna:   (name)   => request('/control/antenna', { method: 'POST', body: { name } }),
   blacklist:    ()       => request('/blacklist'),
   blacklistAdd: (call, reason) => request('/control/blacklist', {

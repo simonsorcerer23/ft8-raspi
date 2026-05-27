@@ -46,6 +46,17 @@
   );
   const activeBand   = $derived(statusStore.value.active_band ?? null);
   const licenseClass = $derived(statusStore.value.license_class ?? 'A');
+  // v0.20.0 — Directed-CQ live vom Dashboard. Liest aus /api/status,
+  // schreibt via /api/control/cq-directed (persistiert in YAML).
+  const cqDirected = $derived(statusStore.value.cq_directed ?? '');
+  let cqDirectedDraft = $state('');
+  $effect(() => { cqDirectedDraft = cqDirected; });
+
+  async function saveCqDirected() {
+    const norm = (cqDirectedDraft || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    if (norm === cqDirected) return;
+    await call(() => api.setCqDirected(norm));
+  }
 
   async function call(fn) {
     busy = true; lastError = null;
@@ -147,6 +158,23 @@
       QSO abbrechen (nicht loggen)
     </button>
   {/if}
+
+  <!-- v0.20.0 Directed CQ — Send-Side-Filter. Wirkt nur im CQ-Modus. -->
+  <div class="cq-directed">
+    <label>
+      <span>CQ-Target</span>
+      <input type="text" maxlength="4"
+             placeholder="leer = klassisch (DX, EU, POTA, TEST …)"
+             value={cqDirectedDraft}
+             oninput={(e) => { cqDirectedDraft = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); }}
+             onblur={saveCqDirected}
+             onkeydown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+             disabled={busy}/>
+    </label>
+    {#if cqDirected}
+      <span class="cq-preview">→ CQ <strong>{cqDirected}</strong> {statusStore.value.callsign ?? ''}</span>
+    {/if}
+  </div>
 
   <!-- Hunting-Filter live umschaltbar — keine Config-Reise nötig -->
   <div class="hunt-filters" class:dim={!huntActive}>
@@ -279,6 +307,27 @@
     cursor: pointer; user-select: none;
   }
   .hunt-filters input { margin: 0; cursor: pointer; }
+  .cq-directed {
+    display: flex; gap: 0.7rem; align-items: center; flex-wrap: wrap;
+    padding: 0.4rem 0.7rem;
+    background: rgba(96,165,250,0.08);
+    border: 1px solid rgba(96,165,250,0.25);
+    border-radius: 8px;
+    font-size: 0.85rem;
+  }
+  .cq-directed label {
+    display: flex; gap: 0.5rem; align-items: center; flex: 1; min-width: 14rem;
+  }
+  .cq-directed label > span { color: #94a3b8; }
+  .cq-directed input {
+    flex: 1;
+    background: #0b1220; color: var(--fg); border: 1px solid #334155;
+    border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.9rem;
+    font-family: ui-monospace, monospace; text-transform: uppercase;
+  }
+  .cq-preview {
+    color: #93c5fd; font-family: ui-monospace, monospace; font-size: 0.85rem;
+  }
   .reboot:hover:not(:disabled), .shutdown:hover:not(:disabled) { background: rgba(148,163,184,0.1); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .lock-banner {

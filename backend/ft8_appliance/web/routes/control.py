@@ -67,6 +67,36 @@ async def hunt_filter(
     )
 
 
+class CqDirectedRequest(BaseModel):
+    value: str  # 0-4 chars [A-Z0-9], leer = klassischer CQ
+
+
+@router.post("/cq-directed", response_model=ControlResponse)
+async def set_cq_directed(
+    req: CqDirectedRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> ControlResponse:
+    """v0.20.0 — Directed-CQ vom Funk-Dashboard setzen.
+
+    Schreibt sowohl in den In-Memory-Config (sofort wirksam beim
+    naechsten CQ-Burst) als auch persistent auf Disk.
+
+    Input wird auf [A-Z0-9]{0,4} normalisiert. Leer-String = klassischer
+    CQ (kein Directed).
+    """
+    import re
+    value = re.sub(r"[^A-Z0-9]", "", (req.value or "").upper())[:4]
+    orch.config.operating.cq_directed = value
+    # In-Memory state-machine-ctx sofort spiegeln damit naechster
+    # CQ-Burst den neuen Wert nutzt.
+    orch.state_machine.ctx.cq_directed = value
+    await orch.persist_config()
+    return ControlResponse(
+        ok=True, state=orch.status().state,
+        detail=f"cq_directed={value!r}",
+    )
+
+
 class SetFreqRequest(BaseModel):
     freq_hz: int
 

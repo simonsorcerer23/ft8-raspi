@@ -61,14 +61,6 @@
 <div class="wrap">
   <header>
     <h2>📡 DXpedition-Schedule</h2>
-    <small>
-      Auto-Import von <a href="https://www.ng3k.com/Misc/adxo.html"
-      target="_blank" rel="noopener">NG3K ADXO</a> alle 6 h
-      (🤖&nbsp;NG3K-Badge). Eigene Eintraege (✋ manuell) bleiben
-      unangetastet. 24 h vor Start kommt eine ntfy-Push, beim
-      QRV-Start kommt der Call automatisch in die Watchlist (und nach
-      Ende wieder raus).
-    </small>
   </header>
 
   <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
