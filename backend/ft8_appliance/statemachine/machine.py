@@ -1365,6 +1365,38 @@ class StateMachine:
                 d for d in cqs
                 if self.ctx.recent_until.get(d.call_from or "", 0) <= now_ts
             ]
+        # v0.20.4 — Hard-Filter fuer die drei "Filter-Tiers" damit sie
+        # auch dann greifen wenn nur ein einziger CQ im Slot ist
+        # (Tier-Score 0 alleine reicht nicht — bei nur einem Kandidaten
+        # gewinnt er trotzdem). Sebastian-Live-Audit 2026-05-27:
+        # EA5KB wurde mit score=10/attempts=10 weiterhin gepickt obwohl
+        # ctx.soft_blacklist ihn enthielt — Tier lieferte 0, aber er war
+        # der einzige CQ und gewann via SNR-Tie-Breaker.
+        #
+        # Bug-Klasse trifft analog Pile-Up + Slot-Parity. Alle drei
+        # werden hier hart gefiltert; die Tiers in HUNT_TIERS bleiben
+        # bestehen als zusaetzliche Defense (falls User sie aus der
+        # Priority-Liste rausnimmt aber das Filter-Set noch befuellt).
+        if self.ctx.soft_blacklist:
+            cqs = [
+                d for d in cqs
+                if (d.call_from or "").upper() not in self.ctx.soft_blacklist
+            ]
+        if self.ctx.pile_up_calls:
+            cqs = [
+                d for d in cqs
+                if (d.call_from or "").upper() not in self.ctx.pile_up_calls
+            ]
+        # Slot-Parity: meide Calls deren TX-Parity == aktueller Slot —
+        # sie senden gerade selbst und hoeren uns nicht.
+        if self.ctx.current_slot_parity and self.ctx.op_slot_parity:
+            cur = self.ctx.current_slot_parity
+            cqs = [
+                d for d in cqs
+                if self.ctx.op_slot_parity.get(
+                    (d.call_from or "").upper()
+                ) != cur
+            ]
         if not cqs:
             return None
         # v0.10.0 Hunt-Priority-Tiers: kaskadierender Score nach ctx.
