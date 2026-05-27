@@ -329,10 +329,6 @@
             </select>
           </label>
         </div>
-        <p class="hint">
-          ⚠️ Lizenz-Cap wird beim TX hart erzwungen. Klasse E darf z.B. nicht auf 40m/30m/20m/17m/12m,
-          Klasse A auf 60m nur 15W EIRP.
-        </p>
       </section>
 
       <!-- Rig -->
@@ -397,13 +393,6 @@
       <!-- Bänder (definieren erst die Frequenzen) -->
       <section>
         <h3>Bänder <button class="add" onclick={addBand}>+ Band</button></h3>
-        <p class="hint">
-          Pro Band eine Reihe je Mode (FT8 + FT4). Frequenz in kHz.
-          Beim Hinzufügen werden beide Modi mit den Standard-Bandplan-
-          Werten angelegt — du kannst die Frequenz pro Reihe anpassen
-          oder die FT4-Reihe entfernen wenn du das Band nur in FT8
-          fahren willst.
-        </p>
         {#each cfg.bands as b, i}
           {@const ft4Default = FT4_DEFAULT_DIALS[b.name]}
           <!-- FT8-Reihe (immer vorhanden) -->
@@ -538,20 +527,7 @@
           </label>
         </div>
 
-        <p class="hint">
-          Die Hunting-Filter (nur ungerufene / nur neue DXCC) findest du
-          jetzt direkt auf dem Funk-Dashboard unter dem Antworten-Button —
-          so kannst du sie live umschalten ohne hier rein zu müssen.
-        </p>
-
         <h4>Hunt-Priorität — wer wird zuerst gepickt?</h4>
-        <p class="hint">
-          Reihenfolge per Drag&Drop ändern. Top der Liste = höchste Priorität.
-          Bei Gleichstand entscheidet immer das nächste Tier abwärts; ganz unten
-          gewinnt das bessere SNR-Signal.
-          <strong>PSK-Reciprocity</strong> (3 Tiers nutzen sie) muss separat
-          aktiviert werden — fetcht pskreporter.info um zu wissen wer uns hört.
-        </p>
         <div class="hunt-tier-list">
           {#each (cfg.operating.hunt_priority ?? []) as tier, idx (tier)}
             <div class="hunt-tier-row"
@@ -573,13 +549,6 @@
           {/each}
         </div>
         <h5 class="subgroup">🎯 Tail-End-Hunter</h5>
-        <p class="hint">
-          Ruft Stationen direkt nach deren <strong>RR73</strong> an wie bei
-          einem CQ. WSJT-X kann das nicht automatisch — wir markieren bei
-          jedem Closing-Decode den Sender für 30 s (= 2 Slots) als
-          Candidate. Cooldown 24 h pro Station damit wir niemanden nerven.
-          Pi 5-only sinnvoll wegen Latenz.
-        </p>
         <div class="grid">
           <label class="field toggle-field">
             <span>Tail-End-Hunter aktiv</span>
@@ -610,14 +579,6 @@
         </div>
 
         <h4>Auto-ALC (Audio-Gain-Regelung beim TX)</h4>
-        <p class="hint">
-          Der Controller misst während des Sendens die ALC-Anzeige des
-          Rigs und passt die Audio-Lautstärke automatisch an. Über
-          dem oberen Limit fährt er um 10 % runter, unter dem unteren
-          um 5 % hoch. Werte in <strong>%</strong> der ALC-Anzeige
-          (0–100). FT8 mag <strong>ALC = 0–5 %</strong> — alles darüber
-          ist Verzerrung am Sender.
-        </p>
         <div class="grid grid-bottom">
           <label><span>ALC-Ziel unten <small>(%, Audio rauf wenn drunter)</small></span>
             <input type="number" min="0" max="50"
@@ -637,7 +598,7 @@
       <!-- Integrations -->
       <section>
         <h3>Online-Dienste</h3>
-        <div class="grid">
+        <div class="grid integration-toggles">
           <label class="check">
             <input type="checkbox" bind:checked={cfg.integrations.qrz.enabled}/>
             <span>QRZ.com (Dads Abo)</span>
@@ -658,10 +619,6 @@
             <input type="checkbox" bind:checked={cfg.integrations.hamqsl.enabled}/>
             <span>hamqsl Solar</span>
           </label>
-          <label class="check">
-            <input type="checkbox" bind:checked={cfg.integrations.blitzortung.enabled}/>
-            <span>Blitzortung-Warnung 🌩️</span>
-          </label>
           {#if cfg.integrations.dx_cluster}
             <label class="check">
               <input type="checkbox" bind:checked={cfg.integrations.dx_cluster.enabled}/>
@@ -669,15 +626,23 @@
             </label>
           {/if}
         </div>
-        {#if cfg.integrations.blitzortung.enabled}
-          <div class="grid">
+
+        <h4>🌩️ Blitzortung-Warnung</h4>
+        <div class="grid two-col">
+          <label class="check">
+            <input type="checkbox" bind:checked={cfg.integrations.blitzortung.enabled}/>
+            <span>Live-Stream + ntfy-Push aktiv</span>
+          </label>
+          {#if cfg.integrations.blitzortung.enabled}
             <label><span>Alarm-Radius <small>(km um QTH)</small></span>
               <input type="number" min="1" max="500"
                      bind:value={cfg.integrations.blitzortung.alarm_radius_km}/>
             </label>
-          </div>
-        {/if}
+          {/if}
+        </div>
+
         {#if cfg.integrations.qrz.enabled}
+          <h4>QRZ-Credentials</h4>
           <div class="grid">
             <label><span>QRZ User</span>
               <input type="text" bind:value={cfg.integrations.qrz.user}/>
@@ -690,13 +655,19 @@
                      bind:value={cfg.integrations.qrz.logbook_api_key}
                      placeholder="aus QRZ-Logbook-Settings"/>
             </label>
-            <label class="check">
-              <input type="checkbox"
-                     bind:checked={cfg.integrations.qrz.logbook_auto_upload}/>
-              <span>QSOs automatisch hochladen (auch nach Offline-Phase)</span>
-            </label>
           </div>
+          <label class="check">
+            <input type="checkbox"
+                   bind:checked={cfg.integrations.qrz.logbook_auto_upload}/>
+            <span>QSOs automatisch hochladen (auch nach Offline-Phase)</span>
+          </label>
         {/if}
+
+        <h4>Push-Notifications (ntfy.sh)</h4>
+        <label class="check">
+          <input type="checkbox" bind:checked={cfg.integrations.ntfy.enabled}/>
+          <span>Push-Notifications aktiv</span>
+        </label>
         {#if cfg.integrations.ntfy.enabled}
           <div class="grid">
             <label><span>ntfy.sh Topic</span>
@@ -705,10 +676,6 @@
             </label>
           </div>
         {/if}
-        <label class="check">
-          <input type="checkbox" bind:checked={cfg.integrations.ntfy.enabled}/>
-          <span>Push-Notifications via ntfy.sh</span>
-        </label>
       </section>
 
       <!-- Netzwerk-Fallback ist auf die WLAN-Seite umgezogen
@@ -748,6 +715,21 @@
      gleicher Höhe egal ob das Label 1- oder 2-zeilig umbricht.
      Sebastian-Hinweis 2026-05-27 zu Auto-ALC-Block. */
   .grid-bottom { align-items: end; }
+  /* 2-Spalten-Override mit ALIGN-end damit Blitzortung-Toggle + Radius-
+     Eingabe nebeneinander auf gleicher Hoehe sitzen. */
+  .grid.two-col {
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+  }
+  /* Online-Dienste-Toggles: ueberschreibt minmax 11rem auf 14rem damit
+     drei Toggles pro Reihe statt vier eng zusammengequetscht — auf
+     Desktop-Width entsteht eine 3x2-Matrix mit Platz zwischen den
+     Spalten. Sebastian-Feedback 2026-05-27. */
+  .integration-toggles {
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    column-gap: 1rem;
+    row-gap: 0.6rem;
+  }
   label { display: flex; flex-direction: column; gap: 0.2rem;
           font-size: 0.85rem; color: #cbd5e1; }
   label.check { flex-direction: row; align-items: center; gap: 0.4rem; }

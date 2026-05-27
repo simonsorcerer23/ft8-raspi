@@ -129,7 +129,6 @@
         <button class="primary" onclick={triggerUpdate} disabled={triggering}>
           {triggering ? 'Starte…' : 'Update-Check erzwingen'}
         </button>
-        <span class="muted small">Timer feuert ohnehin alle 10 min + 04:00 nachts</span>
       {/if}
       {#if triggerMsg}
         <span class="status {triggerMsg.kind}">{triggerMsg.text}</span>
