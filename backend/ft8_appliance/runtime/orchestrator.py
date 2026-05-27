@@ -309,6 +309,13 @@ class Orchestrator:
         default_factory=dict, init=False
     )
     _op_slot_parity: dict[str, str] = field(default_factory=dict, init=False)
+    # v0.16.0 — Hour-of-Day-Aggregat aus DB. Set von (continent, hour)
+    # die in den letzten 90 Tagen ueberdurchschnittlich aktiv waren.
+    # Beim Boot rekonstruiert + alle 1h re-aggregiert.
+    _active_continent_hours: set[tuple[str, int]] = field(
+        default_factory=set, init=False
+    )
+    _hod_last_refresh_at: float = field(default=0.0, init=False)
     # v0.13.0 — Blitzortung-Storm-Alert Throttle.
     # _last_storm_alert_at: monotonic-Zeit des letzten ntfy-Pushes
     # (egal welche Distanz). Verhindert Spam wenn ein Gewitter eine
@@ -903,6 +910,12 @@ class Orchestrator:
                         "Soft-Blacklist hydratisiert: %d Calls",
                         len(self._soft_blacklist),
                     )
+                # v0.16.0 Hour-of-Day-Aggregat aus QSO-Historie. Geht
+                # ueber alle eigenen QSOs, mapped call → continent ueber
+                # cty.dat (sync-Lookup im selben Loop), zählt pro
+                # (continent, hour) und nimmt die Top-50% Stunden je
+                # Continent als "aktiv".
+                self._active_continent_hours = await self._aggregate_active_hours(s, my_call)
             # DXCC-Set aus den geloggten Calls ableiten. Wir queryen die
             # DB *ausserhalb* des session_scope, weil der cty-Lookup
             # synchron + potenziell langsam (4500 Eintraege) ist und wir
@@ -3625,6 +3638,7 @@ class Orchestrator:
         new_dxcc: set[str] = set()
         call_to_dxcc: dict[str, str] = {}
         call_to_latlon: dict[str, tuple[float, float]] = {}
+        call_to_continent: dict[str, str] = {}  # v0.16.0
         rarity_scores: dict[str, int] = {}
         if self.integrations.cty is not None:
             # Lazy-Import damit Tests ohne dxcc_rarity-Daten nicht failen
@@ -3648,6 +3662,9 @@ class Orchestrator:
                     # cachen damit der Tier ohne weiteren Lookup auskommt.
                     if rec.entity.lat is not None and rec.entity.lon is not None:
                         call_to_latlon[norm] = (rec.entity.lat, rec.entity.lon)
+                    # v0.16.0 Hour-of-Day-Tier: Continent cachen
+                    if rec.entity.continent:
+                        call_to_continent[norm] = rec.entity.continent
                 # Rarity-Score (0..100) per Call — basiert auf cty-prefix
                 # fallback, daher unabhängig vom cty-Lookup verfügbar.
                 score = rarity_for(call)
@@ -3656,7 +3673,10 @@ class Orchestrator:
         self.state_machine.ctx.new_dxcc_calls = new_dxcc
         self.state_machine.ctx.call_to_dxcc = call_to_dxcc
         self.state_machine.ctx.call_to_latlon = call_to_latlon
+        self.state_machine.ctx.call_to_continent = call_to_continent
         self.state_machine.ctx.rarity_scores = rarity_scores
+        # v0.16.0 active_continent_hours aus DB-Aggregat
+        self.state_machine.ctx.active_continent_hours = set(self._active_continent_hours)
         # v0.14.0 Band-Conditions aus hamqsl-Cache spiegeln. Daten werden
         # vom HamQslClient mit 30-min-TTL gecached, hier ist's also ein
         # billiger Memory-Read. Wenn Client gerade keine Daten hat → leere
@@ -4046,6 +4066,68 @@ class Orchestrator:
                     )
         except Exception as exc:
             log.warning("reputation bail-update failed for %s: %s", call, exc)
+
+    async def _aggregate_active_hours(self, s, my_call: str) -> set[tuple[str, int]]:
+        """v0.16.0 — Aggregate QSO-DB into (continent, hour) Top-50% pro
+        Continent.
+
+        Geht die letzten 90 Tage durch, mapped call → continent ueber
+        cty.dat, zählt QSOs pro (continent, hour-of-day-UTC). Nimmt
+        pro Continent die Stunden mit count >= Median als "aktiv".
+        """
+        from sqlalchemy import select as _select
+        cty = self.integrations.cty
+        if cty is None:
+            return set()
+        try:
+            rows = (await s.execute(
+                _select(Qso.call, Qso.qso_start).where(
+                    Qso.user_callsign == my_call,
+                    Qso.qso_start.isnot(None),
+                )
+            )).all()
+        except Exception as exc:
+            log.warning("active-hours aggregation: db query failed: %s", exc)
+            return set()
+        # Count: continent → {hour: count}
+        counts: dict[str, dict[int, int]] = {}
+        for call, ts in rows:
+            if not call or ts is None:
+                continue
+            try:
+                rec = cty.lookup(call)
+            except Exception:
+                continue
+            if rec is None or rec.entity is None:
+                continue
+            cont = rec.entity.continent
+            if not cont:
+                continue
+            hour = ts.hour if hasattr(ts, "hour") else None
+            if hour is None:
+                continue
+            counts.setdefault(cont, {}).setdefault(hour, 0)
+            counts[cont][hour] += 1
+        # Pro Continent: nimm Stunden mit count >= Median als aktiv.
+        active: set[tuple[str, int]] = set()
+        for cont, hour_counts in counts.items():
+            if len(hour_counts) < 2:
+                # Zu wenig Datenpunkte → alle Stunden aktiv (keine
+                # falsche Negativ-Annahme).
+                for h in hour_counts:
+                    active.add((cont, h))
+                continue
+            sorted_counts = sorted(hour_counts.values())
+            median = sorted_counts[len(sorted_counts) // 2]
+            for hour, c in hour_counts.items():
+                if c >= median:
+                    active.add((cont, hour))
+        if active:
+            log.info(
+                "active-hours: %d (continent, hour) Tuples aus %d QSOs",
+                len(active), len(rows),
+            )
+        return active
 
     async def _record_qso_success(self, call: str) -> None:
         """Erfolg vergibt — Score Richtung 0 ziehen, ggf. Soft-Blacklist

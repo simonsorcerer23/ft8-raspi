@@ -244,3 +244,17 @@ class MachineContext:
     # Aktuelle Slot-Parity dieses Slots — vom Orchestrator pro Slot
     # gesetzt aus SlotTick. "even" oder "odd".
     current_slot_parity: str = ""
+    # v0.16.0 Hour-of-Day-Predictor — fuer jeden Decoded-Call cachen wir
+    # den Continent (aus cty.dat). Tier `active_hour` schaut nach ob
+    # die aktuelle UTC-Hour historisch ein "aktive Stunde" fuer diesen
+    # Continent ist (aus eigener QSO-DB aggregiert).
+    call_to_continent: dict[str, str] = field(default_factory=dict)
+    # Set of (continent, hour) Tupeln die laut DB-History "aktiv" sind
+    # (Top-50% Stunden pro Continent). Vom Orchestrator beim Boot +
+    # periodisch aus call_reputation/qso-Daten aggregiert.
+    active_continent_hours: set[tuple[str, int]] = field(default_factory=set)
+    # v0.16.0 Tail-End-PreStage — Calls die wir gerade in QSO_REPORT
+    # gesehen haben (R-Report decoded). Cached snr/freq/band/grid damit
+    # bei RR73 im naechsten Slot die Detection schon "warm" ist und der
+    # 5-min-CQ-Filter uebersteuert wird.
+    pre_staged_tail_ends: dict[str, dict] = field(default_factory=dict)

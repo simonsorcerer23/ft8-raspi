@@ -198,6 +198,26 @@ def _tier_band_open(d: "DecodedMsg", ctx: "MachineContext") -> int:
         return 0
 
 
+def _tier_active_hour(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """v0.16.0 — Aktuelle UTC-Stunde ist historisch aktiv fuer den
+    Continent des CQ-Rufers.
+
+    Continent kommt aus ctx.call_to_continent (vom Orchestrator pro Slot
+    aus cty.dat befuellt). active_continent_hours ist die Set-Repraesen-
+    tation der Top-50%-Stunden pro Continent aus eigener QSO-DB.
+
+    Effekt: VK morgens auf 15m aktiv → Boost. Mittagspause auf 15m fuer
+    VK → kein Boost (andere Tiers entscheiden).
+    """
+    if not d.call_from or not ctx.active_continent_hours:
+        return 0
+    continent = ctx.call_to_continent.get(d.call_from.upper())
+    if not continent:
+        return 0
+    hour = datetime.now(UTC).hour
+    return 1 if (continent, hour) in ctx.active_continent_hours else 0
+
+
 def _tier_not_bad_reputation(d: "DecodedMsg", ctx: "MachineContext") -> int:
     """v0.15.0 — Soft-Blacklist-Aware: 0 fuer Calls die wir mehrfach
     erfolglos angerufen haben (Reputation-Score >= 5), sonst 1.
@@ -275,6 +295,7 @@ HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
     "tail_end_target": _tier_tail_end_target,
     "grayline":        _tier_grayline,
     "band_open":       _tier_band_open,
+    "active_hour":     _tier_active_hour,   # v0.16.0
     "new_dxcc_psk":    _tier_new_dxcc_psk,
     "new_dxcc":        _tier_new_dxcc,
     "psk_heard_us":    _tier_psk_heard_us,
@@ -791,7 +812,9 @@ class StateMachine:
         # die 30-s-Expiry abgelaufen ist. Laeuft auch wenn der Toggle
         # aus ist (defensiv — falls jemand wechselt waehrend Candidates
         # noch im Dict stehen).
-        if self.ctx.tail_end_candidates or self.ctx.tail_end_recent_cq:
+        if (self.ctx.tail_end_candidates
+                or self.ctx.tail_end_recent_cq
+                or self.ctx.pre_staged_tail_ends):
             self._prune_tail_end_state()
 
         # Boot-Auto-Resume (Sebastian 2026-05-23 nach Multi-Operator-
@@ -1314,11 +1337,16 @@ class StateMachine:
         """Pflegt ctx.tail_end_candidates + ctx.tail_end_recent_cq.
 
         - Jeder CQ-Decode aktualisiert tail_end_recent_cq[call] = now.
+        - Jeder R-Report-Decode (X→Y "R-12") markiert X als
+          tail_end_pre_staged (v0.16.0): naechster Slot bringt mit
+          hoher Wahrscheinlichkeit RR73 von X. Damit ueberschreiben
+          wir den 5-min-CQ-Filter beim Closing-Detect.
         - Jeder Closing-Decode (RR73/RRR/73) macht den Sender zum
           Candidate, sofern er nicht in den letzten 5 min selbst CQ
           gerufen hat (sein naechster CQ kommt eh) UND er das Closing
           nicht an UNS gesendet hat (das ist unser Partner, der kommt
-          via Standard-Cooldown).
+          via Standard-Cooldown). Pre-Staged Calls ueberspringen den
+          5-min-Filter weil wir wissen dass sie GERADE fertig sind.
         - Expiry-Pflege geschieht in on_slot_tick (siehe dort).
         """
         now = datetime.now(UTC).timestamp()
@@ -1335,6 +1363,39 @@ class StateMachine:
                 continue
             self.ctx.tail_end_recent_cq[d.call_from.upper()] = now
 
+        # v0.16.0 Pre-Stage: R-Report-Decodes erkennen. Pattern:
+        # "<Y> <X> R-<snr>" — X sendet R-Report an Y. X ist also in
+        # QSO_REPORT-State; naechster Slot bringt mit hoher
+        # Wahrscheinlichkeit sein RR73. Markieren wir ihn als Pre-
+        # Staged damit der spaetere Closing-Detect die snr/freq
+        # parat hat (zero detection latency) + den 5-min-CQ-Filter
+        # uebersteuert (wir wissen er ist gerade fertig, kein
+        # Routine-CQ-Caller).
+        for d in decodes:
+            if not d.call_from or getattr(d, "is_freetext", False):
+                continue
+            msg = (d.message or "")
+            if d.call_to is None:
+                continue
+            if d.call_to == self.ctx.callsign:
+                # Das ist UNSER Partner → kein Pre-Stage. Sein RR73
+                # geht an UNS, nicht an andere.
+                continue
+            if _R_SNR_RE.search(" " + msg) is None:
+                continue
+            call = d.call_from.upper()
+            self.ctx.pre_staged_tail_ends[call] = {
+                "expiry": now + self.TAIL_END_EXPIRY_S,
+                "snr_db": d.snr_db,
+                "freq_offset_hz": d.freq_offset_hz,
+                "band": d.band,
+                "grid": d.grid,
+            }
+            log.debug(
+                "Tail-End-PreStage: %s (R-Report an %s, snr=%s freq=%s)",
+                call, d.call_to, d.snr_db, d.freq_offset_hz,
+            )
+
         # Closings einsammeln. Eligibility-Filter direkt hier statt im
         # Tier — sonst muessten wir die snr/freq vom letzten Decode auch
         # noch durchschleusen.
@@ -1349,8 +1410,16 @@ class StateMachine:
                 continue
             # 5-min-Filter: Station ruft sowieso noch CQ, kein Tail-End-
             # Boost noetig — ihr naechster CQ-Slot kommt von selbst.
+            # AUSNAHME (v0.16.0 Pre-Stage): wenn wir gerade einen R-Report
+            # von ihm gesehen haben, war er nachweislich im QSO_REPORT
+            # → das jetzt sichtbare Closing ist die natuerliche Fortsetzung,
+            # kein "weiter-rufen-und-irgendwann-Closing". Pre-Stage
+            # uebersteuert den 5-min-CQ-Filter.
+            is_pre_staged = call in self.ctx.pre_staged_tail_ends
             recent_cq_at = self.ctx.tail_end_recent_cq.get(call)
-            if recent_cq_at is not None and now - recent_cq_at < self.TAIL_END_RECENT_CQ_S:
+            if (recent_cq_at is not None
+                    and now - recent_cq_at < self.TAIL_END_RECENT_CQ_S
+                    and not is_pre_staged):
                 log.debug(
                     "Tail-End: %s ignoriert (selbst CQ vor %.0fs)",
                     call, now - recent_cq_at,
@@ -1395,6 +1464,13 @@ class StateMachine:
         ]
         for call in stale_cq:
             del self.ctx.tail_end_recent_cq[call]
+        # v0.16.0 Pre-Stage expiry analog Candidates
+        expired_ps = [
+            call for call, meta in self.ctx.pre_staged_tail_ends.items()
+            if meta.get("expiry", 0) <= now
+        ]
+        for call in expired_ps:
+            del self.ctx.pre_staged_tail_ends[call]
 
     # ------------------------------------------------------------------ guard plumbing
     def _check_guards(self, hw: HardwareState) -> bool:

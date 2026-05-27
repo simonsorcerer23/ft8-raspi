@@ -121,11 +121,13 @@ def test_migration_adds_v015_tiers():
     assert cfg.hunt_priority[-1] == "snr"
 
 
-def test_migration_len_is_16():
-    """v0.15.0: 16 known Tiers total (+ not_bad_reputation, not_his_tx_slot)."""
+def test_migration_includes_v015_tiers():
+    """v0.15.0 hat min. die filter-tiers drin."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 16
+    assert "not_bad_reputation" in cfg.hunt_priority
+    assert "not_his_tx_slot" in cfg.hunt_priority
+    assert len(cfg.hunt_priority) >= 16
 
 
 # ---------------------------------------------------------------------------

@@ -348,6 +348,7 @@ class OperatingConfig(BaseModel):
             "tail_end_target",   # v0.11.0 — Station hat gerade QSO beendet
             "grayline",          # v0.14.0 — CQ-Rufer in eigenem Grayline-Fenster
             "band_open",         # v0.14.0 — hamqsl: Band aktuell "Good"
+            "active_hour",       # v0.16.0 — DB-History sagt: Continent jetzt aktiv
             "new_dxcc_psk",      # neues DXCC + PSK sagt "hört uns"
             "new_dxcc",          # neues DXCC (auch ohne PSK)
             "psk_heard_us",      # PSK sagt "hört uns" (für routine-EU)
@@ -380,7 +381,7 @@ class OperatingConfig(BaseModel):
         known = [
             "not_bad_reputation", "not_his_tx_slot",
             "marine_psk", "marine", "tail_end_target",
-            "grayline", "band_open",
+            "grayline", "band_open", "active_hour",
             "new_dxcc_psk", "new_dxcc", "psk_heard_us", "new_dxcc_band",
             "new_grid", "new_grid_band", "not_worked", "dxcc_rarity", "snr",
         ]

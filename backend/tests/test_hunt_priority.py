@@ -310,11 +310,11 @@ def test_compute_score_snr_tiebreaker_added():
 
 
 def test_hunt_tiers_registry_complete():
-    """Alle erwarteten Tier-Namen sind registriert (v0.15.0: + not_bad_reputation, not_his_tx_slot)."""
+    """Alle erwarteten Tier-Namen sind registriert (v0.16.0: + active_hour)."""
     expected = {
         "not_bad_reputation", "not_his_tx_slot",
         "marine_psk", "marine", "tail_end_target",
-        "grayline", "band_open",
+        "grayline", "band_open", "active_hour",
         "new_dxcc_psk", "new_dxcc",
         "psk_heard_us", "new_dxcc_band", "new_grid", "new_grid_band",
         "not_worked", "dxcc_rarity", "snr",
@@ -375,8 +375,8 @@ def test_hunt_priority_auto_migration_preserves_user_order():
     assert cfg.hunt_priority[0] == "new_dxcc"  # User-Sortierung erhalten
     assert cfg.hunt_priority[1] == "marine"
     assert cfg.hunt_priority[-1] == "snr"
-    # v0.15.0: 16 known Tiers (+ not_bad_reputation, not_his_tx_slot)
-    assert len(cfg.hunt_priority) == 16
+    # v0.16.0: 17 known Tiers (+ active_hour)
+    assert len(cfg.hunt_priority) == 17
 
 
 def test_hunt_priority_validator_keeps_unknown_tiers():
@@ -391,7 +391,7 @@ def test_hunt_priority_validator_empty_list_to_default():
     """Leere Liste in der Config → komplette Default-Liste."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 16  # v0.15.0
+    assert len(cfg.hunt_priority) == 17  # v0.16.0
     assert cfg.hunt_priority[0] == "not_bad_reputation"
 
 
