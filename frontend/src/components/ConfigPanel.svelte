@@ -181,6 +181,10 @@
       }
     }
     s += `${ind(2)}tail_end_hunter_enabled: ${c.operating.tail_end_hunter_enabled === true}\n`;
+    if (c.operating.dxped_ng3k_push_enabled !== undefined)
+      s += `${ind(2)}dxped_ng3k_push_enabled: ${c.operating.dxped_ng3k_push_enabled === true}\n`;
+    if (c.operating.dxped_ng3k_push_min_rarity !== undefined)
+      s += `${ind(2)}dxped_ng3k_push_min_rarity: ${c.operating.dxped_ng3k_push_min_rarity}\n`;
     s += `${ind(2)}psk_reciprocity_enabled: ${c.operating.psk_reciprocity_enabled === true}\n`;
     s += `${ind(2)}psk_reciprocity_refresh_s: ${c.operating.psk_reciprocity_refresh_s ?? 600}\n`;
     // YAML 1.1: "off"/"on"/"yes"/"no" sind Boolean-Keywords → ohne
@@ -567,6 +571,23 @@
                     aria-pressed={cfg.operating.tail_end_hunter_enabled}>
               <span class="toggle-knob"></span>
             </button>
+          </label>
+        </div>
+        <h5 class="subgroup">📡 DXpedition-Pushes (NG3K-Auto-Watchlist)</h5>
+        <div class="grid">
+          <label class="field toggle-field">
+            <span>Push bei Decode aktiv</span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.dxped_ng3k_push_enabled}
+                    onclick={() => cfg.operating.dxped_ng3k_push_enabled = !cfg.operating.dxped_ng3k_push_enabled}
+                    aria-pressed={cfg.operating.dxped_ng3k_push_enabled}>
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+          <label class="field">
+            <span>Rarity-Schwellwert <small>(0–100, höher = nur rare DX)</small></span>
+            <input type="number" min="0" max="100" step="5"
+                   bind:value={cfg.operating.dxped_ng3k_push_min_rarity}/>
           </label>
         </div>
         <h5 class="subgroup">PSK-Reciprocity</h5>

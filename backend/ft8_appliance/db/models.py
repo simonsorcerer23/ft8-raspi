@@ -211,6 +211,11 @@ class Watchlist(Base):
     last_alert_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # v0.19.2 — Herkunft: 'manual' (User-Eingabe) oder 'ng3k_auto'
+    # (DXpedition-Schedule-Loop hat den Call automatisch eingetragen).
+    # Push-Verhalten differenziert: manual = 1h-Throttle (User
+    # wollte's), ng3k_auto = 24h-Throttle + rarity-gated.
+    source: Mapped[str] = mapped_column(String, default="manual")
 
 
 # ---------------------------------------------------------------------------

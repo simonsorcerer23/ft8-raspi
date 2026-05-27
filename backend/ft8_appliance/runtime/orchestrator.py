@@ -290,9 +290,12 @@ class Orchestrator:
     # handle_watchlist_add/remove aktualisiert. Wird pro Slot in den
     # state-machine-ctx gespiegelt.
     _watchlist_calls: set[str] = field(default_factory=set, init=False)
+    # v0.19.2 — Source pro Watchlist-Call (manual|ng3k_auto). Bestimmt
+    # das Push-Verhalten in _fire_watchlist_alert (Throttle + Rarity-
+    # Gate). Beim Boot aus DB rekonstruiert.
+    _watchlist_sources: dict[str, str] = field(default_factory=dict, init=False)
     # Throttle pro Watchlist-Call (POSIX-Zeit des letzten ntfy-Pushes).
-    # Default-Fenster: 1h damit DXpedition-Calls die im selben Slot
-    # 30x decoden nicht in Push-Spam ausarten.
+    # Manual: 1h-Throttle. ng3k_auto: 24h-Throttle.
     _watchlist_last_alert: dict[str, float] = field(default_factory=dict, init=False)
     # Band-Conditions aus hamqsl-Solar — periodisch via _solar_refresh_loop
     # aktualisiert, pro Slot in den ctx kopiert.
@@ -918,9 +921,18 @@ class Orchestrator:
                 # Orchestrator und in ctx; In-Memory-Sync, DB ist die
                 # Wahrheit.
                 wl_rows = (await s.execute(
-                    select(DbWatchlist.call).where(DbWatchlist.user_callsign == my_call)
-                )).scalars()
-                self._watchlist_calls = {c.upper() for c in wl_rows if c}
+                    select(DbWatchlist.call, DbWatchlist.source).where(
+                        DbWatchlist.user_callsign == my_call
+                    )
+                )).all()
+                self._watchlist_calls = set()
+                self._watchlist_sources = {}
+                for c_, src_ in wl_rows:
+                    if not c_:
+                        continue
+                    norm = c_.upper()
+                    self._watchlist_calls.add(norm)
+                    self._watchlist_sources[norm] = (src_ or "manual")
                 # v0.17.0 — Watchlist-Calls in den Hint-Decoder-Hash-Table
                 # pushen damit marginal-decodes (z.B. -22 dB SNR fuer
                 # DXpeditions) eher mit-gefunden werden. Selbe Logik wie
@@ -1437,17 +1449,26 @@ class Orchestrator:
             log.warning("blacklist DB delete failed: %s", exc)
 
     # ------------------------------------------------------------------ watchlist (v0.14.0)
-    async def handle_watchlist_add(self, call: str, note: str | None = None) -> None:
+    async def handle_watchlist_add(
+        self, call: str, note: str | None = None,
+        source: str = "manual",
+    ) -> None:
         """Add a callsign to the watchlist (in-memory + DB persist).
 
         Operator-Isolation: row.user_callsign = aktiver Op. Bei Hot-Switch
         sieht ein anderer Op die nicht.
+
+        v0.19.2 — source-Parameter: "manual" (User-Eingabe ueber UI/API)
+        oder "ng3k_auto" (vom DXpedition-Schedule-Loop). Source ist
+        entscheidend fuer Push-Verhalten in _fire_watchlist_alert
+        (manual = 1h, ng3k_auto = 24h + rarity-gated).
         """
         call = call.upper().strip()
         if not call:
             return
         my_call = self.config.operator.callsign
         self._watchlist_calls.add(call)
+        self._watchlist_sources[call] = source
         # v0.17.0 — sofort in den Hint-Decoder-Hash-Table pushen damit
         # ab dem naechsten Slot marginal-Decodes des Calls funktionieren.
         try:
@@ -1465,6 +1486,7 @@ class Orchestrator:
                         user_callsign=my_call,
                         added=datetime.now(UTC),
                         note=note,
+                        source=source,
                     ))
                 else:
                     # Note aktualisieren falls neuer Wert mitkam.
@@ -1473,12 +1495,19 @@ class Orchestrator:
                     # Operator-Pflege falls Eintrag global verwaist war.
                     if exists.user_callsign is None:
                         exists.user_callsign = my_call
+                    # Source NICHT downgraden: ein manueller Eintrag
+                    # bleibt manuell auch wenn NG3K ihn spaeter sehen
+                    # wuerde. Aber upgraden ist OK (manual schlaegt
+                    # ng3k_auto).
+                    if exists.source == "ng3k_auto" and source == "manual":
+                        exists.source = "manual"
         except Exception as exc:
             log.warning("watchlist DB persist failed: %s", exc)
 
     async def handle_watchlist_remove(self, call: str) -> None:
         call = call.upper().strip()
         self._watchlist_calls.discard(call)
+        self._watchlist_sources.pop(call, None)
         self._watchlist_last_alert.pop(call, None)
         try:
             async with session_scope() as s:
@@ -1489,7 +1518,15 @@ class Orchestrator:
             log.warning("watchlist DB delete failed: %s", exc)
 
     async def _fire_watchlist_alert(self, call: str, decoded) -> None:
-        """ntfy-Push wenn ein Watchlist-Call decoded wurde, mit 1h-Throttle.
+        """ntfy-Push wenn ein Watchlist-Call decoded wurde.
+
+        v0.19.2 — source-aware throttle + rarity-filter:
+
+        * **manual** (User-Eingabe): 1h-Throttle pro Call, **kein**
+          Rarity-Filter (User wollte den Call explizit).
+        * **ng3k_auto** (DXpedition-Schedule): 24h-Throttle pro Call,
+          PLUS Rarity-Gate via OperatingConfig.dxped_ng3k_push_min_rarity.
+          Plus globaler On/Off-Schalter dxped_ng3k_push_enabled.
 
         Wird aus dem Decode-Loop aufgerufen. Decoded ist eine DecodedMsg.
         """
@@ -1497,22 +1534,48 @@ class Orchestrator:
         if ntfy is None or not ntfy.enabled:
             return
         norm = call.upper()
+        source = self._watchlist_sources.get(norm, "manual")
+
+        # v0.19.2 NG3K-spezifische Gates
+        if source == "ng3k_auto":
+            if not self.config.operating.dxped_ng3k_push_enabled:
+                return
+            min_rarity = self.config.operating.dxped_ng3k_push_min_rarity
+            try:
+                from ..integrations.dxcc_rarity import rarity_for
+                rarity = rarity_for(norm)
+            except Exception:
+                rarity = 0
+            if rarity < min_rarity:
+                log.debug(
+                    "Watchlist (ng3k_auto): %s rarity=%d < %d — kein Push",
+                    norm, rarity, min_rarity,
+                )
+                return
+            throttle_s = 86400.0  # 24h
+        else:
+            throttle_s = 3600.0  # 1h fuer manual
+
         now = time.time()
         last = self._watchlist_last_alert.get(norm, 0.0)
-        if now - last < 3600:  # 1h throttle pro Call
+        if now - last < throttle_s:
             return
         self._watchlist_last_alert[norm] = now
         try:
             band_tag = decoded.band or self.state_machine.ctx.band
             snr_str = f"{decoded.snr_db:+d} dB" if decoded.snr_db is not None else "?"
             msg_kind = "CQ" if decoded.call_to is None else f"→ {decoded.call_to}"
+            badge = "🎯 DXpedition" if source == "ng3k_auto" else "👀 Watchlist"
             await ntfy.push(
-                title=f"👀 Watchlist: {norm}",
+                title=f"{badge}: {norm}",
                 message=f"{msg_kind} auf {band_tag} ({snr_str})",
                 priority="default",
                 tags="eyes",
             )
-            log.info("Watchlist-Alert: %s decoded on %s (%s)", norm, band_tag, snr_str)
+            log.info(
+                "Watchlist-Alert: %s decoded on %s (%s) source=%s",
+                norm, band_tag, snr_str, source,
+            )
         except Exception as exc:
             log.warning("watchlist ntfy push failed for %s: %s", norm, exc)
 
@@ -4502,7 +4565,9 @@ class Orchestrator:
                         # Auto-add zur Watchlist wenn aktiv
                         active = row.start_date <= now <= row.end_date
                         if active and not row.auto_added_to_watchlist:
-                            self._watchlist_calls.add(row.call.upper())
+                            norm_call = row.call.upper()
+                            self._watchlist_calls.add(norm_call)
+                            self._watchlist_sources[norm_call] = "ng3k_auto"
                             wl_row = await s.get(DbWatchlist, row.call)
                             if wl_row is None:
                                 s.add(DbWatchlist(
@@ -4510,6 +4575,7 @@ class Orchestrator:
                                     user_callsign=row.user_callsign,
                                     added=now,
                                     note=f"DXpedition (auto): {row.note or ''}".strip(),
+                                    source="ng3k_auto",
                                 ))
                             row.auto_added_to_watchlist = True
                             log.info(

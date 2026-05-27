@@ -400,6 +400,18 @@ class OperatingConfig(BaseModel):
         except ValueError:
             return existing + missing
 
+    # v0.19.2 — DXpedition-Push-Verhalten (NG3K-Auto-Import).
+    # Manuelle Watchlist-Eintraege (vom User explizit hinzugefuegt)
+    # behalten ihren 1h-Throttle. NG3K-Auto-Eintraege haben:
+    # - eigenen On/Off-Schalter
+    # - Throttle 24h pro Call (statt 1h) — kein Spam-Risiko
+    # - Rarity-Gate: nur DXpeditions mit rarity_score >= Schwellwert
+    #   pushen. So bleibt Routine-DX wie Galapagos (~30) still in der
+    #   Watchlist (Decoder-Hint-Boost trotzdem aktiv), nur echte
+    #   rare-Sachen (P5, 3Y, BS7H, ZL9 etc.) loesen Push aus.
+    dxped_ng3k_push_enabled: bool = True
+    dxped_ng3k_push_min_rarity: int = Field(default=50, ge=0, le=100)
+
     # v0.11.0 Tail-End-Hunter (Sebastian-Wunsch):
     # Wenn aktiv, markiert die State-Machine bei jedem RR73/RRR/73-Decode
     # den Sender als Tail-End-Candidate (= sein QSO ist beendet, er ist

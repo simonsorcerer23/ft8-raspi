@@ -72,6 +72,7 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_user_callsign_columns(conn, default_user_callsign)
         await _migrate_mf_columns(conn)
         await _migrate_dxped_source_column(conn)
+        await _migrate_watchlist_source_column(conn)
 
 
 async def _migrate_qrz_columns(conn) -> None:
@@ -87,6 +88,23 @@ async def _migrate_qrz_columns(conn) -> None:
     for name, ddl in additions:
         if name not in existing:
             await conn.exec_driver_sql(f"ALTER TABLE qso ADD COLUMN {name} {ddl}")
+
+
+async def _migrate_watchlist_source_column(conn) -> None:
+    """v0.19.2 — Watchlist.source-Spalte ergaenzen.
+
+    Bestehende Rows bekommen source='manual'. Auto-Adds vom
+    DXpedition-Schedule-Loop setzen ab v0.19.2 source='ng3k_auto'.
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(watchlist)")
+    existing = {row[1] for row in res.fetchall()}
+    if "source" not in existing:
+        await conn.exec_driver_sql(
+            "ALTER TABLE watchlist ADD COLUMN source TEXT DEFAULT 'manual'"
+        )
+        await conn.exec_driver_sql(
+            "UPDATE watchlist SET source='manual' WHERE source IS NULL"
+        )
 
 
 async def _migrate_dxped_source_column(conn) -> None:
