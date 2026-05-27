@@ -954,9 +954,22 @@ class StateMachine:
             and (d.message or "").startswith("CQ")
         }
         now_ts = datetime.now(UTC)
+        now_posix = now_ts.timestamp()
         synth: list[DecodedMsg] = []
         for call, meta in self.ctx.tail_end_candidates.items():
             if call in existing_cq_calls:
+                continue
+            # 24h-Cooldown auch im Injection-Pfad respektieren — sonst
+            # landet ein bereits gepickter Call wieder als synthetischer
+            # CQ-Decode im Pool und gewinnt ueber den SNR-Tie-Breaker,
+            # selbst wenn _tier_tail_end_target 0 liefert. Bug 2026-05-27:
+            # UN7GBX wurde 17 min nach erstem Tail-End-Pick erneut gepickt
+            # (Tier=0 reichte nicht, weil SNR -6 dB als Tie-Breaker
+            # zuschlug). Der echte Closing-Decode wuerde den Standard-
+            # Picker eh nicht durchlaufen (kein CQ-Prefix), also ist
+            # dieser Filter exklusiv zustaendig fuer die 24h-Sperre.
+            last_pick = self.ctx.tail_end_last_pick.get(call)
+            if last_pick is not None and now_posix - last_pick < TAIL_END_COOLDOWN_S:
                 continue
             grid = meta.get("grid") or ""
             # Fake-CQ-Message: nutzt das Grid wenn bekannt (matched dann

@@ -272,6 +272,49 @@ def test_picker_records_last_pick_when_candidate_wins():
     assert "DL3QR" in sm.ctx.tail_end_last_pick
 
 
+def test_picker_no_synthetic_during_24h_cooldown():
+    """Regression v0.11.1: nach Tail-End-Pick wird der Call fuer 24h
+    NICHT mehr als synthetischer CQ injiziert. Bug 2026-05-27 (UN7GBX):
+    Tier-Funktion lieferte 0, aber der synthetische Decode kam mit
+    SNR -6 in den Pool und gewann ueber den SNR-Tie-Breaker."""
+    now = _time.time()
+    ctx = _ctx(
+        tail_end_candidates={
+            "UN7GBX": {
+                "expiry": now + 30,
+                "snr_db": -6,
+                "freq_offset_hz": 1103,
+                "band": "15m",
+                "grid": None,
+            }
+        },
+        tail_end_last_pick={"UN7GBX": now - 1800},  # vor 30 min
+    )
+    sm = _machine(ctx)
+    synth = sm._build_synthetic_tail_end_decodes([])
+    assert synth == [], "Im 24h-Cooldown darf kein synthetischer Decode entstehen"
+
+
+def test_picker_synthetic_returns_after_24h():
+    now = _time.time()
+    ctx = _ctx(
+        tail_end_candidates={
+            "UN7GBX": {
+                "expiry": now + 30,
+                "snr_db": -6,
+                "freq_offset_hz": 1103,
+                "band": "15m",
+                "grid": None,
+            }
+        },
+        tail_end_last_pick={"UN7GBX": now - (TAIL_END_COOLDOWN_S + 60)},
+    )
+    sm = _machine(ctx)
+    synth = sm._build_synthetic_tail_end_decodes([])
+    assert len(synth) == 1
+    assert synth[0].call_from == "UN7GBX"
+
+
 def test_picker_no_synthetic_if_real_cq_present():
     """Wenn die Candidate-Station im selben Slot bereits echte CQ ruft,
     kein Duplikat — der echte Decode wird verarbeitet."""
