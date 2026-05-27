@@ -71,6 +71,7 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_qrz_columns(conn)
         await _migrate_user_callsign_columns(conn, default_user_callsign)
         await _migrate_mf_columns(conn)
+        await _migrate_dxped_source_column(conn)
 
 
 async def _migrate_qrz_columns(conn) -> None:
@@ -86,6 +87,24 @@ async def _migrate_qrz_columns(conn) -> None:
     for name, ddl in additions:
         if name not in existing:
             await conn.exec_driver_sql(f"ALTER TABLE qso ADD COLUMN {name} {ddl}")
+
+
+async def _migrate_dxped_source_column(conn) -> None:
+    """v0.19.1 — DxpeditionSchedule.source-Spalte ergaenzen.
+
+    Bestehende Rows (alle vom User manuell eingegeben) bekommen
+    source='manual'. Neue Auto-Importe vom NG3K-Loop werden mit
+    source='ng3k' eingetragen.
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(dxpedition_schedule)")
+    existing = {row[1] for row in res.fetchall()}
+    if "source" not in existing:
+        await conn.exec_driver_sql(
+            "ALTER TABLE dxpedition_schedule ADD COLUMN source TEXT DEFAULT 'manual'"
+        )
+        await conn.exec_driver_sql(
+            "UPDATE dxpedition_schedule SET source='manual' WHERE source IS NULL"
+        )
 
 
 async def _migrate_mf_columns(conn) -> None:

@@ -240,6 +240,9 @@ class DxpeditionSchedule(Base):
         Boolean, default=False
     )
     reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    # v0.19.1 — Herkunft: 'manual' (User-Eingabe) oder 'ng3k' (Auto-Import).
+    # Manuelle Eintraege werden vom Auto-Import NICHT ueberschrieben.
+    source: Mapped[str] = mapped_column(String, default="manual")
 
 
 # ---------------------------------------------------------------------------

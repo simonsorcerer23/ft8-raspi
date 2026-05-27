@@ -62,9 +62,12 @@
   <header>
     <h2>📡 DXpedition-Schedule</h2>
     <small>
-      Trage geplante DXpeditions ein damit du sie nicht verpasst. 24 h
-      vor Start kommt eine ntfy-Push, beim QRV-Start wird der Call
-      automatisch in die Watchlist gesetzt (und nach Ende wieder raus).
+      Auto-Import von <a href="https://www.ng3k.com/Misc/adxo.html"
+      target="_blank" rel="noopener">NG3K ADXO</a> alle 6 h
+      (🤖&nbsp;NG3K-Badge). Eigene Eintraege (✋ manuell) bleiben
+      unangetastet. 24 h vor Start kommt eine ntfy-Push, beim
+      QRV-Start kommt der Call automatisch in die Watchlist (und nach
+      Ende wieder raus).
     </small>
   </header>
 
@@ -90,7 +93,7 @@
     <table>
       <thead>
         <tr>
-          <th>Call</th><th>Notiz</th><th>Start</th><th>Ende</th>
+          <th>Call</th><th>Quelle</th><th>Notiz</th><th>Start</th><th>Ende</th>
           <th>Status</th><th>Watchlist</th><th></th>
         </tr>
       </thead>
@@ -99,6 +102,13 @@
           {@const st = statusOf(e)}
           <tr class={st.cls}>
             <td class="call">{e.call}</td>
+            <td>
+              {#if e.source === 'ng3k'}
+                <span class="src-ng3k" title="Auto-Import von NG3K ADXO">🤖 NG3K</span>
+              {:else}
+                <span class="src-manual" title="Manuell eingetragen">✋ manuell</span>
+              {/if}
+            </td>
             <td>{e.note ?? '—'}</td>
             <td class="ts">{fmtDate(e.start_date)}</td>
             <td class="ts">{fmtDate(e.end_date)}</td>
@@ -142,6 +152,15 @@
   .pill.soon { background: rgba(234,179,8,0.25); color: #fde047; }
   .pill.future { background: #1e293b; color: #94a3b8; }
   .pill.past { background: #0f172a; color: #475569; }
+  .src-ng3k {
+    background: rgba(96,165,250,0.2); color: #93c5fd;
+    padding: 0.1rem 0.4rem; border-radius: 99px; font-size: 0.75rem;
+    font-family: ui-monospace, monospace;
+  }
+  .src-manual {
+    background: #1e293b; color: #94a3b8;
+    padding: 0.1rem 0.4rem; border-radius: 99px; font-size: 0.75rem;
+  }
   .rm {
     background: transparent; color: #94a3b8; border: 1px solid #334155;
     border-radius: 4px; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.8rem;

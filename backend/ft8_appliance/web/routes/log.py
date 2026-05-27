@@ -376,6 +376,7 @@ class DxpeditionEntry(BaseModel):
     added: datetime
     auto_added_to_watchlist: bool
     reminder_sent: bool
+    source: str = "manual"
 
 
 class DxpeditionResponse(BaseModel):

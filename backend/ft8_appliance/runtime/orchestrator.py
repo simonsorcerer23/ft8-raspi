@@ -655,6 +655,11 @@ class Orchestrator:
         self._bg_tasks.append(asyncio.create_task(
             self._dxpedition_schedule_loop(), name="dxpedition-schedule"
         ))
+        # v0.19.1 — NG3K Auto-Import (alle 6h). Manuelle Eintraege
+        # werden NICHT ueberschrieben (source-Feld unterscheidet).
+        self._bg_tasks.append(asyncio.create_task(
+            self._dxped_ng3k_import_loop(), name="dxped-ng3k-import"
+        ))
 
         # systemd liveness-watchdog: nur schedulen wenn unter systemd
         # mit NotifyAccess+WatchdogSec gestartet (NOTIFY_SOCKET env).
@@ -4401,6 +4406,60 @@ class Orchestrator:
                         self._watchlist_calls.discard(call)
         except Exception as exc:
             log.warning("dxpedition remove DB failed: %s", exc)
+
+    async def _dxped_ng3k_import_loop(self) -> None:
+        """v0.19.1 — Periodischer Auto-Import von ng3k.com/Misc/adxo.html.
+
+        Alle 6h fetched + merged in dxpedition_schedule:
+        - Neue Calls → einfuegen mit source='ng3k'
+        - Existierende ng3k-Eintraege → Dates/Info aktualisieren
+        - source='manual' Eintraege werden NIE ueberschrieben
+
+        Boot-Grace 30s damit Service-Start nicht direkt mit Netz-Call
+        blockiert wird.
+        """
+        from ..integrations.dxped_ng3k import fetch_ng3k
+        await asyncio.sleep(30)
+        while True:
+            try:
+                entries = await fetch_ng3k()
+                added = 0
+                updated = 0
+                async with session_scope() as s:
+                    for e in entries:
+                        existing = await s.get(DbDxpeditionSchedule, e.call)
+                        if existing is None:
+                            s.add(DbDxpeditionSchedule(
+                                call=e.call,
+                                user_callsign=self.config.operator.callsign,
+                                start_date=e.start,
+                                end_date=e.end,
+                                note=f"{e.dxcc_name}: {e.info}".strip(": "),
+                                added=datetime.now(UTC),
+                                auto_added_to_watchlist=False,
+                                reminder_sent=False,
+                                source="ng3k",
+                            ))
+                            added += 1
+                        elif existing.source == "ng3k":
+                            # Auto-Import: refresh dates + info, behalte
+                            # auto_added_to_watchlist + reminder_sent.
+                            existing.start_date = e.start
+                            existing.end_date = e.end
+                            new_note = f"{e.dxcc_name}: {e.info}".strip(": ")
+                            if new_note and new_note != existing.note:
+                                existing.note = new_note
+                            updated += 1
+                        # source='manual' → NICHT anfassen
+                log.info(
+                    "ng3k-import: %d entries fetched, %d added, %d updated",
+                    len(entries), added, updated,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("ng3k-import hiccup: %s", exc)
+            await asyncio.sleep(6 * 3600)
 
     async def _dxpedition_schedule_loop(self) -> None:
         """v0.19.0 — Background-Loop pflegt die Watchlist auf Basis
