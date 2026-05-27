@@ -4129,6 +4129,24 @@ class Orchestrator:
             )
         return active
 
+    async def handle_reputation_reset(self, call: str) -> None:
+        """v0.15.0 — User-triggered Soft-Blacklist-Removal.
+
+        Entfernt den DB-Eintrag UND das In-Memory-Set. Nach Reset
+        ist der Call wieder neutral fuer den Picker.
+        """
+        call = (call or "").upper().strip()
+        if not call:
+            return
+        self._soft_blacklist.discard(call)
+        try:
+            async with session_scope() as s:
+                row = await s.get(DbCallReputation, call)
+                if row is not None:
+                    await s.delete(row)
+        except Exception as exc:
+            log.warning("reputation reset DB-delete failed: %s", exc)
+
     async def _record_qso_success(self, call: str) -> None:
         """Erfolg vergibt — Score Richtung 0 ziehen, ggf. Soft-Blacklist
         verlassen."""

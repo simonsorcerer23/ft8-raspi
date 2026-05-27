@@ -163,7 +163,14 @@ async def set_ap_fallback(
     Reload-Hook das neue AP-Profil verteilt.
     """
     cfg = get_config()
-    new_dict = cfg.model_dump()
+    # Pydantic computed_fields werden von model_dump() mit-emittiert,
+    # aber von model_validate() unter extra='forbid' rejected. Strip
+    # sie raus bevor wir re-validieren. Sebastian 2026-05-27 Bug: AP-
+    # Fallback-Save crashte mit "rig.hamlib_id Extra inputs not permitted".
+    new_dict = cfg.model_dump(exclude={
+        "operator": True,  # computed (mirrors operators[active_callsign])
+        "rig": {"hamlib_id", "effective_max_power_w"},  # computed
+    })
     new_dict.setdefault("network", {})
     new_dict["network"]["ap_fallback"] = {
         "ssid": req.ssid,

@@ -277,6 +277,19 @@ async def watchlist_remove(
     )
 
 
+# ---------------------------------------------------------------------------
+# v0.15.0 Reputation-Reset — User darf einen Call rehabilitieren.
+@router.delete("/reputation/{call}", response_model=ControlResponse)
+async def reputation_reset(
+    call: str, orch: Orchestrator = Depends(get_orchestrator)
+) -> ControlResponse:
+    await orch.handle_reputation_reset(call)
+    return ControlResponse(
+        ok=True, state=orch.status().state,
+        detail=f"reputation reset for {call.upper()}",
+    )
+
+
 class TxPowerRequest(BaseModel):
     watts: int
 

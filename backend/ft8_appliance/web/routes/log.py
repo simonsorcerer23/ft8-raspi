@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 
 from ...db import session_scope
-from ...db.models import Blacklist, Decode, Heard, Qso, Watchlist
+from ...db.models import Blacklist, CallReputation, Decode, Heard, Qso, Watchlist
 from ...integrations.flags import flag_for_call
 from ...runtime import Orchestrator
 from ..deps import get_orchestrator
@@ -299,6 +299,67 @@ async def get_watchlist(
         )
     return WatchlistResponse(
         entries=[WatchlistEntry.model_validate(r, from_attributes=True) for r in rows]
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.15.0 Call-Reputation (Soft-Blacklist) — Bail-Reason-aware Tracking
+class CallReputationEntry(BaseModel):
+    call: str
+    score: int
+    attempts: int
+    successes: int
+    last_attempt_at: datetime | None
+    last_reason: str | None
+    is_soft_blacklisted: bool
+
+
+class CallReputationResponse(BaseModel):
+    entries: list[CallReputationEntry]
+    soft_blacklist_threshold: int
+    min_attempts: int
+
+
+@router.get("/reputation", response_model=CallReputationResponse)
+async def get_reputation(
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> CallReputationResponse:
+    """Call-Reputation des aktiven Operators inkl. Soft-Blacklist-Markierung.
+
+    Sortiert nach Score absteigend (schlechteste oben). Threshold +
+    min_attempts werden mitgeliefert damit das UI die Soft-Blacklist-
+    Grenze anzeigen kann.
+    """
+    my_call = orch.config.operator.callsign
+    async with session_scope() as s:
+        rows = list(
+            (await s.execute(
+                select(CallReputation)
+                .where(CallReputation.user_callsign == my_call)
+                .order_by(desc(CallReputation.score), desc(CallReputation.attempts))
+            )).scalars()
+        )
+    threshold = orch._SOFT_BLACKLIST_THRESHOLD
+    min_attempts = orch._MIN_ATTEMPTS_FOR_BLACKLIST
+    entries = []
+    for r in rows:
+        is_bl = (
+            (r.score or 0) >= threshold
+            and (r.attempts or 0) >= min_attempts
+        )
+        entries.append(CallReputationEntry(
+            call=r.call,
+            score=r.score or 0,
+            attempts=r.attempts or 0,
+            successes=r.successes or 0,
+            last_attempt_at=r.last_attempt_at,
+            last_reason=r.last_reason,
+            is_soft_blacklisted=is_bl,
+        ))
+    return CallReputationResponse(
+        entries=entries,
+        soft_blacklist_threshold=threshold,
+        min_attempts=min_attempts,
     )
 
 
