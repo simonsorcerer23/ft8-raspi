@@ -17,6 +17,7 @@
   import StatsDashboard from './components/StatsDashboard.svelte';
   import SystemPanel from './components/SystemPanel.svelte';
   import BestTimeChart  from './components/BestTimeChart.svelte';
+  import ActiveHoursChart from './components/ActiveHoursChart.svelte';
   import FirstBootWizard from './components/FirstBootWizard.svelte';
   import QsoConversation from './components/QsoConversation.svelte';
   import RigPanel       from './components/RigPanel.svelte';
@@ -165,6 +166,7 @@
     <DecodeList onReply={handleReply} onTailEnd={handleTailEnd} />
     <SwrTrendChart hours={24} />
     <BestTimeChart band={currentBandName} />
+    <ActiveHoursChart />
     <SystemPanel />
     <!-- ControlPanel ganz ans Ende: TX-Leistung-Slider, Antenne-Dropdown,
          PANIC und Shutdown sind Tap-empfindlich. Sebastian 2026-05-24:

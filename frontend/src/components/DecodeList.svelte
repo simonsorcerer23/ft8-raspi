@@ -19,6 +19,9 @@
   const items = $derived(decodeStore.items);
   let busy = $state(false);
   let onlyToMe = $state(false);
+  // v0.20.3 Pile-Up-Set, alle 30 s gepollt. Decodes deren call_from drin
+  // ist bekommen ein 🌪️-Badge — Picker laesst sie eh aus.
+  let pileUpSet = $state(new Set());
 
   const myCall = $derived(statusStore.value.callsign ?? null);
   const visible = $derived(
@@ -34,13 +37,21 @@
       const r = await api.decodes({ limit: 100 });
       decodeStore.setAll(r.decodes);
     } catch { /* ignore */ }
+    async function refreshPileUp() {
+      try {
+        const r = await api.pileUp();
+        pileUpSet = new Set((r.calls ?? []).map(c => c.toUpperCase()));
+      } catch {}
+    }
+    refreshPileUp();
     const t = setInterval(async () => {
       try {
         const r = await api.decodes({ limit: 100 });
         decodeStore.setAll(r.decodes);
       } catch {}
     }, 15_000);
-    return () => clearInterval(t);
+    const tp = setInterval(refreshPileUp, 30_000);
+    return () => { clearInterval(t); clearInterval(tp); };
   });
 
   function shortTs(iso) {
@@ -116,6 +127,7 @@
             {#if d.is_new_grid && !d.is_new_dxcc}<span class="badge ngrid" title="Neuer Grid">🆕Grid</span>{/if}
             {#if d.is_new_grid_on_band && !d.is_new_grid && !d.is_new_dxcc}<span class="badge ngridb" title="Neuer Grid auf diesem Band">🎯Band</span>{/if}
             {#if d.psk_heard_us}<span class="badge psk" title="laut PSK Reporter hat diese Station uns gehört → Asymmetrie-Pfad lohnt">📡PSK</span>{/if}
+            {#if d.call_from && pileUpSet.has(d.call_from.toUpperCase())}<span class="badge pileup" title="Pile-Up: viele andere Stationen rufen → Picker laesst aus">🌪️Pile-Up</span>{/if}
             {#if d.worked_before}<span class="badge worked" title="schon gearbeitet">B4</span>{/if}
             {#if d.blacklisted}<span class="badge bl" title="auf Blacklist">⛔</span>{/if}
             {d.message}
@@ -186,6 +198,7 @@
   .badge.ngridb { background: rgba(56, 189, 248, 0.30); color: #38bdf8; }
   .badge.mf     { background: rgba(20, 184, 166, 0.30); color: #5eead4; }
   .badge.psk    { background: rgba(16, 185, 129, 0.30); color: #6ee7b7; }
+  .badge.pileup { background: rgba(148, 163, 184, 0.30); color: #cbd5e1; }
   .actions { display: flex; gap: 0.25rem; }
   .reply {
     background: var(--accent); color: #0f172a; border: none;

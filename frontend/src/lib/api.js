@@ -113,6 +113,8 @@ export const api = {
   apFallbackGet:   ()       => request('/network/ap-fallback'),
   apFallbackSet:   (body)   => request('/network/ap-fallback', { method: 'PUT', body }),
   switchBand:   (band)   => request('/control/band', { method: 'POST', body: { band } }),
+  pileUp:       ()       => request('/pile-up'),
+  activeHours:  ()       => request('/active-hours'),
   stats:        ()       => request('/stats'),
   systemInfo:   ()       => request('/system/info'),
   swrTrend:     (hours = 24) => request('/stats/swr-trend', { query: { hours } }),
