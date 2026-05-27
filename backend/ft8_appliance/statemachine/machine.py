@@ -313,6 +313,53 @@ class StateMachine:
         self.state = State.QSO_RESPOND
         self._emit_respond_with_grid()
 
+    def on_user_tail_end(
+        self, hw: HardwareState, closing_decode: DecodedMsg
+    ) -> None:
+        """User klickt 🎯 auf einen RR73/RRR/73-Decode in der UI → wir
+        rufen den Sender (call_from) direkt an wie nach einem CQ.
+
+        Manueller Override: ignoriert 5-min-Recent-CQ-Filter UND
+        bestehenden 24h-Cooldown — wenn Sebastian klickt weiss er was
+        er tut. Setzt aber tail_end_last_pick danach, damit der
+        automatische Hunter nicht im selben oder naechsten Slot
+        denselben Call nochmal pickt.
+
+        v0.12.0 Companion zur automatischen Detection (v0.11.0).
+        """
+        if not self._check_guards(hw):
+            return
+        if closing_decode.call_from is None:
+            return
+        # Defensive: Closing-Self-Reply waere sinnlos
+        if closing_decode.call_from.upper() == self.ctx.callsign.upper():
+            log.warning("on_user_tail_end ignored — closing is from us")
+            return
+        # Wenn das Closing an UNS gerichtet ist, ist's unser eigener
+        # QSO-Partner. Tail-End-Pickup hier ist redundant — der Standard-
+        # Cooldown via _bail oder LOG_QSO greift sowieso.
+        if closing_decode.call_to and closing_decode.call_to.upper() == self.ctx.callsign.upper():
+            log.warning("on_user_tail_end ignored — closing addressed to us")
+            return
+        self.qso = QsoContext(
+            their_call=closing_decode.call_from,
+            their_grid=closing_decode.grid,
+            band=closing_decode.band,
+            freq_offset_hz=closing_decode.freq_offset_hz or 1500,
+            their_snr_at_us=closing_decode.snr_db,
+        )
+        self.state = State.QSO_RESPOND
+        self._emit_respond_with_grid()
+        # 24h-Cooldown setzen — siehe _pick_hunt_target. Damit der
+        # Auto-Picker nicht 1 Slot spaeter denselben Call nochmal
+        # auf demselben Pfad pickt.
+        norm = closing_decode.call_from.upper()
+        self.ctx.tail_end_last_pick[norm] = datetime.now(UTC).timestamp()
+        log.info(
+            "User-Tail-End: %s (Closing an %s, freq=%s, 24h-Cooldown gesetzt)",
+            norm, closing_decode.call_to or "?", closing_decode.freq_offset_hz,
+        )
+
     def on_decodes(self, hw: HardwareState, decodes: Iterable[DecodedMsg]) -> None:
         decodes = list(decodes)
         self.last_decodes = decodes

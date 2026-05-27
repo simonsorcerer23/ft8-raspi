@@ -96,9 +96,22 @@
   }
   const currentBandName = $derived(_bandFromHz(statusStore.value.rig?.freq_hz));
 
-  function handleReply(decode) {
-    // Wired up when the user-reply API lands. For now, just log.
-    console.log('reply to', decode);
+  async function handleReply(decode) {
+    try {
+      await api.reply(decode);
+    } catch (e) {
+      console.error('reply failed', e);
+      alert(`Reply fehlgeschlagen: ${e.message}`);
+    }
+  }
+
+  async function handleTailEnd(decode) {
+    try {
+      await api.tailEnd(decode);
+    } catch (e) {
+      console.error('tail-end failed', e);
+      alert(`Tail-End fehlgeschlagen: ${e.message}`);
+    }
   }
 
   function handleBadgeDetail(key, section) {
@@ -143,7 +156,7 @@
     <RigPanel />
     <StatsDashboard />
     <QsoConversation />
-    <DecodeList onReply={handleReply} />
+    <DecodeList onReply={handleReply} onTailEnd={handleTailEnd} />
     <SwrTrendChart hours={24} />
     <BestTimeChart band={currentBandName} />
     <SystemPanel />

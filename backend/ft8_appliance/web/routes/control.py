@@ -174,6 +174,35 @@ async def reply(
     return ControlResponse(ok=True, state=orch.status().state)
 
 
+@router.post("/tail-end", response_model=ControlResponse)
+async def tail_end(
+    req: ReplyRequest, orch: Orchestrator = Depends(get_orchestrator)
+) -> ControlResponse:
+    """v0.12.0 — User klickt 🎯 auf einen RR73/RRR/73-Decode.
+
+    Wir rufen den call_from (= den Closer) direkt an wie nach einem CQ.
+    Manueller Override des automatischen Tail-End-Hunters; setzt 24h-
+    Cooldown nach Pick damit der Auto-Picker nicht doppelt feuert.
+    """
+    from datetime import UTC, datetime
+
+    from ...statemachine import DecodedMsg
+
+    decoded = DecodedMsg(
+        ts=datetime.now(UTC),
+        call_from=req.call_from,
+        call_to=req.call_to,
+        grid=req.grid,
+        message=req.message,
+        snr_db=req.snr_db,
+        dt_s=req.dt_s,
+        freq_offset_hz=req.freq_offset_hz,
+        band=req.band,
+    )
+    await orch.handle_tail_end(decoded)
+    return ControlResponse(ok=True, state=orch.status().state)
+
+
 class AutoAnswerRequest(BaseModel):
     enabled: bool
 

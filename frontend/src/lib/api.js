@@ -37,6 +37,32 @@ export const api = {
                               method: 'POST', body: { enabled }
                             }),
   skipQso:      ()       => request('/control/skip', { method: 'POST' }),
+  reply:        (decode) => request('/control/reply', {
+                              method: 'POST',
+                              body: {
+                                call_from:      decode.call_from,
+                                call_to:        decode.call_to ?? null,
+                                grid:           decode.grid ?? null,
+                                message:        decode.message,
+                                snr_db:         decode.snr_db ?? null,
+                                dt_s:           decode.dt_s ?? null,
+                                freq_offset_hz: decode.freq_offset_hz ?? null,
+                                band:           decode.band ?? '20m',
+                              },
+                            }),
+  tailEnd:      (decode) => request('/control/tail-end', {
+                              method: 'POST',
+                              body: {
+                                call_from:      decode.call_from,
+                                call_to:        decode.call_to ?? null,
+                                grid:           decode.grid ?? null,
+                                message:        decode.message,
+                                snr_db:         decode.snr_db ?? null,
+                                dt_s:           decode.dt_s ?? null,
+                                freq_offset_hz: decode.freq_offset_hz ?? null,
+                                band:           decode.band ?? '20m',
+                              },
+                            }),
   setTxPower:   (watts)  => request('/control/tx-power', { method: 'POST', body: { watts } }),
   setAntenna:   (name)   => request('/control/antenna', { method: 'POST', body: { name } }),
   blacklist:    ()       => request('/blacklist'),

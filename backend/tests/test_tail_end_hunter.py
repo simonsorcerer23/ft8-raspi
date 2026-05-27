@@ -379,3 +379,81 @@ def test_default_hunt_priority_includes_tail_end_at_position_3():
 
 def test_hunt_tiers_registry_contains_tail_end():
     assert "tail_end_target" in HUNT_TIERS
+
+
+# ---------------------------------------------------------------------------
+# v0.12.0 — User-triggered Tail-End (manueller 🎯-Button in UI)
+# ---------------------------------------------------------------------------
+
+
+def _closing(call_from: str, call_to: str = "EA4XYZ", freq: int = 1500,
+             snr: int = -10, band: str = "15m") -> DecodedMsg:
+    return DecodedMsg(
+        ts=datetime.now(UTC),
+        call_from=call_from,
+        call_to=call_to,
+        grid=None,
+        message=f"{call_to} {call_from} RR73",
+        snr_db=snr,
+        dt_s=0.1,
+        freq_offset_hz=freq,
+        band=band,
+    )
+
+
+def test_user_tail_end_transitions_to_qso_respond():
+    """🎯-Klick → QSO_RESPOND mit call_from des Closings als Partner."""
+    sm = _machine()
+    sm.state = State.IDLE
+    sm.on_user_tail_end(_hw_ok(), _closing("DL3QR", call_to="OK1AB", freq=1234))
+    assert sm.state is State.QSO_RESPOND
+    assert sm.qso is not None
+    assert sm.qso.their_call == "DL3QR"
+    assert sm.qso.freq_offset_hz == 1234
+
+
+def test_user_tail_end_sets_24h_cooldown():
+    """Nach manuellem 🎯 muss tail_end_last_pick gesetzt sein damit der
+    Auto-Picker nicht 1 Slot spaeter denselben Call wieder pickt."""
+    sm = _machine()
+    sm.state = State.IDLE
+    sm.on_user_tail_end(_hw_ok(), _closing("DL3QR"))
+    assert "DL3QR" in sm.ctx.tail_end_last_pick
+
+
+def test_user_tail_end_ignores_existing_24h_cooldown():
+    """Manueller Override: auch wenn 24h-Cooldown laeuft, User darf
+    trotzdem manuell anrufen wenn er es bewusst klickt."""
+    sm = _machine()
+    # Cooldown 30 min alt = noch aktiv
+    sm.ctx.tail_end_last_pick["DL3QR"] = _time.time() - 1800
+    sm.state = State.IDLE
+    sm.on_user_tail_end(_hw_ok(), _closing("DL3QR"))
+    assert sm.state is State.QSO_RESPOND
+    assert sm.qso.their_call == "DL3QR"
+
+
+def test_user_tail_end_refuses_closing_addressed_to_us():
+    """Wenn das Closing an UNS ging, ist's unser eigener QSO-Partner —
+    kein Tail-End-Pickup noetig."""
+    sm = _machine()
+    sm.state = State.IDLE
+    sm.on_user_tail_end(_hw_ok(), _closing("DL3QR", call_to="DK9XR"))
+    assert sm.state is State.IDLE
+
+
+def test_user_tail_end_refuses_closing_from_us():
+    """Defensive: wenn unsere eigene RR73 zurueckkommt, kein Self-Reply."""
+    sm = _machine()
+    sm.state = State.IDLE
+    sm.on_user_tail_end(_hw_ok(), _closing("DK9XR", call_to="DL3QR"))
+    assert sm.state is State.IDLE
+
+
+def test_user_tail_end_no_call_from_is_noop():
+    sm = _machine()
+    sm.state = State.IDLE
+    d = _closing("DL3QR")
+    d.call_from = None
+    sm.on_user_tail_end(_hw_ok(), d)
+    assert sm.state is State.IDLE

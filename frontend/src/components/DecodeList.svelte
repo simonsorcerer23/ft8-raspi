@@ -3,7 +3,18 @@
   import { api } from '../lib/api.js';
   import { decodeStore, statusStore } from '../lib/stores.svelte.js';
 
-  let { onReply = () => {} } = $props();
+  let { onReply = () => {}, onTailEnd = () => {} } = $props();
+
+  // v0.12.0 — RR73/RRR/73 am Ende der Message = Closing.
+  // Wenn der Sender (call_from) jemand anderes ist als wir, koennen wir
+  // ihn direkt nach seinem Closing als Tail-End anrufen.
+  function isClosing(msg) {
+    if (!msg) return false;
+    const parts = msg.trim().split(/\s+/);
+    if (parts.length === 0) return false;
+    const tail = parts[parts.length - 1].toUpperCase();
+    return tail === 'RR73' || tail === 'RRR' || tail === '73';
+  }
 
   const items = $derived(decodeStore.items);
   let busy = $state(false);
@@ -58,6 +69,17 @@
     }
     onReply(d);
   }
+
+  function doTailEnd(d) {
+    if (d.worked_before) {
+      const ok = confirm(
+        `${d.call_from} wurde schon gearbeitet (B4).\n` +
+        `Trotzdem Tail-End anrufen?`
+      );
+      if (!ok) return;
+    }
+    onTailEnd(d);
+  }
 </script>
 
 <div class="wrap">
@@ -101,6 +123,9 @@
           <span class="actions">
             {#if d.call_from && d.message?.startsWith('CQ')}
               <button class="reply" onclick={() => doReply(d)}>Reply</button>
+            {:else if d.call_from && d.call_from !== myCall && d.call_to !== myCall && isClosing(d.message)}
+              <button class="tail-end" onclick={() => doTailEnd(d)}
+                      title="Tail-End: nach diesem RR73 anrufen wie nach CQ">🎯 Tail-End</button>
             {/if}
             {#if d.call_from && !d.blacklisted}
               <button class="bl-btn" title="Blacklisten"
@@ -167,6 +192,13 @@
     border-radius: 4px; padding: 0.15rem 0.5rem; font-size: 0.75rem;
     cursor: pointer; font-weight: 600;
   }
+  /* v0.12.0 — Tail-End-Button erscheint statt Reply bei RR73/RRR/73. */
+  .tail-end {
+    background: #a855f7; color: #0f172a; border: none;
+    border-radius: 4px; padding: 0.15rem 0.5rem; font-size: 0.75rem;
+    cursor: pointer; font-weight: 600;
+  }
+  .tail-end:hover { background: #c084fc; }
   .bl-btn {
     background: transparent; color: var(--danger); border: 1px solid var(--danger);
     border-radius: 4px; padding: 0.1rem 0.3rem; font-size: 0.7rem; cursor: pointer;

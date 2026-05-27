@@ -1106,6 +1106,12 @@ class Orchestrator:
         self.state_machine.on_user_reply_to(self._hardware_state, decoded)
         await self._drain_actions()
 
+    async def handle_tail_end(self, decoded: DecodedMsg) -> None:
+        """v0.12.0 — manueller 🎯-Klick in der UI auf einen RR73/73-Decode."""
+        await self._refresh_hw_for_control()
+        self.state_machine.on_user_tail_end(self._hardware_state, decoded)
+        await self._drain_actions()
+
     async def handle_shutdown(self) -> None:
         """Sauberes System-Shutdown via systemd. Vorher: STOP_TX, PTT
         off, ntfy-Push, dann poweroff. sebastian-NOPASSWD-sudoers
