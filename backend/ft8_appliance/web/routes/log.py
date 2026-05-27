@@ -16,7 +16,10 @@ from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 
 from ...db import session_scope
-from ...db.models import Blacklist, CallReputation, Decode, Heard, Qso, Watchlist
+from ...db.models import (
+    Blacklist, CallReputation, Decode, DxpeditionSchedule,
+    Heard, Qso, Watchlist,
+)
 from ...integrations.flags import flag_for_call
 from ...runtime import Orchestrator
 from ..deps import get_orchestrator
@@ -360,6 +363,41 @@ async def get_reputation(
         entries=entries,
         soft_blacklist_threshold=threshold,
         min_attempts=min_attempts,
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.19.0 DXpedition-Schedule
+class DxpeditionEntry(BaseModel):
+    call: str
+    start_date: datetime
+    end_date: datetime
+    note: str | None
+    added: datetime
+    auto_added_to_watchlist: bool
+    reminder_sent: bool
+
+
+class DxpeditionResponse(BaseModel):
+    entries: list[DxpeditionEntry]
+
+
+@router.get("/dxpedition-schedule", response_model=DxpeditionResponse)
+async def get_dxpedition_schedule(
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> DxpeditionResponse:
+    """DXpedition-Schedule des aktiven Operators."""
+    my_call = orch.config.operator.callsign
+    async with session_scope() as s:
+        rows = list(
+            (await s.execute(
+                select(DxpeditionSchedule)
+                .where(DxpeditionSchedule.user_callsign == my_call)
+                .order_by(DxpeditionSchedule.start_date)
+            )).scalars()
+        )
+    return DxpeditionResponse(
+        entries=[DxpeditionEntry.model_validate(r, from_attributes=True) for r in rows]
     )
 
 

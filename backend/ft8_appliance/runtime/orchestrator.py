@@ -40,6 +40,7 @@ from ..config import AppConfig, OperatorConfig
 from ..db import repository, session_scope
 from ..db.models import Blacklist as DbBlacklist
 from ..db.models import CallReputation as DbCallReputation
+from ..db.models import DxpeditionSchedule as DbDxpeditionSchedule
 from ..db.models import FreqReputation as DbFreqReputation
 from ..db.models import Qso
 from ..db.models import Watchlist as DbWatchlist
@@ -648,6 +649,12 @@ class Orchestrator:
             self._bg_tasks.append(asyncio.create_task(
                 self._solar_refresh_loop(), name="solar-refresh"
             ))
+
+        # v0.19.0 — DXpedition-Schedule-Sync (Watchlist-Auto-Add + ntfy
+        # 24h-Reminder). Laeuft immer, harmlos wenn Schedule leer.
+        self._bg_tasks.append(asyncio.create_task(
+            self._dxpedition_schedule_loop(), name="dxpedition-schedule"
+        ))
 
         # systemd liveness-watchdog: nur schedulen wenn unter systemd
         # mit NotifyAccess+WatchdogSec gestartet (NOTIFY_SOCKET env).
@@ -3603,6 +3610,61 @@ class Orchestrator:
 
     _chrony: ChronyStatus | None = field(default=None, init=False)
 
+    def _detect_pile_ups(
+        self, decodes: list, rarity_scores: dict[str, int]
+    ) -> set[str]:
+        """v0.19.0 — Pile-Up-Detection aus aktuellen Slot-Decodes.
+
+        Zwei Indikatoren machen einen Pile-Up wahrscheinlich:
+
+        1. **Rare-DXCC-Threshold**: rarity_score >= 70 → automatisch
+           als Pile-Up-Verdacht markiert. Sebastian-Setup (Klasse E,
+           50 W, fixed Antenne) hat bei Top-rare-DX <5% Erfolgsrate.
+
+        2. **Decode-Density**: 4+ unique call_from auf ±50 Hz Audio-Freq
+           des Decoded-CQ-Calls → klassisches Pile-Up-Muster mit vielen
+           Callern auf der DX-Frequenz.
+
+        Output: set normalisierter Calls die "in Pile-Up" sind.
+        """
+        pile_ups: set[str] = set()
+        # Pass 1: rare-DX-Auto-Flag
+        for d in decodes:
+            if not d.call_from or d.call_to is not None:
+                continue
+            if not (d.message or "").startswith("CQ"):
+                continue
+            norm = d.call_from.upper()
+            if rarity_scores.get(norm, 0) >= 70:
+                pile_ups.add(norm)
+        # Pass 2: Density-Detection auf der DX-Audio-Freq
+        # Build freq → set(call_from) map
+        from collections import defaultdict
+        freq_callers: dict[int, set[str]] = defaultdict(set)
+        for d in decodes:
+            if not d.call_from or d.freq_offset_hz is None:
+                continue
+            bin_hz = int(d.freq_offset_hz // 50) * 50  # 50Hz Bin
+            freq_callers[bin_hz].add(d.call_from.upper())
+        # Fuer jeden CQ-Decode: schau ob auf seiner Freq ±50Hz viele
+        # andere Calls aktiv sind.
+        for d in decodes:
+            if not d.call_from or d.call_to is not None:
+                continue
+            if not (d.message or "").startswith("CQ"):
+                continue
+            if d.freq_offset_hz is None:
+                continue
+            target_bin = int(d.freq_offset_hz // 50) * 50
+            unique_callers: set[str] = set()
+            for nb in (target_bin - 50, target_bin, target_bin + 50):
+                unique_callers.update(freq_callers.get(nb, set()))
+            # Subtrahiere den DX selbst — wir wollen ANDERE Caller zaehlen
+            unique_callers.discard(d.call_from.upper())
+            if len(unique_callers) >= 4:
+                pile_ups.add(d.call_from.upper())
+        return pile_ups
+
     def _compute_slot_parity(self, tick) -> str:
         """v0.15.0 — Slot-Parity ('even' oder 'odd') aus SlotTick ableiten.
 
@@ -3759,6 +3821,10 @@ class Orchestrator:
         self.state_machine.ctx.worked_call_band = set(self._worked_call_band)
         # v0.18.0 Freq-Reputation in ctx spiegeln fuer Smart-CQ-Picker
         self.state_machine.ctx.freq_reputation = dict(self._freq_reputation)
+        # v0.19.0 Pile-Up-Detection: pro Slot aus aktuellen Decodes.
+        self.state_machine.ctx.pile_up_calls = self._detect_pile_ups(
+            self._last_decodes, rarity_scores,
+        )
         # PSK-Reciprocity: aktueller Set "wer hat uns recently gehört".
         # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;
         # hier nur in den ctx kopieren damit der Picker O(1) lookup hat.
@@ -4287,6 +4353,126 @@ class Orchestrator:
                     row.last_used_at = now
         except Exception as exc:
             log.debug("freq-rep success persist failed: %s", exc)
+
+    async def handle_dxpedition_add(
+        self, call: str, start_date: datetime, end_date: datetime,
+        note: str | None = None,
+    ) -> None:
+        """v0.19.0 — DXpedition-Schedule-Eintrag hinzufuegen."""
+        call = (call or "").upper().strip()
+        if not call:
+            return
+        my_call = self.config.operator.callsign
+        try:
+            async with session_scope() as s:
+                exists = await s.get(DbDxpeditionSchedule, call)
+                if exists is None:
+                    s.add(DbDxpeditionSchedule(
+                        call=call, user_callsign=my_call,
+                        start_date=start_date, end_date=end_date,
+                        note=note, added=datetime.now(UTC),
+                        auto_added_to_watchlist=False, reminder_sent=False,
+                    ))
+                else:
+                    exists.start_date = start_date
+                    exists.end_date = end_date
+                    if note is not None:
+                        exists.note = note
+                    if exists.user_callsign is None:
+                        exists.user_callsign = my_call
+        except Exception as exc:
+            log.warning("dxpedition add DB failed: %s", exc)
+
+    async def handle_dxpedition_remove(self, call: str) -> None:
+        call = (call or "").upper().strip()
+        if not call:
+            return
+        try:
+            async with session_scope() as s:
+                row = await s.get(DbDxpeditionSchedule, call)
+                if row is not None:
+                    was_auto = row.auto_added_to_watchlist
+                    await s.delete(row)
+                    if was_auto:
+                        # Watchlist-Eintrag auch entfernen
+                        wl_row = await s.get(DbWatchlist, call)
+                        if wl_row is not None:
+                            await s.delete(wl_row)
+                        self._watchlist_calls.discard(call)
+        except Exception as exc:
+            log.warning("dxpedition remove DB failed: %s", exc)
+
+    async def _dxpedition_schedule_loop(self) -> None:
+        """v0.19.0 — Background-Loop pflegt die Watchlist auf Basis
+        des DXpedition-Schedule.
+
+        Alle 30 min:
+        - Innerhalb [start, end] UND nicht auto_added → in Watchlist + Mark
+        - 24h vor start UND noch keine reminder_sent → ntfy-Push, Mark
+        - Nach end + auto_added → aus Watchlist raus + Eintrag bleibt
+          (User kann ihn manuell loeschen)
+        """
+        from datetime import timedelta
+        await asyncio.sleep(10)  # boot grace
+        while True:
+            try:
+                now = datetime.now(UTC)
+                async with session_scope() as s:
+                    rows = list(
+                        (await s.execute(select(DbDxpeditionSchedule))).scalars()
+                    )
+                    for row in rows:
+                        # 24h-Reminder
+                        if (not row.reminder_sent
+                                and row.start_date - timedelta(hours=24) <= now < row.start_date):
+                            ntfy = self.integrations.ntfy
+                            if ntfy and ntfy.enabled:
+                                try:
+                                    await ntfy.push(
+                                        title=f"📡 DXpedition morgen QRV: {row.call}",
+                                        message=(
+                                            f"{row.note or ''} · "
+                                            f"{row.start_date:%Y-%m-%d %H:%M}–"
+                                            f"{row.end_date:%Y-%m-%d %H:%M} UTC"
+                                        ),
+                                        tags="satellite_antenna",
+                                    )
+                                except Exception:
+                                    pass
+                            row.reminder_sent = True
+                        # Auto-add zur Watchlist wenn aktiv
+                        active = row.start_date <= now <= row.end_date
+                        if active and not row.auto_added_to_watchlist:
+                            self._watchlist_calls.add(row.call.upper())
+                            wl_row = await s.get(DbWatchlist, row.call)
+                            if wl_row is None:
+                                s.add(DbWatchlist(
+                                    call=row.call,
+                                    user_callsign=row.user_callsign,
+                                    added=now,
+                                    note=f"DXpedition (auto): {row.note or ''}".strip(),
+                                ))
+                            row.auto_added_to_watchlist = True
+                            log.info(
+                                "DXpedition QRV: %s in Watchlist (%s–%s)",
+                                row.call, row.start_date, row.end_date,
+                            )
+                        # Auto-remove wenn vorbei
+                        if not active and row.auto_added_to_watchlist and now > row.end_date:
+                            self._watchlist_calls.discard(row.call.upper())
+                            wl_row = await s.get(DbWatchlist, row.call)
+                            if wl_row is not None:
+                                await s.delete(wl_row)
+                            row.auto_added_to_watchlist = False
+                            log.info(
+                                "DXpedition vorbei: %s aus Watchlist entfernt",
+                                row.call,
+                            )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("dxpedition-schedule-loop hiccup: %s", exc)
+            await asyncio.sleep(1800)  # 30 min
 
     async def handle_reputation_reset(self, call: str) -> None:
         """v0.15.0 — User-triggered Soft-Blacklist-Removal.

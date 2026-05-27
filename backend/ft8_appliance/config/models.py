@@ -343,6 +343,7 @@ class OperatingConfig(BaseModel):
         default_factory=lambda: [
             "not_bad_reputation",  # v0.15.0 — Soft-Blacklist (filter)
             "not_his_tx_slot",     # v0.15.0 — Slot-Parity-Awareness (filter)
+            "not_in_pileup",       # v0.19.0 — Pile-Up-Avoidance (filter)
             "marine_psk",        # Marinefunker + PSK sagt "hört uns"
             "marine",            # Marinefunker (auch ohne PSK)
             "tail_end_target",   # v0.11.0 — Station hat gerade QSO beendet
@@ -380,7 +381,7 @@ class OperatingConfig(BaseModel):
         # Synchron mit statemachine.machine.HUNT_TIERS — der Test
         # test_hunt_tiers_registry_complete erzwingt das.
         known = [
-            "not_bad_reputation", "not_his_tx_slot",
+            "not_bad_reputation", "not_his_tx_slot", "not_in_pileup",
             "marine_psk", "marine", "tail_end_target",
             "grayline", "band_open", "active_hour", "buddy_seen",
             "new_dxcc_psk", "new_dxcc", "psk_heard_us", "new_dxcc_band",

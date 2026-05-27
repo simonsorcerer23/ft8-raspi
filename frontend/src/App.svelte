@@ -11,6 +11,7 @@
   import BlacklistPanel from './components/BlacklistPanel.svelte';
   import WatchlistPanel from './components/WatchlistPanel.svelte';
   import ReputationPanel from './components/ReputationPanel.svelte';
+  import DxpeditionPanel from './components/DxpeditionPanel.svelte';
   import SolarWidget    from './components/SolarWidget.svelte';
   import StatusBar      from './components/StatusBar.svelte';
   import StatsDashboard from './components/StatsDashboard.svelte';
@@ -132,6 +133,7 @@
     <button class:active={tab === 'bl'}    onclick={() => tab = 'bl'}>🚫 Blacklist</button>
     <button class:active={tab === 'watch'} onclick={() => tab = 'watch'}>👀 Watchlist</button>
     <button class:active={tab === 'rep'}   onclick={() => tab = 'rep'}>✋ Reputation</button>
+    <button class:active={tab === 'dxped'} onclick={() => tab = 'dxped'}>📡 DXpedition</button>
     <button class:active={tab === 'wifi'}  onclick={() => tab = 'wifi'}>📶 WLAN</button>
     <button class:active={tab === 'cfg'}   onclick={() => tab = 'cfg'}>⚙️ Konfig</button>
     <button class="sound" onclick={toggleSound}
@@ -183,6 +185,8 @@
     <WatchlistPanel />
   {:else if tab === 'rep'}
     <ReputationPanel />
+  {:else if tab === 'dxped'}
+    <DxpeditionPanel />
   {:else if tab === 'wifi'}
     <WifiManager />
   {:else if tab === 'cfg'}

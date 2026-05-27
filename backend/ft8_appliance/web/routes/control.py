@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -274,6 +276,37 @@ async def watchlist_remove(
     return ControlResponse(
         ok=True, state=orch.status().state,
         detail=f"unwatched {call.upper()}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# v0.19.0 DXpedition-Schedule
+class DxpeditionAddRequest(BaseModel):
+    call: str
+    start_date: datetime
+    end_date: datetime
+    note: str | None = None
+
+
+@router.post("/dxpedition-schedule", response_model=ControlResponse)
+async def dxpedition_add(
+    req: DxpeditionAddRequest, orch: Orchestrator = Depends(get_orchestrator)
+) -> ControlResponse:
+    await orch.handle_dxpedition_add(req.call, req.start_date, req.end_date, req.note)
+    return ControlResponse(
+        ok=True, state=orch.status().state,
+        detail=f"scheduled {req.call.upper()}",
+    )
+
+
+@router.delete("/dxpedition-schedule/{call}", response_model=ControlResponse)
+async def dxpedition_remove(
+    call: str, orch: Orchestrator = Depends(get_orchestrator)
+) -> ControlResponse:
+    await orch.handle_dxpedition_remove(call)
+    return ControlResponse(
+        ok=True, state=orch.status().state,
+        detail=f"removed dxpedition {call.upper()}",
     )
 
 

@@ -275,3 +275,9 @@ class MachineContext:
     freq_reputation: dict[tuple[str, int], tuple[int, int]] = field(
         default_factory=dict
     )
+    # v0.19.0 — Pile-Up-Detection: Calls die wahrscheinlich in einem
+    # Pile-Up stecken (rare DX mit vielen Callern auf der Frequenz).
+    # Vom Orchestrator pro Slot aus Decode-Pattern erkannt. Tier
+    # `not_in_pileup` liefert 0 fuer diese Calls = Picker pickt sie
+    # nur wenn andere Tiers grün sind.
+    pile_up_calls: set[str] = field(default_factory=set)

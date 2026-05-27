@@ -83,6 +83,14 @@ export const api = {
   reputationReset: (call) => request(`/control/reputation/${encodeURIComponent(call)}`, {
                               method: 'DELETE'
                             }),
+  dxpedition:   ()       => request('/dxpedition-schedule'),
+  dxpeditionAdd: (call, start_date, end_date, note) => request('/control/dxpedition-schedule', {
+                              method: 'POST',
+                              body: { call, start_date, end_date, note }
+                            }),
+  dxpeditionRemove: (call) => request(`/control/dxpedition-schedule/${encodeURIComponent(call)}`, {
+                              method: 'DELETE'
+                            }),
   log:          (opts)   => request('/log',     { query: opts }),
   heard:        (opts)   => request('/heard',   { query: opts }),
   decodes:      (opts)   => request('/decodes', { query: opts }),

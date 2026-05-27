@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -211,6 +211,35 @@ class Watchlist(Base):
     last_alert_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+# ---------------------------------------------------------------------------
+class DxpeditionSchedule(Base):
+    """v0.19.0 — Geplante DXpeditions die wir nicht verpassen wollen.
+
+    Manueller Eintrag pro Op (User kennt seine DXpeditions besser als
+    irgendeine Scraper-API). Background-Loop pflegt automatisch die
+    Watchlist:
+
+    * 24h vor ``start_date`` → ntfy-Reminder "morgen QRV"
+    * ``start_date`` erreicht → Call kommt in Watchlist (auto_added=True)
+    * nach ``end_date`` → Call wieder aus Watchlist raus
+
+    So vergisst der Op nie ne Aktivierungszeit; und die Watchlist bleibt
+    schlank ohne abgelaufene DXpeditions.
+    """
+    __tablename__ = "dxpedition_schedule"
+
+    call: Mapped[str] = mapped_column(String, primary_key=True)
+    user_callsign: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+    added: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    auto_added_to_watchlist: Mapped[bool] = mapped_column(
+        Boolean, default=False
+    )
+    reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 # ---------------------------------------------------------------------------

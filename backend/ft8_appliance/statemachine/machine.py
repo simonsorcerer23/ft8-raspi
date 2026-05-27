@@ -198,6 +198,24 @@ def _tier_band_open(d: "DecodedMsg", ctx: "MachineContext") -> int:
         return 0
 
 
+def _tier_not_in_pileup(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """v0.19.0 — Inverse-Filter: 0 wenn der Call wahrscheinlich in einem
+    Pile-Up steckt (rare DX + viele Caller auf seiner Frequenz), sonst 1.
+
+    Pile-Up-Erfolgsrate fuer ein Klasse-E QRP-Setup ist <5%. Statt
+    TX-Energie zu verschwenden lieber 3-5 min warten bis der Pile-Up
+    sich legt — dann nochmal versuchen. Die Detection-Heuristik liegt
+    im Orchestrator (ctx.pile_up_calls); dieser Tier ist nur die
+    Picker-Seite.
+
+    Wie not_bad_reputation/not_his_tx_slot: defensive 1 (kein Filter)
+    fuer Calls ohne call_from.
+    """
+    if not d.call_from:
+        return 1
+    return 0 if d.call_from.upper() in ctx.pile_up_calls else 1
+
+
 def _tier_buddy_seen(d: "DecodedMsg", ctx: "MachineContext") -> int:
     """v0.17.0 — Call ist global worked (wir wissen er hoert uns) ABER
     nicht auf DIESEM Band gearbeitet → +Boost.
@@ -309,6 +327,7 @@ def _tier_tail_end_target(d: "DecodedMsg", ctx: "MachineContext") -> int:
 HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
     "not_bad_reputation": _tier_not_bad_reputation,  # v0.15.0
     "not_his_tx_slot":    _tier_not_his_tx_slot,     # v0.15.0
+    "not_in_pileup":      _tier_not_in_pileup,       # v0.19.0
     "marine_psk":      _tier_marine_psk,
     "marine":          _tier_marine,
     "tail_end_target": _tier_tail_end_target,

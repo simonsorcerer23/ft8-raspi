@@ -310,9 +310,9 @@ def test_compute_score_snr_tiebreaker_added():
 
 
 def test_hunt_tiers_registry_complete():
-    """Alle erwarteten Tier-Namen sind registriert (v0.17.0: + buddy_seen)."""
+    """Alle erwarteten Tier-Namen sind registriert (v0.19.0: + not_in_pileup)."""
     expected = {
-        "not_bad_reputation", "not_his_tx_slot",
+        "not_bad_reputation", "not_his_tx_slot", "not_in_pileup",
         "marine_psk", "marine", "tail_end_target",
         "grayline", "band_open", "active_hour", "buddy_seen",
         "new_dxcc_psk", "new_dxcc",
@@ -375,8 +375,8 @@ def test_hunt_priority_auto_migration_preserves_user_order():
     assert cfg.hunt_priority[0] == "new_dxcc"  # User-Sortierung erhalten
     assert cfg.hunt_priority[1] == "marine"
     assert cfg.hunt_priority[-1] == "snr"
-    # v0.17.0: 18 known Tiers (+ buddy_seen)
-    assert len(cfg.hunt_priority) == 18
+    # v0.19.0: 19 known Tiers (+ not_in_pileup)
+    assert len(cfg.hunt_priority) == 19
 
 
 def test_hunt_priority_validator_keeps_unknown_tiers():
@@ -391,7 +391,7 @@ def test_hunt_priority_validator_empty_list_to_default():
     """Leere Liste in der Config → komplette Default-Liste."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 18  # v0.17.0
+    assert len(cfg.hunt_priority) == 19  # v0.19.0
     assert cfg.hunt_priority[0] == "not_bad_reputation"
 
 
@@ -429,7 +429,7 @@ def test_no_call_from_returns_zero():
     # not_bad_reputation + not_his_tx_slot sind INVERSE Filter (default 1
     # fuer alle "nicht-schlecht", nur Bad-Calls bekommen 0) — die liefern
     # auch ohne call_from defensiv 1 statt 0.
-    inverse_tiers = {"not_bad_reputation", "not_his_tx_slot"}
+    inverse_tiers = {"not_bad_reputation", "not_his_tx_slot", "not_in_pileup"}
     for name, fn in HUNT_TIERS.items():
         if name == "snr":
             continue

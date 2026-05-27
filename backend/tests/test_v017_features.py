@@ -94,8 +94,8 @@ def test_migration_includes_buddy_seen():
     assert "buddy_seen" in cfg.hunt_priority
 
 
-def test_migration_len_is_18():
-    """v0.17.0: 18 known Tiers (+ buddy_seen)."""
+def test_migration_includes_buddy_seen_v017():
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 18
+    assert "buddy_seen" in cfg.hunt_priority
+    assert len(cfg.hunt_priority) >= 18
