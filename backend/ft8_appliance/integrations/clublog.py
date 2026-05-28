@@ -12,10 +12,10 @@ Wir bleiben bei dem dummen Network-Layer-Schema von qrz_logbook: ein POST
 pro QSO, kurzes Timeout, return None bei OK oder raise. Drain-Logik (batch,
 retry, queue depth) lebt im Orchestrator.
 
-Sebastian-Note 2026-05-28: ClubLog akzeptiert nur Application Passwords
-(generiert in Settings → Application Passwords), NICHT das normale Login-
-Passwort. Application Passwords sind 1× sichtbar bei Erstellung; danach
-weg. Format z.B. ``REDACTED-OLD-APP-PASSWORD-WAS-HERE``.
+Note: ClubLog akzeptiert nur Application Passwords (generiert in
+Settings → Application Passwords), NICHT das normale Login-Passwort.
+Application Passwords sind 1× sichtbar bei Erstellung; danach weg.
+Plus separater API-Key (40-char hex) via clublog.org/requestapikey.php.
 """
 
 from __future__ import annotations
