@@ -622,6 +622,7 @@ class Orchestrator:
             self.db_enabled
             and self.config.operator.clublog_email
             and self.config.operator.clublog_app_password
+            and self.config.operator.clublog_api_key
         ):
             self._bg_tasks.append(asyncio.create_task(
                 self._clublog_drain_loop(), name="clublog-drain"
@@ -2043,6 +2044,7 @@ class Orchestrator:
             self.db_enabled
             and new_cfg.operator.clublog_email
             and new_cfg.operator.clublog_app_password
+            and new_cfg.operator.clublog_api_key
             and not clublog_running
         ):
             log.info("config hot-reload: starting ClubLog-drain loop")
@@ -3017,10 +3019,12 @@ class Orchestrator:
             try:
                 email = self.config.operator.clublog_email
                 app_pw = self.config.operator.clublog_app_password
+                api_key = self.config.operator.clublog_api_key
                 my_call = self.config.operator.callsign
-                if not (email and app_pw):
-                    # Credentials weg (Operator-Switch ohne ClubLog) →
-                    # ruhig schlafen und beim naechsten Poll erneut checken.
+                if not (email and app_pw and api_key):
+                    # Credentials nicht vollstaendig (Operator-Switch ohne
+                    # ClubLog, oder api_key noch nicht beantragt) → ruhig
+                    # schlafen und beim naechsten Poll erneut checken.
                     await asyncio.sleep(interval_s)
                     continue
 
@@ -3045,7 +3049,7 @@ class Orchestrator:
                         qso.clublog_upload_attempts += 1
                         qso.clublog_last_attempt_at = now
                         try:
-                            await upload_qso(email, app_pw, my_call, qso)
+                            await upload_qso(email, app_pw, api_key, my_call, qso)
                         except ClubLogError as exc:
                             msg = str(exc).lower()
                             # Hard reject erkennen: Authentication / Duplicate

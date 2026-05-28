@@ -70,7 +70,9 @@ def _to_out(op: OperatorConfig, active: str) -> OperatorOut:
         qrz_user=op.qrz_user,
         has_qrz_credentials=bool(op.qrz_user and op.qrz_logbook_api_key),
         clublog_email=op.clublog_email,
-        has_clublog_credentials=bool(op.clublog_email and op.clublog_app_password),
+        has_clublog_credentials=bool(
+            op.clublog_email and op.clublog_app_password and op.clublog_api_key
+        ),
         is_active=(op.callsign == active),
     )
 
@@ -142,6 +144,7 @@ class CreateOperatorRequest(BaseModel):
     qrz_logbook_api_key: str | None = None
     clublog_email: str | None = None
     clublog_app_password: str | None = None
+    clublog_api_key: str | None = None
 
 
 class CreateOperatorResponse(BaseModel):
@@ -174,6 +177,7 @@ async def create_operator(
             qrz_logbook_api_key=payload.qrz_logbook_api_key,
             clublog_email=payload.clublog_email,
             clublog_app_password=payload.clublog_app_password,
+            clublog_api_key=payload.clublog_api_key,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"invalid operator: {exc}")

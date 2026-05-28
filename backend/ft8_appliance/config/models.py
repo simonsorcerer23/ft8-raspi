@@ -47,6 +47,10 @@ class OperatorConfig(BaseModel):
     # und DO3XR in getrennte ClubLog-Accounts schreiben koennen.
     clublog_email: str | None = None
     clublog_app_password: str | None = None
+    # v0.21.1 — ClubLog API-Key (40-char hex, separat vom Application
+    # Password). Wird via clublog.org/requestapikey.php oder helpdesk
+    # beantragt. Ohne diesen Key liefert realtime.php HTTP 403.
+    clublog_api_key: str | None = None
 
     @field_validator("callsign")
     @classmethod

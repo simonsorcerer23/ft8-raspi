@@ -104,38 +104,47 @@ async def test_upload_ok_empty_body(monkeypatch):
 
     _patch_httpx(monkeypatch, handler)
     q = _make_qso()
-    await upload_qso("me@example.com", "secret-app-pw", "DO3XR", q)
+    await upload_qso("me@example.com", "secret-app-pw", "deadbeef-api-key", "DO3XR", q)
     assert seen["url"] == CLUBLOG_URL
     assert "email=me%40example.com" in seen["body"]
     assert "password=secret-app-pw" in seen["body"]
     assert "callsign=DO3XR" in seen["body"]
+    assert "api=deadbeef-api-key" in seen["body"]  # v0.21.1: api-Key mitgesendet
     assert "EA5KB" in seen["body"]  # ADIF im Body
 
 
-async def test_upload_ok_with_ok_body(monkeypatch):
-    """Alt: manche Server antworten mit "OK\\n" — auch akzeptiert."""
+async def test_upload_ok_qso_ok_body(monkeypatch):
+    """ClubLog-Doku-konformes "QSO OK" → Erfolg."""
     def handler(req):
-        return httpx.Response(200, text="OK\n")
+        return httpx.Response(200, text="QSO OK")
     _patch_httpx(monkeypatch, handler)
-    await upload_qso("me@example.com", "pw", "DO3XR", _make_qso())
+    await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
 
 
-async def test_upload_authentication_failure(monkeypatch):
-    """Body "Authentication failed" → ClubLogError, hard-reject."""
+async def test_upload_ok_qso_duplicate_body(monkeypatch):
+    """QSO Duplicate ist auch ein Erfolg (idempotent)."""
     def handler(req):
-        return httpx.Response(200, text="Authentication failed")
+        return httpx.Response(200, text="QSO Duplicate, no changes")
     _patch_httpx(monkeypatch, handler)
-    with pytest.raises(ClubLogError, match="(?i)authentication"):
-        await upload_qso("me@example.com", "wrong-pw", "DO3XR", _make_qso())
+    await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
 
 
-async def test_upload_duplicate(monkeypatch):
-    """Duplikat-Erkennung via Body-String."""
+async def test_upload_ok_qso_modified_body(monkeypatch):
+    """QSO Modified: ClubLog hat Korrekturen — auch Erfolg."""
     def handler(req):
-        return httpx.Response(200, text="Duplicate QSO ignored")
+        return httpx.Response(200, text="QSO Modified (DXCC resolved)")
     _patch_httpx(monkeypatch, handler)
-    with pytest.raises(ClubLogError, match="(?i)duplicate"):
-        await upload_qso("me@example.com", "pw", "DO3XR", _make_qso())
+    await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
+
+
+async def test_upload_rejects_unknown_200_body(monkeypatch):
+    """200 mit irgendeinem anderen Text (z.B. Rate-Limit, HTML-Wartung)
+    wird NICHT mehr als Erfolg gewertet."""
+    def handler(req):
+        return httpx.Response(200, text="Rate limit exceeded, try later")
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(ClubLogError, match="(?i)rate limit"):
+        await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
 
 
 async def test_upload_http_500(monkeypatch):
@@ -144,16 +153,16 @@ async def test_upload_http_500(monkeypatch):
         return httpx.Response(500, text="server error")
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(ClubLogError, match="HTTP 500"):
-        await upload_qso("me@example.com", "pw", "DO3XR", _make_qso())
+        await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
 
 
-async def test_upload_http_403(monkeypatch):
-    """403 → ClubLogError (typisch bei IP-Block oder Bot-Verdacht)."""
+async def test_upload_http_403_missing_api_key(monkeypatch):
+    """403 = api_key fehlt/falsch (Sebastian-Live-Bug 2026-05-28)."""
     def handler(req):
         return httpx.Response(403, text="forbidden")
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(ClubLogError, match="HTTP 403"):
-        await upload_qso("me@example.com", "pw", "DO3XR", _make_qso())
+        await upload_qso("me@example.com", "pw", "bad-key", "DO3XR", _make_qso())
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +181,14 @@ def test_operator_clublog_credentials_stored():
         callsign="DO3XR",
         clublog_email="me@example.com",
         clublog_app_password="abc-123",
+        clublog_api_key="deadbeef" * 5,
     )
     assert op.clublog_email == "me@example.com"
     assert op.clublog_app_password == "abc-123"
+    assert op.clublog_api_key == "deadbeef" * 5
+
+
+def test_operator_clublog_api_key_default_none():
+    """v0.21.1 — api_key ist eigenes Feld, default None."""
+    op = OperatorConfig(callsign="DO3XR")
+    assert op.clublog_api_key is None

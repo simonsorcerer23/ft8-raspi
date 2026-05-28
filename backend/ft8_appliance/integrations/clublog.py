@@ -84,6 +84,7 @@ def _qso_to_adif(qso: Qso, my_call: str) -> str:
 async def upload_qso(
     email: str,
     app_password: str,
+    api_key: str,
     my_call: str,
     qso: Qso,
     *,
@@ -91,9 +92,18 @@ async def upload_qso(
 ) -> None:
     """POST one QSO to ClubLog realtime endpoint. Raises on any non-OK response.
 
-    Antwort-Erkennung: HTTP 200 + Body startet mit "OK" → Erfolg.
-    Sonst Body als ClubLogError werfen (z.B. "Authentication failed",
-    "Duplicate QSO", "Bad ADIF").
+    Erforderliche Credentials (alle 3):
+      - email          → ClubLog-Account-Email
+      - app_password   → Application Password aus Settings → App Passwords
+      - api_key        → 40-char Hex-API-Key via clublog.org/requestapikey.php
+
+    Response-Body-Erkennung (HTTP 200):
+      - "QSO OK"        → angekommen, neu gespeichert
+      - "QSO Duplicate" → schon im Log (kein Fehler, idempotent)
+      - "QSO Modified"  → angekommen, ClubLog hat Korrekturen vorgenommen
+      - Anderer Text    → Error (ClubLogError) — Drain-Loop entscheidet
+        anhand des Wortlauts ob hard-reject (auth/duplicate-Hinweis im
+        Wortlaut) oder soft-defer (Netz/Throttle).
     """
     adif = _qso_to_adif(qso, my_call)
     body = urlencode({
@@ -101,7 +111,7 @@ async def upload_qso(
         "password": app_password,
         "callsign": my_call,
         "adif": adif,
-        "api": "ft8-appliance/0.21.0",  # client identifier (ClubLog logs)
+        "api": api_key,
     })
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(
@@ -109,16 +119,20 @@ async def upload_qso(
             content=body,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-    # HTTP-Fehler: 401/403 = auth, 5xx = ClubLog down → beides als Error werfen,
-    # Orchestrator retried bei 5xx automatisch.
     if r.status_code != 200:
         raise ClubLogError(
             f"ClubLog HTTP {r.status_code}: {r.text[:200]}"
         )
     body_text = (r.text or "").strip()
-    # ClubLog antwortet typisch mit leerem Body bei OK ODER "OK" — beides
-    # akzeptieren. Fehler kommen als Klartext zurueck (z.B. "Duplicate
-    # QSO ignored", "Login failed").
-    if body_text and not body_text.upper().startswith("OK"):
-        raise ClubLogError(f"ClubLog rejected: {body_text[:200]}")
-    # Erfolg — kein Return-Value (anders als QRZ kein logbook_id).
+    # ClubLog-Doku: 200 mit "QSO OK"/"QSO Duplicate"/"QSO Modified" sind
+    # alle Erfolg. Reines HTTP-200 reicht nicht — ein Rate-Limit oder
+    # Wartungsseite koennte auch 200 mit HTML zurueckschicken.
+    upper = body_text.upper()
+    if any(marker in upper for marker in ("QSO OK", "QSO DUPLICATE", "QSO MODIFIED")):
+        return
+    # Auch leerer Body wird (defensiv) als OK akzeptiert — manche
+    # ClubLog-Endpoints liefern das so. Wenn das Falsch-Positive
+    # gibt, eng-werden auf strikt "QSO ..."-Match.
+    if not body_text:
+        return
+    raise ClubLogError(f"ClubLog rejected: {body_text[:200]}")
