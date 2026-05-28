@@ -74,6 +74,23 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_dxped_source_column(conn)
         await _migrate_watchlist_source_column(conn)
         await _migrate_clublog_columns(conn)
+        await _migrate_station_callsign_column(conn)
+
+
+async def _migrate_station_callsign_column(conn) -> None:
+    """v0.22.0 — station_callsign-Spalte fuer DX-Operating-Location.
+
+    Wenn der Operator z.B. aus Kroatien als 9A/DK9XR sendet, wird das
+    hier zum QSO-Zeitpunkt eingefroren. ADIF-Upload (QRZ + ClubLog)
+    nutzt diesen Wert als station_callsign-Feld; user_callsign bleibt
+    der Heimat-Call (DK9XR) fuer Multi-Op-Filter.
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(qso)")
+    existing = {row[1] for row in res.fetchall()}
+    if "station_callsign" not in existing:
+        await conn.exec_driver_sql(
+            "ALTER TABLE qso ADD COLUMN station_callsign TEXT"
+        )
 
 
 async def _migrate_clublog_columns(conn) -> None:

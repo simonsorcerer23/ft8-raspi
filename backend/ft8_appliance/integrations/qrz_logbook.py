@@ -55,6 +55,11 @@ def _qso_to_adif(qso: Qso, my_call: str) -> str:
     qso_date = start.strftime("%Y%m%d")
     qso_time = start.strftime("%H%M%S")
 
+    # v0.22.0 — wenn das QSO mit DX-Prefix gesendet wurde (z.B. 9A/DK9XR
+    # aus Kroatien), nutze den station_callsign aus dem QSO-Row.
+    # operator-Feld bleibt der Heimat-Call. ADIF-Standard: station_callsign
+    # ist der Call der gesendet wurde, operator ist die physische Person.
+    station_call = qso.station_callsign or my_call
     parts = [
         fld("call", qso.call),
         fld("qso_date", qso_date),
@@ -62,7 +67,7 @@ def _qso_to_adif(qso: Qso, my_call: str) -> str:
         fld("band", qso.band),
         fld("freq", f"{qso.freq_hz / 1_000_000:.4f}"),  # MHz
         fld("mode", qso.mode),
-        fld("station_callsign", my_call),
+        fld("station_callsign", station_call),
         fld("operator", my_call),
     ]
     if qso.rst_sent is not None:

@@ -805,20 +805,45 @@ class AppConfig(BaseModel):
         )
 
     def can_tx_on(self, band_name: str) -> bool:
-        """TX erlaubt? AND-Verknüpfung aus Antennen-Lockout UND Lizenz-Allowlist.
+        """TX erlaubt? AND-Verknüpfung aus Antennen-Lockout, Lizenz-Allowlist
+        und CEPT-Compliance im aktuellen Operating-Country.
 
-        Drei Gates:
+        Vier Gates:
 
         1. *Lizenz*: ist das Band für ``operator.license_class`` freigegeben?
         2. *Antenne*: gibt es überhaupt eine Antenne die das Band kann?
-        3. (Power-Cap wird separat in ``effective_max_power_w()``
-           erzwungen — der Operator darf das Band anrufen, aber der
-           Slider darf nicht über den Cap.)
+        3. *CEPT* (v0.22.0): wenn current_operating_country gesetzt UND !=
+           home_country: ist die Lizenz-Klasse dort als Gast erlaubt?
+        4. (Power-Cap wird separat in ``effective_max_power_w()``
+           erzwungen.)
         """
         from .license import is_band_allowed
-        if not is_band_allowed(self.operator.license_class, band_name):
+        from ..integrations.cept import cept_compliance
+        op = self.operator
+        if not is_band_allowed(op.license_class, band_name):
+            return False
+        # CEPT-Auslandsbetrieb: harte Sperre wenn Klasse-E in nicht-CEPT-
+        # Land oder unbekanntes Land
+        allowed, _reason = cept_compliance(
+            op.current_operating_country,
+            op.home_country,
+            op.license_class,
+        )
+        if not allowed:
             return False
         return self.antenna_for(band_name) is not None
+
+    def cept_lock_reason(self) -> str | None:
+        """Klartext-Begruendung wenn TX wegen CEPT-Compliance geblockt
+        ist. None wenn ok. UI rendert das im Lock-Banner."""
+        from ..integrations.cept import cept_compliance
+        op = self.operator
+        _allowed, reason = cept_compliance(
+            op.current_operating_country,
+            op.home_country,
+            op.license_class,
+        )
+        return reason
 
     def effective_max_power_w(self, band_name: str) -> int:
         """Wirkliche TX-Leistungs-Obergrenze für *band_name*.
@@ -827,6 +852,8 @@ class AppConfig(BaseModel):
 
         * Lizenz-Cap (z.B. Klasse E: 100W HF, oder Klasse A auf 60m: 15W)
         * Rig-Hardware-Cap (z.B. QMX+ 5W, IC-7300 100W)
+        * CEPT-Power-Cap im operating-country (v0.22.0): z.B. Frankreich
+          500W statt 750W national.
 
         ``operator.default_power_w`` ist KEIN Cap mehr (Sebastian
         2026-05-24): das war die persistente Initial-Preference und
@@ -840,10 +867,13 @@ class AppConfig(BaseModel):
         das hier direkt aufruft.
         """
         from .license import max_power_for
-        license_cap = max_power_for(self.operator.license_class, band_name)
+        from ..integrations.cept import cept_power_cap
+        op = self.operator
+        license_cap = max_power_for(op.license_class, band_name)
         if license_cap is None:
             return 0
-        return min(
-            license_cap,
-            self.rig.effective_max_power_w,
-        )
+        caps = [license_cap, self.rig.effective_max_power_w]
+        cept_cap = cept_power_cap(op.current_operating_country, op.home_country)
+        if cept_cap is not None:
+            caps.append(cept_cap)
+        return min(caps)

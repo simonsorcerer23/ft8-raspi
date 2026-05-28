@@ -452,6 +452,17 @@ class Orchestrator:
     # der ALC-Loop noch nachjustiert.
     _alc_warn_since: float | None = field(default=None, init=False)
     _last_alc_warn_ntfy_at: float = field(default=0.0, init=False)
+    # v0.22.0 — DX-Operating-Location GPS-Detection.
+    # _gps_country_pending: aktuell detektiertes Land (kann von home_country
+    # ODER aktuellem current_operating_country abweichen).
+    # _gps_country_consistent_since: monotonic time ab wann dieses Land
+    # erstmals erkannt wurde. Erst nach 30 min konsistenter Detection +
+    # mismatch zu current setting wird eine ntfy-Push ausgeloest.
+    # _gps_last_pushed_country: gegen welches Land wir zuletzt geponst
+    # haben — Anti-Spam (kein wiederholter Push fuer dasselbe Land).
+    _gps_country_pending: str | None = field(default=None, init=False)
+    _gps_country_consistent_since: float = field(default=0.0, init=False)
+    _gps_last_pushed_country: str | None = field(default=None, init=False)
     integrations: IntegrationContainer = field(default_factory=IntegrationContainer, init=False)
     # Failure-defaults: before the first _refresh_hardware_state() we want
     # every guard to FAIL, not pass. That way a control-button pressed
@@ -477,6 +488,8 @@ class Orchestrator:
                 callsign=self.config.operator.callsign,
                 my_grid=self.config.operator.default_locator or "AA00",
                 cq_directed=(self.config.operating.cq_directed or "").upper(),
+                home_country=self.config.operator.home_country,
+                current_operating_country=self.config.operator.current_operating_country,
             ),
             limits=GuardLimits(
                 swr_max=self.config.operating.swr_max,
@@ -627,6 +640,10 @@ class Orchestrator:
             self._bg_tasks.append(asyncio.create_task(
                 self._clublog_drain_loop(), name="clublog-drain"
             ))
+        # v0.22.0 — GPS-based DX-country detection loop
+        self._bg_tasks.append(asyncio.create_task(
+            self._gps_country_detect_loop(), name="gps-country-detect"
+        ))
         # v0.10.0: PSK-Reciprocity-Refresh — alle paar Minuten fetchen
         # wer uns recently gehört hat. Nur wenn explizit aktiviert (Default
         # aus) UND PSK-Client überhaupt enabled ist (kein Punkt zu fetchen
@@ -839,6 +856,8 @@ class Orchestrator:
         new_op = cfg.operator  # die Property zeigt jetzt auf den neuen
         # State-Machine-Context aktualisieren
         self.state_machine.ctx.callsign = new_op.callsign
+        self.state_machine.ctx.home_country = new_op.home_country
+        self.state_machine.ctx.current_operating_country = new_op.current_operating_country
         if new_op.default_locator:
             self.state_machine.ctx.my_grid = new_op.default_locator
         # Globale Integrations-Config aus dem aktiven Operator spiegeln
@@ -1933,6 +1952,8 @@ class Orchestrator:
             )
         # State-machine context: callsign + locator may have changed
         self.state_machine.ctx.callsign = new_cfg.operator.callsign
+        self.state_machine.ctx.home_country = new_cfg.operator.home_country
+        self.state_machine.ctx.current_operating_country = new_cfg.operator.current_operating_country
         if new_cfg.operator.default_locator:
             self.state_machine.ctx.my_grid = new_cfg.operator.default_locator
         # Operating limits → guards
@@ -3129,6 +3150,123 @@ class Orchestrator:
             except Exception as exc:
                 log.warning("ClubLog drain loop hiccup: %s", exc)
             await asyncio.sleep(interval_s)
+
+    async def _gps_country_detect_loop(self) -> None:
+        """v0.22.0 — GPS-based DX-Operating-Country Suggestion + Mismatch-Warnung.
+
+        Alle 5 min:
+        - GPS-Position lookup gegen Country-Bounding-Boxes
+        - Konsistente Detection ueber 30 min → ntfy-Push falls != current
+
+        Sebastian-Pattern: "ich vergess umzustellen". Daher:
+        - Wenn current_operating_country=None aber GPS=Ausland: Push
+          "Vorschlag X/DK9XR aktivieren?"
+        - Wenn current=Ausland-X aber GPS=Heimat: Push
+          "Wieder daheim — zurueck auf DK9XR?"
+        - Wenn current=X aber GPS=Y (anderes Ausland): Push
+          "Mismatch — du sendest X aber bist in Y"
+
+        Throttle: 6h pro (current, detected) Tupel. Reset bei
+        Operator-Switch oder manueller Country-Aenderung.
+        """
+        from ..integrations.cept import detect_from_gps
+        import time as _time
+
+        CONSISTENCY_S = 30 * 60.0       # 30 min konsistent erkennen
+        PUSH_THROTTLE_S = 6 * 3600.0    # 6h zwischen Pushes pro Mismatch
+        INTERVAL_S = 300.0              # alle 5 min checken
+        log.info("GPS country detect loop active (interval=%.0fs)", INTERVAL_S)
+
+        # Per-(current, detected)-Tupel der letzte Push-Zeitpunkt
+        last_pushed: dict[tuple[str | None, str | None], float] = {}
+
+        while True:
+            try:
+                gps = self.gps.snapshot
+                op = self.config.operator
+                current = op.current_operating_country
+                home = op.home_country
+
+                # GPS-Lookup
+                detected = None
+                if gps.mode and gps.mode >= 2 and gps.lat is not None:
+                    detected = detect_from_gps(gps.lat, gps.lon)
+
+                if detected is None:
+                    # Kein GPS-Fix oder keine Box matched — reset persistence
+                    self._gps_country_pending = None
+                    self._gps_country_consistent_since = 0.0
+                else:
+                    # GPS-Detection vorhanden — track Konsistenz
+                    now_mono = _time.monotonic()
+                    if self._gps_country_pending != detected:
+                        self._gps_country_pending = detected
+                        self._gps_country_consistent_since = now_mono
+                    consistent_for = now_mono - self._gps_country_consistent_since
+
+                    # Mismatch-Cases bestimmen
+                    effective_current = current if current else home
+                    mismatch = (effective_current != detected)
+
+                    if mismatch and consistent_for >= CONSISTENCY_S:
+                        key = (current, detected)
+                        last = last_pushed.get(key, 0.0)
+                        if now_mono - last >= PUSH_THROTTLE_S:
+                            await self._push_country_mismatch(
+                                op, current, home, detected, gps,
+                            )
+                            last_pushed[key] = now_mono
+                            self._gps_last_pushed_country = detected
+            except Exception as exc:
+                log.warning("gps-country-detect loop hiccup: %s", exc)
+            await asyncio.sleep(INTERVAL_S)
+
+    async def _push_country_mismatch(
+        self,
+        op,
+        current: str | None,
+        home: str,
+        detected: str,
+        gps,
+    ) -> None:
+        """Sendet ntfy-Push wenn GPS != current Operating-Country.
+
+        Drei Wortlaut-Varianten je nach Mismatch-Typ:
+        - current=None (Heimat-Default), GPS=Ausland: "Vorschlag X aktivieren"
+        - current=Ausland, GPS=Heimat: "Wieder daheim — zurueck auf Heimat?"
+        - current=X, GPS=Y: "Mismatch — du sendest X aber bist in Y"
+        """
+        from ..integrations.cept import COUNTRIES
+        info_detected = COUNTRIES.get(detected)
+        det_name = info_detected.name if info_detected else detected
+        if current is None or current == home:
+            title = "📍 DX-Operating?"
+            msg = (
+                f"GPS sagt du bist seit 30+ min in {det_name} ({detected}). "
+                f"Auf {detected}/{op.callsign} umstellen?"
+            )
+        elif detected == home:
+            title = "🏠 Wieder daheim?"
+            msg = (
+                f"GPS sagt du bist zuhause aber sendest noch als "
+                f"{current}/{op.callsign}. Auf Heimat-Call zurueck?"
+            )
+        else:
+            title = "⚠️ Operating-Country Mismatch"
+            cur_info = COUNTRIES.get(current)
+            cur_name = cur_info.name if cur_info else current
+            msg = (
+                f"Du sendest {current}/{op.callsign} ({cur_name}) aber GPS "
+                f"sagt du bist in {det_name} ({detected})."
+            )
+        log.info("ntfy country-mismatch push: %s", msg)
+        try:
+            ntfy = self.integrations.ntfy
+            if ntfy is None or not ntfy.enabled:
+                return
+            await ntfy.push(title=title, message=msg, priority="default")
+        except Exception as exc:
+            log.warning("ntfy country-mismatch push failed: %s", exc)
 
     async def _rig_poll_loop(self) -> None:
         """Refresh the cached rig snapshot every second outside slot-time.
@@ -4429,6 +4567,9 @@ class Orchestrator:
                     my_lon=gps.lon,
                     # Multi-Operator-Tracking: welcher Operator hat diesen QSO?
                     user_callsign=self.config.operator.callsign,
+                    # v0.22.0 — Was haben wir tatsaechlich gesendet (mit
+                    # DX-Prefix falls im Ausland). Null = wie user_callsign.
+                    station_callsign=payload.get("station_callsign"),
                     # Marinefunker-Snapshot (Sebastian v0.9.0): MFNr zum
                     # QSO-Zeitpunkt einfrieren — bleibt stabil ueber spaetere
                     # PDF-Updates. Null wenn Partner kein aktives Mitglied.

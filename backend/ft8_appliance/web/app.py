@@ -145,6 +145,8 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     app.include_router(adif.router, prefix="/api", tags=["adif"])
     from .routes import operators as operators_routes
     app.include_router(operators_routes.router, prefix="/api", tags=["operators"])
+    from .routes import operating_location as opl_routes
+    app.include_router(opl_routes.router, prefix="/api", tags=["operating-location"])
     app.include_router(sse.router, tags=["sse"])
 
     # Mount the SPA build output under /assets/ + serve index.html at /.

@@ -18,6 +18,7 @@
   import SystemPanel from './components/SystemPanel.svelte';
   import BestTimeChart  from './components/BestTimeChart.svelte';
   import ActiveHoursChart from './components/ActiveHoursChart.svelte';
+  import OperatingLocationCard from './components/OperatingLocationCard.svelte';
   import FirstBootWizard from './components/FirstBootWizard.svelte';
   import QsoConversation from './components/QsoConversation.svelte';
   import RigPanel       from './components/RigPanel.svelte';
@@ -161,6 +162,7 @@
 
   {#if tab === 'main'}
     <RigPanel />
+    <OperatingLocationCard />
     <StatsDashboard />
     <QsoConversation />
     <DecodeList onReply={handleReply} onTailEnd={handleTailEnd} />

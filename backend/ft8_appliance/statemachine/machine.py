@@ -504,13 +504,13 @@ class StateMachine:
         if closing_decode.call_from is None:
             return
         # Defensive: Closing-Self-Reply waere sinnlos
-        if closing_decode.call_from.upper() == self.ctx.callsign.upper():
+        if closing_decode.call_from.upper() == self.ctx.tx_callsign.upper():
             log.warning("on_user_tail_end ignored — closing is from us")
             return
         # Wenn das Closing an UNS gerichtet ist, ist's unser eigener
         # QSO-Partner. Tail-End-Pickup hier ist redundant — der Standard-
         # Cooldown via _bail oder LOG_QSO greift sowieso.
-        if closing_decode.call_to and closing_decode.call_to.upper() == self.ctx.callsign.upper():
+        if closing_decode.call_to and closing_decode.call_to.upper() == self.ctx.tx_callsign.upper():
             log.warning("on_user_tail_end ignored — closing addressed to us")
             return
         self.qso = QsoContext(
@@ -564,7 +564,7 @@ class StateMachine:
             # auch fuer Direct-Reply-Pickup, damit nach Bail derselbe
             # Tail-Ender nicht sofort wieder triggert.
             now_ts = datetime.now(UTC).timestamp()
-            te = _find_answer_with_report_to_us(decodes, self.ctx.callsign)
+            te = _find_answer_with_report_to_us(decodes, self.ctx.tx_callsign)
             if te is not None:
                 their_snr, decoded = te
                 their_call = decoded.call_from or ""
@@ -592,7 +592,7 @@ class StateMachine:
                     self.state = State.QSO_REPORT
                     self._emit_send_r_report()
                     return
-            ans = _find_answer_to_us(decodes, self.ctx.callsign)
+            ans = _find_answer_to_us(decodes, self.ctx.tx_callsign)
             if ans is not None:
                 their_call = ans.call_from or ""
                 cd = self.ctx.recent_until.get(their_call, 0.0)
@@ -644,7 +644,7 @@ class StateMachine:
             # signal report (skipping the grid stage). When that happens
             # we jump straight to QSO_REPORT and send the R-report,
             # cutting two slots out of the QSO. Architecture §6.6.
-            te = _find_answer_with_report_to_us(decodes, self.ctx.callsign)
+            te = _find_answer_with_report_to_us(decodes, self.ctx.tx_callsign)
             if te is not None:
                 if not self._check_guards(hw):
                     return
@@ -662,7 +662,7 @@ class StateMachine:
                 return
 
             # Normal sequence: someone answered us with their grid.
-            ans = _find_answer_to_us(decodes, self.ctx.callsign)
+            ans = _find_answer_to_us(decodes, self.ctx.tx_callsign)
             if ans is not None:
                 if not self._check_guards(hw):
                     return
@@ -685,7 +685,7 @@ class StateMachine:
             # gemessen haben, nicht den den er uns gemeldet hat.
             self._track_partner_snr(decodes)
             # did they send us a report?
-            rep = _find_report_from_them(decodes, self.qso.their_call, self.ctx.callsign)
+            rep = _find_report_from_them(decodes, self.qso.their_call, self.ctx.tx_callsign)
             if rep is not None:
                 if not self._check_guards(hw):
                     return
@@ -709,7 +709,7 @@ class StateMachine:
                 heard_them_with_other = any(
                     d.call_from == their_call
                     and d.call_to is not None
-                    and d.call_to != self.ctx.callsign
+                    and d.call_to != self.ctx.tx_callsign
                     for d in decodes
                 )
                 if heard_them_with_other:
@@ -762,14 +762,14 @@ class StateMachine:
             # nicht decodiert). Wenn ja: ein 73 hinterher als finale
             # Closure-Bestaetigung (analog WSJT-X Tx6). Sebastian
             # 2026-05-24, Audit-Finding 2.
-            if _find_closing(decodes, self._grace_partner_call, self.ctx.callsign):
+            if _find_closing(decodes, self._grace_partner_call, self.ctx.tx_callsign):
                 if not self._check_guards(hw):
                     return
                 log.info(
                     "QSO_GRACE: %s repeated RR73 → 73 hinterher zur Closure",
                     self._grace_partner_call,
                 )
-                msg = f"{self._grace_partner_call} {self.ctx.callsign} 73"
+                msg = f"{self._grace_partner_call} {self.ctx.tx_callsign} 73"
                 # freq_offset_hz kennt der Grace-State nicht mehr direkt
                 # (qso wurde in _emit_log_qso auf None gesetzt), default
                 # tx_payload nutzt CQ_DEFAULT — fuer ein einzelnes 73
@@ -786,7 +786,7 @@ class StateMachine:
             # mit dem neuesten Wert sendet.
             self._track_partner_snr(decodes)
             # did they send RR73 / 73 ?
-            if _find_closing(decodes, self.qso.their_call, self.ctx.callsign):
+            if _find_closing(decodes, self.qso.their_call, self.ctx.tx_callsign):
                 self.qso.stale_slots = 0
                 self.state = State.QSO_LOG
                 self._emit_log_qso()
@@ -819,7 +819,7 @@ class StateMachine:
                 heard_them_with_other = any(
                     d.call_from == their_call
                     and d.call_to is not None
-                    and d.call_to != self.ctx.callsign
+                    and d.call_to != self.ctx.tx_callsign
                     for d in decodes
                 )
                 if heard_them_with_other:
@@ -830,7 +830,7 @@ class StateMachine:
                     self._bail_qso_with_cooldown(their_call, "picked_another")
                     return
                 rep_again = _find_report_from_them(
-                    decodes, their_call, self.ctx.callsign
+                    decodes, their_call, self.ctx.tx_callsign
                 )
                 them_cq_again = any(
                     d.call_from == their_call
@@ -1102,15 +1102,15 @@ class StateMachine:
         # wenn ctx.cq_directed gesetzt ist. Leer = klassischer CQ.
         directed = (self.ctx.cq_directed or "").strip().upper()
         if directed:
-            msg = f"CQ {directed} {self.ctx.callsign} {self.ctx.my_grid[:4]}"
+            msg = f"CQ {directed} {self.ctx.tx_callsign} {self.ctx.my_grid[:4]}"
         else:
-            msg = f"CQ {self.ctx.callsign} {self.ctx.my_grid[:4]}"
+            msg = f"CQ {self.ctx.tx_callsign} {self.ctx.my_grid[:4]}"
         freq = self._next_cq_freq_hz()
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "cq", freq_override_hz=freq)))
 
     def _emit_respond_with_grid(self) -> None:
         assert self.qso is not None
-        msg = f"{self.qso.their_call} {self.ctx.callsign} {self.ctx.my_grid[:4]}"
+        msg = f"{self.qso.their_call} {self.ctx.tx_callsign} {self.ctx.my_grid[:4]}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "respond_grid")))
 
     # FT8-Spec: SNR-Feld ist 7-bit signed, Bereich -50..+49 dB (siehe
@@ -1132,7 +1132,7 @@ class StateMachine:
         # Echo von their_snr_at_them.
         snr = self._clamp_snr(self.qso.their_snr_at_us)
         self.qso.their_snr = snr  # = rst_sent fuer Log
-        msg = f"{self.qso.their_call} {self.ctx.callsign} {snr:+03d}"
+        msg = f"{self.qso.their_call} {self.ctx.tx_callsign} {snr:+03d}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "respond_report")))
 
     def _emit_send_r_report(self) -> None:
@@ -1144,7 +1144,7 @@ class StateMachine:
         # echtes Feedback ueber sein Signal bei uns gab.
         snr = self._clamp_snr(self.qso.their_snr_at_us)
         self.qso.their_snr = snr  # = rst_sent fuer Log
-        msg = f"{self.qso.their_call} {self.ctx.callsign} R{snr:+03d}"
+        msg = f"{self.qso.their_call} {self.ctx.tx_callsign} R{snr:+03d}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "r_report")))
 
     def _track_partner_snr(self, decodes: Iterable[DecodedMsg]) -> None:
@@ -1164,7 +1164,7 @@ class StateMachine:
 
     def _emit_log_qso(self) -> None:
         assert self.qso is not None
-        rr73 = f"{self.qso.their_call} {self.ctx.callsign} RR73"
+        rr73 = f"{self.qso.their_call} {self.ctx.tx_callsign} RR73"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(rr73, "rr73")))
         self._pending.append(
             Action(
@@ -1181,6 +1181,11 @@ class StateMachine:
                     # this the orchestrator would only know the rig dial
                     # frequency and miss the per-QSO audio split.
                     "freq_offset_hz": self.qso.freq_offset_hz,
+                    # v0.22.0 — TX-Callsign (mit DX-Prefix wenn Auslandsbetrieb)
+                    # damit ADIF station_callsign sauber "9A/DK9XR" emittiert
+                    # statt nur "DK9XR". operator-Feld bleibt der Heimat-Call.
+                    "station_callsign": self.ctx.tx_callsign,
+                    "operator": self.ctx.callsign,
                 },
             )
         )
@@ -1291,7 +1296,7 @@ class StateMachine:
         cqs = [
             d for d in decodes
             if d.call_from
-            and d.call_from != self.ctx.callsign
+            and d.call_from != self.ctx.tx_callsign
             and d.call_from not in self.ctx.blacklist
             and d.call_to is None
             and (d.message or "").startswith("CQ")
@@ -1497,7 +1502,7 @@ class StateMachine:
             msg = (d.message or "")
             if d.call_to is None:
                 continue
-            if d.call_to == self.ctx.callsign:
+            if d.call_to == self.ctx.tx_callsign:
                 # Das ist UNSER Partner → kein Pre-Stage. Sein RR73
                 # geht an UNS, nicht an andere.
                 continue
@@ -1526,7 +1531,7 @@ class StateMachine:
             # Wenn das Closing an UNS gerichtet ist: das ist unser
             # Partner. Der kommt nach LOG_QSO eh in den Standard-Cooldown
             # (qso_cooldown_min), kein Tail-End noetig.
-            if d.call_to == self.ctx.callsign:
+            if d.call_to == self.ctx.tx_callsign:
                 continue
             # 5-min-Filter: Station ruft sowieso noch CQ, kein Tail-End-
             # Boost noetig — ihr naechster CQ-Slot kommt von selbst.

@@ -67,6 +67,12 @@ class Qso(Base):
     clublog_last_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # v0.22.0 — TX-Callsign zum QSO-Zeitpunkt (mit DX-Prefix wenn
+    # Auslandsbetrieb). user_callsign bleibt der Heimat-Call (Multi-Op-
+    # Filter), station_callsign ist was wir tatsaechlich gesendet
+    # haben. ADIF-Upload nutzt station_callsign damit QRZ + ClubLog
+    # den DX-Prefix erkennen. Null = wie user_callsign (Heimat).
+    station_callsign: Mapped[str | None] = mapped_column(String, nullable=True)
     # Marinefunker-Snapshot (Sebastian 2026-05-26 v0.9.0).
     # mf_mfnr ist die Mitgliedsnummer aus der MF-Dipl.Such-Abhakliste
     # ZUM ZEITPUNKT DES QSO eingefroren — bleibt korrekt auch wenn die
