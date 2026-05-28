@@ -122,7 +122,9 @@ export const api = {
   bandSuggestions: ()    => request('/stats/band-suggestions'),
   bestTime:     (band)   => request(`/stats/best-time/${encodeURIComponent(band)}`),
   callsignInfo: (call)   => request(`/callsign/${encodeURIComponent(call)}`),
-  adifUrl:      ()       => '/api/log/adif',
+  adifUrl:      (operator) => operator
+                                ? `/api/log/adif?operator=${encodeURIComponent(operator)}`
+                                : '/api/log/adif',
   dxCluster:    (opts)   => request('/dx-cluster',           { query: opts }),
   operatingLocations: () => request('/operating-locations'),
   heatmap:      (opts)   => request('/heard/heatmap',         { query: opts }),

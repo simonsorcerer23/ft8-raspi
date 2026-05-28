@@ -1,7 +1,14 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { logStore } from '../lib/stores.svelte.js';
+  import { logStore, statusStore } from '../lib/stores.svelte.js';
+
+  const activeCall = $derived(statusStore.value.callsign ?? null);
+  // v0.21.2 — ADIF-Export ist standardmaessig auf den aktiven Operator
+  // gefiltert. Verhindert das Schicken von DK9XR-QSOs in den DO3XR-
+  // ClubLog-Account beim manuellen Upload.
+  const exportUrl = $derived(activeCall ? api.adifUrl(activeCall) : api.adifUrl());
+  const exportName = $derived(`${(activeCall ?? 'log').toLowerCase()}_ft8.adif`);
 
   const COLOURS = { worked: '#22c55e', heard: '#f59e0b', both: '#38bdf8',
                     new_dxcc: '#a78bfa' };
@@ -55,7 +62,7 @@
 <div class="wrap">
   <div class="header">
     <h2>QSO-Log</h2>
-    <a class="export" href={api.adifUrl()} download="dk9xr_ft8.adif">⬇ ADIF Export</a>
+    <a class="export" href={exportUrl} download={exportName}>⬇ ADIF Export ({activeCall ?? 'alle'})</a>
   </div>
 
   <div class="filters">

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from io import StringIO
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import desc, select
 
@@ -53,11 +53,22 @@ def _dxcc_for_call(call: str | None, cty) -> str | None:
 @router.get("/log/adif", response_class=PlainTextResponse)
 async def export_adif(
     orch: Orchestrator = Depends(get_orchestrator),
+    operator: str | None = Query(
+        default=None,
+        description=(
+            "Filter: nur QSOs dieses user_callsign exportieren. "
+            "Default = alle. Beispiel: ?operator=DO3XR fuer ClubLog-Upload "
+            "des DO3XR-Accounts."
+        ),
+    ),
 ) -> PlainTextResponse:
-    """Return the entire QSO log as an ADIF file.
+    """Return the QSO log as an ADIF file.
 
     Sebastian Audit 2026-05-24: dynamische Version + Multi-Op-Filename
     + STATION_CALLSIGN/OPERATOR/DXCC-Felder + COMMENT mit Software-Tag.
+
+    v0.21.2 — optionaler ?operator=<call>-Filter fuer saubere ClubLog/QRZ-
+    Account-Trennung. Ohne Parameter: alle QSOs (alter Default).
     """
     out = StringIO()
     progver = __version__
@@ -74,12 +85,14 @@ async def export_adif(
     # schreiben wir das per-row in OPERATOR + STATION_CALLSIGN — der
     # Dateiname zeigt aber den AKTIVEN Operator des Exports.
     active_op = orch.config.operator.callsign.upper()
+    filter_op = operator.upper().strip() if operator else None
     cty = getattr(getattr(orch, "integrations", None), "cty", None)
 
     async with session_scope() as s:
-        rows = list(
-            (await s.execute(select(Qso).order_by(desc(Qso.qso_start)))).scalars()
-        )
+        stmt = select(Qso).order_by(desc(Qso.qso_start))
+        if filter_op:
+            stmt = stmt.where(Qso.user_callsign == filter_op)
+        rows = list((await s.execute(stmt)).scalars())
 
     for q in rows:
         date_on, time_on = _adif_date_time(q.qso_start)
@@ -109,7 +122,8 @@ async def export_adif(
         ])
         out.write(fields + "\n")
 
-    filename = f"{active_op.lower()}_ft8.adif"
+    label = (filter_op or active_op).lower()
+    filename = f"{label}_ft8.adif"
     return PlainTextResponse(
         out.getvalue(),
         headers={
