@@ -97,13 +97,16 @@ async def upload_qso(
       - app_password   → Application Password aus Settings → App Passwords
       - api_key        → 40-char Hex-API-Key via clublog.org/requestapikey.php
 
-    Response-Body-Erkennung (HTTP 200):
-      - "QSO OK"        → angekommen, neu gespeichert
-      - "QSO Duplicate" → schon im Log (kein Fehler, idempotent)
-      - "QSO Modified"  → angekommen, ClubLog hat Korrekturen vorgenommen
+    Response-Body-Erkennung (HTTP 200, beobachtete Varianten live 2026-05-28):
+      - "OK"            → neu gespeichert (häufigste Antwort)
+      - "QSO OK"        → ebenfalls Erfolg (Doku-Variante)
+      - "Updated QSO"   → existierender QSO wurde aktualisiert (Erfolg)
+      - "QSO Modified"  → ClubLog hat Korrekturen vorgenommen (Erfolg)
+      - "Duplicate"     → schon im Log (kein Fehler, idempotent)
+      - "QSO Duplicate" → dito (Doku-Variante)
       - Anderer Text    → Error (ClubLogError) — Drain-Loop entscheidet
-        anhand des Wortlauts ob hard-reject (auth/duplicate-Hinweis im
-        Wortlaut) oder soft-defer (Netz/Throttle).
+        anhand des Wortlauts ob hard-reject (auth/login/bad adif) oder
+        soft-defer (Netz/Throttle).
     """
     adif = _qso_to_adif(qso, my_call)
     body = urlencode({
@@ -124,15 +127,21 @@ async def upload_qso(
             f"ClubLog HTTP {r.status_code}: {r.text[:200]}"
         )
     body_text = (r.text or "").strip()
-    # ClubLog-Doku: 200 mit "QSO OK"/"QSO Duplicate"/"QSO Modified" sind
-    # alle Erfolg. Reines HTTP-200 reicht nicht — ein Rate-Limit oder
-    # Wartungsseite koennte auch 200 mit HTML zurueckschicken.
     upper = body_text.upper()
-    if any(marker in upper for marker in ("QSO OK", "QSO DUPLICATE", "QSO MODIFIED")):
+    # Erfolgs-Marker — ClubLog antwortet in mehreren Varianten je nachdem
+    # ob der QSO neu, updated oder duplicate ist. Alle sind aus unserer
+    # Sicht Erfolg (Idempotenz inklusive).
+    success_markers = (
+        "OK",            # häufigste Antwort live
+        "QSO OK",
+        "UPDATED QSO",   # existierender Eintrag wurde geupdated
+        "QSO MODIFIED",
+        "DUPLICATE",
+        "QSO DUPLICATE",
+    )
+    if any(upper.startswith(m) or m in upper for m in success_markers):
         return
-    # Auch leerer Body wird (defensiv) als OK akzeptiert — manche
-    # ClubLog-Endpoints liefern das so. Wenn das Falsch-Positive
-    # gibt, eng-werden auf strikt "QSO ..."-Match.
+    # Leerer Body defensiv als OK (sehr selten, manche Endpoints).
     if not body_text:
         return
     raise ClubLogError(f"ClubLog rejected: {body_text[:200]}")

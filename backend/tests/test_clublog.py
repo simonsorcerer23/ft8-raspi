@@ -137,6 +137,32 @@ async def test_upload_ok_qso_modified_body(monkeypatch):
     await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
 
 
+async def test_upload_ok_bare_ok_body(monkeypatch):
+    """Live-Beobachtung 2026-05-28: ClubLog antwortet typisch mit bare
+    'OK' (kein "QSO "-Prefix). v0.21.3-Fix."""
+    def handler(req):
+        return httpx.Response(200, text="OK")
+    _patch_httpx(monkeypatch, handler)
+    await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
+
+
+async def test_upload_ok_updated_qso_body(monkeypatch):
+    """Live-Beobachtung 2026-05-28: 'Updated QSO' = ClubLog hat einen
+    schon vorhandenen QSO geupdated. Erfolg, kein Reject."""
+    def handler(req):
+        return httpx.Response(200, text="Updated QSO")
+    _patch_httpx(monkeypatch, handler)
+    await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
+
+
+async def test_upload_ok_bare_duplicate_body(monkeypatch):
+    """Bare 'Duplicate' (ohne QSO-Prefix) ist Erfolg, idempotent."""
+    def handler(req):
+        return httpx.Response(200, text="Duplicate")
+    _patch_httpx(monkeypatch, handler)
+    await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
+
+
 async def test_upload_rejects_unknown_200_body(monkeypatch):
     """200 mit irgendeinem anderen Text (z.B. Rate-Limit, HTML-Wartung)
     wird NICHT mehr als Erfolg gewertet."""
