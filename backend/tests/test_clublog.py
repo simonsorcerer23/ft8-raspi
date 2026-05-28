@@ -10,9 +10,12 @@ import pytest
 from ft8_appliance.config.models import OperatorConfig
 from ft8_appliance.db.models import Qso
 from ft8_appliance.integrations.clublog import (
+    CLUBLOG_BULK_URL,
     CLUBLOG_URL,
     ClubLogError,
     _qso_to_adif,
+    _qsos_to_adif,
+    bulk_upload,
     upload_qso,
 )
 
@@ -218,3 +221,84 @@ def test_operator_clublog_api_key_default_none():
     """v0.21.1 — api_key ist eigenes Feld, default None."""
     op = OperatorConfig(callsign="DO3XR")
     assert op.clublog_api_key is None
+
+
+# ---------------------------------------------------------------------------
+# v0.21.4 — bulk_upload via putlogs.php
+# ---------------------------------------------------------------------------
+
+
+def test_qsos_to_adif_multi_record():
+    """Mehrere QSOs werden zu einem ADIF-Stream mit Header zusammengefuegt."""
+    q1 = _make_qso(call="EA5KB")
+    q2 = _make_qso(call="JA1XYZ")
+    adif = _qsos_to_adif([q1, q2], "DO3XR")
+    assert "<eoh>" in adif
+    assert "<call:5>EA5KB" in adif
+    assert "<call:6>JA1XYZ" in adif
+    # Genau zwei EOR-Marker
+    assert adif.count("<eor>") == 2
+
+
+def test_qsos_to_adif_empty_list():
+    adif = _qsos_to_adif([], "DO3XR")
+    assert "<eoh>" in adif  # Header da, keine Records
+
+
+async def test_bulk_upload_ok(monkeypatch):
+    """putlogs.php POST mit multipart-Body. 200 OK → success."""
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["url"] = str(req.url)
+        seen["method"] = req.method
+        seen["content_type"] = req.headers.get("content-type", "")
+        seen["body"] = req.content
+        return httpx.Response(200, text="OK — 3 records processed")
+
+    _patch_httpx(monkeypatch, handler)
+    qsos = [_make_qso(call=c) for c in ("EA5KB", "JA1XYZ", "K1JT")]
+    await bulk_upload("me@example.com", "pw", "deadbeef-key", "DO3XR", qsos)
+
+    assert seen["url"] == CLUBLOG_BULK_URL
+    assert seen["method"] == "POST"
+    # multipart/form-data Body enthaelt die Credentials + die ADIF-Datei
+    assert b"multipart/form-data" in seen["content_type"].encode()
+    assert b"me@example.com" in seen["body"]
+    assert b"pw" in seen["body"]
+    assert b"DO3XR" in seen["body"]
+    assert b"deadbeef-key" in seen["body"]
+    assert b"EA5KB" in seen["body"]
+    assert b"JA1XYZ" in seen["body"]
+    assert b"K1JT" in seen["body"]
+
+
+async def test_bulk_upload_empty_list_is_noop(monkeypatch):
+    """Leere Liste → keine Request, kein Crash."""
+    seen = {"called": False}
+    def handler(req):
+        seen["called"] = True
+        return httpx.Response(200)
+    _patch_httpx(monkeypatch, handler)
+    await bulk_upload("me@example.com", "pw", "key", "DO3XR", [])
+    assert seen["called"] is False
+
+
+async def test_bulk_upload_http_403_raises(monkeypatch):
+    """403 = bad creds / api_key → ClubLogError mit HTTP-Hinweis."""
+    def handler(req):
+        return httpx.Response(403, text="Authentication failed")
+    _patch_httpx(monkeypatch, handler)
+    qsos = [_make_qso()]
+    with pytest.raises(ClubLogError, match="HTTP 403"):
+        await bulk_upload("me@example.com", "pw", "bad", "DO3XR", qsos)
+
+
+async def test_bulk_upload_http_500_raises(monkeypatch):
+    """5xx → ClubLogError, Drain-Loop soll spaeter retrien."""
+    def handler(req):
+        return httpx.Response(500, text="server error")
+    _patch_httpx(monkeypatch, handler)
+    qsos = [_make_qso()]
+    with pytest.raises(ClubLogError, match="HTTP 500"):
+        await bulk_upload("me@example.com", "pw", "key", "DO3XR", qsos)

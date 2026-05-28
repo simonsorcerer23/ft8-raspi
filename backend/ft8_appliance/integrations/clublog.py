@@ -31,6 +31,7 @@ from ..db.models import Qso
 log = logging.getLogger(__name__)
 
 CLUBLOG_URL = "https://clublog.org/realtime.php"
+CLUBLOG_BULK_URL = "https://clublog.org/putlogs.php"
 
 
 class ClubLogError(RuntimeError):
@@ -145,3 +146,66 @@ async def upload_qso(
     if not body_text:
         return
     raise ClubLogError(f"ClubLog rejected: {body_text[:200]}")
+
+
+def _qsos_to_adif(qsos: list[Qso], my_call: str) -> str:
+    """Mehrere Qso-Rows zu einem ADIF-Stream (mit Header + EOR-trennern).
+
+    ClubLog akzeptiert mit oder ohne Header — wir senden Minimal-Header
+    fuer Erkennbarkeit beim Parser.
+    """
+    records = [_qso_to_adif(q, my_call) for q in qsos]
+    header = (
+        "FT8 Raspi Appliance — Bulk-Upload\n"
+        "<adif_ver:5>3.1.4<programid:19>ft8-raspi-appliance<eoh>\n"
+    )
+    return header + "\n".join(records) + "\n"
+
+
+async def bulk_upload(
+    email: str,
+    app_password: str,
+    api_key: str,
+    my_call: str,
+    qsos: list[Qso],
+    *,
+    timeout: float = 90.0,
+) -> None:
+    """Bulk-Upload via clublog.org/putlogs.php — Michael's empfohlener Weg
+    fuer mehr als ~5 QSOs in Folge.
+
+    Aus Doku (clublog excessive-api-usage Article):
+      > realtime.php must NOT be used to serially upload a large number
+      > of QSOs as this results in hundreds of uploads in a matter of
+      > seconds — it jams up Club Log for other users.
+      > Use putlogs.php whenever more than about 150 QSOs are to be uploaded.
+
+    Wir wenden das schon ab ~5 QSOs an: ein putlogs.php-Request belastet
+    ClubLog weniger als 5 serielle realtime-Requests.
+
+    multipart/form-data mit Feld `file` = ADIF-Bytes. Response 200 OK
+    bei Erfolg, sonst HTTP-Fehler oder Klartext im Body.
+    """
+    if not qsos:
+        return
+    adif_text = _qsos_to_adif(qsos, my_call)
+    files = {
+        "file": ("upload.adi", adif_text.encode("utf-8"), "text/plain"),
+    }
+    data = {
+        "email": email,
+        "password": app_password,
+        "callsign": my_call,
+        "api": api_key,
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(CLUBLOG_BULK_URL, data=data, files=files)
+    if r.status_code != 200:
+        raise ClubLogError(
+            f"ClubLog bulk HTTP {r.status_code}: {r.text[:300]}"
+        )
+    # 200 OK heisst: Upload akzeptiert (Verarbeitung passiert async bei
+    # ClubLog, kann 5-60 s dauern). Body ist normal HTML/Plain mit
+    # Erfolgs-Nachricht — wir parsen das nicht detailliert, vertrauen
+    # auf den 200-Status.
+    log.info("ClubLog bulk upload accepted: %d QSOs", len(qsos))
