@@ -73,6 +73,26 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_mf_columns(conn)
         await _migrate_dxped_source_column(conn)
         await _migrate_watchlist_source_column(conn)
+        await _migrate_clublog_columns(conn)
+
+
+async def _migrate_clublog_columns(conn) -> None:
+    """v0.21.0 — ClubLog-Logbook tracking columns (analog QRZ).
+
+    ClubLog API liefert kein eigenes logbook_id zurueck — wir tracken
+    nur uploaded/attempts/last_attempt damit der Drain-Loop weiss was
+    noch offen ist und retry-throttling funktioniert.
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(qso)")
+    existing = {row[1] for row in res.fetchall()}
+    additions = [
+        ("clublog_uploaded",         "BOOLEAN NOT NULL DEFAULT 0"),
+        ("clublog_upload_attempts",  "INTEGER NOT NULL DEFAULT 0"),
+        ("clublog_last_attempt_at",  "DATETIME"),
+    ]
+    for name, ddl in additions:
+        if name not in existing:
+            await conn.exec_driver_sql(f"ALTER TABLE qso ADD COLUMN {name} {ddl}")
 
 
 async def _migrate_qrz_columns(conn) -> None:

@@ -58,6 +58,15 @@ class Qso(Base):
     qrz_last_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # v0.21.0 — ClubLog Logbook upload tracking. Analog QRZ: jedes QSO
+    # wird lokal sofort persistiert, der Drain-Loop schiebt es im
+    # Hintergrund nach ClubLog hoch. ClubLog liefert kein eigenes
+    # logbook_id zurueck (nur OK/FAIL), daher reicht das bool + attempts.
+    clublog_uploaded: Mapped[bool] = mapped_column(default=False, index=True)
+    clublog_upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    clublog_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Marinefunker-Snapshot (Sebastian 2026-05-26 v0.9.0).
     # mf_mfnr ist die Mitgliedsnummer aus der MF-Dipl.Such-Abhakliste
     # ZUM ZEITPUNKT DES QSO eingefroren — bleibt korrekt auch wenn die

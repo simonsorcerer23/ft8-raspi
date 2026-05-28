@@ -615,6 +615,17 @@ class Orchestrator:
             self._bg_tasks.append(asyncio.create_task(
                 self._qrz_logbook_sync_loop(), name="qrz-logbook-sync"
             ))
+        # v0.21.0 — ClubLog Real-Time-Upload. Pro Operator eigene Creds
+        # (analog QRZ pro-Operator). Loop laeuft wenn der ACTIVE Operator
+        # ClubLog-Credentials hat.
+        if (
+            self.db_enabled
+            and self.config.operator.clublog_email
+            and self.config.operator.clublog_app_password
+        ):
+            self._bg_tasks.append(asyncio.create_task(
+                self._clublog_drain_loop(), name="clublog-drain"
+            ))
         # v0.10.0: PSK-Reciprocity-Refresh — alle paar Minuten fetchen
         # wer uns recently gehört hat. Nur wenn explizit aktiviert (Default
         # aus) UND PSK-Client überhaupt enabled ist (kein Punkt zu fetchen
@@ -2023,6 +2034,21 @@ class Orchestrator:
             self._bg_tasks.append(asyncio.create_task(
                 self._qrz_logbook_drain_loop(), name="qrz-logbook-drain"
             ))
+        # v0.21.0 — ClubLog-Drain analog hot-startbar
+        clublog_running = any(
+            t.get_name() == "clublog-drain" and not t.done()
+            for t in self._bg_tasks
+        )
+        if (
+            self.db_enabled
+            and new_cfg.operator.clublog_email
+            and new_cfg.operator.clublog_app_password
+            and not clublog_running
+        ):
+            log.info("config hot-reload: starting ClubLog-drain loop")
+            self._bg_tasks.append(asyncio.create_task(
+                self._clublog_drain_loop(), name="clublog-drain"
+            ))
         log.info(
             "config hot-reloaded: callsign=%s antenna=%s",
             self.state_machine.ctx.callsign, self._active_antenna,
@@ -2963,6 +2989,88 @@ class Orchestrator:
                                      qso.call, result.logbook_id)
             except Exception as exc:
                 log.warning("QRZ drain loop hiccup: %s", exc)
+            await asyncio.sleep(interval_s)
+
+    async def _clublog_drain_loop(self) -> None:
+        """v0.21.0 — ClubLog Real-Time-Upload-Drain (analog QRZ).
+
+        Filtert pro aktiven Operator nach user_callsign — DK9XR-QSOs gehen
+        in Dad's ClubLog, DO3XR-QSOs in Sebastians. Operator-Switch zur
+        Laufzeit ist ok: der Loop greift jeweils auf
+        ``self.config.operator.clublog_*`` zu, das wird beim Switch
+        synchron im selben Objekt aktualisiert.
+
+        Backoff identisch zu QRZ: 5min, 10min, 20min, 40min, ..., gecappt
+        bei 1h. Hard-Reject (auth/duplicate) → uploaded=True damit kein
+        endloser Retry. Soft-Failure (Netz, 5xx) → leave for next round.
+        """
+        from datetime import UTC, datetime
+        from sqlalchemy import select
+        from ..db import session_scope
+        from ..db.models import Qso
+        from ..integrations.clublog import ClubLogError, upload_qso
+
+        interval_s = 300.0  # 5 min
+        log.info("ClubLog drain loop active (interval=%.0fs)", interval_s)
+
+        while True:
+            try:
+                email = self.config.operator.clublog_email
+                app_pw = self.config.operator.clublog_app_password
+                my_call = self.config.operator.callsign
+                if not (email and app_pw):
+                    # Credentials weg (Operator-Switch ohne ClubLog) →
+                    # ruhig schlafen und beim naechsten Poll erneut checken.
+                    await asyncio.sleep(interval_s)
+                    continue
+
+                async with session_scope() as s:
+                    now = datetime.now(UTC)
+                    rows = list(
+                        (await s.execute(
+                            select(Qso)
+                            .where(Qso.clublog_uploaded == False)  # noqa: E712
+                            .where(Qso.user_callsign == my_call)
+                            .order_by(Qso.qso_start.asc())
+                            .limit(20)
+                        )).scalars()
+                    )
+                    for qso in rows:
+                        backoff_s = min(3600.0, 300.0 * (2 ** qso.clublog_upload_attempts))
+                        if (
+                            qso.clublog_last_attempt_at
+                            and (now - qso.clublog_last_attempt_at).total_seconds() < backoff_s
+                        ):
+                            continue
+                        qso.clublog_upload_attempts += 1
+                        qso.clublog_last_attempt_at = now
+                        try:
+                            await upload_qso(email, app_pw, my_call, qso)
+                        except ClubLogError as exc:
+                            msg = str(exc).lower()
+                            # Hard reject erkennen: Authentication / Duplicate
+                            # / Bad ADIF — Retry bringt nichts.
+                            hard = any(
+                                k in msg for k in (
+                                    "authentication", "login", "bad password",
+                                    "duplicate", "invalid adif", "rejected",
+                                )
+                            )
+                            if hard:
+                                log.warning("ClubLog rejected %s (%s) — won't retry",
+                                            qso.call, exc)
+                                qso.clublog_uploaded = True
+                            else:
+                                log.info("ClubLog upload deferred for %s: %s",
+                                         qso.call, exc)
+                        except Exception as exc:
+                            log.info("ClubLog upload deferred for %s: %s",
+                                     qso.call, exc)
+                        else:
+                            qso.clublog_uploaded = True
+                            log.info("ClubLog uploaded QSO %s", qso.call)
+            except Exception as exc:
+                log.warning("ClubLog drain loop hiccup: %s", exc)
             await asyncio.sleep(interval_s)
 
     async def _rig_poll_loop(self) -> None:

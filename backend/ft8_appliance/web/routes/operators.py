@@ -37,6 +37,11 @@ class OperatorOut(BaseModel):
     license_class: str
     qrz_user: str | None
     has_qrz_credentials: bool
+    # v0.21.0 — ClubLog. App-Password wird NICHT exposed (analog
+    # qrz_password). has_clublog_credentials zeigt nur ob beide gesetzt
+    # sind damit das UI einen Status anzeigen kann.
+    clublog_email: str | None = None
+    has_clublog_credentials: bool = False
     is_active: bool
 
 
@@ -64,6 +69,8 @@ def _to_out(op: OperatorConfig, active: str) -> OperatorOut:
         license_class=op.license_class,
         qrz_user=op.qrz_user,
         has_qrz_credentials=bool(op.qrz_user and op.qrz_logbook_api_key),
+        clublog_email=op.clublog_email,
+        has_clublog_credentials=bool(op.clublog_email and op.clublog_app_password),
         is_active=(op.callsign == active),
     )
 
@@ -133,6 +140,8 @@ class CreateOperatorRequest(BaseModel):
     qrz_user: str | None = None
     qrz_password: str | None = None
     qrz_logbook_api_key: str | None = None
+    clublog_email: str | None = None
+    clublog_app_password: str | None = None
 
 
 class CreateOperatorResponse(BaseModel):
@@ -163,6 +172,8 @@ async def create_operator(
             qrz_user=payload.qrz_user,
             qrz_password=payload.qrz_password,
             qrz_logbook_api_key=payload.qrz_logbook_api_key,
+            clublog_email=payload.clublog_email,
+            clublog_app_password=payload.clublog_app_password,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"invalid operator: {exc}")

@@ -29,6 +29,8 @@
     qrz_user: '',
     qrz_password: '',
     qrz_logbook_api_key: '',
+    clublog_email: '',
+    clublog_app_password: '',
   });
   let createError = $state(null);
 
@@ -67,6 +69,7 @@
     newOp = {
       callsign: '', default_locator: '', default_power_w: 50,
       license_class: 'A', qrz_user: '', qrz_password: '', qrz_logbook_api_key: '',
+      clublog_email: '', clublog_app_password: '',
     };
     createError = null;
   }
@@ -87,6 +90,8 @@
         qrz_user: newOp.qrz_user.trim() || null,
         qrz_password: newOp.qrz_password || null,
         qrz_logbook_api_key: newOp.qrz_logbook_api_key.trim() || null,
+        clublog_email: newOp.clublog_email.trim() || null,
+        clublog_app_password: newOp.clublog_app_password.trim() || null,
       };
       await api.operatorCreate(body);
       await refresh();
@@ -208,6 +213,17 @@
             <span>QRZ Logbook API-Key</span>
             <input type="text" bind:value={newOp.qrz_logbook_api_key}
                    placeholder="XXXX-XXXX-XXXX-XXXX" />
+          </label>
+          <div class="form-section">ClubLog (optional)</div>
+          <label>
+            <span>ClubLog Email</span>
+            <input type="email" bind:value={newOp.clublog_email}
+                   placeholder="me@example.com" />
+          </label>
+          <label>
+            <span>ClubLog Application Password</span>
+            <input type="password" bind:value={newOp.clublog_app_password}
+                   placeholder="xxx-xxxx-xxxx-..." />
           </label>
           {#if createError}
             <div class="error">⚠ {createError}</div>

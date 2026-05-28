@@ -42,6 +42,11 @@ class OperatorConfig(BaseModel):
     qrz_user: str | None = None
     qrz_password: str | None = None
     qrz_logbook_api_key: str | None = None
+    # v0.21.0 — ClubLog Application Password (one-shot generated, single-use
+    # für API-Integration). Pro Operator eigene Credentials damit DK9XR
+    # und DO3XR in getrennte ClubLog-Accounts schreiben koennen.
+    clublog_email: str | None = None
+    clublog_app_password: str | None = None
 
     @field_validator("callsign")
     @classmethod
