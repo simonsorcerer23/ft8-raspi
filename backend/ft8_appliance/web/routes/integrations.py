@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from ...runtime import Orchestrator
+from ...util.timefmt import iso_utc
 from ..deps import get_orchestrator
 
 router = APIRouter()
@@ -210,7 +211,7 @@ async def dx_cluster_spots(
     out: list[DxSpotOut] = []
     for s in raw:
         spot = DxSpotOut(
-            ts=s.ts.isoformat(),
+            ts=iso_utc(s.ts),
             spotter=s.spotter,
             freq_hz=s.freq_hz,
             spotted=s.spotted,

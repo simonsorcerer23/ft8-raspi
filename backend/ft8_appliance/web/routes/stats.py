@@ -14,6 +14,7 @@ from ...db.models import Decode, Qso
 from ...runtime import Orchestrator
 from ...util.band_suggester import suggest_bands
 from ...util.maidenhead import destination_point, great_circle, locator_to_latlon
+from ...util.timefmt import iso_utc
 from ..deps import get_orchestrator
 
 router = APIRouter()
@@ -274,7 +275,7 @@ async def swr_trend(
     return SwrTrendResponse(
         points=[
             SwrPoint(
-                ts=row.qso_start.isoformat() if hasattr(row.qso_start, "isoformat") else str(row.qso_start),
+                ts=iso_utc(row.qso_start),
                 call=row.call,
                 band=row.band,
                 swr=round(float(row.swr_avg), 2),

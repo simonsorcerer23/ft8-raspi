@@ -51,6 +51,14 @@ class OperatorConfig(BaseModel):
     # Password). Wird via clublog.org/requestapikey.php oder helpdesk
     # beantragt. Ohne diesen Key liefert realtime.php HTTP 403.
     clublog_api_key: str | None = None
+    # v0.22.0 — DX-Operating-Location.
+    # home_country: ITU/CEPT-Country-Code des Heimat-DXCC (DL für DE).
+    # current_operating_country: wenn gesetzt UND != home_country, dann
+    # wird der TX-Callsign zu "<prefix>/<callsign>" (z.B. 9A/DO3XR in
+    # Kroatien). Steuert auch CEPT-Power-Cap + Klasse-E-Lockout fuer
+    # Lizenz-Compliance.
+    home_country: str = "DL"
+    current_operating_country: str | None = None
 
     @field_validator("callsign")
     @classmethod

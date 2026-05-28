@@ -281,3 +281,20 @@ class MachineContext:
     # `not_in_pileup` liefert 0 fuer diese Calls = Picker pickt sie
     # nur wenn andere Tiers grün sind.
     pile_up_calls: set[str] = field(default_factory=set)
+    # v0.22.0 — DX-Operating-Location. Wenn current_operating_country
+    # gesetzt UND != home_country, wird der TX-Callsign zu
+    # "<prefix>/<callsign>" (z.B. 9A/DK9XR). Beide aus OperatorConfig
+    # gespiegelt vom Orchestrator pro Slot.
+    home_country: str = "DL"
+    current_operating_country: str | None = None
+
+    @property
+    def tx_callsign(self) -> str:
+        """Effektiver TX-Callsign — mit DX-Prefix wenn Auslandsbetrieb,
+        sonst nur der Heimat-Call. Wird von allen _emit_*-Helpers in der
+        State-Machine benutzt.
+        """
+        oc = self.current_operating_country
+        if oc and oc != self.home_country:
+            return f"{oc}/{self.callsign}"
+        return self.callsign

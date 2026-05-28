@@ -11,6 +11,7 @@ from sqlalchemy import select
 from ...db import session_scope
 from ...db.models import Decode
 from ...runtime import Orchestrator
+from ...util.timefmt import iso_utc
 from ..deps import get_orchestrator
 
 router = APIRouter()
@@ -252,7 +253,7 @@ async def conversation(
             continue
         seen_last = (msg, kind)
         entries.append(ConvEntry(
-            direction="tx", ts=a.ts.isoformat(), message=msg, kind=kind,
+            direction="tx", ts=iso_utc(a.ts), message=msg, kind=kind,
             mf_mfnr=_mfnr_in_message(msg),
         ))
 
@@ -291,7 +292,7 @@ async def conversation(
         if row.call_to == my_call:
             entries.append(ConvEntry(
                 direction="rx",
-                ts=row.ts.isoformat() if hasattr(row.ts, "isoformat") else str(row.ts),
+                ts=iso_utc(row.ts),
                 message=row.message,
                 mf_mfnr=_mfnr_in_message(row.message),
             ))
@@ -300,7 +301,7 @@ async def conversation(
         ):
             entries.append(ConvEntry(
                 direction="rx",
-                ts=row.ts.isoformat() if hasattr(row.ts, "isoformat") else str(row.ts),
+                ts=iso_utc(row.ts),
                 message=row.message,
                 mf_mfnr=_mfnr_in_message(row.message),
             ))
@@ -350,7 +351,7 @@ async def conversation(
         partner_grid=qso.their_grid if qso else None,
         partner_snr_received=qso.our_snr_received if qso else None,
         our_snr_sent=qso.their_snr if qso else None,
-        started_at=qso.started.isoformat() if qso else None,
+        started_at=iso_utc(qso.started) if qso else None,
         entries=entries[-20:],  # last 20 entries
         next_action_hint=hint,
         partner_flag=partner_flag,
