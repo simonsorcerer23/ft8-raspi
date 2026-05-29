@@ -87,13 +87,30 @@ def test_cept_compliance_class_a_in_foreign_country():
     assert reason is None
 
 
-def test_cept_compliance_class_e_in_foreign_country_blocked():
-    """Klasse E ist NICHT CEPT-Novice → blocked in Italien, Kroatien etc."""
-    allowed, reason = cept_compliance("9A", "DL", "E")
+def test_cept_compliance_class_e_in_cept1_only_country_blocked():
+    """Klasse E (CEPT-Novice) ist in CEPT-1-only-Laendern GESPERRT.
+    Frankreich setzt T/R 61-01 um, aber NICHT ECC/REC (05)06."""
+    allowed, reason = cept_compliance("F", "DL", "E")
     assert allowed is False
     assert reason is not None
     assert "Klasse E" in reason
-    assert "Kroatien" in reason
+    assert "Frankreich" in reason
+
+
+def test_cept_compliance_class_e_in_novice_country_allowed():
+    """Klasse E IST in CEPT-Novice-Laendern erlaubt (ECC/REC 05-06).
+    Kroatien, Oesterreich, Schweiz etc. setzen die Novice-Empfehlung um."""
+    for code in ("9A", "OE", "HB9", "PA", "OK", "OZ", "HA", "S5"):
+        allowed, reason = cept_compliance(code, "DL", "E")
+        assert allowed is True, f"Klasse E sollte in {code} erlaubt sein"
+        assert reason is None
+
+
+def test_cept_compliance_class_e_cept1_only_set():
+    """Stichprobe der CEPT-1-only-Laender — Klasse E ueberall gesperrt."""
+    for code in ("F", "I", "EA", "SV", "G", "SM", "LA", "EI", "TA"):
+        allowed, _ = cept_compliance(code, "DL", "E")
+        assert allowed is False, f"Klasse E darf NICHT in {code}"
 
 
 def test_cept_compliance_unknown_country_blocked():
@@ -238,22 +255,34 @@ def test_can_tx_on_class_a_in_foreign_country():
     assert cfg.can_tx_on("15m") is True
 
 
-def test_can_tx_on_class_e_in_foreign_country_blocked():
-    """KLASSE E IN AUSLAND → HART BLOCKED auf allen Baendern."""
-    cfg = _app_config(license_class="E", current_op_country="9A")
-    # 15m ware in DL erlaubt, in 9A aber nicht (CEPT-Klasse-E nicht anerkannt)
+def test_can_tx_on_class_e_in_cept1_only_country_blocked():
+    """Klasse E in CEPT-1-only-Land (Frankreich) → HART BLOCKED."""
+    cfg = _app_config(license_class="E", current_op_country="F")
     assert cfg.can_tx_on("15m") is False
-    assert cfg.can_tx_on("20m") is False
+
+
+def test_can_tx_on_class_e_in_novice_country_allowed():
+    """Klasse E in CEPT-Novice-Land (Kroatien) → erlaubt (auf den
+    Baendern die Klasse E national hat + Antenne deckt)."""
+    cfg = _app_config(license_class="E", current_op_country="9A")
+    assert cfg.can_tx_on("15m") is True   # 15m: Klasse E national erlaubt
+    assert cfg.can_tx_on("20m") is False  # 20m: Klasse E national gesperrt
 
 
 def test_cept_lock_reason_when_blocked():
-    cfg = _app_config(license_class="E", current_op_country="9A")
+    cfg = _app_config(license_class="E", current_op_country="F")
     reason = cfg.cept_lock_reason()
     assert reason is not None
     assert "Klasse E" in reason
 
 
-def test_cept_lock_reason_none_when_ok():
+def test_cept_lock_reason_none_when_novice_country():
+    """Klasse E in CEPT-Novice-Land → kein Lock-Reason."""
+    cfg = _app_config(license_class="E", current_op_country="9A")
+    assert cfg.cept_lock_reason() is None
+
+
+def test_cept_lock_reason_none_when_class_a():
     cfg = _app_config(license_class="A", current_op_country="9A")
     assert cfg.cept_lock_reason() is None
 
