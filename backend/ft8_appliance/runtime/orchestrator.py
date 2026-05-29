@@ -226,6 +226,19 @@ class Orchestrator:
     # obwohl in odd-Slots ständig dekodiert wurde. Persistenter Timestamp
     # statt Snapshot eliminiert den Phase-Lock-Bug.
     _last_decode_recv_at: float = field(default_factory=lambda: time.time(), init=False)
+    # v0.23.1 — Audio-Liveness-Tracker fuer den Funkstille-Watchdog.
+    # Timestamp wann zuletzt ein PLAUSIBLER RX-Audio-Pegel gemessen wurde
+    # (rx_audio_dbfs nicht None und ueber dem digital-silence-Floor). Bei
+    # totem Band kommt weiter Rauschen rein → frisch. Bei kaputter Audio-
+    # Kette (Kabel ab, ALSA-device weg, Capture-Thread tot) → stale.
+    # Erlaubt dem Watchdog "Band tot" (kein Alarm) von "Audio kaputt"
+    # (Alarm) zu unterscheiden. Sebastian 2026-05-29.
+    _last_audio_seen_at: float = field(default_factory=lambda: time.time(), init=False)
+    # Digital-silence-Floor in dBFS: RX-Pegel darueber = lebende Audio-
+    # Kette (Rauschen), darunter/None = Capture liefert nichts. Echter
+    # RF-Rausch-Floor liegt typisch bei -30..-60 dBFS; ein abgezogenes
+    # Kabel / totes ALSA-Device gibt < -80 dBFS oder None.
+    AUDIO_SILENCE_FLOOR_DBFS: typing.ClassVar[float] = -75.0
     # v0.6.0 Anti-WSJT-X-Audit Phase A2: DT-Drift-Self-Diagnose.
     # Sammelt die DT-Werte (dt_s) der letzten Decodes — wenn der
     # Median systematisch um >0.5s offset ist, ist UNSERE Clock schuld
@@ -1164,6 +1177,12 @@ class Orchestrator:
         # Anzeige sofort hoch; danach fällt sie sanft auf den Rauschpegel.
         # So sieht der Operator den echten Spitzenpegel statt eine zappelnde
         # RMS-Anzeige.
+        # Audio-Liveness fuer den Funkstille-Watchdog: ein plausibler
+        # Pegel ueber dem digital-silence-Floor heisst die Audio-Kette
+        # lebt (auch bei totem Band — Rauschen kommt rein). Unter dem
+        # Floor / None = Capture liefert nichts → echtes Problem.
+        if rx_audio_dbfs is not None and rx_audio_dbfs > self.AUDIO_SILENCE_FLOOR_DBFS:
+            self._last_audio_seen_at = time.time()
         rx_audio_dbfs_peak: float | None = self._rx_audio_dbfs_peak
         if rx_audio_dbfs is not None:
             now_ts = time.time()
@@ -2382,20 +2401,38 @@ class Orchestrator:
                 # Empfang upgedated wird — nicht slot-bezogen.
                 stale_min = (now_t - self._last_decode_recv_at) / 60
                 if is_active and stale_min > watchdog_min and not self._funkstille_push_active:
-                    # Single-Shot (Sebastian v0.5.2): pro Funkstille-
-                    # Episode genau EIN Push. Flag wird erst beim
-                    # naechsten echten Decode wieder zurueckgesetzt
-                    # (siehe slot_loop wo _last_decode_recv_at gesetzt
-                    # wird). Vorher: alle watchdog_min (=15min) Spam-
-                    # Push wenn das Band nachts stundenlang tot ist.
-                    await ntfy.notify(
-                        f"Keine Decodes seit {stale_min:.0f} min — Antenne / Audio prüfen?",
-                        title="📡 FT8 Pi: Funkstille",
-                        priority="high",
-                        tags=["warning"],
-                    )
-                    last_alert_at = now_t
-                    self._funkstille_push_active = True
+                    # v0.23.1 — Audio-Liveness-Diskriminator (Sebastian
+                    # 2026-05-29): "keine Decodes" alleine ist KEIN
+                    # Problem — auf einem Tagband (15m/10m) ist nachts
+                    # einfach das Band tot. Wir alarmieren nur wenn ZUSAETZLICH
+                    # die Audio-Kette tot ist (kein RX-Pegel ueber dem
+                    # silence-Floor seit X min) = echtes Hardware-Problem
+                    # (Kabel ab, ALSA weg, Capture-Thread tot).
+                    audio_stale_min = (now_t - self._last_audio_seen_at) / 60
+                    audio_dead = audio_stale_min > watchdog_min
+                    if audio_dead:
+                        # Echtes Problem: keine Decodes UND kein RX-Audio.
+                        await ntfy.notify(
+                            f"Keine Decodes seit {stale_min:.0f} min UND "
+                            f"kein RX-Audio seit {audio_stale_min:.0f} min — "
+                            "Antenne / Audio-Kabel / Rig prüfen!",
+                            title="📡 FT8 Pi: Funkstille (Audio tot)",
+                            priority="high",
+                            tags=["warning"],
+                        )
+                        last_alert_at = now_t
+                        self._funkstille_push_active = True
+                    else:
+                        # Band tot, aber Audio-Kette lebt (Rauschen kommt
+                        # rein) → erwartbar, KEIN Push. Single-Shot-Flag
+                        # trotzdem setzen damit wir nicht jeden Tick neu
+                        # pruefen; Reset beim naechsten echten Decode.
+                        log.info(
+                            "Funkstille seit %.0f min, aber RX-Audio lebt "
+                            "(zuletzt vor %.0f min) → Band tot, kein Alarm",
+                            stale_min, audio_stale_min,
+                        )
+                        self._funkstille_push_active = True
                     continue
 
                 # Fall 4: CQ-Idle-Watchdog. Wir rufen seit
