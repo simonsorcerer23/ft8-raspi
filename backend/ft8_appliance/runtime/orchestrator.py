@@ -833,9 +833,12 @@ class Orchestrator:
             qrz.password = op.qrz_password
         if op.qrz_logbook_api_key is not None:
             qrz.logbook_api_key = op.qrz_logbook_api_key
-        # ntfy-Topic pro Operator (lower-case, kein Slash etc.)
+        # ntfy-Topic pro PERSON, nicht pro On-Air-Call (v0.28.1): base_call
+        # strippt /AM, /MM, DX-Prefixe → DO3XR und DO3XR/AM teilen das Topic
+        # "ft8-do3xr". Sonst haette /AM ein "ft8-do3xr/am"-Topic — Slash ist
+        # in ntfy ungueltig UND niemand waere drauf subscribed.
         ntfy = self.config.integrations.ntfy
-        ntfy.topic = f"ft8-{op.callsign.lower()}"
+        ntfy.topic = f"ft8-{base_call(op.callsign).lower()}"
 
     async def switch_operator(self, callsign: str) -> None:
         """Aktiven Operator wechseln (Hot-Swap, Sebastian 2026-05-23).
