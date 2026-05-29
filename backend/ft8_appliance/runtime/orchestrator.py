@@ -974,9 +974,22 @@ class Orchestrator:
                 if st.ok:
                     book = st.book_name or st.callsign or "Logbuch"
                     n = st.qso_count
-                    qrz = {"status": "ok",
-                           "detail": f"QRZ-Logbuch '{book}'"
-                                     + (f" ({n} QSOs)" if n is not None else "")}
+                    book_call = (st.callsign or "").upper().strip()
+                    # QRZ STATUS liefert CALLSIGN = der Call dem das Logbuch
+                    # gehoert. Stimmt der nicht mit dem On-Air-Call ueberein,
+                    # zeigt der Key aufs falsche Logbuch (QRZ wuerde den
+                    # Upload ablehnen). Das ist genau der DO3XR/AM-Fall, wo
+                    # versehentlich der Heimat-Key hinterlegt war.
+                    if book_call and book_call != call:
+                        qrz = {"status": "warn",
+                               "detail": f"QRZ-Key gehoert zum Logbuch '{book}' "
+                                         f"(Call {st.callsign}), nicht zu {call} — "
+                                         f"in QRZ ein eigenes Logbuch fuer {call} "
+                                         f"anlegen und dessen Key hinterlegen."}
+                    else:
+                        qrz = {"status": "ok",
+                               "detail": f"QRZ-Logbuch '{book}'"
+                                         + (f" ({n} QSOs)" if n is not None else "")}
                 else:
                     qrz = {"status": "error",
                            "detail": f"QRZ lehnt den Key ab: {st.reason}"}
