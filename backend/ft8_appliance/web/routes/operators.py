@@ -90,6 +90,43 @@ async def list_operators(
     )
 
 
+class PreflightSection(BaseModel):
+    status: Literal["ok", "not_set_up", "warn", "error"]
+    detail: str | None = None
+
+
+class PreflightResponse(BaseModel):
+    callsign: str          # geprueft: der On-Air-Call
+    owner_callsign: str    # welches Profil ihn besitzt
+    qrz: PreflightSection
+    clublog: PreflightSection
+
+
+@router.get("/operators/preflight", response_model=PreflightResponse)
+async def preflight(
+    callsign: str | None = None,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> PreflightResponse:
+    """Pre-Flight-Setup-Check: ist ein On-Air-Call upload-bereit?
+
+    Prueft QRZ (Key vorhanden + live) und ClubLog (Call registriert) fuer
+    den angegebenen Call — default: der effektive TX-Call des aktiven
+    Operators (inkl. DX-Prefix). Query-Param statt Pfad, weil DX-Calls
+    einen Slash enthalten (9A/DO3XR). Macht je hoechstens EINE Netz-
+    Anfrage pro Dienst (ClubLog-Firewall-safe).
+    """
+    call = (callsign or orch.effective_tx_call()).upper().strip()
+    if not call:
+        raise HTTPException(status_code=400, detail="kein Callsign")
+    res = await orch.check_call_setup(call)
+    return PreflightResponse(
+        callsign=res["callsign"],
+        owner_callsign=res["owner"],
+        qrz=PreflightSection(**res["qrz"]),
+        clublog=PreflightSection(**res["clublog"]),
+    )
+
+
 @router.get("/operators/active", response_model=OperatorOut)
 async def get_active_operator(
     orch: Orchestrator = Depends(get_orchestrator),

@@ -59,6 +59,32 @@ class OperatorConfig(BaseModel):
     # Lizenz-Compliance.
     home_country: str = "DL"
     current_operating_country: str | None = None
+    # v0.28.0 — QRZ verlangt pro On-Air-Call (jeder Prefix/Suffix) ein
+    # EIGENES Logbuch mit eigenem API-Key (DO3XR, DO3XR/AM und 9A/DO3XR
+    # sind fuer QRZ drei verschiedene Rufzeichen). Diese Map ordnet einem
+    # konkreten On-Air-Call seinen Logbook-Key zu. Der Uploader waehlt den
+    # Key anhand des QSO-station_callsign (siehe :meth:`qrz_key_for`);
+    # fehlt ein Eintrag, faellt er auf qrz_logbook_api_key (Heimat-Logbuch)
+    # zurueck. ClubLog braucht das NICHT — ein Account, Call nur als Tag.
+    qrz_logbooks: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("qrz_logbooks")
+    @classmethod
+    def _upper_logbook_keys(cls, v: dict[str, str]) -> dict[str, str]:
+        return {k.upper().strip(): val for k, val in (v or {}).items()}
+
+    def qrz_key_for(self, station_callsign: str | None) -> str | None:
+        """QRZ-Logbook-API-Key fuer einen konkreten On-Air-Call.
+
+        Map-Treffer (z.B. station_callsign "DO3XR/AM" → dessen eigener
+        Key) gewinnt; sonst der Heimat-Key. So landen /AM- und
+        DX-Prefix-QSOs im richtigen QRZ-Logbuch.
+        """
+        if station_callsign:
+            key = self.qrz_logbooks.get(station_callsign.upper().strip())
+            if key:
+                return key
+        return self.qrz_logbook_api_key
 
     @field_validator("callsign")
     @classmethod

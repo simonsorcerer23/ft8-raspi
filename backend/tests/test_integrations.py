@@ -300,6 +300,61 @@ async def test_ntfy_disabled_when_no_topic() -> None:
 
 
 # ============================================================================
+# Pre-Flight setup check — QRZ STATUS + ClubLog watch.php (v0.28.0)
+# ============================================================================
+@respx.mock
+async def test_qrz_status_ok_parses_book_info() -> None:
+    from ft8_appliance.integrations import qrz_logbook
+    route = respx.post("https://logbook.qrz.com/api").mock(
+        return_value=Response(
+            200,
+            text="RESULT=OK&CALLSIGN=DO3XR/AM&BOOK_NAME=DO3XR%20AM&COUNT=42&DXCC_COUNT=7",
+        )
+    )
+    st = await qrz_logbook.status("KEY123")
+    assert st.ok is True
+    assert st.callsign == "DO3XR/AM"
+    assert st.book_name == "DO3XR AM"
+    assert st.qso_count == 42
+    assert st.dxcc_count == 7
+    assert route.call_count == 1  # single-shot
+
+
+@respx.mock
+async def test_qrz_status_bad_key() -> None:
+    from ft8_appliance.integrations import qrz_logbook
+    respx.post("https://logbook.qrz.com/api").mock(
+        return_value=Response(200, text="RESULT=AUTH&REASON=invalid+api+key")
+    )
+    st = await qrz_logbook.status("WRONG")
+    assert st.ok is False
+    assert "invalid" in (st.reason or "")
+
+
+@respx.mock
+async def test_clublog_check_registered_true() -> None:
+    from ft8_appliance.integrations import clublog
+    route = respx.get("https://clublog.org/watch.php").mock(
+        return_value=Response(200, json={"clublog_user": True, "call": "DO3XR/AM"})
+    )
+    reg = await clublog.check_callsign_registered("DO3XR/AM", "APIKEY")
+    assert reg.ok is True
+    assert reg.registered is True
+    assert route.call_count == 1  # single-shot — ClubLog firewall
+
+
+@respx.mock
+async def test_clublog_check_registered_false() -> None:
+    from ft8_appliance.integrations import clublog
+    respx.get("https://clublog.org/watch.php").mock(
+        return_value=Response(200, json={"clublog_user": False})
+    )
+    reg = await clublog.check_callsign_registered("VK/DO3XR", "APIKEY")
+    assert reg.ok is True
+    assert reg.registered is False
+
+
+# ============================================================================
 # Blitzortung
 # ============================================================================
 def test_haversine_known_distance() -> None:

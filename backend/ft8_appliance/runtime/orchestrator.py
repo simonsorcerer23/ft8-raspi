@@ -895,14 +895,170 @@ class Orchestrator:
             new_op.callsign, len(self._worked_calls),
             len(self.state_machine.ctx.blacklist),
         )
+        # v0.28.0 — Pre-Flight im Hintergrund: warnt aufs Handy wenn der
+        # neue On-Air-Call nicht sauber in QRZ/ClubLog angelegt ist. Non-
+        # blocking (kein Switch-Delay) + single-shot (ClubLog-Firewall-safe).
+        self._preflight_task = asyncio.create_task(
+            self._preflight_warn(self.effective_tx_call(new_op)),
+            name="preflight-warn",
+        )
+
+    async def _preflight_warn(self, call: str) -> None:
+        """Hintergrund-Check nach Operator-Wechsel → ntfy bei Setup-Luecke."""
+        try:
+            res = await self.check_call_setup(call)
+        except Exception as exc:
+            log.info("preflight-warn uebersprungen (%s)", exc)
+            return
+        probs = [
+            f"{label}: {res[svc]['detail']}"
+            for svc, label in (("qrz", "QRZ"), ("clublog", "ClubLog"))
+            if res[svc]["status"] in ("not_set_up", "warn", "error")
+        ]
+        if not probs:
+            return
+        ntfy = getattr(self.integrations, "ntfy", None)
+        if ntfy is None:
+            return
+        try:
+            await ntfy.notify(
+                "\n".join(probs),
+                title=f"\u26a0 {call}: Upload-Setup unvollstaendig",
+                priority="high",
+                tags=["warning"],
+            )
+        except Exception as exc:
+            log.info("preflight-warn ntfy fehlgeschlagen: %s", exc)
+
+    def effective_tx_call(self, op=None) -> str:
+        """Der tatsaechlich gesendete Call eines Operators.
+
+        Bei DX-Betrieb (current_operating_country gesetzt + != Heimat)
+        wird er zu ``<prefix>/<callsign>`` (z.B. 9A/DO3XR), sonst der
+        Heimat-Call. Spiegelt die Synthese in operating_location.py.
+        """
+        op = op or self.config.operator
+        c = op.current_operating_country
+        if c and c != op.home_country:
+            return f"{c}/{op.callsign}"
+        return op.callsign
+
+    async def check_call_setup(self, call: str) -> dict:
+        """Pre-Flight: ist ``call`` in QRZ + ClubLog sauber zum Upload bereit?
+
+        Verifiziert genau EINMAL (kein Retry — ClubLog firewallt sonst):
+          * QRZ: ist ein Logbook-Key fuer den On-Air-Call hinterlegt und
+            live (ACTION=STATUS)?
+          * ClubLog: sind Zugangsdaten da und ist der Call registriert
+            (watch.php)?
+
+        Returns ein dict mit {callsign, owner, qrz:{status,detail},
+        clublog:{status,detail}} — status je 'ok'|'not_set_up'|'warn'|
+        'error'. Genutzt vom /preflight-Endpoint und der Switch-Warnung.
+        """
+        from ..integrations import clublog as _clublog
+        from ..integrations import qrz_logbook as _qrz
+
+        call = (call or "").upper().strip()
+        owner = self._operator_for_call(call)
+
+        # --- QRZ ---
+        key = owner.qrz_key_for(call)
+        if not key:
+            qrz = {"status": "not_set_up",
+                   "detail": f"Kein QRZ-Logbook-Key fuer {call} hinterlegt — "
+                             f"in QRZ ein Logbuch fuer {call} anlegen und den Key eintragen."}
+        else:
+            try:
+                st = await _qrz.status(key)
+                if st.ok:
+                    book = st.book_name or st.callsign or "Logbuch"
+                    n = st.qso_count
+                    qrz = {"status": "ok",
+                           "detail": f"QRZ-Logbuch '{book}'"
+                                     + (f" ({n} QSOs)" if n is not None else "")}
+                else:
+                    qrz = {"status": "error",
+                           "detail": f"QRZ lehnt den Key ab: {st.reason}"}
+            except Exception as exc:
+                qrz = {"status": "error", "detail": f"QRZ nicht erreichbar: {exc}"}
+
+        # --- ClubLog ---
+        if not (owner.clublog_email and owner.clublog_app_password and owner.clublog_api_key):
+            clublog = {"status": "not_set_up",
+                       "detail": "ClubLog-Zugang unvollstaendig (Mail / App-Passwort / API-Key)."}
+        else:
+            try:
+                reg = await _clublog.check_callsign_registered(call, owner.clublog_api_key)
+                if not reg.ok:
+                    clublog = {"status": "error", "detail": reg.reason or "ClubLog-Check fehlgeschlagen"}
+                elif reg.registered:
+                    clublog = {"status": "ok", "detail": f"{call} ist bei ClubLog registriert."}
+                else:
+                    clublog = {"status": "warn",
+                               "detail": f"{call} scheint bei ClubLog nicht angelegt — "
+                                         f"vor dem Betrieb unter Settings → Callsigns hinzufuegen."}
+            except Exception as exc:
+                clublog = {"status": "error", "detail": f"ClubLog nicht erreichbar: {exc}"}
+
+        return {"callsign": call, "owner": owner.callsign, "qrz": qrz, "clublog": clublog}
+
+    async def _sibling_callsigns(self, s, my_call: str) -> set[str]:
+        """v0.28.0 — Alle On-Air-Calls die DERSELBEN Person gehoeren.
+
+        DO3XR, DO3XR/AM, DO3XR/MM, 9A/DO3XR sind ein und derselbe
+        Operator — nur unter wechselndem Hut. Sie teilen daher die
+        Picker-Daten (worked-before, DXCC/Grids, Watchlist, Blacklist):
+        was DO3XR schon gearbeitet hat, soll DO3XRs Picker auch als /AM
+        meiden. Gruppierung ueber :func:`base_call` (Suffixe/Prefixe weg).
+
+        Quelle: konfigurierte Operator-Profile PLUS historische
+        user_callsigns im Log (DX-Prefixe wie 9A/DO3XR sind keine
+        Profile). NUR fuer Picker-Heuristik — NIE fuer Award-Credit
+        oder ADIF-Upload (siehe util/callsign.py:13).
+        """
+        base = base_call(my_call)
+        sibs = {my_call}
+        sibs |= {
+            op.callsign for op in self.config.operators
+            if base_call(op.callsign) == base
+        }
+        try:
+            ucs = (await s.execute(select(Qso.user_callsign).distinct())).scalars()
+            sibs |= {uc for uc in ucs if uc and base_call(uc) == base}
+        except Exception as exc:
+            log.warning("sibling-callsigns: distinct query failed: %s", exc)
+        return sibs
+
+    def _operator_for_call(self, call: str):
+        """v0.28.0 — Das Operator-Profil zu einem On-Air-Call.
+
+        Reihenfolge: erst EXAKTER Profil-Match (das DK9XR/AM-Profil mit
+        eigenem Logbook-Key gewinnt vor DK9XR), sonst per Person
+        (base_call), sonst der aktive Operator als Fallback."""
+        c = (call or "").upper().strip()
+        for op in self.config.operators:
+            if op.callsign == c:
+                return op
+        base = base_call(c)
+        for op in self.config.operators:
+            if base_call(op.callsign) == base:
+                return op
+        return self.config.operator
+
+    def _operator_for_qso(self, qso):
+        """Owner-Profil eines QSO (ueber dessen user_callsign)."""
+        return self._operator_for_call(getattr(qso, "user_callsign", None) or "")
 
     async def _hydrate_from_db(self) -> None:
         """Load persistent state (worked calls + blacklist) from DB on boot.
 
-        Multi-Operator (Sebastian 2026-05-23): alle Queries werden auf
-        den aktiven Callsign gefiltert. So sieht DK9XR nur seine eigenen
-        QSOs/Blacklist/worked-Grids, DL2XYZ nur seine. Bei Hot-Switch
-        ruft :meth:`switch_operator` den Hydrate erneut auf.
+        Multi-Operator (Sebastian 2026-05-23): Queries werden auf den
+        aktiven Operator gefiltert. v0.28.0: nicht mehr auf den exakten
+        Callsign, sondern auf alle Calls derselben Person (base_call) —
+        siehe :meth:`_sibling_callsigns`. So teilen DO3XR und DO3XR/AM
+        ihre Picker-Daten, bleiben aber von DK9XR getrennt. Bei
+        Hot-Switch ruft :meth:`switch_operator` den Hydrate erneut auf.
         """
         if not self.db_enabled:
             return
@@ -922,9 +1078,11 @@ class Orchestrator:
         my_call = self.config.operator.callsign
         try:
             async with session_scope() as s:
-                # worked calls — nur die unseres aktiven Operators
+                # v0.28.0 — alle Calls derselben Person (DO3XR + DO3XR/AM …)
+                sib = await self._sibling_callsigns(s, my_call)
+                # worked calls — alle On-Air-Calls dieser Person
                 rows = (await s.execute(
-                    select(Qso.call).where(Qso.user_callsign == my_call).distinct()
+                    select(Qso.call).where(Qso.user_callsign.in_(sib)).distinct()
                 )).scalars()
                 self._worked_calls = {c.upper() for c in rows if c}
                 # v0.7.0 Build 2: Hint-Decoder profitiert von known-calls
@@ -947,7 +1105,7 @@ class Orchestrator:
                 grid_rows = (
                     await s.execute(
                         select(Qso.grid_rcvd, Qso.band).where(
-                            Qso.user_callsign == my_call,
+                            Qso.user_callsign.in_(sib),
                             Qso.grid_rcvd.isnot(None),
                         )
                     )
@@ -958,9 +1116,9 @@ class Orchestrator:
                         self._worked_grids.add(g4)
                         if band:
                             self._worked_grid_band.add((g4, band))
-                # blacklist — nur des aktiven Operators
+                # blacklist — alle On-Air-Calls dieser Person
                 bl_rows = (await s.execute(
-                    select(DbBlacklist.call).where(DbBlacklist.user_callsign == my_call)
+                    select(DbBlacklist.call).where(DbBlacklist.user_callsign.in_(sib))
                 )).scalars()
                 self.state_machine.ctx.blacklist = {c.upper() for c in bl_rows if c}
                 # v0.14.0 Watchlist — pro Operator isoliert. Sets im
@@ -968,7 +1126,7 @@ class Orchestrator:
                 # Wahrheit.
                 wl_rows = (await s.execute(
                     select(DbWatchlist.call, DbWatchlist.source).where(
-                        DbWatchlist.user_callsign == my_call
+                        DbWatchlist.user_callsign.in_(sib)
                     )
                 )).all()
                 self._watchlist_calls = set()
@@ -1025,7 +1183,7 @@ class Orchestrator:
                 # cty.dat (sync-Lookup im selben Loop), zählt pro
                 # (continent, hour) und nimmt die Top-50% Stunden je
                 # Continent als "aktiv".
-                self._active_continent_hours = await self._aggregate_active_hours(s, my_call)
+                self._active_continent_hours = await self._aggregate_active_hours(s, sib)
                 # v0.18.0 — Freq-Reputation aus DB hydratisieren (kein
                 # Operator-Filter, das Set ist Pi-global).
                 self._freq_reputation = {}
@@ -1060,7 +1218,7 @@ class Orchestrator:
                     async with session_scope() as s2:
                         dxcc_band_rows = (await s2.execute(
                             select(Qso.call, Qso.band).where(
-                                Qso.user_callsign == my_call,
+                                Qso.user_callsign.in_(sib),
                                 Qso.call.isnot(None),
                                 Qso.band.isnot(None),
                             )
@@ -3083,10 +3241,20 @@ class Orchestrator:
                             and (now - qso.qrz_last_attempt_at).total_seconds() < backoff_s
                         ):
                             continue
+                        # v0.28.0 — Key + Heimat-Call aus dem OWNER-Profil
+                        # ableiten und den Logbook-Key am On-Air-Call
+                        # (station_callsign) ausrichten: DO3XR/AM landet im
+                        # /AM-Logbuch, 9A/DO3XR im 9A-Logbuch. Ohne passenden
+                        # Key kein Upload-Versuch (bleibt pending; Pre-Flight
+                        # warnt) statt ihn falsch ins Heimat-Logbuch zu kippen.
+                        owner = self._operator_for_qso(qso)
+                        qso_key = owner.qrz_key_for(qso.station_callsign)
+                        if not qso_key:
+                            continue
                         qso.qrz_upload_attempts += 1
                         qso.qrz_last_attempt_at = now
                         try:
-                            result = await upload_qso(api_key, my_call, qso)
+                            result = await upload_qso(qso_key, owner.callsign, qso)
                         except QrzLogbookError as exc:
                             log.warning("QRZ rejected %s (%s) — won't retry",
                                         qso.call, exc)
@@ -4726,13 +4894,15 @@ class Orchestrator:
         except Exception as exc:
             log.warning("reputation bail-update failed for %s: %s", call, exc)
 
-    async def _aggregate_active_hours(self, s, my_call: str) -> set[tuple[str, int]]:
+    async def _aggregate_active_hours(self, s, siblings: set[str]) -> set[tuple[str, int]]:
         """v0.16.0 — Aggregate QSO-DB into (continent, hour) Top-50% pro
         Continent.
 
         Geht die letzten 90 Tage durch, mapped call → continent ueber
         cty.dat, zählt QSOs pro (continent, hour-of-day-UTC). Nimmt
         pro Continent die Stunden mit count >= Median als "aktiv".
+
+        v0.28.0: ueber alle On-Air-Calls derselben Person (siblings).
         """
         from sqlalchemy import select as _select
         cty = self.integrations.cty
@@ -4741,7 +4911,7 @@ class Orchestrator:
         try:
             rows = (await s.execute(
                 _select(Qso.call, Qso.qso_start).where(
-                    Qso.user_callsign == my_call,
+                    Qso.user_callsign.in_(siblings),
                     Qso.qso_start.isnot(None),
                 )
             )).all()

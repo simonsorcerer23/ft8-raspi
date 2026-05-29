@@ -14,9 +14,9 @@ just translates a :class:`Qso` row into ADIF and parses the response.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from urllib.parse import urlencode
+from urllib.parse import unquote_plus, urlencode
 
 import httpx
 
@@ -35,6 +35,24 @@ class QrzLogbookError(RuntimeError):
 class QrzLogbookResult:
     logbook_id: str
     count: int  # records accepted (1 for INSERT)
+
+
+@dataclass(slots=True)
+class QrzLogbookStatus:
+    """Ergebnis von ACTION=STATUS — fuer den Pre-Flight-Setup-Check.
+
+    ``ok`` = Key gueltig. ``callsign``/``book_name``/``owner`` so weit QRZ
+    sie liefert (die STATUS-Felder sind nicht streng spezifiziert; ``raw``
+    haelt alles roh fuer den Fall, dass QRZ andere Namen verwendet)."""
+    ok: bool
+    reason: str | None = None
+    callsign: str | None = None
+    book_name: str | None = None
+    owner: str | None = None
+    qso_count: int | None = None
+    confirmed: int | None = None
+    dxcc_count: int | None = None
+    raw: dict[str, str] = field(default_factory=dict)
 
 
 def _qso_to_adif(qso: Qso, my_call: str) -> str:
@@ -210,4 +228,52 @@ async def upload_qso(api_key: str, my_call: str, qso: Qso, *, timeout: float = 1
     return QrzLogbookResult(
         logbook_id=fields.get("LOGID", ""),
         count=int(fields.get("COUNT", "1")),
+    )
+
+
+async def status(api_key: str, *, timeout: float = 10.0) -> QrzLogbookStatus:
+    """ACTION=STATUS — Key validieren + Logbuch-Metadaten lesen.
+
+    Fuer den Pre-Flight-Setup-Check: bestaetigt dass der Key live ist und
+    zu welchem Logbuch/Call er gehoert, damit der Operator sieht ob er zum
+    geplanten On-Air-Call passt. Eine einzige Anfrage, kein Retry.
+    """
+    body = urlencode({"KEY": api_key, "ACTION": "STATUS"})
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(
+            QRZ_LOGBOOK_URL, content=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    r.raise_for_status()
+    fields = {
+        k: unquote_plus(v)
+        for k, v in (part.split("=", 1) for part in r.text.split("&") if "=" in part)
+    }
+    if fields.get("RESULT") != "OK":
+        return QrzLogbookStatus(
+            ok=False,
+            reason=fields.get("REASON") or fields.get("STATUS") or "QRZ STATUS failed",
+            raw=fields,
+        )
+
+    def _pick(*names: str) -> str | None:
+        for n in names:
+            for key in (n, n.upper(), n.lower()):
+                if fields.get(key):
+                    return fields[key]
+        return None
+
+    def _int(*names: str) -> int | None:
+        v = _pick(*names)
+        return int(v) if v and str(v).strip().isdigit() else None
+
+    return QrzLogbookStatus(
+        ok=True,
+        callsign=_pick("CALLSIGN", "Callsign"),
+        book_name=_pick("BOOK_NAME", "BOOKNAME", "Book Name", "BookName", "NAME"),
+        owner=_pick("OWNER", "Owner", "BOOK_OWNER"),
+        qso_count=_int("COUNT", "BOOK_COUNT", "Count"),
+        confirmed=_int("CONFIRMED", "Confirmed"),
+        dxcc_count=_int("DXCC_COUNT", "DXCC", "DXCCTOTAL"),
+        raw=fields,
     )

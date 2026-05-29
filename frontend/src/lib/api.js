@@ -146,4 +146,7 @@ export const api = {
   operatorDelete:  (callsign, force=false) =>
                     request(`/operators/${encodeURIComponent(callsign)}${force ? '?force=true' : ''}`,
                             { method: 'DELETE' }),
+  // v0.28.0 — Pre-Flight: ist der On-Air-Call in QRZ/ClubLog upload-bereit?
+  operatorPreflight: (callsign) =>
+                    request(`/operators/preflight?callsign=${encodeURIComponent(callsign)}`),
 };

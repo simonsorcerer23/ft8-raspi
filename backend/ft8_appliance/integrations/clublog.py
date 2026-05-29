@@ -21,6 +21,7 @@ Plus separater API-Key (40-char hex) via clublog.org/requestapikey.php.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -32,10 +33,20 @@ log = logging.getLogger(__name__)
 
 CLUBLOG_URL = "https://clublog.org/realtime.php"
 CLUBLOG_BULK_URL = "https://clublog.org/putlogs.php"
+CLUBLOG_WATCH_URL = "https://clublog.org/watch.php"
 
 
 class ClubLogError(RuntimeError):
     """Raised when ClubLog refuses an upload (bad credentials, duplicate, ...)."""
+
+
+@dataclass(slots=True)
+class ClubLogRegistration:
+    """Ergebnis des Pre-Flight-Checks via watch.php."""
+    ok: bool                 # Anfrage erfolgreich (API-Key gueltig etc.)
+    registered: bool         # Call ist ClubLog bekannt (clublog_user)
+    reason: str | None = None
+    raw: dict = field(default_factory=dict)
 
 
 def _qso_to_adif(qso: Qso, my_call: str) -> str:
@@ -212,3 +223,40 @@ async def bulk_upload(
     # Erfolgs-Nachricht — wir parsen das nicht detailliert, vertrauen
     # auf den 200-Status.
     log.info("ClubLog bulk upload accepted: %d QSOs", len(qsos))
+
+
+async def check_callsign_registered(
+    callsign: str,
+    api_key: str,
+    *,
+    timeout: float = 10.0,
+) -> ClubLogRegistration:
+    """Single-shot watch.php — ist ein Call bei ClubLog registriert?
+
+    WICHTIG: genau EINE Anfrage, KEINE Retry-Schleife. ClubLog firewallt
+    IPs bei wiederholten Fehl-Anfragen — daher nur auf bewusste
+    User-Aktion (Pre-Flight-Klick / Operator-Wechsel) aufrufen.
+
+    Liefert ``clublog_user`` (bool). Hinweis: das bedeutet 'der Call ist
+    ClubLog bekannt', nicht zwingend 'unter DEINEM Account' — Letzteres
+    laesst sich read-only nicht sicher pruefen ohne echten Upload-Versuch.
+    Fuer eigene Calls (DO3XR/AM o.ae.) ist clublog_user=True praktisch
+    gleichbedeutend mit 'angelegt'.
+    """
+    params = {"call": callsign.upper().strip(), "api": api_key}
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.get(CLUBLOG_WATCH_URL, params=params)
+    r.raise_for_status()
+    try:
+        data = r.json()
+    except ValueError:
+        return ClubLogRegistration(
+            ok=False, registered=False,
+            reason="ClubLog watch.php lieferte kein JSON",
+            raw={"body": r.text[:200]},
+        )
+    return ClubLogRegistration(
+        ok=True,
+        registered=bool(data.get("clublog_user")),
+        raw=data if isinstance(data, dict) else {"data": data},
+    )

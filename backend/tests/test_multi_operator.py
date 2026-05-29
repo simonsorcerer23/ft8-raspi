@@ -194,3 +194,31 @@ def test_no_operators_raises_when_accessed() -> None:
     })
     with pytest.raises(ValueError, match="keine Operators"):
         _ = cfg.operator
+
+
+# ---------------------------------------------------------------------------
+def test_qrz_key_for_routes_by_on_air_call() -> None:
+    """v0.28.0 — qrz_logbooks-Map routet den Logbook-Key am On-Air-Call;
+    fehlt ein Eintrag, faellt es auf den Heimat-Key zurueck."""
+    op = OperatorConfig(
+        callsign="DO3XR",
+        qrz_logbook_api_key="HOME",
+        qrz_logbooks={"do3xr/am": "AM", "9A/DO3XR": "CRO"},
+    )
+    assert op.qrz_key_for("DO3XR") == "HOME"
+    assert op.qrz_key_for("DO3XR/AM") == "AM"      # case-insensitiv
+    assert op.qrz_key_for("9A/DO3XR") == "CRO"
+    assert op.qrz_key_for("VK/DO3XR") == "HOME"    # unbekannt → Heimat
+    assert op.qrz_key_for(None) == "HOME"
+    # Keys werden uppercased gespeichert
+    assert set(op.qrz_logbooks) == {"DO3XR/AM", "9A/DO3XR"}
+
+
+def test_base_call_groups_suffix_and_prefix_variants() -> None:
+    """DO3XR, DO3XR/AM und 9A/DO3XR sind dieselbe Person (gleicher
+    base_call), DK9XR nicht."""
+    from ft8_appliance.util.callsign import base_call
+    assert base_call("DO3XR/AM") == "DO3XR"
+    assert base_call("9A/DO3XR") == "DO3XR"
+    assert base_call("DO3XR/MM") == "DO3XR"
+    assert base_call("DK9XR") != base_call("DO3XR")

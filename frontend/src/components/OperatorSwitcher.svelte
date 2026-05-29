@@ -35,6 +35,19 @@
   });
   let createError = $state(null);
 
+  // Pre-Flight-Check-State: callsign → { busy, qrz:{status,detail}, clublog:{...} }
+  let preflight = $state({});
+
+  async function checkSetup(callsign) {
+    preflight[callsign] = { busy: true };
+    try {
+      const res = await api.operatorPreflight(callsign);
+      preflight[callsign] = { busy: false, qrz: res.qrz, clublog: res.clublog };
+    } catch (e) {
+      preflight[callsign] = { busy: false, error: e.message };
+    }
+  }
+
   async function refresh() {
     try {
       const data = await api.operatorsList();
@@ -160,6 +173,12 @@
               {#if op.has_qrz_credentials}· QRZ{/if}
             </span>
           </button>
+          <button
+            class="check"
+            title="Setup in QRZ/ClubLog pruefen"
+            onclick={(e) => { e.stopPropagation(); checkSetup(op.callsign); }}
+            disabled={preflight[op.callsign]?.busy}
+          >{preflight[op.callsign]?.busy ? '…' : 'prüfen'}</button>
           {#if !op.is_active}
             <button
               class="del"
@@ -169,6 +188,21 @@
             >✕</button>
           {/if}
         </div>
+        {#if preflight[op.callsign] && !preflight[op.callsign].busy}
+          {@const pf = preflight[op.callsign]}
+          <div class="preflight">
+            {#if pf.error}
+              <div class="pf-line err">⚠ {pf.error}</div>
+            {:else}
+              <div class="pf-line {pf.qrz.status === 'ok' ? 'ok' : pf.qrz.status === 'error' ? 'err' : 'warn'}">
+                <span class="pf-dot"></span>QRZ: {pf.qrz.detail}
+              </div>
+              <div class="pf-line {pf.clublog.status === 'ok' ? 'ok' : pf.clublog.status === 'error' ? 'err' : 'warn'}">
+                <span class="pf-dot"></span>ClubLog: {pf.clublog.detail}
+              </div>
+            {/if}
+          </div>
+        {/if}
       {/each}
 
       {#if !showCreate}
@@ -290,6 +324,27 @@
   }
   .del:hover { color: var(--danger); }
   .del:disabled { opacity: 0.3; cursor: not-allowed; }
+  .check {
+    background: transparent; border: none; color: #64748b; cursor: pointer;
+    padding: 0 0.5rem; font-size: 0.7rem; align-self: center;
+  }
+  .check:hover { color: var(--accent); }
+  .check:disabled { opacity: 0.5; cursor: progress; }
+  .preflight {
+    padding: 0.2rem 0.8rem 0.5rem; display: flex; flex-direction: column;
+    gap: 0.2rem; border-bottom: 1px solid #1e293b;
+  }
+  .pf-line {
+    font-size: 0.7rem; display: flex; align-items: center; gap: 0.35rem;
+    color: #94a3b8;
+  }
+  .pf-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    background: currentColor;
+  }
+  .pf-line.ok { color: #4ade80; }
+  .pf-line.warn { color: #fbbf24; }
+  .pf-line.err { color: var(--danger); }
   .add-btn {
     width: 100%; background: transparent; border: none;
     border-top: 1px solid #1e293b; padding: 0.6rem 0.8rem;
