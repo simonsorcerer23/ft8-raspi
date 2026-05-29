@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 
+from ...util.timefmt import UtcDateTime, UtcDateTimeOpt
 from ...db import session_scope
 from ...db.models import (
     Blacklist, CallReputation, Decode, DxpeditionSchedule,
@@ -37,8 +38,8 @@ class QsoOut(BaseModel):
     rst_sent: int | None
     rst_rcvd: int | None
     grid_rcvd: str | None
-    qso_start: datetime
-    qso_end: datetime
+    qso_start: UtcDateTime
+    qso_end: UtcDateTime
     my_grid: str
     my_power_w: int | None
     swr_avg: float | None
@@ -150,7 +151,7 @@ async def get_log(
 # ---------------------------------------------------------------------------
 class HeardOut(BaseModel):
     call: str
-    last_seen: datetime
+    last_seen: UtcDateTime
     count: int
     grid: str | None
     best_snr: int | None
@@ -189,7 +190,7 @@ async def get_heard(
 # ---------------------------------------------------------------------------
 class DecodeOut(BaseModel):
     id: int
-    ts: datetime
+    ts: UtcDateTime
     call_from: str | None
     call_to: str | None
     grid: str | None
@@ -246,7 +247,7 @@ async def get_decodes(
 # ---------------------------------------------------------------------------
 class BlacklistEntry(BaseModel):
     call: str
-    added: datetime
+    added: UtcDateTime
     reason: str | None
 
 
@@ -277,9 +278,9 @@ async def get_blacklist(
 # v0.14.0 Watchlist — Calls die der Op aktiv beobachtet (DXpeditions etc.)
 class WatchlistEntry(BaseModel):
     call: str
-    added: datetime
+    added: UtcDateTime
     note: str | None
-    last_alert_at: datetime | None
+    last_alert_at: UtcDateTimeOpt
 
 
 class WatchlistResponse(BaseModel):
@@ -312,7 +313,7 @@ class CallReputationEntry(BaseModel):
     score: int
     attempts: int
     successes: int
-    last_attempt_at: datetime | None
+    last_attempt_at: UtcDateTimeOpt
     last_reason: str | None
     is_soft_blacklisted: bool
 
@@ -370,10 +371,10 @@ async def get_reputation(
 # v0.19.0 DXpedition-Schedule
 class DxpeditionEntry(BaseModel):
     call: str
-    start_date: datetime
-    end_date: datetime
+    start_date: UtcDateTime
+    end_date: UtcDateTime
     note: str | None
-    added: datetime
+    added: UtcDateTime
     auto_added_to_watchlist: bool
     reminder_sent: bool
     source: str = "manual"
@@ -429,7 +430,7 @@ class FreqReputationEntry(BaseModel):
     attempts: int
     successes: int
     success_rate: float
-    last_used_at: datetime | None
+    last_used_at: UtcDateTimeOpt
 
 
 class FreqReputationResponse(BaseModel):
@@ -502,8 +503,8 @@ class MapMarker(BaseModel):
     lat: float
     lon: float
     kind: Literal["worked", "heard", "both"]
-    last_seen: datetime | None = None
-    last_worked: datetime | None = None
+    last_seen: UtcDateTimeOpt = None
+    last_worked: UtcDateTimeOpt = None
     snr_best: int | None = None
     count: int = 1
     band: str | None = None
@@ -647,8 +648,8 @@ class OperatingLocation(BaseModel):
     lat: float
     lon: float
     qso_count: int
-    first_qso: datetime
-    last_qso: datetime
+    first_qso: UtcDateTime
+    last_qso: UtcDateTime
     bands: list[str]
 
 

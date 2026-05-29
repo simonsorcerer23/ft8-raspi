@@ -2712,7 +2712,31 @@ class Orchestrator:
             for op in (self.config.operators or []):
                 if op.callsign and op.callsign not in operator_calls:
                     operator_calls.append(op.callsign)
-            log.info("psk-reciprocity: monitoring %d operator-call(s): %s",
+            # v0.23.0 — QRV-Filter: nur Calls abfragen die tatsaechlich
+            # schon mal gesendet haben (QSOs in der DB). Sebastian
+            # 2026-05-29: die /AM-Profile (DK9XR/AM, DO3XR/AM) waren nie
+            # QRV, aber wir haben pskreporter.info trotzdem fuer sie
+            # abgefragt → 2x so viele Requests → 503-Rate-Limit. Der
+            # aktive Operator bleibt IMMER drin (auch ohne QSOs, damit
+            # ein frisch angelegter Op vom ersten QSO an getrackt wird).
+            if self.db_enabled:
+                try:
+                    from sqlalchemy import select as _sel, distinct as _distinct
+                    from ..db.models import Qso as _Qso
+                    active = self.config.operator.callsign
+                    async with session_scope() as _s:
+                        qrv_rows = (await _s.execute(
+                            _sel(_distinct(_Qso.user_callsign))
+                        )).scalars().all()
+                    qrv = {c for c in qrv_rows if c}
+                    operator_calls = [
+                        c for c in operator_calls
+                        if c == active or c in qrv
+                    ]
+                except Exception as exc:
+                    log.warning("psk-reciprocity: QRV-Filter fehlgeschlagen (%s) "
+                                "— frage alle Calls ab", exc)
+            log.info("psk-reciprocity: monitoring %d QRV operator-call(s): %s",
                      len(operator_calls), operator_calls)
         except Exception as exc:
             log.error("psk-reciprocity: setup failed, refresh-loop dead: %s",

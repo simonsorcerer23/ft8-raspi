@@ -2,6 +2,7 @@
   // Live transcript of what we're sending and receiving in the current QSO,
   // plus a "next action" hint so you always know what comes next.
   import { onMount } from 'svelte';
+  import { fmtUtcTime } from '../lib/time.js';
 
   let conv = $state({ op_mode: 'off', state: 'IDLE', entries: [],
                       next_action_hint: null });
@@ -19,11 +20,7 @@
     return () => clearInterval(t);
   });
 
-  function shortTime(iso) {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  }
+  const shortTime = fmtUtcTime;
 
   function kindIcon(k) {
     return ({

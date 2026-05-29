@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { fmtUtcDateTime } from '../lib/time.js';
 
   let entries = $state([]);
   let newCall = $state('');
@@ -33,7 +34,7 @@
 
   function fmtTs(iso) {
     if (!iso) return '';
-    return new Date(iso).toLocaleString();
+    return fmtUtcDateTime(iso);
   }
 </script>
 

@@ -12,6 +12,8 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
 
+  import { utcMillis, fmtUtcDateTime } from '../lib/time.js';
+
   let { hours = 24 } = $props();
 
   let data = $state(null);
@@ -55,10 +57,10 @@
     if (!data || data.length === 0) { path = ''; points = []; return; }
     const swrs = data.map(p => p.swr);
     yMax = Math.max(threshold + 0.3, Math.max(...swrs) + 0.2, 2.0);
-    const tMin = new Date(data[0].ts).getTime();
-    const tMax = new Date(data[data.length - 1].ts).getTime();
+    const tMin = utcMillis(data[0].ts);
+    const tMax = utcMillis(data[data.length - 1].ts);
     const tRange = Math.max(1, tMax - tMin);
-    const xFor = (ts) => PAD_L + ((new Date(ts).getTime() - tMin) / tRange) * PLOT_W;
+    const xFor = (ts) => PAD_L + ((utcMillis(ts) - tMin) / tRange) * PLOT_W;
     const yFor = (swr) => PAD_T + ((yMax - swr) / (yMax - Y_MIN)) * PLOT_H;
     points = data.map(p => ({ ...p, x: xFor(p.ts), y: yFor(p.swr) }));
     path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
@@ -148,7 +150,7 @@
       <div class="tip" style="left: {hoverX}px; top: {hoverY - 60}px;">
         <strong>{hoverPoint.call}</strong> · {hoverPoint.band}<br/>
         SWR <strong>{hoverPoint.swr}</strong> · {hoverPoint.power_w ?? '?'}W<br/>
-        <span class="muted">{new Date(hoverPoint.ts).toLocaleString('de-DE', {dateStyle:'short', timeStyle:'short'})}</span>
+        <span class="muted">{fmtUtcDateTime(hoverPoint.ts)}</span>
       </div>
     {/if}
     <div class="legend">

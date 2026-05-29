@@ -117,17 +117,43 @@ async def psk_who_heard_me(
     if not orch.integrations.psk_reporter or not orch.integrations.psk_reporter.enabled:
         return PskHeardResponse(reports=[])
     callsign = orch.state_machine.ctx.callsign
-    rs = await orch.integrations.psk_reporter.who_heard_me(callsign, hours=hours)
     from ...integrations.flags import flag_for_call
     cty = getattr(getattr(orch, "integrations", None), "cty", None)
+    # Live-Query. pskreporter.info rate-limited regelmaessig mit 503 —
+    # in dem Fall NICHT leer anzeigen sondern auf den Reciprocity-Cache
+    # zurueckfallen (der Background-Loop fragt im 1h-Fenster und haelt
+    # die zuletzt bekannten Stationen). Sebastian 2026-05-29: "warum
+    # hoert uns keiner mehr" — taten sie, nur der 24h-Query failte mit
+    # 503 und die Box zeigte leer.
+    rs = []
+    try:
+        rs = await orch.integrations.psk_reporter.who_heard_me(callsign, hours=hours)
+    except Exception:
+        rs = []
+    if rs:
+        return PskHeardResponse(
+            reports=[
+                PskHeardRow(
+                    rx_call=r.rx_call, rx_grid=r.rx_grid, snr_db=r.snr_db,
+                    band=r.band, mode=r.mode, received_at=r.received_at.isoformat(),
+                    flag=flag_for_call(r.rx_call, cty),
+                )
+                for r in rs
+            ]
+        )
+    # Fallback: Reciprocity-Cache (nur Calls, kein SNR/Grid/Band).
+    # Besser als "kein Empfangsbericht" wenn pskreporter gerade 503t.
+    from datetime import UTC, datetime
+    cache = sorted(getattr(orch, "_psk_heard_us_cache", set()) or set())
+    cached_at = getattr(orch, "_psk_last_refresh_at", 0.0) or 0.0
+    iso = (
+        datetime.fromtimestamp(cached_at, UTC).isoformat()
+        if cached_at else datetime.now(UTC).isoformat()
+    )
     return PskHeardResponse(
         reports=[
-            PskHeardRow(
-                rx_call=r.rx_call, rx_grid=r.rx_grid, snr_db=r.snr_db,
-                band=r.band, mode=r.mode, received_at=r.received_at.isoformat(),
-                flag=flag_for_call(r.rx_call, cty),
-            )
-            for r in rs
+            PskHeardRow(rx_call=c, received_at=iso, flag=flag_for_call(c, cty))
+            for c in cache
         ]
     )
 

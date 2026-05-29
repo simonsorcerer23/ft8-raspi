@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { decodeStore, statusStore } from '../lib/stores.svelte.js';
+  import { fmtUtcTime } from '../lib/time.js';
 
   let { onReply = () => {}, onTailEnd = () => {} } = $props();
 
@@ -54,11 +55,7 @@
     return () => { clearInterval(t); clearInterval(tp); };
   });
 
-  function shortTs(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')}`;
-  }
+  const shortTs = fmtUtcTime;
   function fmtSnr(s) {
     if (s === null || s === undefined) return '   ';
     return (s >= 0 ? '+' : '') + String(s).padStart(3, ' ');

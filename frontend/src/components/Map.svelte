@@ -4,6 +4,7 @@
   import 'leaflet/dist/leaflet.css';
   import { api } from '../lib/api.js';
   import { mapStore, decodeStore, statusStore } from '../lib/stores.svelte.js';
+  import { utcMillis, fmtUtcTime, fmtUtcDateTime, parseUtc } from '../lib/time.js';
   import { greatCircle, gridToLatLon } from '../lib/geo.js';
 
   let el;
@@ -109,7 +110,7 @@
       seen.add(d.call_from);
       const target = gridToLatLon(d.grid);
       if (!target) continue;
-      const age_s = (now - new Date(d.ts).getTime()) / 1000;
+      const age_s = (now - utcMillis(d.ts)) / 1000;
       // Fade 1.0 → 0.4 über 5 min; vorher 0.85 → 0.1 war zu schwach,
       // bei vielen frischen Decodes verlor man die Sicht auf einzelne
       // Bögen. Mindest-Opacity 0.4 hält ältere Spots noch erkennbar.
@@ -126,7 +127,7 @@
         `<strong>${d.call_from}</strong><br>` +
         `${d.message}<br>` +
         `${d.grid} · ${d.snr_db ?? '?'} dB · ${d.band ?? ''}<br>` +
-        `<small>${new Date(d.ts).toLocaleTimeString()}</small>`
+        `<small>${fmtUtcTime(d.ts)} UTC</small>`
       ).addTo(liveArcLayer);
     }
   }
@@ -136,8 +137,8 @@
     if (m.band) lines.push(`Band: ${m.band}`);
     if (m.snr_best != null) lines.push(`Best SNR: ${m.snr_best} dB`);
     if (m.count > 1) lines.push(`Heard: ${m.count}×`);
-    if (m.last_worked) lines.push(`Worked: ${new Date(m.last_worked).toLocaleString()}`);
-    if (m.last_seen)   lines.push(`Seen:   ${new Date(m.last_seen).toLocaleString()}`);
+    if (m.last_worked) lines.push(`Worked: ${fmtUtcDateTime(m.last_worked)}`);
+    if (m.last_seen)   lines.push(`Seen:   ${fmtUtcDateTime(m.last_seen)}`);
     return lines.join('<br>');
   }
 
@@ -165,7 +166,7 @@
           `<small>${sp.country ?? '?'} (${sp.continent ?? '?'})</small><br>` +
           `${(sp.freq_hz / 1000).toFixed(1)} kHz<br>` +
           `<em>${sp.comment ?? ''}</em><br>` +
-          `<small>${sp.spotter} · ${new Date(sp.ts).toLocaleTimeString()}</small>`
+          `<small>${sp.spotter} · ${fmtUtcTime(sp.ts)} UTC</small>`
         );
         m.addTo(dxLayer);
       }
@@ -183,7 +184,7 @@
           `<strong>📍 Operating location</strong><br>` +
           `${loc.qso_count} QSOs<br>` +
           `Bänder: ${loc.bands.join(', ')}<br>` +
-          `Zeit: ${new Date(loc.first_qso).toLocaleDateString()} – ${new Date(loc.last_qso).toLocaleDateString()}`
+          `Zeit: ${fmtUtcDateTime(loc.first_qso).slice(0,10)} – ${fmtUtcDateTime(loc.last_qso).slice(0,10)}`
         );
         marker.addTo(locLayer);
       }
@@ -447,13 +448,15 @@
   }
   function shortDate(iso) {
     if (!iso) return '—';
-    const d = new Date(iso);
+    const d = parseUtc(iso);
+    if (!d) return '—';
     const now = new Date();
+    const iso2 = d.toISOString();
     const sameYear = d.getUTCFullYear() === now.getUTCFullYear();
-    return d.toLocaleDateString([], {
-      day: '2-digit', month: '2-digit',
-      ...(sameYear ? {} : { year: '2-digit' }),
-    }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // DD.MM[.YY] HH:MM in UTC
+    const datePart = `${iso2.slice(8,10)}.${iso2.slice(5,7)}` +
+                     (sameYear ? '' : `.${iso2.slice(2,4)}`);
+    return `${datePart} ${iso2.slice(11,16)}`;
   }
   function panTo(m) {
     map.flyTo([m.lat, m.lon], Math.max(map.getZoom(), 4));

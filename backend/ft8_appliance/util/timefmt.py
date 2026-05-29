@@ -18,6 +18,9 @@ ausgegeben. TZ-aware datetimes werden in UTC normalisiert.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Annotated
+
+from pydantic import PlainSerializer
 
 
 def iso_utc(dt: datetime | None) -> str | None:
@@ -40,3 +43,20 @@ def iso_utc(dt: datetime | None) -> str | None:
     else:
         dt = dt.astimezone(UTC)
     return dt.isoformat()
+
+
+# v0.23.0 — Pydantic-Annotated-Typ fuer Response-Model-Felder. Statt
+# ``ts: datetime`` (Pydantic serialisiert naive ohne TZ-Suffix → Frontend-
+# Bug) schreibt man ``ts: UtcDateTime`` und kriegt automatisch
+# ``...+00:00``. Naive werden als UTC interpretiert (Backend-Vertrag).
+#
+# when_used='json' damit interne Python-Nutzung (z.B. Vergleiche in Tests)
+# den datetime-Typ behaelt — nur die JSON-Serialisierung wird angefasst.
+UtcDateTime = Annotated[
+    datetime,
+    PlainSerializer(iso_utc, return_type=str, when_used="json"),
+]
+UtcDateTimeOpt = Annotated[
+    datetime | None,
+    PlainSerializer(iso_utc, return_type=(str | None), when_used="json"),
+]

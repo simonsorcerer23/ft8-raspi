@@ -3,6 +3,7 @@
   // pro Reporter-Station, mit best-SNR und Anzahl Reports.
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { parseUtc } from '../lib/time.js';
 
   let reports = $state([]);
   let loading = $state(true);
@@ -27,7 +28,7 @@
     for (const r of reports) {
       const k = r.rx_call;
       const e = map.get(k);
-      const ts = new Date(r.received_at);
+      const ts = parseUtc(r.received_at);
       if (!e) {
         map.set(k, {
           rx_call: r.rx_call, rx_grid: r.rx_grid,
@@ -48,8 +49,10 @@
   });
 
   function shortTs(d) {
-    return d.toLocaleString([], { day: '2-digit', month: '2-digit',
-                                   hour: '2-digit', minute: '2-digit' });
+    // d ist ein Date (via parseUtc) — in UTC anzeigen, nicht lokal.
+    if (!d || isNaN(d.getTime())) return '—';
+    const iso = d.toISOString();
+    return `${iso.slice(8, 10)}.${iso.slice(5, 7)} ${iso.slice(11, 16)}`;
   }
 
   onMount(refresh);
@@ -74,9 +77,7 @@
   {:else if loading && reports.length === 0}
     <div class="muted">Lade…</div>
   {:else if grouped.length === 0}
-    <div class="muted">Bisher kein Empfangsbericht. Sobald jemand DK9XR
-      decodiert hat (typisch 5–10 min nach erstem TX), erscheinen die
-      Reporter hier.</div>
+    <div class="muted">Bisher kein Empfangsbericht.</div>
   {:else}
     <table>
       <thead>

@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { fmtUtcDateTime } from '../lib/time.js';
 
   let entries = $state([]);
   let threshold = $state(5);
@@ -30,7 +31,7 @@
 
   function fmtTs(iso) {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString();
+    return fmtUtcDateTime(iso);
   }
 
   function reasonLabel(r) {

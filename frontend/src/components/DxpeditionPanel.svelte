@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { fmtUtcDateTime, parseUtc } from '../lib/time.js';
 
   let entries = $state([]);
   let newCall = $state('');
@@ -40,13 +41,13 @@
 
   function fmtDate(iso) {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString();
+    return fmtUtcDateTime(iso);
   }
 
   function statusOf(e) {
     const now = new Date();
-    const start = new Date(e.start_date);
-    const end = new Date(e.end_date);
+    const start = parseUtc(e.start_date);
+    const end = parseUtc(e.end_date);
     if (now > end) return { label: 'vorbei', cls: 'past' };
     if (now < start) {
       const dh = (start - now) / 3600000;

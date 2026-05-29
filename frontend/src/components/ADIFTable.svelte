@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { logStore, statusStore } from '../lib/stores.svelte.js';
+  import { fmtUtcDateTime } from '../lib/time.js';
 
   const activeCall = $derived(statusStore.value.callsign ?? null);
   // v0.21.2 — ADIF-Export ist standardmaessig auf den aktiven Operator
@@ -19,10 +20,7 @@
     return () => clearInterval(t);
   });
 
-  function shortTs(iso) {
-    if (!iso) return '';
-    return new Date(iso).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
-  }
+  const shortTs = fmtUtcDateTime;
   function fmtFreq(hz) {
     return hz ? (hz / 1000).toFixed(2) + ' kHz' : '';
   }
