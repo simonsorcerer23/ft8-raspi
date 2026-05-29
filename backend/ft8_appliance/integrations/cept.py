@@ -24,8 +24,10 @@ Deutschland, Ungarn, Island, Liechtenstein, Litauen, Luxemburg, Moldau,
 Niederlande, Polen, Portugal, Rumaenien, Russland, Slowakei, Slowenien,
 Schweiz. → cept_class_e_allowed=True nur fuer diese.
 
-USA: FCC DA-16-1048 erkennt CEPT-Novice an, ABER mit US-Frequenz-
-Sonderregeln die wir nicht modellieren → konservativ Klasse-E-geblockt.
+USA: ECC/REC (05)06 beigetreten (FCC DA-16-1048). Deutsche Klasse E
+(= CEPT-Novice) DARF dort operieren — 47 CFR §97.107 limitiert auf die
+Heimat-Lizenz-Bedingungen (Klasse-E-Baender, max 100W), die license.py
+ohnehin erzwingt. Daher cept_class_e_allowed=True fuer W + KH6.
 
 Power-Caps (cept_class_a_max_w) sind fuer Klasse A. Fuer Klasse E greift
 ohnehin der nationale 100W-Cap (license.py) — und bei IC-705/IC-7300
@@ -226,14 +228,22 @@ COUNTRIES: dict[str, CountryInfo] = {
     "G":  CountryInfo("G", "G", "Großbritannien",
                      cept_class_a_max_w=400, cept_class_e_allowed=False,
                      bbox=(49.91, 58.70, -8.65, 1.76)),
-    # ==== Übersee (CEPT-anerkannt fuer Klasse A; Klasse E konservativ
-    #      gesperrt — FCC-CEPT-Novice hat US-Frequenz-Sonderregeln die
-    #      wir nicht modellieren) ====
+    # ==== USA (Sebastian reist haeufig hin) ====
+    # Klasse A: CEPT-1 via FCC DA-16-1048.
+    # Klasse E: ERLAUBT. Die USA ist ECC/REC (05)06 beigetreten,
+    #   Deutschland nimmt teil → deutsche Klasse E (= CEPT-Novice) darf
+    #   in den USA operieren (47 CFR §97.107). Die Privilegien sind
+    #   limitiert auf die Heimat-Lizenz-Bedingungen (deutsche Klasse-E-
+    #   Baender: 80/15/10m HF + 2m/70cm) ∩ US-Zuteilungen, max 100W —
+    #   und genau diese Klasse-E-Bandgrenzen erzwingt license.py bereits.
+    #   FT8 auf 15m (21.074, in US-General/Novice-Allocation) ist damit
+    #   abgedeckt. Identifikation: W/<call> (US-District-Numeral W4/...
+    #   waere noch praeziser, aber W/<call> ist CEPT-konform + decodebar).
     "W":  CountryInfo("W", "W", "USA",
-                     cept_class_a_max_w=1500, cept_class_e_allowed=False,
+                     cept_class_a_max_w=1500, cept_class_e_allowed=True,
                      bbox=(24.50, 49.38, -125.00, -66.95)),
     "KH6": CountryInfo("KH6", "KH6", "Hawaii",
-                     cept_class_a_max_w=1500, cept_class_e_allowed=False,
+                     cept_class_a_max_w=1500, cept_class_e_allowed=True,
                      bbox=(18.91, 22.24, -160.25, -154.81)),
     # ==== Grosse bbox ans Ende (GPS-Detection: spezifischere Laender
     #      matchen zuerst, Russland nur wenn nichts anderes passt) ====

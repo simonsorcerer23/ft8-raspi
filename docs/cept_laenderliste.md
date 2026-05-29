@@ -7,9 +7,9 @@ Auto-generiert aus `backend/ft8_appliance/integrations/cept.py` (Quelle: ARRL/CE
 - **Klasse A** (Volllizenz) = CEPT-1 (T/R 61-01) → Gastbetrieb in allen unten gelisteten Ländern.
 - **Klasse E** (Novice) = CEPT-Novice (ECC/REC (05)06) → NUR in der Teilmenge die diese Empfehlung umsetzt.
 - **Klasse N** (Einsteiger seit 24.06.2024) = international NICHT anerkannt → Auslandsbetrieb generell gesperrt.
-- Format im Betrieb: `<Prefix>/<Heimat-Call>`, z.B. `9A/DK9XR` in Kroatien.
+- Format im Betrieb: `<Prefix>/<Heimat-Call>`, z.B. `9A/DK9XR` in Kroatien, `W/DO3XR` in den USA.
 
-## ✅ Klasse E + A erlaubt (CEPT-Novice, 23 Länder)
+## ✅ Klasse E + A erlaubt (CEPT-Novice, 25 Länder)
 
 | Land | Prefix | Klasse-A Power-Cap |
 |---|---|---|
@@ -18,6 +18,7 @@ Auto-generiert aus `backend/ft8_appliance/integrations/cept.py` (Quelle: ARRL/CE
 | Bosnien-Herzegowina | `E7` | 1000 W |
 | Dänemark | `OZ` | 1000 W |
 | Finnland | `OH` | 1500 W |
+| Hawaii | `KH6` | 1500 W |
 | Island | `TF` | 1000 W |
 | Kroatien | `9A` | 1000 W |
 | Lettland | `YL` | 1000 W |
@@ -34,10 +35,11 @@ Auto-generiert aus `backend/ft8_appliance/integrations/cept.py` (Quelle: ARRL/CE
 | Slowakei | `OM` | 1500 W |
 | Slowenien | `S5` | 1000 W |
 | Tschechien | `OK` | 1000 W |
+| USA | `W` | 1500 W |
 | Ungarn | `HA` | 1500 W |
 | Österreich | `OE` | 400 W |
 
-## 🅰️ NUR Klasse A (CEPT-1-only — Klasse E hier GESPERRT, 20 Länder)
+## 🅰️ NUR Klasse A (CEPT-1-only — Klasse E hier GESPERRT, 18 Länder)
 
 | Land | Prefix | Klasse-A Power-Cap |
 |---|---|---|
@@ -47,7 +49,6 @@ Auto-generiert aus `backend/ft8_appliance/integrations/cept.py` (Quelle: ARRL/CE
 | Frankreich | `F` | 500 W |
 | Griechenland | `SV` | 1000 W |
 | Großbritannien | `G` | 400 W |
-| Hawaii | `KH6` | 1500 W |
 | Irland | `EI` | 400 W |
 | Italien | `I` | 500 W |
 | Monaco | `3A` | 500 W |
@@ -58,13 +59,12 @@ Auto-generiert aus `backend/ft8_appliance/integrations/cept.py` (Quelle: ARRL/CE
 | Serbien | `YU` | 1000 W |
 | Spanien | `EA` | 1500 W |
 | Türkei | `TA` | 1000 W |
-| USA | `W` | 1500 W |
 | Ukraine | `UR` | 1000 W |
 | Zypern | `5B` | 1000 W |
 
 ## Hinweise
 
-- **USA/Hawaii**: für Klasse A via FCC-CEPT-Anerkennung; Klasse E konservativ gesperrt (FCC-CEPT-Novice hat US-Frequenz-Sonderregeln die wir nicht modellieren).
+- **USA/Hawaii**: Klasse A via FCC-CEPT (DA-16-1048). **Klasse E ebenfalls erlaubt** — die USA ist ECC/REC (05)06 beigetreten, deutsche Klasse E (CEPT-Novice) darf dort operieren (47 CFR §97.107), limitiert auf Klasse-E-Bänder (80/15/10m + 2m/70cm) ∩ US-Zuteilungen, max 100W. FT8 auf 15m ist abgedeckt.
 - **Power-Caps** sind für Klasse A; für Klasse E greift der nationale 100-W-Cap. Bei IC-705/IC-7300 bindet ohnehin der Rig-Cap (10/100 W) — die Länder-Caps sind nie limitierend.
 - **Hart geblockt**: Die Box verweigert TX wenn die Lizenzklasse im gewählten Land nicht erlaubt ist (gleiche Mechanik wie Band-/Power-Lockout).
 - **GPS-Detection** ist ein Vorschlag — bei verschachtelten Balkan-Grenzen (Kroatien/Bosnien) kann das Rechteck mehrdeutig sein; der Operator bestätigt den Wechsel manuell.
