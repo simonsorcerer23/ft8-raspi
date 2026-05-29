@@ -48,11 +48,38 @@
     }
   }
 
+  // v0.29.0 — Sende-Call-Logbuecher (Prefix/Suffix → eigener QRZ-Key)
+  let lbForm = $state({});  // person-callsign → { call, key }
+
+  async function addLogbook(cs) {
+    const d = lbForm[cs];
+    if (!d || !d.call.trim() || !d.key.trim() || busy) return;
+    busy = true; error = null;
+    try {
+      await api.operatorAddLogbook(cs, d.call.trim().toUpperCase(), d.key.trim());
+      lbForm[cs] = { call: '', key: '' };
+      await refresh();
+    } catch (e) { error = e.message; } finally { busy = false; }
+  }
+
+  async function removeLogbook(cs, call) {
+    if (busy) return;
+    busy = true; error = null;
+    try {
+      await api.operatorDeleteLogbook(cs, call);
+      await refresh();
+    } catch (e) { error = e.message; } finally { busy = false; }
+  }
+
   async function refresh() {
     try {
       const data = await api.operatorsList();
       operators = data.operators;
       active = data.active_callsign;
+      // Sende-Call-Add-Form pro Operator seeden (bind braucht echtes Feld)
+      for (const op of operators) {
+        if (!lbForm[op.callsign]) lbForm[op.callsign] = { call: '', key: '' };
+      }
       error = null;
     } catch (e) {
       error = e.message;
@@ -203,6 +230,35 @@
             {/if}
           </div>
         {/if}
+        <div class="logbooks">
+          <div class="lb-title">Sende-Calls (eigener QRZ-Key)</div>
+          {#each op.station_logbooks as call (call)}
+            <div class="lb-row">
+              <span class="lb-call">{call}</span>
+              <button class="lb-check" title="prüfen"
+                      onclick={(e) => { e.stopPropagation(); checkSetup(call); }}
+                      disabled={preflight[call]?.busy}>{preflight[call]?.busy ? '…' : 'prüfen'}</button>
+              <button class="lb-del" title="entfernen"
+                      onclick={(e) => { e.stopPropagation(); removeLogbook(op.callsign, call); }}
+                      disabled={busy}>✕</button>
+            </div>
+            {#if preflight[call] && !preflight[call].busy && !preflight[call].error}
+              <div class="lb-pf {preflight[call].qrz.status === 'ok' ? 'ok' : preflight[call].qrz.status === 'error' ? 'err' : 'warn'}">
+                {preflight[call].qrz.detail}
+              </div>
+            {/if}
+          {/each}
+          {#if lbForm[op.callsign]}
+            <div class="lb-add">
+              <input type="text" placeholder="z.B. {op.callsign}/AM"
+                     bind:value={lbForm[op.callsign].call} autocapitalize="characters" />
+              <input type="text" placeholder="QRZ-Logbook-Key"
+                     bind:value={lbForm[op.callsign].key} />
+              <button onclick={(e) => { e.stopPropagation(); addLogbook(op.callsign); }}
+                      disabled={busy}>+</button>
+            </div>
+          {/if}
+        </div>
       {/each}
 
       {#if !showCreate}
@@ -345,6 +401,40 @@
   .pf-line.ok { color: #4ade80; }
   .pf-line.warn { color: #fbbf24; }
   .pf-line.err { color: var(--danger); }
+  .logbooks {
+    padding: 0.3rem 0.8rem 0.5rem; border-bottom: 1px solid #1e293b;
+    display: flex; flex-direction: column; gap: 0.25rem;
+  }
+  .lb-title {
+    font-size: 0.65rem; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .lb-row { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; }
+  .lb-call {
+    flex: 1; font-family: ui-monospace, monospace; color: var(--text);
+  }
+  .lb-check, .lb-del {
+    background: transparent; border: none; cursor: pointer; font-size: 0.7rem;
+    color: #64748b; padding: 0 0.3rem;
+  }
+  .lb-check:hover { color: var(--accent); }
+  .lb-del:hover { color: var(--danger); }
+  .lb-pf { font-size: 0.65rem; padding-left: 0.2rem; color: #94a3b8; }
+  .lb-pf.ok { color: #4ade80; }
+  .lb-pf.warn { color: #fbbf24; }
+  .lb-pf.err { color: var(--danger); }
+  .lb-add { display: flex; gap: 0.3rem; margin-top: 0.2rem; }
+  .lb-add input {
+    flex: 1; min-width: 0; background: rgba(15,23,42,0.6); border: 1px solid #334155;
+    border-radius: 4px; padding: 0.25rem 0.4rem; color: var(--text);
+    font-size: 0.72rem; font-family: inherit;
+  }
+  .lb-add input:focus { outline: none; border-color: var(--accent); }
+  .lb-add button {
+    background: rgba(56,189,248,0.15); border: 1px solid #334155; color: var(--accent);
+    border-radius: 4px; padding: 0 0.5rem; cursor: pointer; font-weight: 700;
+  }
+  .lb-add button:disabled { opacity: 0.5; cursor: not-allowed; }
   .add-btn {
     width: 100%; background: transparent; border: none;
     border-top: 1px solid #1e293b; padding: 0.6rem 0.8rem;

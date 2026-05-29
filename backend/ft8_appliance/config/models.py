@@ -59,6 +59,11 @@ class OperatorConfig(BaseModel):
     # Lizenz-Compliance.
     home_country: str = "DL"
     current_operating_country: str | None = None
+    # v0.29.0 — aktueller Sende-Modifier-Suffix (Aeronautical/Maritime
+    # Mobile, Portable …). None = Heimat. Wird mit current_operating_country
+    # kombiniert: 9A + AM → "9A/DO3XR/AM". Steuert station_callsign + welcher
+    # QRZ-Logbook-Key gezogen wird.
+    current_operating_suffix: str | None = None
     # v0.28.0 — QRZ verlangt pro On-Air-Call (jeder Prefix/Suffix) ein
     # EIGENES Logbuch mit eigenem API-Key (DO3XR, DO3XR/AM und 9A/DO3XR
     # sind fuer QRZ drei verschiedene Rufzeichen). Diese Map ordnet einem
@@ -72,6 +77,32 @@ class OperatorConfig(BaseModel):
     @classmethod
     def _upper_logbook_keys(cls, v: dict[str, str]) -> dict[str, str]:
         return {k.upper().strip(): val for k, val in (v or {}).items()}
+
+    @field_validator("current_operating_suffix")
+    @classmethod
+    def _validate_suffix(cls, v: str | None) -> str | None:
+        if not v:
+            return None
+        v = v.upper().strip().lstrip("/")
+        if not re.match(r"^[A-Z0-9]{1,4}$", v):
+            raise ValueError(f"invalid operating suffix: {v!r}")
+        return v
+
+    def operating_call(self) -> str:
+        """Der aktuell effektive On-Air-Call dieses Operators.
+
+        Kombiniert DX-Prefix (current_operating_country) und Modifier-
+        Suffix (current_operating_suffix) mit dem Heimat-Call:
+        9A + AM → "9A/DO3XR/AM". Beide optional → Heimat-Call.
+        Einzige Quelle der Wahrheit, gespiegelt nach MachineContext.
+        """
+        call = self.callsign
+        c = self.current_operating_country
+        if c and c != self.home_country:
+            call = f"{c}/{call}"
+        if self.current_operating_suffix:
+            call = f"{call}/{self.current_operating_suffix}"
+        return call
 
     def qrz_key_for(self, station_callsign: str | None) -> str | None:
         """QRZ-Logbook-API-Key fuer einen konkreten On-Air-Call.
@@ -722,6 +753,7 @@ class AppConfig(BaseModel):
             for op in data["operators"]:
                 if isinstance(op, dict):
                     _mirror_global_qrz(op)
+            cls._fold_variant_operators(data)
             return data
         legacy_op = data.pop("operator", None) if "operator" in data else None
         if not legacy_op:
@@ -746,6 +778,57 @@ class AppConfig(BaseModel):
             if isinstance(cs, str):
                 data["active_callsign"] = cs.upper().strip()
         return data
+
+    @staticmethod
+    def _fold_variant_operators(data: dict) -> None:
+        """v0.29.0 — Falte Prefix/Suffix-Profile in ihren Person-Parent.
+
+        Frueher waren DK9XR/AM, DO3XR/AM eigene Top-Level-Operatoren.
+        Das saubere Modell hat oben nur die Personen (DK9XR, DO3XR);
+        jede Variante wird zu einem Eintrag in qrz_logbooks des Parents
+        (On-Air-Call → eigener QRZ-Key). Laeuft beim Load, idempotent.
+        """
+        from ..util.callsign import base_call
+
+        ops = data.get("operators")
+        if not isinstance(ops, list) or not ops:
+            return
+        dicts: list[dict] = []
+        for o in ops:
+            if isinstance(o, dict):
+                dicts.append(o)
+            elif hasattr(o, "model_dump"):
+                dicts.append(o.model_dump())
+            else:
+                return  # unbekanntes Format → nicht anfassen
+        # Parents = Operatoren deren Callsign == base_call (die Person selbst)
+        parents: dict[str, dict] = {}
+        for o in dicts:
+            cs = (o.get("callsign") or "").upper().strip()
+            if cs and cs == base_call(cs):
+                parents[cs] = o
+        survivors: list[dict] = []
+        folded: dict[str, str] = {}  # Varianten-Call → Parent-Call
+        for o in dicts:
+            cs = (o.get("callsign") or "").upper().strip()
+            b = base_call(cs)
+            if cs and cs != b and b in parents:
+                parent = parents[b]
+                key = o.get("qrz_logbook_api_key")
+                if key:
+                    lb = parent.setdefault("qrz_logbooks", {}) or {}
+                    lb.setdefault(cs, key)
+                    parent["qrz_logbooks"] = lb
+                folded[cs] = b
+            else:
+                survivors.append(o)
+        if not folded:
+            return
+        data["operators"] = survivors
+        # active_callsign auf eine gefaltete Variante → auf Person umbiegen
+        active = (data.get("active_callsign") or "").upper().strip()
+        if active in folded:
+            data["active_callsign"] = folded[active]
 
     @field_validator("active_callsign")
     @classmethod

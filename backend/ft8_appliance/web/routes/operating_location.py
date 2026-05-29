@@ -10,6 +10,7 @@ GET  /api/operating-location/countries → Liste verfuegbarer Country-Codes
 from __future__ import annotations
 
 import asyncio
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -36,7 +37,8 @@ class OperatingLocationOut(BaseModel):
     home_country_name: str
     current_country: str | None
     current_country_name: str | None
-    tx_callsign: str  # was wir tatsaechlich senden (mit DX-Prefix wenn aktiv)
+    current_suffix: str | None = None  # v0.29.0 Modifier (/AM, /MM …)
+    tx_callsign: str  # was wir tatsaechlich senden (mit DX-Prefix + Suffix)
     operator_callsign: str
     # GPS-Detection
     gps_detected_country: str | None
@@ -113,6 +115,7 @@ async def get_operating_location(
         home_country_name=home_info.name if home_info else op.home_country,
         current_country=op.current_operating_country,
         current_country_name=current_info.name if current_info else None,
+        current_suffix=op.current_operating_suffix,
         tx_callsign=sm.ctx.tx_callsign,
         operator_callsign=op.callsign,
         gps_detected_country=gps_country,
@@ -172,6 +175,36 @@ async def set_operating_location(
             name="preflight-warn-dx",
         )
 
+    return await get_operating_location(orch=orch)
+
+
+class SetSuffixRequest(BaseModel):
+    suffix: str | None  # None / "" = kein Modifier (Heimat-Betrieb)
+
+
+@router.post("/operating-suffix", response_model=OperatingLocationOut)
+async def set_operating_suffix(
+    req: SetSuffixRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatingLocationOut:
+    """Setze den Modifier-Suffix (AM/MM/P/QRP) fuer den aktiven Operator.
+
+    None/"" = zurueck auf Heimat (kein Suffix). Kombiniert sich mit dem
+    DX-Land: 9A + AM → 9A/DO3XR/AM. Loest dieselbe Pre-Flight-ntfy aus
+    wie der Location-Wechsel (eigener QRZ-Key/ClubLog fuer den Call?).
+    """
+    raw = (req.suffix or "").strip().upper().lstrip("/") or None
+    if raw is not None and not re.match(r"^[A-Z0-9]{1,4}$", raw):
+        raise HTTPException(status_code=400, detail=f"ungueltiger Suffix {raw!r}")
+    op = orch.config.operator
+    op.current_operating_suffix = raw
+    orch.state_machine.ctx.current_operating_suffix = raw
+    await orch.persist_config()
+    if op.current_operating_suffix:
+        orch._preflight_task = asyncio.create_task(
+            orch._preflight_warn(orch.effective_tx_call()),
+            name="preflight-warn-suffix",
+        )
     return await get_operating_location(orch=orch)
 
 

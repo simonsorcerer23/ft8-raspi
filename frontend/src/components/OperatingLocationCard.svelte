@@ -40,6 +40,29 @@
     }
   }
 
+  // v0.29.0 — Modifier-Suffix (Aeronautical/Maritime Mobile, Portable …)
+  const SUFFIXES = [
+    { v: '',    label: '🏠 keiner (Heimat)' },
+    { v: 'AM',  label: '/AM · Aeronautical Mobile' },
+    { v: 'MM',  label: '/MM · Maritime Mobile' },
+    { v: 'P',   label: '/P · Portable' },
+    { v: 'M',   label: '/M · Mobile' },
+    { v: 'QRP', label: '/QRP · QRP' },
+  ];
+
+  async function setSuffix(s) {
+    if (busy) return;
+    busy = true;
+    err = null;
+    try {
+      loc = await api.setOperatingSuffix(s || null);
+    } catch (e) {
+      err = e.message;
+    } finally {
+      busy = false;
+    }
+  }
+
   onMount(() => {
     refresh();
     loadCountries();
@@ -130,6 +153,15 @@
             {#if c.code !== loc.home_country}
               <option value={c.code}>{c.name} ({c.code}){c.cept_class_e_allowed ? '' : ' · ⚠️ keine Klasse-E'}</option>
             {/if}
+          {/each}
+        </select>
+      </label>
+      <label>
+        <span>Funke als</span>
+        <select value={loc.current_suffix ?? ''} onchange={(e) => setSuffix(e.target.value)}
+                disabled={busy}>
+          {#each SUFFIXES as s}
+            <option value={s.v}>{s.label}</option>
           {/each}
         </select>
       </label>

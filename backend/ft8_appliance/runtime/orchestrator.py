@@ -504,6 +504,7 @@ class Orchestrator:
                 cq_directed=(self.config.operating.cq_directed or "").upper(),
                 home_country=self.config.operator.home_country,
                 current_operating_country=self.config.operator.current_operating_country,
+                current_operating_suffix=self.config.operator.current_operating_suffix,
             ),
             limits=GuardLimits(
                 swr_max=self.config.operating.swr_max,
@@ -876,6 +877,7 @@ class Orchestrator:
         self.state_machine.ctx.callsign = new_op.callsign
         self.state_machine.ctx.home_country = new_op.home_country
         self.state_machine.ctx.current_operating_country = new_op.current_operating_country
+        self.state_machine.ctx.current_operating_suffix = new_op.current_operating_suffix
         if new_op.default_locator:
             self.state_machine.ctx.my_grid = new_op.default_locator
         # Globale Integrations-Config aus dem aktiven Operator spiegeln
@@ -934,17 +936,8 @@ class Orchestrator:
             log.info("preflight-warn ntfy fehlgeschlagen: %s", exc)
 
     def effective_tx_call(self, op=None) -> str:
-        """Der tatsaechlich gesendete Call eines Operators.
-
-        Bei DX-Betrieb (current_operating_country gesetzt + != Heimat)
-        wird er zu ``<prefix>/<callsign>`` (z.B. 9A/DO3XR), sonst der
-        Heimat-Call. Spiegelt die Synthese in operating_location.py.
-        """
-        op = op or self.config.operator
-        c = op.current_operating_country
-        if c and c != op.home_country:
-            return f"{c}/{op.callsign}"
-        return op.callsign
+        """Der tatsaechlich gesendete Call eines Operators (Prefix + Suffix)."""
+        return (op or self.config.operator).operating_call()
 
     async def check_call_setup(self, call: str) -> dict:
         """Pre-Flight: ist ``call`` in QRZ + ClubLog sauber zum Upload bereit?
@@ -2154,6 +2147,7 @@ class Orchestrator:
         self.state_machine.ctx.callsign = new_cfg.operator.callsign
         self.state_machine.ctx.home_country = new_cfg.operator.home_country
         self.state_machine.ctx.current_operating_country = new_cfg.operator.current_operating_country
+        self.state_machine.ctx.current_operating_suffix = new_cfg.operator.current_operating_suffix
         if new_cfg.operator.default_locator:
             self.state_machine.ctx.my_grid = new_cfg.operator.default_locator
         # Operating limits → guards

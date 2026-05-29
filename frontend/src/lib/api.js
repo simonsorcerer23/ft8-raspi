@@ -117,6 +117,7 @@ export const api = {
   activeHours:  ()       => request('/active-hours'),
   operatingLocation:    ()        => request('/operating-location'),
   setOperatingLocation: (country) => request('/operating-location', { method: 'POST', body: { country } }),
+  setOperatingSuffix:   (suffix)  => request('/operating-suffix', { method: 'POST', body: { suffix } }),
   countryList:          ()        => request('/operating-location/countries'),
   stats:        ()       => request('/stats'),
   systemInfo:   ()       => request('/system/info'),
@@ -149,4 +150,11 @@ export const api = {
   // v0.28.0 — Pre-Flight: ist der On-Air-Call in QRZ/ClubLog upload-bereit?
   operatorPreflight: (callsign) =>
                     request(`/operators/preflight?callsign=${encodeURIComponent(callsign)}`),
+  // v0.29.0 — Sende-Call-Logbuecher (Prefix/Suffix → eigener QRZ-Key)
+  operatorAddLogbook: (callsign, on_air_call, qrz_logbook_api_key) =>
+                    request(`/operators/${encodeURIComponent(callsign)}/logbook`,
+                            { method: 'PUT', body: { on_air_call, qrz_logbook_api_key } }),
+  operatorDeleteLogbook: (callsign, on_air_call) =>
+                    request(`/operators/${encodeURIComponent(callsign)}/logbook?on_air_call=${encodeURIComponent(on_air_call)}`,
+                            { method: 'DELETE' }),
 };

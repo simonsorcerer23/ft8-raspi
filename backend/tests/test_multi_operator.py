@@ -222,3 +222,70 @@ def test_base_call_groups_suffix_and_prefix_variants() -> None:
     assert base_call("9A/DO3XR") == "DO3XR"
     assert base_call("DO3XR/MM") == "DO3XR"
     assert base_call("DK9XR") != base_call("DO3XR")
+
+
+# ---------------------------------------------------------------------------
+def test_fold_variant_operators_into_parent() -> None:
+    """v0.29.0 — /AM-Top-Level-Profile werden beim Load in den Person-Parent
+    gefaltet: oben nur DK9XR + DO3XR, /AM-Keys landen in qrz_logbooks."""
+    cfg = AppConfig.model_validate({
+        "operators": [
+            {"callsign": "DK9XR", "license_class": "A", "qrz_logbook_api_key": "K_DK"},
+            {"callsign": "DO3XR", "license_class": "E", "qrz_logbook_api_key": "K_DO"},
+            {"callsign": "DK9XR/AM", "license_class": "A", "qrz_logbook_api_key": "K_DK_AM"},
+            {"callsign": "DO3XR/AM", "license_class": "E", "qrz_logbook_api_key": "K_DO_AM"},
+        ],
+        "active_callsign": "DO3XR",
+        "bands": [{"name": "20m", "freq_khz": 14074}],
+        "antennas": [{"name": "ant", "bands": ["20m"]}],
+    })
+    assert sorted(o.callsign for o in cfg.operators) == ["DK9XR", "DO3XR"]
+    do = [o for o in cfg.operators if o.callsign == "DO3XR"][0]
+    dk = [o for o in cfg.operators if o.callsign == "DK9XR"][0]
+    assert do.qrz_logbooks == {"DO3XR/AM": "K_DO_AM"}
+    assert dk.qrz_logbooks == {"DK9XR/AM": "K_DK_AM"}
+    assert do.qrz_key_for("DO3XR/AM") == "K_DO_AM"
+    assert do.qrz_key_for("DO3XR") == "K_DO"
+
+
+def test_fold_remaps_active_variant_to_person() -> None:
+    """War /AM aktiv, zeigt active_callsign nach dem Falten auf die Person."""
+    cfg = AppConfig.model_validate({
+        "operators": [
+            {"callsign": "DO3XR", "qrz_logbook_api_key": "K"},
+            {"callsign": "DO3XR/AM", "qrz_logbook_api_key": "KAM"},
+        ],
+        "active_callsign": "DO3XR/AM",
+        "bands": [{"name": "20m", "freq_khz": 14074}],
+        "antennas": [{"name": "ant", "bands": ["20m"]}],
+    })
+    assert [o.callsign for o in cfg.operators] == ["DO3XR"]
+    assert cfg.active_callsign == "DO3XR"
+
+
+def test_operating_call_combines_prefix_and_suffix() -> None:
+    op = OperatorConfig(callsign="DO3XR", home_country="DL")
+    assert op.operating_call() == "DO3XR"
+    op.current_operating_suffix = "AM"
+    assert op.operating_call() == "DO3XR/AM"
+    op.current_operating_country = "9A"
+    assert op.operating_call() == "9A/DO3XR/AM"
+    op.current_operating_suffix = None
+    assert op.operating_call() == "9A/DO3XR"
+
+
+def test_operating_suffix_validation() -> None:
+    op = OperatorConfig(callsign="DO3XR", current_operating_suffix="/am")
+    assert op.current_operating_suffix == "AM"   # stripped + uppercased
+    with pytest.raises(ValidationError):
+        OperatorConfig(callsign="DO3XR", current_operating_suffix="TOOLONG")
+
+
+def test_machine_ctx_tx_callsign_with_suffix() -> None:
+    from ft8_appliance.statemachine.states import MachineContext
+    ctx = MachineContext(callsign="DK9XR", my_grid="JN58", home_country="DL")
+    assert ctx.tx_callsign == "DK9XR"
+    ctx.current_operating_suffix = "MM"
+    assert ctx.tx_callsign == "DK9XR/MM"
+    ctx.current_operating_country = "9A"
+    assert ctx.tx_callsign == "9A/DK9XR/MM"

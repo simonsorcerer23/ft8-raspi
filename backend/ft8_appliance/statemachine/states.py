@@ -287,14 +287,20 @@ class MachineContext:
     # gespiegelt vom Orchestrator pro Slot.
     home_country: str = "DL"
     current_operating_country: str | None = None
+    # v0.29.0 — Modifier-Suffix (AM/MM/P/QRP). Wird mit dem DX-Prefix
+    # kombiniert: 9A + AM → "9A/DK9XR/AM".
+    current_operating_suffix: str | None = None
 
     @property
     def tx_callsign(self) -> str:
-        """Effektiver TX-Callsign — mit DX-Prefix wenn Auslandsbetrieb,
-        sonst nur der Heimat-Call. Wird von allen _emit_*-Helpers in der
-        State-Machine benutzt.
+        """Effektiver TX-Callsign — mit DX-Prefix (Auslandsbetrieb) und/oder
+        Modifier-Suffix (/AM /MM …), sonst nur der Heimat-Call. Wird von
+        allen _emit_*-Helpers in der State-Machine benutzt.
         """
+        call = self.callsign
         oc = self.current_operating_country
         if oc and oc != self.home_country:
-            return f"{oc}/{self.callsign}"
-        return self.callsign
+            call = f"{oc}/{call}"
+        if self.current_operating_suffix:
+            call = f"{call}/{self.current_operating_suffix}"
+        return call

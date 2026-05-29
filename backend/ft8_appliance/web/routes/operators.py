@@ -43,6 +43,9 @@ class OperatorOut(BaseModel):
     clublog_email: str | None = None
     has_clublog_credentials: bool = False
     is_active: bool
+    # v0.29.0 — zusaetzliche Sende-Calls (Prefix/Suffix) mit eigenem
+    # QRZ-Logbook-Key. Nur die Calls, nicht die Keys.
+    station_logbooks: list[str] = Field(default_factory=list)
 
 
 class OperatorsResponse(BaseModel):
@@ -74,6 +77,7 @@ def _to_out(op: OperatorConfig, active: str) -> OperatorOut:
             op.clublog_email and op.clublog_app_password and op.clublog_api_key
         ),
         is_active=(op.callsign == active),
+        station_logbooks=sorted(op.qrz_logbooks.keys()),
     )
 
 
@@ -289,3 +293,51 @@ async def delete_operator(
     cfg.operators = [op for op in cfg.operators if op.callsign != target]
     await orch.persist_config()
     return DeleteOperatorResponse(ok=True, deleted=target)
+
+
+# ---------------------------------------------------------------------------
+# v0.29.0 — Sende-Call-Logbuecher (Prefix/Suffix) eines Operators verwalten.
+# QRZ braucht pro On-Air-Call (DO3XR/AM, 9A/DO3XR) ein eigenes Logbuch mit
+# eigenem Key — die werden hier in OperatorConfig.qrz_logbooks gepflegt.
+class StationLogbookRequest(BaseModel):
+    on_air_call: str           # z.B. "DO3XR/AM" oder "9A/DO3XR"
+    qrz_logbook_api_key: str
+
+
+def _resolve_person(orch: Orchestrator, callsign: str) -> OperatorConfig:
+    target = callsign.upper().strip()
+    for op in orch.config.operators:
+        if op.callsign == target:
+            return op
+    raise HTTPException(status_code=404, detail=f"unknown operator {target!r}")
+
+
+@router.put("/operators/{callsign}/logbook", response_model=OperatorOut)
+async def upsert_station_logbook(
+    callsign: str,
+    payload: StationLogbookRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    """QRZ-Logbook-Key fuer einen Sende-Call setzen/aktualisieren."""
+    op = _resolve_person(orch, callsign)
+    call = payload.on_air_call.upper().strip()
+    key = payload.qrz_logbook_api_key.strip()
+    if not call or not key:
+        raise HTTPException(status_code=400, detail="on_air_call und Key noetig")
+    op.qrz_logbooks = {**op.qrz_logbooks, call: key}
+    await orch.persist_config()
+    return _to_out(op, orch.config.active_callsign or "")
+
+
+@router.delete("/operators/{callsign}/logbook", response_model=OperatorOut)
+async def delete_station_logbook(
+    callsign: str,
+    on_air_call: str,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    """Einen Sende-Call-Logbook-Eintrag entfernen."""
+    op = _resolve_person(orch, callsign)
+    call = on_air_call.upper().strip()
+    op.qrz_logbooks = {k: v for k, v in op.qrz_logbooks.items() if k != call}
+    await orch.persist_config()
+    return _to_out(op, orch.config.active_callsign or "")
