@@ -66,11 +66,15 @@ class PskReporterClient(Integration):
         cache_ttl_s: float = 300.0,  # 5 minutes
         my_call: str = "",
         my_grid: str = "",
+        contact_email: str | None = None,
     ) -> None:
         super().__init__(
             enabled=enabled, base_url=None, timeout=timeout, cache_ttl_s=cache_ttl_s
         )
         self.upload_decodes = upload_decodes
+        # appcontact-Param (pskreporter.info-Policy) — Betreiber kann uns
+        # bei Last-Problemen kontaktieren statt blind zu blocken.
+        self.contact_email = (contact_email or "").strip() or None
         self.my_call = my_call.upper()
         self.my_grid = my_grid.upper()
         # IPFIX-Observation-Domain-ID: 1 ist Standard für PSK Reporter.
@@ -97,15 +101,15 @@ class PskReporterClient(Integration):
         cached = await self.cache.get(key)
         if cached is not None:
             return cached  # type: ignore[no-any-return]
+        params = {
+            "senderCallsign": callsign.upper(),
+            "flowStartSeconds": -hours * 3600,
+            "mode": "FT8",
+        }
+        if self.contact_email:
+            params["appcontact"] = self.contact_email
         try:
-            r = await self._get(
-                PSK_QUERY_URL,
-                params={
-                    "senderCallsign": callsign.upper(),
-                    "flowStartSeconds": -hours * 3600,
-                    "mode": "FT8",
-                },
-            )
+            r = await self._get(PSK_QUERY_URL, params=params)
         except Exception:
             stale, _ = await self.cache.get_stale_ok(key)
             return list(stale) if stale else []  # type: ignore[arg-type]

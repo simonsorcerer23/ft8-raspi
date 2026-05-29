@@ -507,6 +507,12 @@ class PskReporterConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = True
     upload_decodes: bool = True
+    # v0.23.2 — Kontakt-Email fuer den appcontact-Query-Parameter.
+    # pskreporter.info-Policy: "add appcontact=email so I can contact
+    # you" — damit der Betreiber bei Last-Problemen erst mailt statt
+    # blind zu blocken. Optional; wenn None wird appcontact weggelassen.
+    # Liegt nur in der Pi-config.yaml, NICHT im Repo.
+    contact_email: str | None = None
 
 
 class HamQslConfig(BaseModel):

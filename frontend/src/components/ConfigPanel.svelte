@@ -204,6 +204,8 @@
     s += `${ind(2)}psk_reporter:\n`;
     s += `${ind(4)}enabled: ${c.integrations.psk_reporter.enabled}\n`;
     s += `${ind(4)}upload_decodes: ${c.integrations.psk_reporter.upload_decodes}\n`;
+    if (c.integrations.psk_reporter.contact_email)
+      s += `${ind(4)}contact_email: ${yq(c.integrations.psk_reporter.contact_email)}\n`;
     s += `${ind(2)}hamqsl:\n${ind(4)}enabled: ${c.integrations.hamqsl.enabled}\n`;
     s += `${ind(2)}blitzortung:\n`;
     s += `${ind(4)}enabled: ${c.integrations.blitzortung.enabled}\n`;

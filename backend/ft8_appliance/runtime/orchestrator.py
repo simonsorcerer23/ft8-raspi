@@ -767,6 +767,7 @@ class Orchestrator:
                 upload_decodes=i.psk_reporter.upload_decodes,
                 my_call=self.config.operator.callsign,
                 my_grid=self.config.operator.default_locator or "",
+                contact_email=i.psk_reporter.contact_email,
             )
         except Exception as exc:
             log.warning("psk_reporter client init: %s", exc)
@@ -2779,32 +2780,57 @@ class Orchestrator:
             log.error("psk-reciprocity: setup failed, refresh-loop dead: %s",
                       exc, exc_info=True)
             return
+        # v0.23.2 — Rate-Limit-Schonung (Sebastian 2026-05-29, pskreporter
+        # .info-Policy "max 1 Query / 5 min, sonst Block"):
+        #   - EIN Call pro Zyklus (Rotation) statt alle im Burst. Bei 2
+        #     Calls + 600s-Refresh = 1 Request / 10 min = 6/h, klar unter
+        #     dem 12/h-Limit. Pro-Call-Sets werden ueber Zyklen gemerged.
+        #   - Backoff bei wiederholten Fehlern (503): Intervall verdoppeln
+        #     bis max 30 min — wenn pskreporter ueberlastet ist hauen wir
+        #     nicht stur weiter drauf.
+        per_call_heard: dict[str, set[str]] = {}
+        rotate_idx = 0
+        consecutive_fail = 0
+        base_interval = float(self.config.operating.psk_reciprocity_refresh_s)
         while True:
             try:
-                all_callsets: set[str] = set()
-                for call in operator_calls:
+                if operator_calls:
+                    call = operator_calls[rotate_idx % len(operator_calls)]
+                    rotate_idx += 1
                     try:
                         reports = await psk_client.who_heard_me(call, hours=1)
-                    except Exception as exc:  # network/parse — log+skip
-                        log.warning("psk-reciprocity: fetch failed for %s: %s", call, exc)
-                        continue
-                    for r in reports:
-                        if r.rx_call:
-                            all_callsets.add(r.rx_call.upper())
-                # In-place swap — Picker liest atomar
-                self._psk_heard_us_cache = all_callsets
-                self._psk_last_refresh_at = time.time()
-                self._psk_last_refresh_ok = True
-                log.info(
-                    "psk-reciprocity: %d unique stations heard us (across %d operator-call(s))",
-                    len(all_callsets), len(operator_calls),
-                )
+                        per_call_heard[call] = {
+                            r.rx_call.upper() for r in reports if r.rx_call
+                        }
+                        consecutive_fail = 0
+                        self._psk_last_refresh_ok = True
+                    except Exception as exc:
+                        consecutive_fail += 1
+                        self._psk_last_refresh_ok = False
+                        log.warning(
+                            "psk-reciprocity: fetch failed for %s: %s (fail #%d)",
+                            call, exc, consecutive_fail,
+                        )
+                    # Merge aller pro-Call gecachten Sets → Picker liest atomar
+                    merged: set[str] = set()
+                    for s in per_call_heard.values():
+                        merged |= s
+                    self._psk_heard_us_cache = merged
+                    self._psk_last_refresh_at = time.time()
+                    log.info(
+                        "psk-reciprocity: %s → %d unique total (über %d Call-Sets)",
+                        call, len(merged), len(per_call_heard),
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 log.warning("psk-reciprocity refresh-loop hiccup: %s", exc)
                 self._psk_last_refresh_ok = False
-            await asyncio.sleep(self.config.operating.psk_reciprocity_refresh_s)
+            # Backoff bei pskreporter-Fehlern (503/Rate-Limit/Netz)
+            interval = base_interval
+            if consecutive_fail > 0:
+                interval = min(1800.0, base_interval * (2 ** min(consecutive_fail, 4)))
+            await asyncio.sleep(interval)
 
     async def _solar_refresh_loop(self) -> None:
         """v0.14.0 — Periodischer hamqsl-Refresh fuer Band-Conditions.
