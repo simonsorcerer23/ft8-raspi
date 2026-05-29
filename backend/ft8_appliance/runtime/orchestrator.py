@@ -168,6 +168,10 @@ class OrchestratorStatus:
     # Surfaced so the UI can show the slot length + tone-spacing the
     # appliance is using right now.
     mode: str = "FT8"
+    # v0.29.2 — effektiver On-Air-Call (mit DX-Prefix + Modifier-Suffix,
+    # z.B. 9A/DO3XR/AM). Damit das UI prominent zeigen kann WAS gerade
+    # gesendet wird, nicht nur den Heimat-Call.
+    tx_callsign: str = ""
     # RX-Audio-Pegel in dBFS (negativer Wert, 0 = Full-Scale int16).
     # Direkt aus dem ALSA-Capture-Stream berechnet als RMS der letzten
     # 250 ms — unabhängig vom Hamlib-STRENGTH (das beim IC-7300 in
@@ -1377,6 +1381,7 @@ class Orchestrator:
             self._rx_audio_dbfs_peak_ts = now_ts
         return OrchestratorStatus(
             callsign=self.state_machine.ctx.callsign,
+            tx_callsign=self.state_machine.ctx.tx_callsign,
             state=self.state_machine.state.name,
             last_lock_reason=self.state_machine.ctx.last_lock_reason,
             cq_count=self.state_machine.ctx.cq_count,

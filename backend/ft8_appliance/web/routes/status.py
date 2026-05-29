@@ -52,6 +52,7 @@ class GpsSnapshotOut(BaseModel):
 
 class StatusResponse(BaseModel):
     callsign: str | None
+    tx_callsign: str | None = None  # v0.29.2 effektiver On-Air-Call (Prefix+Suffix)
     state: str
     last_lock_reason: str | None = None
     cq_count: int = 0
@@ -110,6 +111,7 @@ async def get_status(orch: Orchestrator = Depends(get_orchestrator)) -> StatusRe
     current_qso_flag = _flag_for_call(s.current_qso_call, cty)
     return StatusResponse(
         callsign=s.callsign,
+        tx_callsign=getattr(s, "tx_callsign", None) or s.callsign,
         state=s.state,
         last_lock_reason=s.last_lock_reason,
         cq_count=s.cq_count,

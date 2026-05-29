@@ -49,6 +49,13 @@
 <div class="bar">
   <div class="call"><OperatorSwitcher /></div>
 
+  {#if v.tx_callsign}
+    <div class="txcall" class:dx={v.tx_callsign !== v.callsign}
+         title="Aktuell gesendetes Rufzeichen">
+      📻 {v.tx_callsign}
+    </div>
+  {/if}
+
   <div class="op-mode" style="background: {opModeColor}">{opModeLabel}</div>
   <div class="state-pill" style="background: {stateColor}">{stateLabel}</div>
 
@@ -89,6 +96,20 @@
   .call {
     font-family: ui-monospace, monospace;
     font-size: 1rem; font-weight: 700; color: var(--accent);
+  }
+  /* Aktuell gesendetes Rufzeichen — gross + farbig. Heimat = gruen,
+     DX/Modifier (z.B. 9A/DO3XR/AM) = amber + auffaellig, damit man auf
+     einen Blick sieht dass man NICHT als Heimat funkt. */
+  .txcall {
+    font-family: ui-monospace, monospace; font-size: 1.35rem; font-weight: 800;
+    letter-spacing: 0.03em; padding: 0.1rem 0.7rem; border-radius: 8px;
+    color: #22c55e; background: rgba(34,197,94,0.12);
+    border: 1px solid rgba(34,197,94,0.4);
+  }
+  .txcall.dx {
+    color: #fbbf24; background: rgba(245,158,11,0.16);
+    border: 1px solid rgba(245,158,11,0.6);
+    box-shadow: 0 0 0 1px rgba(245,158,11,0.25);
   }
   .op-mode {
     padding: 0.25rem 0.7rem; border-radius: 999px;

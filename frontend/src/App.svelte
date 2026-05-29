@@ -19,6 +19,7 @@
   import BestTimeChart  from './components/BestTimeChart.svelte';
   import ActiveHoursChart from './components/ActiveHoursChart.svelte';
   import OperatingLocationCard from './components/OperatingLocationCard.svelte';
+  import OperatorAdminPanel from './components/OperatorAdminPanel.svelte';
   import FirstBootWizard from './components/FirstBootWizard.svelte';
   import QsoConversation from './components/QsoConversation.svelte';
   import RigPanel       from './components/RigPanel.svelte';
@@ -194,6 +195,7 @@
   {:else if tab === 'wifi'}
     <WifiManager />
   {:else if tab === 'cfg'}
+    <OperatorAdminPanel />
     <ConfigPanel />
   {/if}
 </main>

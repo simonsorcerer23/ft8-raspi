@@ -35,58 +35,11 @@
   });
   let createError = $state(null);
 
-  // Pre-Flight-Check-State: callsign → { busy, qrz:{status,detail}, clublog:{...} }
-  let preflight = $state({});
-
-  function pfClass(status) {
-    if (status === 'ok') return 'ok';
-    if (status === 'error') return 'err';
-    if (status === 'info') return 'info';
-    return 'warn';  // not_set_up | warn
-  }
-
-  async function checkSetup(callsign) {
-    preflight[callsign] = { busy: true };
-    try {
-      const res = await api.operatorPreflight(callsign);
-      preflight[callsign] = { busy: false, qrz: res.qrz, clublog: res.clublog };
-    } catch (e) {
-      preflight[callsign] = { busy: false, error: e.message };
-    }
-  }
-
-  // v0.29.0 — Sende-Call-Logbuecher (Prefix/Suffix → eigener QRZ-Key)
-  let lbForm = $state({});  // person-callsign → { call, key }
-
-  async function addLogbook(cs) {
-    const d = lbForm[cs];
-    if (!d || !d.call.trim() || !d.key.trim() || busy) return;
-    busy = true; error = null;
-    try {
-      await api.operatorAddLogbook(cs, d.call.trim().toUpperCase(), d.key.trim());
-      lbForm[cs] = { call: '', key: '' };
-      await refresh();
-    } catch (e) { error = e.message; } finally { busy = false; }
-  }
-
-  async function removeLogbook(cs, call) {
-    if (busy) return;
-    busy = true; error = null;
-    try {
-      await api.operatorDeleteLogbook(cs, call);
-      await refresh();
-    } catch (e) { error = e.message; } finally { busy = false; }
-  }
-
   async function refresh() {
     try {
       const data = await api.operatorsList();
       operators = data.operators;
       active = data.active_callsign;
-      // Sende-Call-Add-Form pro Operator seeden (bind braucht echtes Feld)
-      for (const op of operators) {
-        if (!lbForm[op.callsign]) lbForm[op.callsign] = { call: '', key: '' };
-      }
       error = null;
     } catch (e) {
       error = e.message;
@@ -207,12 +160,6 @@
               {#if op.has_qrz_credentials}· QRZ{/if}
             </span>
           </button>
-          <button
-            class="check"
-            title="Setup in QRZ/ClubLog pruefen"
-            onclick={(e) => { e.stopPropagation(); checkSetup(op.callsign); }}
-            disabled={preflight[op.callsign]?.busy}
-          >{preflight[op.callsign]?.busy ? '…' : 'prüfen'}</button>
           {#if !op.is_active}
             <button
               class="del"
@@ -220,50 +167,6 @@
               onclick={(e) => { e.stopPropagation(); deleteOperator(op.callsign); }}
               disabled={busy}
             >✕</button>
-          {/if}
-        </div>
-        {#if preflight[op.callsign] && !preflight[op.callsign].busy}
-          {@const pf = preflight[op.callsign]}
-          <div class="preflight">
-            {#if pf.error}
-              <div class="pf-line err">⚠ {pf.error}</div>
-            {:else}
-              <div class="pf-line {pfClass(pf.qrz.status)}">
-                <span class="pf-dot"></span>QRZ: {pf.qrz.detail}
-              </div>
-              <div class="pf-line {pfClass(pf.clublog.status)}">
-                <span class="pf-dot"></span>ClubLog: {pf.clublog.detail}
-              </div>
-            {/if}
-          </div>
-        {/if}
-        <div class="logbooks">
-          <div class="lb-title">Sende-Calls (eigener QRZ-Key)</div>
-          {#each op.station_logbooks as call (call)}
-            <div class="lb-row">
-              <span class="lb-call">{call}</span>
-              <button class="lb-check" title="prüfen"
-                      onclick={(e) => { e.stopPropagation(); checkSetup(call); }}
-                      disabled={preflight[call]?.busy}>{preflight[call]?.busy ? '…' : 'prüfen'}</button>
-              <button class="lb-del" title="entfernen"
-                      onclick={(e) => { e.stopPropagation(); removeLogbook(op.callsign, call); }}
-                      disabled={busy}>✕</button>
-            </div>
-            {#if preflight[call] && !preflight[call].busy && !preflight[call].error}
-              <div class="lb-pf {pfClass(preflight[call].qrz.status)}">
-                {preflight[call].qrz.detail}
-              </div>
-            {/if}
-          {/each}
-          {#if lbForm[op.callsign]}
-            <div class="lb-add">
-              <input type="text" placeholder="z.B. {op.callsign}/AM"
-                     bind:value={lbForm[op.callsign].call} autocapitalize="characters" />
-              <input type="text" placeholder="QRZ-Logbook-Key"
-                     bind:value={lbForm[op.callsign].key} />
-              <button onclick={(e) => { e.stopPropagation(); addLogbook(op.callsign); }}
-                      disabled={busy}>+</button>
-            </div>
           {/if}
         </div>
       {/each}
@@ -387,63 +290,6 @@
   }
   .del:hover { color: var(--danger); }
   .del:disabled { opacity: 0.3; cursor: not-allowed; }
-  .check {
-    background: transparent; border: none; color: #64748b; cursor: pointer;
-    padding: 0 0.5rem; font-size: 0.7rem; align-self: center;
-  }
-  .check:hover { color: var(--accent); }
-  .check:disabled { opacity: 0.5; cursor: progress; }
-  .preflight {
-    padding: 0.2rem 0.8rem 0.5rem; display: flex; flex-direction: column;
-    gap: 0.2rem; border-bottom: 1px solid #1e293b;
-  }
-  .pf-line {
-    font-size: 0.7rem; display: flex; align-items: center; gap: 0.35rem;
-    color: #94a3b8;
-  }
-  .pf-dot {
-    width: 7px; height: 7px; border-radius: 50%; flex: none;
-    background: currentColor;
-  }
-  .pf-line.ok { color: #4ade80; }
-  .pf-line.warn { color: #fbbf24; }
-  .pf-line.err { color: var(--danger); }
-  .pf-line.info { color: #94a3b8; }
-  .logbooks {
-    padding: 0.3rem 0.8rem 0.5rem; border-bottom: 1px solid #1e293b;
-    display: flex; flex-direction: column; gap: 0.25rem;
-  }
-  .lb-title {
-    font-size: 0.65rem; color: #64748b; text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .lb-row { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; }
-  .lb-call {
-    flex: 1; font-family: ui-monospace, monospace; color: var(--text);
-  }
-  .lb-check, .lb-del {
-    background: transparent; border: none; cursor: pointer; font-size: 0.7rem;
-    color: #64748b; padding: 0 0.3rem;
-  }
-  .lb-check:hover { color: var(--accent); }
-  .lb-del:hover { color: var(--danger); }
-  .lb-pf { font-size: 0.65rem; padding-left: 0.2rem; color: #94a3b8; }
-  .lb-pf.ok { color: #4ade80; }
-  .lb-pf.warn { color: #fbbf24; }
-  .lb-pf.err { color: var(--danger); }
-  .lb-pf.info { color: #94a3b8; }
-  .lb-add { display: flex; gap: 0.3rem; margin-top: 0.2rem; }
-  .lb-add input {
-    flex: 1; min-width: 0; background: rgba(15,23,42,0.6); border: 1px solid #334155;
-    border-radius: 4px; padding: 0.25rem 0.4rem; color: var(--text);
-    font-size: 0.72rem; font-family: inherit;
-  }
-  .lb-add input:focus { outline: none; border-color: var(--accent); }
-  .lb-add button {
-    background: rgba(56,189,248,0.15); border: 1px solid #334155; color: var(--accent);
-    border-radius: 4px; padding: 0 0.5rem; cursor: pointer; font-weight: 700;
-  }
-  .lb-add button:disabled { opacity: 0.5; cursor: not-allowed; }
   .add-btn {
     width: 100%; background: transparent; border: none;
     border-top: 1px solid #1e293b; padding: 0.6rem 0.8rem;
