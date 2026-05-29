@@ -915,6 +915,7 @@ class Orchestrator:
         except Exception as exc:
             log.info("preflight-warn uebersprungen (%s)", exc)
             return
+        # "info" loest KEINEN Alarm aus (z.B. ClubLog-noch-keine-Aktivitaet).
         probs = [
             f"{label}: {res[svc]['detail']}"
             for svc, label in (("qrz", "QRZ"), ("clublog", "ClubLog"))
@@ -1002,11 +1003,16 @@ class Orchestrator:
                 if not reg.ok:
                     clublog = {"status": "error", "detail": reg.reason or "ClubLog-Check fehlgeschlagen"}
                 elif reg.registered:
-                    clublog = {"status": "ok", "detail": f"{call} ist bei ClubLog registriert."}
+                    clublog = {"status": "ok", "detail": f"{call} ist bei ClubLog aktiv."}
                 else:
-                    clublog = {"status": "warn",
-                               "detail": f"{call} scheint bei ClubLog nicht angelegt — "
-                                         f"vor dem Betrieb unter Settings → Callsigns hinzufuegen."}
+                    # clublog_user=false heisst NICHT "nicht angelegt" — die
+                    # ClubLog-API kann Account-Zugehoerigkeit read-only nicht
+                    # bestaetigen; das Flag wird erst true mit Aktivitaet/QSOs.
+                    # Deshalb nur ein neutraler Hinweis, kein Alarm.
+                    clublog = {"status": "info",
+                               "detail": f"ClubLog meldet fuer {call} noch keine Aktivitaet "
+                                         f"(wird gruen nach dem ersten Upload). Falls neu: "
+                                         f"unter Settings → Callsigns angelegt? Sonst ok."}
             except Exception as exc:
                 clublog = {"status": "error", "detail": f"ClubLog nicht erreichbar: {exc}"}
 

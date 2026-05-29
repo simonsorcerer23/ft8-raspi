@@ -38,6 +38,13 @@
   // Pre-Flight-Check-State: callsign → { busy, qrz:{status,detail}, clublog:{...} }
   let preflight = $state({});
 
+  function pfClass(status) {
+    if (status === 'ok') return 'ok';
+    if (status === 'error') return 'err';
+    if (status === 'info') return 'info';
+    return 'warn';  // not_set_up | warn
+  }
+
   async function checkSetup(callsign) {
     preflight[callsign] = { busy: true };
     try {
@@ -221,10 +228,10 @@
             {#if pf.error}
               <div class="pf-line err">⚠ {pf.error}</div>
             {:else}
-              <div class="pf-line {pf.qrz.status === 'ok' ? 'ok' : pf.qrz.status === 'error' ? 'err' : 'warn'}">
+              <div class="pf-line {pfClass(pf.qrz.status)}">
                 <span class="pf-dot"></span>QRZ: {pf.qrz.detail}
               </div>
-              <div class="pf-line {pf.clublog.status === 'ok' ? 'ok' : pf.clublog.status === 'error' ? 'err' : 'warn'}">
+              <div class="pf-line {pfClass(pf.clublog.status)}">
                 <span class="pf-dot"></span>ClubLog: {pf.clublog.detail}
               </div>
             {/if}
@@ -243,7 +250,7 @@
                       disabled={busy}>✕</button>
             </div>
             {#if preflight[call] && !preflight[call].busy && !preflight[call].error}
-              <div class="lb-pf {preflight[call].qrz.status === 'ok' ? 'ok' : preflight[call].qrz.status === 'error' ? 'err' : 'warn'}">
+              <div class="lb-pf {pfClass(preflight[call].qrz.status)}">
                 {preflight[call].qrz.detail}
               </div>
             {/if}
@@ -401,6 +408,7 @@
   .pf-line.ok { color: #4ade80; }
   .pf-line.warn { color: #fbbf24; }
   .pf-line.err { color: var(--danger); }
+  .pf-line.info { color: #94a3b8; }
   .logbooks {
     padding: 0.3rem 0.8rem 0.5rem; border-bottom: 1px solid #1e293b;
     display: flex; flex-direction: column; gap: 0.25rem;
@@ -423,6 +431,7 @@
   .lb-pf.ok { color: #4ade80; }
   .lb-pf.warn { color: #fbbf24; }
   .lb-pf.err { color: var(--danger); }
+  .lb-pf.info { color: #94a3b8; }
   .lb-add { display: flex; gap: 0.3rem; margin-top: 0.2rem; }
   .lb-add input {
     flex: 1; min-width: 0; background: rgba(15,23,42,0.6); border: 1px solid #334155;

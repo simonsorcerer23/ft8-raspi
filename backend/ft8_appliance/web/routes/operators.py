@@ -95,7 +95,9 @@ async def list_operators(
 
 
 class PreflightSection(BaseModel):
-    status: Literal["ok", "not_set_up", "warn", "error"]
+    # "info" = neutraler Hinweis (kein Alarm), z.B. ClubLog meldet noch
+    # keine Aktivitaet fuer einen frisch angelegten Call.
+    status: Literal["ok", "not_set_up", "warn", "error", "info"]
     detail: str | None = None
 
 
