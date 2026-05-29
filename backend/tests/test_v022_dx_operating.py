@@ -113,6 +113,69 @@ def test_cept_compliance_class_e_cept1_only_set():
         assert allowed is False, f"Klasse E darf NICHT in {code}"
 
 
+def test_cept_compliance_class_e_newly_verified_novice_countries():
+    """DARC-PDF 2026-05-16: Montenegro (4O), Nordmazedonien (Z3) und
+    Ukraine (UR) setzen ECC/REC (05)06 OHNE Gastlizenz um → Klasse E
+    erlaubt. (Korrektur: frueher faelschlich als A-only gelistet.)"""
+    for code in ("4O", "Z3", "UR"):
+        allowed, reason = cept_compliance(code, "DL", "E")
+        assert allowed is True, f"Klasse E sollte in {code} erlaubt sein"
+        assert reason is None
+
+
+def test_cept_compliance_class_e_estonia_norway_ireland_blocked():
+    """DARC-PDF: Estland (ES), Norwegen (LA), Irland (EI) sind Full=x,
+    Novice=- → NUR Klasse A, Klasse E gesperrt. (Disput aufgeloest.)"""
+    for code in ("ES", "LA", "EI"):
+        allowed, _ = cept_compliance(code, "DL", "E")
+        assert allowed is False, f"Klasse E darf NICHT in {code}"
+
+
+def test_cept_compliance_usa_class_a_and_e_allowed():
+    """USA (DARC ITU Region 2, inkl. Hawaii): Full=x UND Novice=x."""
+    for cls in ("A", "E"):
+        for code in ("W", "KH6"):
+            allowed, reason = cept_compliance(code, "DL", cls)
+            assert allowed is True, f"Klasse {cls} sollte in {code} erlaubt sein"
+            assert reason is None
+
+
+def test_cept_compliance_suspended_countries_blocked_both_classes():
+    """Belarus (EW) + Russland (UA): CEPT-Mitgliedschaft ausgesetzt (**)
+    → Gastbetrieb fuer JEDE Klasse gesperrt, trotz x/x in den
+    Recommendation-Spalten."""
+    for code in ("EW", "UA"):
+        for cls in ("A", "E"):
+            allowed, reason = cept_compliance(code, "DL", cls)
+            assert allowed is False, f"{code} ist suspendiert — {cls} muss blocken"
+            assert reason is not None
+            assert "ausgesetzt" in reason
+
+
+def test_guest_licence_only_countries_not_listed():
+    """Albanien/Andorra/Aserbaidschan/San Marino/Vatikan sind Full=-
+    (Gastlizenz Pflicht) → bewusst NICHT in COUNTRIES, kein Drop-in."""
+    for code in ("ZA", "C3", "4J", "T7", "HV"):
+        assert code not in COUNTRIES
+        allowed, _ = cept_compliance(code, "DL", "A")
+        assert allowed is False  # unbekannt → defensiv geblockt
+
+
+def test_new_drop_in_countries_present():
+    """Malta (9H, A-only) + Georgien (4L, A+E) sind als Drop-in gelistet."""
+    assert country("9H") is not None
+    assert country("9H").cept_class_e_allowed is False
+    assert country("4L") is not None
+    assert country("4L").cept_class_e_allowed is True
+
+
+def test_class_n_blocked_everywhere_abroad():
+    """Klasse N ist international nicht anerkannt → ueberall gesperrt."""
+    allowed, reason = cept_compliance("9A", "DL", "N")
+    assert allowed is False
+    assert reason is not None
+
+
 def test_cept_compliance_unknown_country_blocked():
     allowed, reason = cept_compliance("XX", "DL", "A")
     assert allowed is False

@@ -23,7 +23,9 @@ class CountryInfoOut(BaseModel):
     code: str
     name: str
     is_home: bool = False
+    cept_class_a_allowed: bool = False
     cept_class_e_allowed: bool = False
+    cept_suspended: bool = False
     cept_class_a_max_w: int | None = None
 
 
@@ -169,7 +171,9 @@ async def list_countries() -> CountriesResponse:
             code=code,
             name=info.name,
             is_home=(code == "DL"),  # heuristisch — Sebastian + Ray sind DL
+            cept_class_a_allowed=info.cept_class_a_allowed,
             cept_class_e_allowed=info.cept_class_e_allowed,
+            cept_suspended=info.cept_suspended,
             cept_class_a_max_w=info.cept_class_a_max_w,
         ))
     return CountriesResponse(countries=items)
