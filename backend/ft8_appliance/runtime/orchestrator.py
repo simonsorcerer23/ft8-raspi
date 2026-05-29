@@ -81,6 +81,7 @@ from ..util.bandplan import (
     iaru_region_from_latlon,
     is_in_ft8_segment,
 )
+from ..util.callsign import base_call
 from ..util.maidenhead import latlon_to_locator
 from ..util.system_health import ChronyStatus, read_chrony_tracking
 from .slot_clock import SlotClock, SlotTick
@@ -996,19 +997,24 @@ class Orchestrator:
                         )
                 except Exception as exc:
                     log.warning("watchlist hint-push failed: %s", exc)
-                # v0.15.0 Soft-Blacklist aus call_reputation rekonstruieren
+                # v0.15.0 Soft-Blacklist aus call_reputation rekonstruieren.
+                # v0.27.0 (Sebastian 2026-05-29): GLOBAL — kein
+                # user_callsign-Filter mehr. Reputation beschreibt das
+                # Funkverhalten der Gegenstation, nicht den Operator; beide
+                # Ops auf demselben Pi teilen sie (wie FreqReputation).
+                # Key ist der Basis-Call (Suffixe gestrippt).
                 self._soft_blacklist = set()
                 rep_rows = (await s.execute(
                     select(
                         DbCallReputation.call,
                         DbCallReputation.score,
                         DbCallReputation.attempts,
-                    ).where(DbCallReputation.user_callsign == my_call)
+                    )
                 )).all()
                 for c_, score, attempts in rep_rows:
                     if (c_ and (score or 0) >= self._SOFT_BLACKLIST_THRESHOLD
                             and (attempts or 0) >= self._MIN_ATTEMPTS_FOR_BLACKLIST):
-                        self._soft_blacklist.add(c_.upper())
+                        self._soft_blacklist.add(base_call(c_))
                 if self._soft_blacklist:
                     log.info(
                         "Soft-Blacklist hydratisiert: %d Calls",
@@ -4685,12 +4691,11 @@ class Orchestrator:
         Updated DB-Eintrag (attempts +1, score += weight, last_reason).
         Triggert ggf. Soft-Blacklist-Aufnahme.
         """
-        call = (payload.get("call") or "").upper().strip()
+        call = base_call(payload.get("call"))
         reason = payload.get("reason") or "unknown"
         if not call:
             return
         weight = self._BAIL_SCORE_WEIGHTS.get(reason, 0)
-        my_user = self.config.operator.callsign
         try:
             async with session_scope() as s:
                 row = await s.get(DbCallReputation, call)
@@ -4698,7 +4703,6 @@ class Orchestrator:
                 if row is None:
                     row = DbCallReputation(
                         call=call,
-                        user_callsign=my_user,
                         score=weight,
                         attempts=1,
                         successes=0,
@@ -4711,8 +4715,6 @@ class Orchestrator:
                     row.attempts = (row.attempts or 0) + 1
                     row.last_attempt_at = now
                     row.last_reason = reason
-                    if row.user_callsign is None:
-                        row.user_callsign = my_user
                 # In-Memory-Set updaten falls jetzt ueber Threshold
                 if (row.score >= self._SOFT_BLACKLIST_THRESHOLD
                         and row.attempts >= self._MIN_ATTEMPTS_FOR_BLACKLIST):
@@ -5005,7 +5007,7 @@ class Orchestrator:
         Entfernt den DB-Eintrag UND das In-Memory-Set. Nach Reset
         ist der Call wieder neutral fuer den Picker.
         """
-        call = (call or "").upper().strip()
+        call = base_call(call)
         if not call:
             return
         self._soft_blacklist.discard(call)
@@ -5020,10 +5022,9 @@ class Orchestrator:
     async def _record_qso_success(self, call: str) -> None:
         """Erfolg vergibt — Score Richtung 0 ziehen, ggf. Soft-Blacklist
         verlassen."""
-        call = (call or "").upper().strip()
+        call = base_call(call)
         if not call:
             return
-        my_user = self.config.operator.callsign
         try:
             async with session_scope() as s:
                 row = await s.get(DbCallReputation, call)
@@ -5031,7 +5032,6 @@ class Orchestrator:
                 if row is None:
                     row = DbCallReputation(
                         call=call,
-                        user_callsign=my_user,
                         score=self._SUCCESS_SCORE_DELTA,
                         attempts=0,
                         successes=1,
@@ -5044,8 +5044,6 @@ class Orchestrator:
                     row.successes = (row.successes or 0) + 1
                     row.last_attempt_at = now
                     row.last_reason = "success"
-                    if row.user_callsign is None:
-                        row.user_callsign = my_user
                 # Aus Soft-Blacklist raus wenn unter Threshold
                 if row.score < self._SOFT_BLACKLIST_THRESHOLD:
                     self._soft_blacklist.discard(call)

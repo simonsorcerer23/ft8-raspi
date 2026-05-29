@@ -191,11 +191,18 @@ class CallReputation(Base):
     Score >= ``SOFT_BLACKLIST_THRESHOLD`` (Default 5) UND
     ``attempts >= MIN_ATTEMPTS`` (Default 3) → Soft-Blacklist.
 
-    Multi-Operator-Isolation via user_callsign.
+    v0.27.0: GLOBAL, nicht pro Operator. Das Funkverhalten einer Station
+    (bricht ab, hoert uns nie, schliesst nie) haengt am Menschen hinter
+    dem Call, nicht am anrufenden Operator — analog FreqReputation teilen
+    sich beide Ops auf einem Pi das Set. PK ``call`` ist der Basis-Call
+    (Suffixe wie /P /MM /AM gestrippt, siehe util.callsign.base_call).
+    Die Spalte ``user_callsign`` bleibt aus Migrations-Gruenden erhalten,
+    wird aber nicht mehr gelesen oder geschrieben (vestigial).
     """
     __tablename__ = "call_reputation"
 
     call: Mapped[str] = mapped_column(String, primary_key=True)
+    # vestigial seit v0.27.0 — Reputation ist global (siehe Docstring)
     user_callsign: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     score: Mapped[int] = mapped_column(Integer, default=0)
     attempts: Mapped[int] = mapped_column(Integer, default=0)

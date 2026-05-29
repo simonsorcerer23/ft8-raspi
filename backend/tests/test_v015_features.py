@@ -58,6 +58,18 @@ def test_reputation_tier_no_call_from_returns_1():
     assert _tier_not_bad_reputation(d, ctx) == 1
 
 
+def test_reputation_tier_matches_base_call_regardless_of_suffix():
+    """v0.27.0 — Reputation laeuft auf dem Basis-Call. Eine als BAD1XYZ
+    geblacklistete Station wird auch als BAD1XYZ/P, /MM, /AM erkannt
+    (selber Mensch, selbes Verhalten)."""
+    ctx = _ctx(soft_blacklist={"BAD1XYZ"})
+    assert _tier_not_bad_reputation(_d("BAD1XYZ/P"), ctx) == 0
+    assert _tier_not_bad_reputation(_d("BAD1XYZ/MM"), ctx) == 0
+    assert _tier_not_bad_reputation(_d("bad1xyz/am"), ctx) == 0
+    # Andere Station bleibt unberuehrt
+    assert _tier_not_bad_reputation(_d("DL5ABC/P"), ctx) == 1
+
+
 # ---------------------------------------------------------------------------
 # Slot-Parity
 # ---------------------------------------------------------------------------

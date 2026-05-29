@@ -328,18 +328,19 @@ class CallReputationResponse(BaseModel):
 async def get_reputation(
     orch: Orchestrator = Depends(get_orchestrator),
 ) -> CallReputationResponse:
-    """Call-Reputation des aktiven Operators inkl. Soft-Blacklist-Markierung.
+    """Call-Reputation (Soft-Blacklist) inkl. Markierung.
 
     Sortiert nach Score absteigend (schlechteste oben). Threshold +
     min_attempts werden mitgeliefert damit das UI die Soft-Blacklist-
     Grenze anzeigen kann.
+
+    v0.27.0: GLOBAL ueber alle Operatoren — Reputation beschreibt das
+    Funkverhalten der Gegenstation, nicht den Operator.
     """
-    my_call = orch.config.operator.callsign
     async with session_scope() as s:
         rows = list(
             (await s.execute(
                 select(CallReputation)
-                .where(CallReputation.user_callsign == my_call)
                 .order_by(desc(CallReputation.score), desc(CallReputation.attempts))
             )).scalars()
         )

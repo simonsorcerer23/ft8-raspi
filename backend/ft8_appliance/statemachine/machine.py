@@ -19,6 +19,7 @@ from typing import Literal
 
 from typing import TYPE_CHECKING
 
+from ..util.callsign import base_call
 from .guards import GuardLimits, HardwareState, evaluate, first_failure
 from .states import DecodedMsg, MachineContext, QsoContext, State
 
@@ -267,7 +268,7 @@ def _tier_not_bad_reputation(d: "DecodedMsg", ctx: "MachineContext") -> int:
     """
     if not d.call_from:
         return 1  # unknown → kein Filter
-    return 0 if d.call_from.upper() in ctx.soft_blacklist else 1
+    return 0 if base_call(d.call_from) in ctx.soft_blacklist else 1
 
 
 def _tier_not_his_tx_slot(d: "DecodedMsg", ctx: "MachineContext") -> int:
