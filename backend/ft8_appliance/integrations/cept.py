@@ -50,14 +50,35 @@ der jeweiligen Band-Tabelle abgelesen. Bei IC-705/IC-7300 bindet ohnehin
 der Rig-Hardware-Cap (10/100W), die Laender-Caps sind fuer dieses Setup
 praktisch nie limitierend; sie dienen v.a. der Dokumentation/Korrektheit.
 
-Bounding-Boxes sind EXPLIZIT grobe rechteckige Approximationen der
-Landesgrenzen — nur fuer GPS-Detection (Vorschlag, ~100km). KEIN
-Auto-Switch; bei Grenz-Ambiguitaet bestaetigt der Operator manuell.
+GPS-Detection (detect_from_gps) arbeitet zweistufig:
+  1. Bounding-Box als schneller Vorfilter (welche Laender kommen ueberhaupt
+     in Frage?).
+  2. Point-in-Polygon gegen vereinfachte echte Landesgrenzen
+     (data/cept_borders.json, aus Natural Earth 1:50m, Ramer-Douglas-
+     Peucker-vereinfacht, ~250 KB) zur Disambiguierung bei Box-Overlap.
+     Loest die Balkan-/Adria-Overlaps sauber (Kroatiens C-Form um Bosnien)
+     ohne Prioritaets-Hacks. Faellt ein Kuestenpunkt knapp aus allen
+     vereinfachten Polygonen → naechstgelegenes Polygon gewinnt.
+  Microstates (Monaco, Liechtenstein, Malta) gewinnen ueber ihre enge
+  Bounding-Box, da Natural Earth ihre Polygone nur grob/versetzt fuehrt.
+  Bleibt ein Vorschlag — KEIN Auto-Switch; der Operator bestaetigt manuell.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+# Vereinfachte Landesgrenzen fuer Point-in-Polygon (siehe Modul-Docstring).
+_BORDERS_PATH = Path(__file__).resolve().parent.parent / "data" / "cept_borders.json"
+# Microstate-Schwelle: Laender mit bbox-Flaeche < diesem Wert (Grad²)
+# gewinnen allein ueber ihre enge Box (Monaco, Liechtenstein, Malta).
+_MICRO_BBOX_AREA = 0.15
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,22 +262,105 @@ def country(code: str | None) -> CountryInfo | None:
     return COUNTRIES.get(code.upper())
 
 
-def detect_from_gps(lat: float | None, lon: float | None) -> str | None:
-    """GPS → wahrscheinliches Country-Code via Bounding-Box.
+@lru_cache(maxsize=1)
+def _borders() -> dict[str, list[list[list[float]]]]:
+    """Lade vereinfachte Landesgrenzen (lazy, gecacht). Bei fehlender/
+    kaputter Datei → leeres Dict → Detection faellt auf reine bbox zurueck."""
+    try:
+        with _BORDERS_PATH.open(encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as exc:
+        log.warning("cept: Grenz-Daten nicht ladbar (%s) — bbox-only Fallback",
+                    exc)
+        return {}
 
-    Returns None wenn keine GPS-Position oder kein Land matched.
-    Falls mehrere Boxes overlappen (Grenz-Region), wird das ERSTE
-    Match aus iteration-order zurueckgegeben — DL hat Vorrang weil
-    es als erster Eintrag im Dict steht; grosse Boxen (Russland)
-    stehen am Ende.
+
+def _bbox_area(code: str) -> float:
+    info = COUNTRIES[code]
+    la0, la1, lo0, lo1 = info.bbox
+    return (la1 - la0) * (lo1 - lo0)
+
+
+def _point_in_rings(rings: list[list[list[float]]], lon: float, lat: float) -> bool:
+    """Ray-Casting Point-in-Polygon ueber alle Ringe (jeder [lon,lat])."""
+    inside = False
+    for ring in rings:
+        n = len(ring)
+        j = n - 1
+        for i in range(n):
+            xi, yi = ring[i]
+            xj, yj = ring[j]
+            if ((yi > lat) != (yj > lat)) and (
+                lon < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-12) + xi
+            ):
+                inside = not inside
+            j = i
+    return inside
+
+
+def _dist_point_to_rings(rings: list[list[list[float]]], lon: float, lat: float) -> float:
+    """Minimaler Abstand (Grad) vom Punkt zu irgendeiner Polygon-Kante."""
+    best = float("inf")
+    for ring in rings:
+        n = len(ring)
+        for i in range(n):
+            ax, ay = ring[i]
+            bx, by = ring[(i + 1) % n]
+            dx, dy = bx - ax, by - ay
+            l2 = dx * dx + dy * dy
+            if l2 == 0:
+                d = ((lon - ax) ** 2 + (lat - ay) ** 2) ** 0.5
+            else:
+                t = max(0.0, min(1.0, ((lon - ax) * dx + (lat - ay) * dy) / l2))
+                px, py = ax + t * dx, ay + t * dy
+                d = ((lon - px) ** 2 + (lat - py) ** 2) ** 0.5
+            if d < best:
+                best = d
+    return best
+
+
+def detect_from_gps(lat: float | None, lon: float | None) -> str | None:
+    """GPS-Position → wahrscheinliches Country-Code.
+
+    Zweistufig: Bounding-Box-Vorfilter, dann Point-in-Polygon gegen
+    vereinfachte echte Grenzen zur Disambiguierung bei Overlap. Returns
+    None wenn keine Position oder kein Land matched.
+
+    Aufloesung der Mehrdeutigkeit (mehrere bbox-Kandidaten):
+      1. Microstate (sehr kleine bbox) gewinnt sofort — Monaco/LI/Malta.
+      2. Sonst: Land dessen Polygon den Punkt enthaelt (kleinste bbox
+         bei mehreren Treffern).
+      3. Kein Polygon-Treffer (z.B. Kuestenpunkt knapp daneben): das
+         Land mit dem naechstgelegenen Polygon.
+      4. Letzter Fallback: kleinste Bounding-Box.
     """
     if lat is None or lon is None:
         return None
-    for code, info in COUNTRIES.items():
-        lat_min, lat_max, lon_min, lon_max = info.bbox
-        if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
-            return code
-    return None
+    cand = [
+        code for code, info in COUNTRIES.items()
+        if info.bbox[0] <= lat <= info.bbox[1] and info.bbox[2] <= lon <= info.bbox[3]
+    ]
+    if not cand:
+        return None
+    if len(cand) == 1:
+        return cand[0]
+
+    # 1. Microstate via enge bbox (NE-Polygone fuer Mini-Staaten unzuverlaessig)
+    micro = [c for c in cand if _bbox_area(c) < _MICRO_BBOX_AREA]
+    if micro:
+        return min(micro, key=_bbox_area)
+
+    borders = _borders()
+    # 2. Polygon-Containment
+    hits = [c for c in cand if c in borders and _point_in_rings(borders[c], lon, lat)]
+    if hits:
+        return min(hits, key=_bbox_area)
+    # 3. naechstgelegenes Polygon (Kuestenpunkte, Simplification-Rand)
+    with_poly = [c for c in cand if c in borders]
+    if with_poly:
+        return min(with_poly, key=lambda c: _dist_point_to_rings(borders[c], lon, lat))
+    # 4. Fallback: spezifischste (kleinste) Box
+    return min(cand, key=_bbox_area)
 
 
 def cept_compliance(

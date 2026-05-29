@@ -64,6 +64,39 @@ def test_detect_from_gps_griechenland():
     assert detect_from_gps(37.98, 23.73) == "SV"
 
 
+def test_detect_from_gps_coastal_croatia_not_bosnia():
+    """Dalmatinische Kueste (Split/Dubrovnik) liegt in den bbox von 9A UND
+    E7 (Bosnien wickelt sich drumherum). Point-in-Polygon muss 9A liefern,
+    nicht E7 — frueher brauchte das einen Reihenfolge-Hack."""
+    assert detect_from_gps(43.51, 16.44) == "9A"   # Split
+    assert detect_from_gps(42.65, 18.09) == "9A"   # Dubrovnik (Sued-Exklave)
+    assert detect_from_gps(45.33, 14.44) == "9A"   # Rijeka
+
+
+def test_detect_from_gps_bosnia_interior():
+    assert detect_from_gps(43.86, 18.41) == "E7"   # Sarajevo
+    assert detect_from_gps(43.34, 17.81) == "E7"   # Mostar
+
+
+def test_detect_from_gps_microstates():
+    """Monaco/Liechtenstein liegen in der bbox des Nachbarn — duerfen aber
+    nicht als Frankreich/Schweiz erkannt werden."""
+    assert detect_from_gps(43.738, 7.424) == "3A"  # Monaco
+    assert detect_from_gps(43.70, 7.27) == "F"     # Nizza (knapp daneben)
+    assert detect_from_gps(47.14, 9.52) == "HB0"   # Vaduz
+
+
+def test_detect_from_gps_finland_vs_russia_overlap():
+    """Ost-Finnland liegt in Russlands grosser bbox — Polygon disambiguiert."""
+    assert detect_from_gps(62.6, 30.0) == "OH"     # Ost-Finnland
+    assert detect_from_gps(55.75, 37.62) == "UA"   # Moskau
+
+
+def test_detect_from_gps_ukraine_vs_russia():
+    assert detect_from_gps(50.45, 30.52) == "UR"   # Kyiv
+    assert detect_from_gps(49.84, 24.03) == "UR"   # Lviv
+
+
 def test_detect_from_gps_no_fix_returns_none():
     assert detect_from_gps(None, None) is None
     assert detect_from_gps(None, 10.0) is None
