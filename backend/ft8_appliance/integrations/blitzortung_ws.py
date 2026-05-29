@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
@@ -104,14 +105,20 @@ def parse_strike(raw_json: str) -> Strike | None:
 async def stream_strikes(
     *,
     hosts: tuple[str, ...] = DEFAULT_WS_HOSTS,
-    reconnect_delay_s: float = 30.0,
+    backoff_base_s: float = 5.0,
+    backoff_cap_s: float = 120.0,
+    good_session_s: float = 60.0,
 ) -> AsyncIterator[Strike]:
     """Async-Generator der Strikes vom Live-WS liefert.
 
     Robust gegen Disconnects: bei Connection-Drop wird der naechste
-    Host probiert (Round-Robin), zwischen Versuchen ``reconnect_delay_s``
-    Pause. Caller ist responsible das via ``async for`` zu iterieren
-    und ``asyncio.CancelledError`` korrekt weiterzureichen.
+    Host probiert (Round-Robin). Reconnect mit **exponential Backoff**
+    (analog DX-Cluster, Sebastian 2026-05-29): nach einem sofortigen
+    Fail / Flapping waechst die Pause ``backoff_base_s`` → ×2 → bis
+    ``backoff_cap_s``, damit wir blitzortung.org bei Ausfall nicht
+    alle 30 s endlos hammern. Nach einer ECHTEN Session (laenger als
+    ``good_session_s`` verbunden) wird der Backoff zurueckgesetzt —
+    ein transienter Drop nach Stunden soll schnell reconnecten.
 
     Connect+Subscribe-Pattern:
         1. websockets.connect(url, ping_interval=30, ping_timeout=10)
@@ -119,9 +126,11 @@ async def stream_strikes(
         3. async for frame in ws: try LZW-decode → parse JSON → yield
     """
     host_idx = 0
+    backoff = backoff_base_s
     while True:
         host = hosts[host_idx % len(hosts)]
         url = f"wss://{host}/"
+        connected_at: float | None = None
         try:
             log.info("blitzortung: connecting to %s", url)
             async with websockets.connect(
@@ -134,6 +143,7 @@ async def stream_strikes(
                 max_size=2 * 1024 * 1024,
             ) as ws:
                 await ws.send(SUBSCRIBE_FRAME)
+                connected_at = time.monotonic()
                 log.info("blitzortung: subscribed, streaming strikes")
                 async for frame in ws:
                     if not isinstance(frame, str):
@@ -154,9 +164,15 @@ async def stream_strikes(
             log.warning("blitzortung: WS error on %s (%s) — rotating host",
                         host, exc)
         host_idx += 1
-        # Backoff zwischen Reconnect-Versuchen damit wir den Server nicht
-        # hammern und das Logfile nicht zuspammen.
+        # Backoff-Bewertung: stand die Session lang genug (echter Stream,
+        # dann transienter Drop) → zurueck auf Base, schnell reconnecten.
+        # Sonst (Sofort-Fail / Flapping / Server lehnt ab) → exponential
+        # wachsen lassen bis Cap, damit wir den Dienst nicht hammern.
+        if connected_at is not None and (time.monotonic() - connected_at) > good_session_s:
+            backoff = backoff_base_s
+        else:
+            backoff = min(backoff * 2, backoff_cap_s)
         try:
-            await asyncio.sleep(reconnect_delay_s)
+            await asyncio.sleep(backoff)
         except asyncio.CancelledError:
             raise
