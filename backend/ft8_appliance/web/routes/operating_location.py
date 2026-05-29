@@ -9,6 +9,8 @@ GET  /api/operating-location/countries → Liste verfuegbarer Country-Codes
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -159,6 +161,16 @@ async def set_operating_location(
     # nicht durch alten Push-Cache unterdrueckt werden
     orch._gps_last_pushed_country = None
     orch._gps_country_consistent_since = 0.0
+
+    # v0.28.3 — Pre-Flight beim DX-Location-Wechsel: warnt aufs Handy wenn
+    # der neue Prefix-Call (z.B. 9A/DO3XR) kein eigenes QRZ-Logbuch/Key hat
+    # oder bei ClubLog nicht angelegt ist. Nur bei DX (country gesetzt) —
+    # zurueck auf Heimat braucht keine Warnung. Hintergrund, non-blocking.
+    if country is not None:
+        orch._preflight_task = asyncio.create_task(
+            orch._preflight_warn(orch.effective_tx_call()),
+            name="preflight-warn-dx",
+        )
 
     return await get_operating_location(orch=orch)
 
