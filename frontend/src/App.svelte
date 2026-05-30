@@ -25,7 +25,8 @@
   import RigPanel       from './components/RigPanel.svelte';
   import SwrTrendChart  from './components/SwrTrendChart.svelte';
   import WhoHeardMe     from './components/WhoHeardMe.svelte';
-  import { api }        from './lib/api.js';
+  import LoginGate      from './components/LoginGate.svelte';
+  import { api, getToken } from './lib/api.js';
   import { statusStore, healthStore, decodeStore } from './lib/stores.svelte.js';
   import { attachStatusStream, attachDecodeStream,
            requestNotificationPermission,
@@ -33,6 +34,22 @@
 
   let soundOn = $state(true);
   let needsSetup = $state(false);
+  // v0.37.0 — Token-Auth-Gate. Optimistisch authed wenn ein Token da ist;
+  // ein 401 (via 'ft8-auth-required'-Event aus api.js) klappt das Gate auf.
+  let authed = $state(!!getToken());
+  let _detachers = [];
+  function startBoot() {
+    if (_detachers.length) return;
+    statusStore.refresh();
+    healthStore.refresh();
+    const t1 = setInterval(() => statusStore.refresh(), 5_000);
+    const t2 = setInterval(() => healthStore.refresh(), 15_000);
+    const ds = attachStatusStream();
+    const dd = attachDecodeStream(decodeStore);
+    _detachers = [() => clearInterval(t1), () => clearInterval(t2), ds, dd];
+  }
+  function stopBoot() { _detachers.forEach((f) => f()); _detachers = []; }
+  function handleAuthed() { authed = true; startBoot(); }
 
   // Pi-Identität in den Titel: ft8 vs ft8-2 unterscheidbar machen.
   // Quelle ist die URL der User benutzt (Tailscale-DNS, .local, oder IP).
@@ -62,15 +79,17 @@
     } catch { return false; }
   }
 
-  onMount(async () => {
-    needsSetup = await checkSetup();
-    statusStore.refresh();
-    healthStore.refresh();
-    const t1 = setInterval(() => statusStore.refresh(), 5_000);
-    const t2 = setInterval(() => healthStore.refresh(), 15_000);
-    const detachStatus = attachStatusStream();
-    const detachDecodes = attachDecodeStream(decodeStore);
-    return () => { clearInterval(t1); clearInterval(t2); detachStatus(); detachDecodes(); };
+  onMount(() => {
+    const onAuthRequired = () => { authed = false; stopBoot(); };
+    window.addEventListener('ft8-auth-required', onAuthRequired);
+    (async () => {
+      needsSetup = await checkSetup();
+      if (authed) startBoot();
+    })();
+    return () => {
+      window.removeEventListener('ft8-auth-required', onAuthRequired);
+      stopBoot();
+    };
   });
 
   function skipSetup() {
@@ -124,6 +143,10 @@
     console.log('badge detail', key, section);
   }
 </script>
+
+{#if !authed}
+  <LoginGate onAuthed={handleAuthed} />
+{:else}
 
 <header>
   <h1>{pageTitle}</h1>
@@ -203,6 +226,8 @@
 <footer>
   <small>DK9XR · FT8 · {new Date().toISOString().slice(0,10)}</small>
 </footer>
+{/if}
+
 {/if}
 
 <style>

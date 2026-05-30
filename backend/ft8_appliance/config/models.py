@@ -705,6 +705,19 @@ class AppConfig(BaseModel):
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
     ui: UiConfig = Field(default_factory=UiConfig)
+    # v0.37.0 API-Auth (Audit 2026-05-30 SEC-C1). Beim ersten Start
+    # generiert + persistiert, falls leer.
+    #  * api_token        — Master-Token, gated ALLES (Config/Operators/
+    #    Secrets/Shutdown/...). Per Authorization: Bearer oder ?token=.
+    #  * ntfy_action_token — eng begrenzter Token, NUR fuer operative
+    #    Control-Toggles (stop/cq/hunt/reset-lock/set-mode/...), eingebettet
+    #    in die ntfy-Lockscreen-Buttons. Leak ueber das ntfy-Topic erlaubt
+    #    hoechstens Betriebs-Mischief (TX-guarded), keinen Secret-/Shutdown-
+    #    Zugriff.
+    # localhost (127.0.0.1/::1) umgeht die Auth komplett (wer auf dem Pi
+    # ist, hat eh via SSH vollen Zugriff — und self-update lebt dort).
+    api_token: str | None = None
+    ntfy_action_token: str | None = None
 
     @model_validator(mode="before")
     @classmethod

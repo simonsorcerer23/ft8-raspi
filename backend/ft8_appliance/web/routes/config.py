@@ -36,6 +36,8 @@ def _redact_secrets(cfg: AppConfig) -> AppConfig:
     for w in c.network.wifi_priority:
         w.psk = None
     c.network.ap_fallback.psk = ""  # required str → leer statt None
+    c.api_token = None
+    c.ntfy_action_token = None
     return c
 
 
@@ -147,6 +149,11 @@ def preserve_secrets(raw: dict, current: AppConfig) -> dict:
         if any(cur_sub.get(k) for k in keys):
             posted_sub = raw.setdefault("integrations", {}).setdefault(sub, {})
             _fill_missing_secrets(posted_sub, cur_sub, keys)
+
+    # --- 4. API-Auth-Tokens bewahren (Frontend kennt sie nicht) -----------
+    for k in ("api_token", "ntfy_action_token"):
+        if not raw.get(k) and cur.get(k):
+            raw[k] = cur[k]
 
     return raw
 

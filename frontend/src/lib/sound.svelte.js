@@ -43,8 +43,15 @@ export async function requestNotificationPermission() {
   return p === 'granted';
 }
 
+function _sseUrl(path) {
+  // EventSource kann keine Header setzen → Token als Query-Param (v0.37.0).
+  let tok = '';
+  try { tok = localStorage.getItem('ft8_api_token') || ''; } catch { /* ignore */ }
+  return tok ? `${path}?token=${encodeURIComponent(tok)}` : path;
+}
+
 export function attachDecodeStream(decodeStore) {
-  const es = new EventSource('/sse/decodes');
+  const es = new EventSource(_sseUrl('/sse/decodes'));
   es.addEventListener('decode', (ev) => {
     try {
       const d = JSON.parse(ev.data);
@@ -55,7 +62,7 @@ export function attachDecodeStream(decodeStore) {
 }
 
 export function attachStatusStream() {
-  const es = new EventSource('/sse/status');
+  const es = new EventSource(_sseUrl('/sse/status'));
   es.addEventListener('status', (ev) => {
     try {
       const s = JSON.parse(ev.data);

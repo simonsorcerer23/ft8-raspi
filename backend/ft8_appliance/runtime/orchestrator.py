@@ -1968,7 +1968,7 @@ class Orchestrator:
             title="🛠 Rig-Settings extern geaendert",
             priority="default",
             tags=["warning"],
-            actions=actions,
+            actions=self._tok_actions(actions),
         )
 
     async def _notify_mode_tamper(self, rig_mode: str, expected_mode: str) -> None:
@@ -1992,7 +1992,7 @@ class Orchestrator:
             title="🛠 Rig-Modus extern geaendert",
             priority="high",
             tags=["warning"],
-            actions=actions,
+            actions=self._tok_actions(actions),
         )
 
     async def _notify_cq_idle_timeout(self, cq_count: int, elapsed_min: float) -> None:
@@ -2018,7 +2018,7 @@ class Orchestrator:
             title="📡 CQ-Idle ohne Antwort",
             priority="default",
             tags=["warning"],
-            actions=actions,
+            actions=self._tok_actions(actions),
         )
 
     async def _notify_bandwidth_tamper(self, rig_bw: int, expected_bw: int) -> None:
@@ -2763,7 +2763,7 @@ class Orchestrator:
             title="📻 Frequenz wurde verstellt",
             priority="high",
             tags=["warning"],
-            actions=actions,
+            actions=self._tok_actions(actions),
         )
 
     async def _send_mode_alert(self, ntfy, message: str, target_mode: str) -> None:
@@ -2792,7 +2792,7 @@ class Orchestrator:
             title=f"⚠️ FT8 {host}: Auto-Modus inaktiv",
             priority="high",
             tags=["warning"],
-            actions=actions,
+            actions=self._tok_actions(actions),
         )
 
     async def _daily_summary_loop(self) -> None:
@@ -4122,7 +4122,7 @@ class Orchestrator:
             title="🚨 SWR-Notabschaltung",
             priority="high",
             tags=["rotating_light"],
-            actions=actions,
+            actions=self._tok_actions(actions),
         )
 
     async def _notify_swr_warn(self, swr: float, warn: float, hard: float) -> None:
@@ -4838,7 +4838,7 @@ class Orchestrator:
                 title=title,
                 priority="high" if is_new_dxcc else "default",
                 tags=["radio", "new"] if is_new_dxcc else ["radio"],
-                actions=actions,
+                actions=self._tok_actions(actions),
                 flag=qso_flag,
             ))
         if not self.db_enabled:
@@ -4894,6 +4894,21 @@ class Orchestrator:
             log.error("LOG_QSO db write failed: %s — sichere QSO %s in Spill-Datei",
                       exc, qso_kwargs.get("call"))
             await self._spill_qso(qso_kwargs)
+
+    def _tok_actions(self, actions: list[str]) -> list[str]:
+        """v0.37.0 — haengt den ntfy_action_token als ?token= an die
+        /api/control/-URLs der ntfy-Lockscreen-Buttons, damit sie trotz
+        API-Auth funktionieren. Der eng begrenzte Action-Token erlaubt nur
+        operative Toggles (siehe web/auth.ACTION_PATHS), keine Secrets/
+        Shutdown — selbst wenn das ntfy-Topic mitgelesen wird."""
+        atok = self.config.ntfy_action_token
+        if not atok:
+            return actions
+        import re
+        out = []
+        for a in actions:
+            out.append(re.sub(r"(/api/control/[a-z-]+)", r"\1?token=" + atok, a))
+        return out
 
     # ------------------------------------------------------------------ v0.36.0 QSO-Spill
     @staticmethod
@@ -5426,7 +5441,7 @@ class Orchestrator:
                     title=f"⚠️ FT8 {self.config.operating.public_hostname or 'Pi'} — TX-Lock",
                     priority="urgent",
                     tags=tags,
-                    actions=actions,
+                    actions=self._tok_actions(actions),
                 )
             except Exception as exc:
                 log.warning("tx_locked ntfy push failed: %s", exc)

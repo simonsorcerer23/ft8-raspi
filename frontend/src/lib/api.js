@@ -1,7 +1,28 @@
 // Thin fetch wrapper around the FastAPI backend.
 
+// v0.37.0 — API-Token-Auth. Token liegt in localStorage (pro Origin), wird
+// als Authorization: Bearer mitgeschickt. Bei 401 feuern wir ein Event,
+// damit die App den Login-Screen zeigt.
+const TOKEN_KEY = 'ft8_api_token';
+export function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+}
+export function setToken(t) {
+  try { localStorage.setItem(TOKEN_KEY, (t || '').trim()); } catch { /* ignore */ }
+}
+export function clearToken() {
+  try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+}
+function _requireLogin() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ft8-auth-required'));
+  }
+}
+
 async function request(path, { method = 'GET', body, query } = {}) {
   const init = { method, headers: { 'Accept': 'application/json' } };
+  const tok = getToken();
+  if (tok) init.headers['Authorization'] = `Bearer ${tok}`;
   if (body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
@@ -14,6 +35,10 @@ async function request(path, { method = 'GET', body, query } = {}) {
     if (qs) url += `?${qs}`;
   }
   const r = await fetch(url, init);
+  if (r.status === 401) {
+    _requireLogin();
+    throw new Error('401 unauthorized — Token erforderlich');
+  }
   const ct = r.headers.get('content-type') || '';
   const payload = ct.includes('application/json') ? await r.json() : await r.text();
   if (!r.ok) {
@@ -157,4 +182,8 @@ export const api = {
   operatorDeleteLogbook: (callsign, on_air_call) =>
                     request(`/operators/${encodeURIComponent(callsign)}/logbook?on_air_call=${encodeURIComponent(on_air_call)}`,
                             { method: 'DELETE' }),
+
+  // v0.37.0 — API-Auth
+  authToken:    ()       => getToken(),           // fuer SSE ?token=
+  authTokens:   ()       => request('/auth/token'),  // {api_token, ntfy_action_token}
 };

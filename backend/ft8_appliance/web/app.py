@@ -76,6 +76,15 @@ async def _production_lifespan(app: FastAPI):
             logger.info("loaded config from %s (callsign=%s, rig=%s, mode=%s)",
                         config_path, cfg.operator.callsign, cfg.rig.model,
                         cfg.operating.mode)
+            # v0.37.0 — API-Auth-Token beim ersten Start generieren.
+            from .auth import generate_token
+            _tokens_generated = False
+            if not cfg.api_token:
+                cfg.api_token = generate_token()
+                _tokens_generated = True
+            if not cfg.ntfy_action_token:
+                cfg.ntfy_action_token = generate_token()
+                _tokens_generated = True
             # Initialise the global SQLAlchemy engine + create tables.
             # create_all() is idempotent so re-running on every boot is fine.
             db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,6 +99,13 @@ async def _production_lifespan(app: FastAPI):
                 await orch.start()
                 app.state.orchestrator = orch
                 logger.info("orchestrator started")
+                if _tokens_generated:
+                    try:
+                        await orch.persist_config()
+                    except Exception as exc:
+                        logger.warning("persist of generated tokens failed: %s", exc)
+                    logger.warning("API-AUTH: neuer Token generiert. Abrufen via "
+                                   "'curl -s localhost:8000/api/auth/token' auf dem Pi.")
             except Exception as exc:
                 logger.exception("orchestrator.start() failed — running without: %s", exc)
         except FileNotFoundError:
@@ -128,6 +144,23 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
 
     if orchestrator is not None:
         app.state.orchestrator = orchestrator
+
+    # v0.37.0 — API-Token-Auth (SEC-C1). Middleware vor allen Routen;
+    # localhost + statische SPA bleiben offen (siehe auth.py).
+    from .auth import auth_middleware
+    app.middleware("http")(auth_middleware)
+
+    @app.get("/api/auth/token", include_in_schema=False)
+    async def _auth_token() -> dict:
+        """Aktuelle Tokens (fuer Konfig-Seite + localhost-Recovery). Durch die
+        Middleware geschuetzt: erreichbar nur mit Master-Token ODER von
+        localhost (z.B. 'curl localhost:8000/api/auth/token' per SSH)."""
+        from ..config import get_config
+        cfg = get_config()
+        return {
+            "api_token": cfg.api_token,
+            "ntfy_action_token": cfg.ntfy_action_token,
+        }
 
     # Captive-portal probe URLs — registered *before* SPA fallback so they win
     captive.register(app)
