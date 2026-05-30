@@ -527,7 +527,7 @@
 
         <h5 class="subgroup">QSO-Verhalten</h5>
         <div class="grid">
-          <label class="field"><span>QSO-Cooldown <small>(min)</small></span>
+          <label class="field"><span>QSO-Cooldown <small>(min/Band)</small></span>
             <input type="number" min="0" max="1440"
                    bind:value={cfg.operating.qso_cooldown_min}/>
           </label>

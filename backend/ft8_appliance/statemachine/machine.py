@@ -569,7 +569,10 @@ class StateMachine:
             if te is not None:
                 their_snr, decoded = te
                 their_call = decoded.call_from or ""
-                cd = self.ctx.recent_until.get(their_call, 0.0)
+                cd = max(
+                    self.ctx.recent_until.get(their_call, 0.0),
+                    self.ctx.worked_until.get((their_call, decoded.band or ""), 0.0),
+                )
                 if cd > now_ts:
                     log.debug(
                         "Tail-Ender %s im Cooldown (%.0fs verbleibend) — ignoriert",
@@ -596,7 +599,10 @@ class StateMachine:
             ans = _find_answer_to_us(decodes, self.ctx.tx_callsign)
             if ans is not None:
                 their_call = ans.call_from or ""
-                cd = self.ctx.recent_until.get(their_call, 0.0)
+                cd = max(
+                    self.ctx.recent_until.get(their_call, 0.0),
+                    self.ctx.worked_until.get((their_call, ans.band or ""), 0.0),
+                )
                 if cd > now_ts:
                     log.debug(
                         "Grid-Reply %s im Cooldown (%.0fs verbleibend) — ignoriert",
@@ -1386,15 +1392,22 @@ class StateMachine:
         # Routine-mäßiges anzurufen.
         if self.ctx.dxcc_only_mode:
             cqs = [d for d in cqs if (d.call_from or "") in self.ctx.new_dxcc_calls]
-        # Recent-Cooldown: Station ist gerade erst gearbeitet, gleicher
-        # Op ruft trotzdem weiter CQ → wir überspringen ihn bis sein
-        # Cooldown-Fenster abgelaufen ist (Default 30 min, in Config
-        # einstellbar). Verhindert "3× EA4GA in 5 min"-Effekte.
-        if self.ctx.recent_until:
+        # Recent-Cooldown: Station ist gerade erst gearbeitet/abgebrochen,
+        # ruft aber weiter CQ → wir überspringen ihn bis sein Fenster
+        # abgelaufen ist. Zwei Cooldowns:
+        #   recent_until[call]          — kurzer Failed/Reply-Cooldown, band-weit
+        #   worked_until[(call, band)]  — Erfolgs-Cooldown, BAND-BEWUSST, damit
+        #     ein neuer Band-Slot derselben Station nicht geblockt wird
+        # Verhindert "3× EA4GA in 5 min"-Effekte ohne 5BWAS/Band-Füllen
+        # zu sabotieren.
+        if self.ctx.recent_until or self.ctx.worked_until:
             now_ts = datetime.now(UTC).timestamp()
             cqs = [
                 d for d in cqs
                 if self.ctx.recent_until.get(d.call_from or "", 0) <= now_ts
+                and self.ctx.worked_until.get(
+                    (d.call_from or "", d.band or ""), 0
+                ) <= now_ts
             ]
         # v0.20.4 — Hard-Filter fuer die drei "Filter-Tiers" damit sie
         # auch dann greifen wenn nur ein einziger CQ im Slot ist

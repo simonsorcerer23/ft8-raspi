@@ -975,6 +975,20 @@ def test_cooldown_filters_picker(sm: StateMachine, good_hw: HardwareState) -> No
     assert pick is None, "Cooldown-Call darf nicht gepickt werden"
 
 
+def test_worked_cooldown_is_band_aware(sm: StateMachine, good_hw: HardwareState) -> None:
+    """v0.32.0 — Erfolgs-Cooldown (worked_until) ist (Call, Band)-spezifisch:
+    auf 20m gearbeitet blockt 20m, aber NICHT 15m (neuer Band-Slot)."""
+    sm.ctx.auto_answer = True
+    until = datetime.now(UTC).timestamp() + 6 * 3600  # 6 h
+    sm.ctx.worked_until[("W1AW", "20m")] = until
+
+    # gleiche Station, gleiches Band → gefiltert
+    assert sm._pick_hunt_target([_decode("W1AW", None, "CQ W1AW FN31", band="20m")]) is None
+    # gleiche Station, ANDERES Band → wählbar (kein Block)
+    pick = sm._pick_hunt_target([_decode("W1AW", None, "CQ W1AW FN31", band="15m")])
+    assert pick is not None and pick.call_from == "W1AW"
+
+
 def test_cooldown_disabled_when_zero(sm: StateMachine, good_hw: HardwareState) -> None:
     """qso_failed_cooldown_s == 0 → Cooldown deaktiviert (Sebastians Opt-Out)."""
     sm.qso_failed_cooldown_s = 0.0

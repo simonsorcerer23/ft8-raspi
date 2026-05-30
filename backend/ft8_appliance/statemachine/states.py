@@ -136,8 +136,15 @@ class MachineContext:
     # Cooldown-Fenster: Call → POSIX-Zeit ab der wir ihn wieder
     # anrufen dürfen. Verhindert dass der Hunting-Picker innerhalb
     # eines Runs dieselbe Station 3x kurz hintereinander wählt
-    # weil sie weiter CQ ruft.
+    # weil sie weiter CQ ruft. KURZER Failed/Reply-Cooldown, call-weit
+    # (band-unabhängig — wer gerade abgebrochen hat, soll auch auf einem
+    # anderen Band kurz Ruhe haben).
     recent_until: dict[str, float] = field(default_factory=dict)
+    # v0.32.0 — Erfolgs-Cooldown nach abgeschlossenem QSO, BAND-BEWUSST:
+    # (Call, Band) → POSIX-Zeit. Damit ein langer Cooldown (z.B. 6 h)
+    # dieselbe Station nicht für einen NEUEN Band-Slot blockt (5BWAS/
+    # Band-Füllen): W1AW auf 20m gearbeitet → 15m bleibt frei wählbar.
+    worked_until: dict[tuple[str, str], float] = field(default_factory=dict)
     # Set neuer DXCC-Calls (vom Orchestrator pro Slot aktualisiert).
     # Hunting-Picker priorisiert diese vor SNR — wenn drei Stationen
     # CQ rufen und nur eine ist aus einem neuen Land, wählen wir die

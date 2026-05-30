@@ -4764,12 +4764,17 @@ class Orchestrator:
                 else:
                     effective_min = cd_min
                     cd_kind = "default"
-                self.state_machine.ctx.recent_until[call] = (
+                # v0.32.0 — Erfolgs-Cooldown band-bewusst: (Call, Band).
+                # Band aus dem QSO-Payload; leeres Band → "" (greift dann
+                # wie zuvor call-weit fuer diesen einen Eintrag).
+                cd_band = payload.get("band") or ""
+                self.state_machine.ctx.worked_until[(call, cd_band)] = (
                     _time.time() + effective_min * 60
                 )
                 log.debug(
-                    "QSO-Cooldown %s: %s = %d min (rarity=%d, new_dxcc=%s, new_grid=%s)",
-                    call, cd_kind, effective_min, rarity, is_new_dxcc, is_new_grid,
+                    "QSO-Cooldown %s@%s: %s = %d min (rarity=%d, new_dxcc=%s, new_grid=%s)",
+                    call, cd_band, cd_kind, effective_min, rarity,
+                    is_new_dxcc, is_new_grid,
                 )
         # Also update the grid + grid-band sets so future decodes from
         # the same grid stop pulsing "new grid" in the UI.
