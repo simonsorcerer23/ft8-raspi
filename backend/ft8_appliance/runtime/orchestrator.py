@@ -2688,20 +2688,24 @@ class Orchestrator:
                     # die NEUE Position misst (sonst kreisst Kalibrierung)
                     self._recent_dts.clear()
 
+                # v0.29.3: DT-Drift-ntfy entfernt. chrony haelt die Clock
+                # sub-ms (verifiziert 0.2ms) — der gemessene DT-Offset ist
+                # reine USB/ALSA-Audio-Capture-Latenz, KEIN Clock-Drift. Die
+                # RX-Auto-Kalibrierung oben heilt das selbsttaetig; ein ntfy
+                # waere fuer den Operator nicht handlungsrelevant (nichts zu
+                # tun aus der Ferne). Nur noch Diagnose-Log, max 1x/h.
                 if len(self._recent_dts) >= 100:
                     sorted_dts = sorted(self._recent_dts)
                     median_dt = sorted_dts[len(sorted_dts) // 2]
                     if abs(median_dt) > 1.5 and (now_t - self._last_dt_drift_alert_at) > 3600:
-                        await ntfy.notify(
-                            f"Median-DT der letzten {len(self._recent_dts)} Decodes "
-                            f"= {median_dt:+.2f}s. Innerhalb FT8-Toleranz (2.5s), "
-                            "aber ungewoehnlich — Audio-Buffer / Slot-Sync pruefen.",
-                            title="⏱️ FT8 Pi: DT-Offset auffaellig",
-                            priority="default",
-                            tags=["warning"],
+                        log.info(
+                            "DT-Diagnose: Median-DT der letzten %d Decodes = %+.2fs "
+                            "(nach RX-Kalibrierung %+.3fs) — Audio-Pipeline-Latenz, "
+                            "innerhalb FT8-Toleranz.",
+                            len(self._recent_dts), median_dt,
+                            self._dt_calibration_offset_s,
                         )
                         self._last_dt_drift_alert_at = now_t
-                        last_alert_at = now_t
 
                 # Fall 6 (v0.6.0 Phase A1): Decoder-Late-Slot-Watchdog.
                 # Wenn die Pipeline 3+ konsekutive Slots >80% der Slot-
