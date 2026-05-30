@@ -22,6 +22,13 @@ from .models import Base
 
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
+_db_path: Path | None = None  # None = in-memory (tests)
+
+
+def get_db_path() -> Path | None:
+    """Pfad der File-DB (oder None bei in-memory). Genutzt z.B. um die
+    QSO-Spill-Datei daneben abzulegen."""
+    return _db_path
 
 
 def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
@@ -39,13 +46,15 @@ def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
         QSO-Verlust in _do_log_qso).
       * synchronous=NORMAL: SD-karten-freundlich + unter WAL crash-safe.
     """
-    global _engine, _sessionmaker
+    global _engine, _sessionmaker, _db_path
     is_memory = db_path is None or str(db_path) == ":memory:"
     if is_memory:
         url = "sqlite+aiosqlite:///:memory:"
         connect_args: dict = {}
+        _db_path = None
     else:
-        url = f"sqlite+aiosqlite:///{Path(db_path).absolute()}"
+        _db_path = Path(db_path).absolute()
+        url = f"sqlite+aiosqlite:///{_db_path}"
         connect_args = {"timeout": 30.0}  # sqlite busy timeout (Sekunden)
     _engine = create_async_engine(url, future=True, connect_args=connect_args)
 

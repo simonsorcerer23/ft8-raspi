@@ -543,6 +543,12 @@ class Orchestrator:
             pass
         self._init_integrations()
         await self._hydrate_from_db()
+        # v0.36.0 — beim Start frueher gespillte (nicht-geloggte) QSOs
+        # nachtragen, falls die DB beim letzten Lauf voll/locked war.
+        try:
+            await self._drain_spilled_qsos()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("QSO-Spill-Drain beim Start fehlgeschlagen: %s", exc)
         if self._active_antenna is None and self.config.antennas:
             self._active_antenna = self.config.antennas[0].name
         self._tx_power_w = self.config.operator.default_power_w
@@ -4845,40 +4851,141 @@ class Orchestrator:
         audio_offset_hz = payload.get("freq_offset_hz", 0)
         freq_hz = dial_hz + audio_offset_hz
         gps = self.gps.snapshot
+        qso_kwargs = dict(
+            call=payload["call"],
+            band=payload.get("band", "20m"),
+            freq_hz=freq_hz,
+            # Sebastian-Bug v0.4.2: state_machine-Payload hat
+            # kein mode-Feld -> default "FT8" hat alle QSOs
+            # falsch als FT8 geloggt auch wenn wir FT4 fuhren.
+            # Jetzt: live aus operating.mode lesen.
+            mode=payload.get("mode") or self.config.operating.mode,
+            rst_sent=payload.get("rst_sent"),
+            rst_rcvd=payload.get("rst_rcvd"),
+            grid_rcvd=payload.get("grid_rcvd"),
+            qso_start=payload["qso_start"],
+            qso_end=payload["qso_end"],
+            my_grid=my_grid,
+            my_power_w=self._tx_power_w,
+            swr_avg=self._last_rig.swr,
+            my_lat=gps.lat,
+            my_lon=gps.lon,
+            # Multi-Operator-Tracking: welcher Operator hat diesen QSO?
+            user_callsign=self.config.operator.callsign,
+            # v0.22.0 — Was haben wir tatsaechlich gesendet (mit
+            # DX-Prefix falls im Ausland). Null = wie user_callsign.
+            station_callsign=payload.get("station_callsign"),
+            # Marinefunker-Snapshot (Sebastian v0.9.0): MFNr zum
+            # QSO-Zeitpunkt einfrieren — bleibt stabil ueber spaetere
+            # PDF-Updates. Null wenn Partner kein aktives Mitglied.
+            mf_mfnr=_mf_snapshot_mfnr(payload["call"]),
+        )
         try:
             async with session_scope() as s:
-                await repository.insert_qso(
-                    s,
-                    call=payload["call"],
-                    band=payload.get("band", "20m"),
-                    freq_hz=freq_hz,
-                    # Sebastian-Bug v0.4.2: state_machine-Payload hat
-                    # kein mode-Feld -> default "FT8" hat alle QSOs
-                    # falsch als FT8 geloggt auch wenn wir FT4 fuhren.
-                    # Jetzt: live aus operating.mode lesen.
-                    mode=payload.get("mode") or self.config.operating.mode,
-                    rst_sent=payload.get("rst_sent"),
-                    rst_rcvd=payload.get("rst_rcvd"),
-                    grid_rcvd=payload.get("grid_rcvd"),
-                    qso_start=payload["qso_start"],
-                    qso_end=payload["qso_end"],
-                    my_grid=my_grid,
-                    my_power_w=self._tx_power_w,
-                    swr_avg=self._last_rig.swr,
-                    my_lat=gps.lat,
-                    my_lon=gps.lon,
-                    # Multi-Operator-Tracking: welcher Operator hat diesen QSO?
-                    user_callsign=self.config.operator.callsign,
-                    # v0.22.0 — Was haben wir tatsaechlich gesendet (mit
-                    # DX-Prefix falls im Ausland). Null = wie user_callsign.
-                    station_callsign=payload.get("station_callsign"),
-                    # Marinefunker-Snapshot (Sebastian v0.9.0): MFNr zum
-                    # QSO-Zeitpunkt einfrieren — bleibt stabil ueber spaetere
-                    # PDF-Updates. Null wenn Partner kein aktives Mitglied.
-                    mf_mfnr=_mf_snapshot_mfnr(payload["call"]),
-                )
+                await repository.insert_qso(s, **qso_kwargs)
+            # v0.36.0 — bei Erfolg: ggf. frueher gespillte QSOs nachtragen.
+            await self._drain_spilled_qsos()
         except Exception as exc:
-            log.warning("LOG_QSO db write failed: %s", exc)
+            # DATA-C1 (Audit 2026-05-30): ein abgeschlossenes QSO darf NIE
+            # still verloren gehen. DB-Write gescheitert (volle SD, Lock,
+            # Korruption) → QSO in eine append-only Spill-Datei sichern +
+            # lauten ntfy-Alarm. Wird beim naechsten erfolgreichen Write
+            # (und beim Start) automatisch nachgetragen.
+            log.error("LOG_QSO db write failed: %s — sichere QSO %s in Spill-Datei",
+                      exc, qso_kwargs.get("call"))
+            await self._spill_qso(qso_kwargs)
+
+    # ------------------------------------------------------------------ v0.36.0 QSO-Spill
+    @staticmethod
+    def _spill_path() -> "Path | None":
+        from ..db.session import get_db_path
+        db = get_db_path()
+        return (db.parent / "unlogged_qsos.jsonl") if db is not None else None
+
+    @staticmethod
+    def _qso_to_jsonable(kwargs: dict) -> dict:
+        out: dict = {}
+        for k, v in kwargs.items():
+            out[k] = v.isoformat() if isinstance(v, datetime) else v
+        return out
+
+    @staticmethod
+    def _qso_from_jsonable(rec: dict) -> dict:
+        out = dict(rec)
+        for k in ("qso_start", "qso_end"):
+            if isinstance(out.get(k), str):
+                try:
+                    out[k] = datetime.fromisoformat(out[k])
+                except ValueError:
+                    pass
+        return out
+
+    async def _spill_qso(self, qso_kwargs: dict) -> None:
+        """Append-only Sicherung eines nicht-loggbaren QSO + lauter Alarm."""
+        path = self._spill_path()
+        call = qso_kwargs.get("call")
+        if path is not None:
+            try:
+                line = json.dumps(self._qso_to_jsonable(qso_kwargs))
+                with path.open("a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+                try:
+                    os.chmod(path, 0o600)
+                except OSError:
+                    pass
+            except Exception as exc:  # noqa: BLE001 — letzter Strohhalm
+                log.error("QSO-SPILL fehlgeschlagen (%s) — QSO %s droht VERLOREN: %r",
+                          exc, call, qso_kwargs)
+        if self.integrations.ntfy and self.integrations.ntfy.enabled:
+            try:
+                asyncio.create_task(self.integrations.ntfy.notify(
+                    f"QSO {call} konnte nicht in die DB geschrieben werden — "
+                    "auf Spill-Datei gesichert, wird automatisch nachgetragen. "
+                    "Bitte Speicherplatz/DB pruefen.",
+                    title="\u26a0\ufe0f QSO-Log-Fehler",
+                    priority="urgent",
+                    tags=["warning"],
+                ))
+            except Exception:
+                pass
+
+    async def _drain_spilled_qsos(self) -> None:
+        """Trage gespillte QSOs in die DB nach. Best-effort, idempotent-genug:
+        erfolgreich geschriebene Zeilen fallen raus, noch fehlschlagende
+        bleiben fuer den naechsten Versuch erhalten."""
+        path = self._spill_path()
+        if path is None or not path.exists() or not self.db_enabled:
+            return
+        try:
+            lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        except OSError:
+            return
+        if not lines:
+            return
+        remaining: list[str] = []
+        drained = 0
+        for line in lines:
+            try:
+                kwargs = self._qso_from_jsonable(json.loads(line))
+            except ValueError:
+                continue  # korrupte Zeile verwerfen
+            try:
+                async with session_scope() as s:
+                    await repository.insert_qso(s, **kwargs)
+                drained += 1
+            except Exception:
+                remaining.append(line)
+        from ..util.atomicfile import atomic_write_with_backup
+        if remaining:
+            atomic_write_with_backup(path, "\n".join(remaining) + "\n")
+        else:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        if drained:
+            log.info("QSO-Spill: %d QSO(s) nachtraeglich in die DB geschrieben "
+                     "(%d verbleiben)", drained, len(remaining))
 
     # ------------------------------------------------------------------ v0.15.0 reputation
     # Bail-Reason → Score-Delta. picked_another zaehlt NICHT (das ist
