@@ -35,22 +35,41 @@ class SaveConfigRequest(BaseModel):
     yaml_text: str
 
 
-def preserve_operators(raw: dict, current: AppConfig) -> dict:
-    """DATENSCHUTZ-GUARD (Incident 2026-05-30).
+def _fill_missing_secrets(posted: dict, current: dict, keys: list[str]) -> None:
+    """Fuelle in ``posted`` fehlende/leere Secret-Felder aus ``current``.
 
-    Der Frontend-Config-Save serialisiert nur den Legacy-``operator:``-Block
-    ohne ``operators:``-Liste + ohne Credentials. Wuerde der direkt
-    uebernommen, plaettet JEDES "Speichern" auf der Konfig-Seite die
-    komplette Operator-Liste + alle QRZ/ClubLog-Keys + Sende-Call-Logbuecher.
+    NUR auffuellen, nie ueberschreiben: ein Wert den das Frontend bewusst
+    mitschickt (User hat ihn editiert) bleibt; nur was das Frontend
+    weglaesst (weil es ihn gar nicht im Formular hat) wird aus der
+    laufenden Config wiederhergestellt.
+    """
+    for k in keys:
+        if not posted.get(k) and current.get(k):
+            posted[k] = current[k]
 
-    Daher: Operatoren + active_callsign kommen AUSSCHLIESSLICH aus der
-    laufenden Config (autoritativ). Aus dem geposteten ``operator:``-Block
-    uebernehmen wir NUR die editierbaren Basisfelder (Locator/Power/Lizenz/
-    Callsign) des AKTIVEN Operators. Operator-/Credential-Verwaltung laeuft
-    sonst ausschliesslich ueber /api/operators.
+
+def preserve_secrets(raw: dict, current: AppConfig) -> dict:
+    """DATENSCHUTZ-GUARD (Incident 2026-05-30, erweitert v0.34.0).
+
+    Der Frontend-Config-Save serialisiert nur einen Teil der Felder. Wuerde
+    das geposteten YAML 1:1 uebernommen, plaettet JEDES "Speichern" auf der
+    Konfig-Seite Daten, die das Frontend nicht (vollstaendig) mitschickt:
+    die Operator-Liste + alle QRZ/ClubLog-Keys, die WLAN-Liste
+    (``network.wifi_priority``) und Integrations-Secrets (HamQTH-Login etc.).
+
+    Strategie:
+      * operators + active_callsign: AUTORITATIV aus der laufenden Config;
+        aus dem geposteten ``operator:``-Block nur die editierbaren
+        Basisfelder des aktiven Operators (Locator/Power/Lizenz/Callsign).
+      * Sonstige Secrets (wifi_priority, integrations.qrz/hamqth/psk):
+        fehlende Felder aus der laufenden Config auffuellen (nie ueber-
+        schreiben — editierbare Werte aus dem Formular bleiben).
 
     Mutiert ``raw`` in-place und gibt es zurueck.
     """
+    cur = current.model_dump()
+
+    # --- 1. Operatoren autoritativ aus der laufenden Config ---------------
     posted_op = raw.get("operator") or {}
     raw.pop("operator", None)
     raw.pop("operators", None)
@@ -75,7 +94,33 @@ def preserve_operators(raw: dict, current: AppConfig) -> dict:
         raw["operators"] = [op.model_dump() for op in ops]
         if active:
             raw["active_callsign"] = active
+
+    # --- 2. WLAN-Liste bewahren (Frontend emittiert nur ap_fallback) ------
+    cur_net = cur.get("network") or {}
+    if cur_net.get("wifi_priority"):
+        net = raw.setdefault("network", {})
+        if not net.get("wifi_priority"):
+            net["wifi_priority"] = cur_net["wifi_priority"]
+
+    # --- 3. Integrations-Secrets auffuellen (nie ueberschreiben) ----------
+    cur_int = cur.get("integrations") or {}
+    secret_keys = {
+        "qrz": ["user", "password", "logbook_api_key"],
+        "hamqth": ["user", "password"],
+        "psk_reporter": ["contact_email"],
+        "ntfy": ["topic"],
+    }
+    for sub, keys in secret_keys.items():
+        cur_sub = cur_int.get(sub) or {}
+        if any(cur_sub.get(k) for k in keys):
+            posted_sub = raw.setdefault("integrations", {}).setdefault(sub, {})
+            _fill_missing_secrets(posted_sub, cur_sub, keys)
+
     return raw
+
+
+# Rueckwaerts-kompatibler Alias (frueherer Name).
+preserve_operators = preserve_secrets
 
 
 @router.put("/config", response_model=AppConfig)
@@ -103,10 +148,10 @@ async def save_config(
 
     try:
         raw = yaml.safe_load(req.yaml_text) or {}
-        # DATENSCHUTZ-GUARD: Operatoren + Credentials NIE aus dem geposteten
-        # YAML uebernehmen — sie kommen autoritativ aus der laufenden Config.
-        # (Incident 2026-05-30: Config-Save plaettete sonst die Operatoren.)
-        raw = preserve_operators(raw, orch.config)
+        # DATENSCHUTZ-GUARD: Operatoren, Credentials, WLAN-Liste + Integra-
+        # tions-Secrets NIE aus dem geposteten YAML verlieren — sie kommen
+        # autoritativ aus der laufenden Config (Incident 2026-05-30).
+        raw = preserve_secrets(raw, orch.config)
         cfg = AppConfig.model_validate(raw)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"invalid config: {exc}")
@@ -121,25 +166,13 @@ async def save_config(
     path = get_current_path()
     if path is not None:
         try:
-            # 1. Backup (best-effort — kein hard-fail wenn Source fehlt)
-            if path.exists():
-                bak_path = path.with_suffix(path.suffix + ".bak")
-                try:
-                    bak_path.write_bytes(path.read_bytes())
-                except OSError as bak_exc:
-                    # Backup failure ist not fatal — log und weiter
-                    import logging
-                    logging.getLogger("ft8_appliance.config").warning(
-                        "auto-backup to %s failed: %s (continuing)",
-                        bak_path, bak_exc,
-                    )
-            # 2. Atomic write: tempfile in same dir, dann rename
-            #    (rename ist atomic auf POSIX-Filesystems).
-            #    v0.33.0: NICHT mehr den rohen req.yaml_text schreiben —
-            #    der enthaelt den Stub-`operator:`-Block ohne Operatoren/
-            #    Creds und wuerde die Datei plaetten. Stattdessen die
-            #    kanonische, merge-korrigierte cfg serialisieren (analog
-            #    persist_config: computed `operator` + rig-Computed raus).
+            # Atomar (tempfile + rename) + .bak via shared helper.
+            # v0.33.0: NICHT mehr den rohen req.yaml_text schreiben — der
+            # enthaelt den Stub-`operator:`-Block ohne Operatoren/Creds und
+            # wuerde die Datei plaetten. Stattdessen die kanonische, merge-
+            # korrigierte cfg serialisieren (analog persist_config: computed
+            # `operator` + rig-Computed raus).
+            from ...util.atomicfile import atomic_write_with_backup
             d = cfg.model_dump(
                 exclude_none=True,
                 exclude={
@@ -147,10 +180,10 @@ async def save_config(
                     "operator": True,
                 },
             )
-            serialized = yaml.safe_dump(d, default_flow_style=False, sort_keys=False)
-            tmp_path = path.with_suffix(path.suffix + ".tmp")
-            tmp_path.write_text(serialized, encoding="utf-8")
-            tmp_path.replace(path)  # atomic rename
+            atomic_write_with_backup(
+                path,
+                yaml.safe_dump(d, default_flow_style=False, sort_keys=False),
+            )
         except OSError as exc:
             raise HTTPException(
                 status_code=500,

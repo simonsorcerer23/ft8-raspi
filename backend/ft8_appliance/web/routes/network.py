@@ -184,9 +184,12 @@ async def set_ap_fallback(
     path = get_current_path()
     if path is not None:
         try:
-            path.write_text(
+            # v0.34.0: atomar + .bak (war plain write_text → Truncation-
+            # Risiko bei Crash mid-write).
+            from ...util.atomicfile import atomic_write_with_backup
+            atomic_write_with_backup(
+                path,
                 yaml.safe_dump(new_dict, sort_keys=False, allow_unicode=True),
-                encoding="utf-8",
             )
         except OSError as exc:
             raise HTTPException(

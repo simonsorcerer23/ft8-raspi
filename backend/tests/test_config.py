@@ -124,7 +124,7 @@ def test_unknown_field_rejected_strict() -> None:
 # weil der Frontend-YAML nur den Legacy-`operator:`-Stub schickt. Der Guard
 # preserve_operators() muss Operatoren/Creds autoritativ aus der laufenden
 # Config bewahren und nur Basisfelder des aktiven Operators uebernehmen.
-from ft8_appliance.web.routes.config import preserve_operators  # noqa: E402
+from ft8_appliance.web.routes.config import preserve_secrets  # noqa: E402
 
 
 def _two_op_config() -> AppConfig:
@@ -139,18 +139,36 @@ def _two_op_config() -> AppConfig:
              "clublog_api_key": "CL", "qrz_logbooks": {"DO3XR/AM": "AMKEY_DO"}},
         ],
         "active_callsign": "DO3XR",
+        "network": {
+            "wifi_priority": [
+                {"ssid": "Heimnetz", "psk": "geheim123"},
+                {"ssid": "Dad-Phone"},
+            ],
+            "ap_fallback": {"ssid": "ft8-ap", "psk": "apsecret9"},
+        },
+        "integrations": {
+            "hamqth": {"enabled": True, "user": "hq_user", "password": "hq_pw"},
+            "psk_reporter": {"contact_email": "me@example.org"},
+        },
     })
+
+
+def _frontend_stub_post() -> dict:
+    """Was die ConfigPanel-Speicherung tatsaechlich schickt: nur der Legacy-
+    `operator:`-Block + ein paar Sektionen, OHNE operators/creds/wifi_priority/
+    hamqth-Login."""
+    return {
+        "operator": {"callsign": "DO3XR", "default_locator": "JN58td",
+                     "default_power_w": 25, "license_class": "E"},
+        "operating": {"qso_cooldown_min": 360},
+        "network": {"ap_fallback": {"ssid": "ft8-ap", "psk": "apsecret9"}},
+        "integrations": {"hamqth": {"enabled": True}},
+    }
 
 
 def test_config_save_preserves_operators_and_creds() -> None:
     current = _two_op_config()
-    # Frontend-Post: nur Legacy-Stub des aktiven Operators, KEINE creds/operators
-    raw = {
-        "operator": {"callsign": "DO3XR", "default_locator": "JN58td",
-                     "default_power_w": 25, "license_class": "E"},
-        "operating": {"qso_cooldown_min": 360},
-    }
-    cfg = AppConfig.model_validate(preserve_operators(raw, current))
+    cfg = AppConfig.model_validate(preserve_secrets(_frontend_stub_post(), current))
     by = {o.callsign: o for o in cfg.operators}
     assert set(by) == {"DK9XR", "DO3XR"}, "beide Operatoren muessen ueberleben"
     assert by["DK9XR"].qrz_logbook_api_key == "KEY_DK"
@@ -164,11 +182,51 @@ def test_config_save_preserves_operators_and_creds() -> None:
     assert cfg.operating.qso_cooldown_min == 360
 
 
+def test_config_save_preserves_wifi_and_integration_secrets() -> None:
+    """Frontend laesst wifi_priority + HamQTH-Login + PSK-Email weg —
+    duerfen NICHT verloren gehen (Incident-Bugklasse)."""
+    current = _two_op_config()
+    cfg = AppConfig.model_validate(preserve_secrets(_frontend_stub_post(), current))
+    # WLAN-Liste erhalten
+    ssids = [w.ssid for w in cfg.network.wifi_priority]
+    assert ssids == ["Heimnetz", "Dad-Phone"]
+    assert cfg.network.wifi_priority[0].psk == "geheim123"
+    # ap_fallback aus dem Post bleibt
+    assert cfg.network.ap_fallback.ssid == "ft8-ap"
+    # HamQTH-Login + PSK-Email erhalten (Frontend schickt sie nie)
+    assert cfg.integrations.hamqth.user == "hq_user"
+    assert cfg.integrations.hamqth.password == "hq_pw"
+    assert cfg.integrations.psk_reporter.contact_email == "me@example.org"
+
+
+def test_config_save_allows_editing_present_secret() -> None:
+    """Fill-not-override: schickt das Frontend einen Secret-Wert mit (User
+    hat ihn editiert), bleibt der gepostete Wert — wird NICHT ueberschrieben."""
+    current = _two_op_config()
+    raw = _frontend_stub_post()
+    raw["integrations"]["hamqth"] = {"enabled": True, "user": "NEU", "password": "neu_pw"}
+    cfg = AppConfig.model_validate(preserve_secrets(raw, current))
+    assert cfg.integrations.hamqth.user == "NEU"
+    assert cfg.integrations.hamqth.password == "neu_pw"
+
+
 def test_config_save_ignores_injected_operators() -> None:
     """Selbst eine boesartig mitgeschickte operators-Liste wird ignoriert."""
     current = _two_op_config()
     raw = {"operators": [{"callsign": "HACKER", "license_class": "A"}],
            "active_callsign": "HACKER"}
-    cfg = AppConfig.model_validate(preserve_operators(raw, current))
+    cfg = AppConfig.model_validate(preserve_secrets(raw, current))
     assert {o.callsign for o in cfg.operators} == {"DK9XR", "DO3XR"}
     assert cfg.active_callsign == "DO3XR"
+
+
+def test_atomic_write_with_backup(tmp_path: Path) -> None:
+    """atomic_write_with_backup schreibt neu + sichert den Vorstand nach .bak."""
+    from ft8_appliance.util.atomicfile import atomic_write_with_backup
+    target = tmp_path / "config.yaml"
+    target.write_text("alt: 1\n", encoding="utf-8")
+    atomic_write_with_backup(target, "neu: 2\n")
+    assert target.read_text() == "neu: 2\n"
+    assert (tmp_path / "config.yaml.bak").read_text() == "alt: 1\n"
+    # kein .tmp-Leftover
+    assert not (tmp_path / "config.yaml.tmp").exists()

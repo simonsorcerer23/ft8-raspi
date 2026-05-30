@@ -1624,6 +1624,8 @@ class Orchestrator:
             if path is None:
                 return
             import yaml
+
+            from ..util.atomicfile import atomic_write_with_backup
             d = self.config.model_dump(
                 exclude_none=True,
                 exclude={
@@ -1631,9 +1633,13 @@ class Orchestrator:
                     "operator": True,  # computed_field, siehe Docstring
                 },
             )
-            path.write_text(
+            # v0.34.0: atomar + .bak. Vorher plain write_text → ein Crash
+            # mitten im Schreiben (haeufigster Write-Pfad: Operator-Edit,
+            # boot_mode, DX-Standort, CQ-Start/Stop) konnte config.yaml
+            # abschneiden, ohne Rollback-Punkt.
+            atomic_write_with_backup(
+                path,
                 yaml.safe_dump(d, default_flow_style=False, sort_keys=False),
-                encoding="utf-8",
             )
         except Exception as exc:
             log.warning("persist_config failed: %s", exc)
