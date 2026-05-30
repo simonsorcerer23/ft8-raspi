@@ -4713,6 +4713,11 @@ class Orchestrator:
                 asyncio.create_task(self._record_qso_success(call))
             except Exception:
                 pass
+            # v0.30.0 — Pick-Attempt-Telemetrie: erfolgreiches QSO.
+            try:
+                asyncio.create_task(self._log_pick_attempt(call, "completed"))
+            except Exception:
+                pass
             # Cooldown registrieren — Hunting-Picker überspringt diesen
             # Call solange das Fenster läuft. 0 = aus.
             #
@@ -4918,6 +4923,35 @@ class Orchestrator:
                     )
         except Exception as exc:
             log.warning("reputation bail-update failed for %s: %s", call, exc)
+        await self._log_pick_attempt(call, "bailed")
+
+    async def _log_pick_attempt(self, call: str | None, outcome: str) -> None:
+        """v0.30.0 — schreibt beim QSO-Ausgang eine pick_attempt-Telemetrie-
+        Zeile, sofern der Pick Hunt-Metadaten hinterlegt hat. Pop nach
+        base_call (passend zu LOG_QSO/QSO_BAIL). Reine Messung, fail-soft.
+        Antworten auf unseren CQ haben keine Meta → werden NICHT gemessen
+        (kein Picker-Entscheid)."""
+        key = base_call(call)
+        if not key:
+            return
+        meta = self.state_machine.ctx.hunt_attempt_meta.pop(key, None)
+        if meta is None or not self.db_enabled:
+            return
+        try:
+            async with session_scope() as s:
+                await repository.insert_pick_attempt(
+                    s,
+                    ts=meta.get("ts") or datetime.now(UTC),
+                    target_call=key,
+                    user_callsign=self.config.operator.callsign,
+                    psk_heard_us=bool(meta.get("psk_heard_us")),
+                    snr_db=meta.get("snr_db"),
+                    dt_s=meta.get("dt_s"),
+                    band=meta.get("band"),
+                    outcome=outcome,
+                )
+        except Exception as exc:
+            log.warning("pick_attempt write failed for %s: %s", key, exc)
 
     async def _aggregate_active_hours(self, s, siblings: set[str]) -> set[tuple[str, int]]:
         """v0.16.0 — Aggregate QSO-DB into (continent, hour) Top-50% pro

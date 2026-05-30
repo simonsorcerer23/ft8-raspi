@@ -13,12 +13,20 @@ from datetime import UTC, datetime
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Decode, Heard, Qso
+from .models import Decode, Heard, PickAttempt, Qso
 
 
 async def insert_decode(session: AsyncSession, **fields: object) -> Decode:
     """Insert one decoded message row."""
     row = Decode(**fields)
+    session.add(row)
+    await session.flush()
+    return row
+
+
+async def insert_pick_attempt(session: AsyncSession, **fields: object) -> PickAttempt:
+    """Insert one hunt-pick-attempt telemetry row (psk_heard_us A/B)."""
+    row = PickAttempt(**fields)
     session.add(row)
     await session.flush()
     return row

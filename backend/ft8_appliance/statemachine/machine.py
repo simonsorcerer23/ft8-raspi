@@ -636,6 +636,25 @@ class StateMachine:
                     freq_offset_hz=best.freq_offset_hz or 1500,
                     their_snr_at_us=best.snr_db,
                 )
+                # v0.30.0 — Pick-Attempt-Telemetrie (reine Messung, kein
+                # Logik-Einfluss): festhalten ob dieses Hunt-Ziel uns laut
+                # PSK-Reciprocity gehoert hat, + SNR/DT/Band zum Pick-Zeit-
+                # punkt. Orchestrator schreibt beim Ausgang die pick_attempt-
+                # Zeile. base_call als Key passend zu LOG_QSO/QSO_BAIL.
+                tgt = base_call(best.call_from)
+                if tgt:
+                    # Cap gegen Leak durch Picks die nie LOG_QSO/QSO_BAIL
+                    # ausloesen (selten, aber moeglich).
+                    if len(self.ctx.hunt_attempt_meta) > 100:
+                        self.ctx.hunt_attempt_meta.clear()
+                    self.ctx.hunt_attempt_meta[tgt] = {
+                        "psk_heard_us": tgt in self.ctx.psk_heard_us
+                        or (best.call_from or "").upper() in self.ctx.psk_heard_us,
+                        "snr_db": best.snr_db,
+                        "dt_s": best.dt_s,
+                        "band": best.band,
+                        "ts": datetime.now(UTC),
+                    }
                 self.state = State.QSO_RESPOND
                 self._emit_respond_with_grid()
                 return

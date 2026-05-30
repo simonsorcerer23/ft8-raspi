@@ -279,3 +279,29 @@ class ConfigHistory(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     yaml_snapshot: Mapped[str] = mapped_column(String)
+
+
+# ---------------------------------------------------------------------------
+class PickAttempt(Base):
+    """v0.30.0 — Forward-A/B-Messpunkt fuer den psk_heard_us-Tier.
+
+    Eine Zeile pro Hunt-Pick: ob das Ziel uns laut PSK-Reciprocity gehoert
+    hat (``psk_heard_us``), plus SNR/DT/Band zum Pick-Zeitpunkt und der
+    Ausgang. Erlaubt sauberes A/B: Completion-Rate von Anrufen MIT vs OHNE
+    ``psk_heard_us``, kontrolliert nach SNR — die einzige rigorose Basis fuer
+    eine etwaige Tier-Umsortierung (retrospektiv nicht ableitbar, weil
+    Anrufversuche bisher nicht geloggt wurden)."""
+
+    __tablename__ = "pick_attempt"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    target_call: Mapped[str] = mapped_column(String, index=True)
+    user_callsign: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    psk_heard_us: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    snr_db: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dt_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    band: Mapped[str | None] = mapped_column(String, nullable=True)
+    outcome: Mapped[str] = mapped_column(String, index=True)  # completed | bailed

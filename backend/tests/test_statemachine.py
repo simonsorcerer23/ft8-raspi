@@ -929,6 +929,40 @@ def test_qso_grace_silent_partner_just_exits(
     assert tx_actions == [], "Kein extra TX wenn Partner still bleibt"
 
 
+def test_hunt_pick_records_attempt_telemetry(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """v0.30.0 — beim autonomen Hunt-Pick wird pick-Telemetrie in
+    ctx.hunt_attempt_meta hinterlegt: psk_heard_us-Flag + SNR/DT/Band.
+    Basis fuer das psk_heard_us-A/B. Darf die Pick-Logik NICHT aendern."""
+    sm.ctx.auto_answer = True
+    sm.ctx.psk_heard_us = {"W1AW"}
+    sm.on_decodes(good_hw, [
+        _decode("W1AW", None, "CQ W1AW FN31", grid="FN31", snr=-7, dt_s=0.3),
+    ])
+    assert sm.state is State.QSO_RESPOND
+    meta = sm.ctx.hunt_attempt_meta.get("W1AW")
+    assert meta is not None, "Pick muss Telemetrie hinterlegen"
+    assert meta["psk_heard_us"] is True, "W1AW ist in psk_heard_us"
+    assert meta["snr_db"] == -7
+    assert meta["dt_s"] == 0.3
+    assert meta["band"] == "20m"
+
+
+def test_hunt_pick_telemetry_psk_false_when_not_heard(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    """psk_heard_us=False wenn das Ziel uns NICHT gehoert hat — die
+    Kontrollgruppe fuers A/B."""
+    sm.ctx.auto_answer = True
+    sm.ctx.psk_heard_us = set()  # niemand hat uns gehoert
+    sm.on_decodes(good_hw, [_decode("DL1ABC", None, "CQ DL1ABC JO31", snr=-4)])
+    assert sm.state is State.QSO_RESPOND
+    meta = sm.ctx.hunt_attempt_meta.get("DL1ABC")
+    assert meta is not None
+    assert meta["psk_heard_us"] is False
+
+
 def test_cooldown_filters_picker(sm: StateMachine, good_hw: HardwareState) -> None:
     """Hunting-Picker uebergeht Calls die im recent_until-Fenster liegen."""
     sm.ctx.auto_answer = True

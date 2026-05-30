@@ -10,7 +10,7 @@ from sqlalchemy import desc, func, select
 
 from ...config import get_config
 from ...db import session_scope
-from ...db.models import Decode, Qso
+from ...db.models import Decode, PickAttempt, Qso
 from ...runtime import Orchestrator
 from ...util.band_suggester import suggest_bands
 from ...util.maidenhead import destination_point, great_circle, locator_to_latlon
@@ -18,6 +18,79 @@ from ...util.timefmt import iso_utc
 from ..deps import get_orchestrator
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+class PickAbCell(BaseModel):
+    n: int
+    completed: int
+    rate: float
+
+
+class PickAttemptStats(BaseModel):
+    """A/B-Auswertung des psk_heard_us-Tiers aus der pick_attempt-Telemetrie."""
+    total: int
+    with_psk: PickAbCell
+    without_psk: PickAbCell
+    by_snr: list[dict]
+    note: str
+
+
+def _pick_cell(items: list[PickAttempt]) -> PickAbCell:
+    n = len(items)
+    c = sum(1 for r in items if r.outcome == "completed")
+    return PickAbCell(n=n, completed=c, rate=round(c / n, 3) if n else 0.0)
+
+
+def _snr_bucket(snr: int | None) -> str:
+    if snr is None:
+        return "n/a"
+    if snr < -18:
+        return "a <-18"
+    if snr < -13:
+        return "b -18..-13"
+    if snr < -8:
+        return "c -13..-8"
+    if snr < 0:
+        return "d -8..0"
+    return "e >=0"
+
+
+@router.get("/stats/pick-attempts", response_model=PickAttemptStats)
+async def pick_attempts(
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> PickAttemptStats:
+    """Sauberes A/B fuer den psk_heard_us-Tier: Completion-Rate von Hunt-
+    Anrufen MIT vs OHNE psk_heard_us, je SNR-Bucket (kontrolliert den SNR-
+    Confound). Speist sich aus der pick_attempt-Tabelle (ab v0.30.0)."""
+    async with session_scope() as s:
+        rows = list((await s.execute(select(PickAttempt))).scalars().all())
+    with_psk = [r for r in rows if r.psk_heard_us]
+    without_psk = [r for r in rows if not r.psk_heard_us]
+    buckets: dict[str, dict[str, list[PickAttempt]]] = {}
+    for r in rows:
+        b = _snr_bucket(r.snr_db)
+        cell = buckets.setdefault(b, {"with": [], "without": []})
+        cell["with" if r.psk_heard_us else "without"].append(r)
+    by_snr = [
+        {
+            "snr_bucket": b,
+            "with_psk": _pick_cell(v["with"]).model_dump(),
+            "without_psk": _pick_cell(v["without"]).model_dump(),
+        }
+        for b, v in sorted(buckets.items())
+    ]
+    return PickAttemptStats(
+        total=len(rows),
+        with_psk=_pick_cell(with_psk),
+        without_psk=_pick_cell(without_psk),
+        by_snr=by_snr,
+        note=(
+            "Hunt-Picks, outcome completed/bailed. Vergleiche rate(with_psk) "
+            "vs rate(without_psk) JE SNR-Bucket — nur dann ist der Tier-Effekt "
+            "vom SNR-Effekt getrennt. Aussagekraeftig ab ~paar hundert Zeilen."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

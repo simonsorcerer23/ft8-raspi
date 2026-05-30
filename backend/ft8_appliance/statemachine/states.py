@@ -183,6 +183,12 @@ class MachineContext:
     # haben (laut pskreporter.info). Vom Orchestrator alle paar Minuten
     # aktualisiert. Leer wenn psk_reciprocity_enabled=False.
     psk_heard_us: set[str] = field(default_factory=set)
+    # v0.30.0 — Pick-Attempt-Telemetrie fuer das psk_heard_us-A/B. Beim
+    # Hunt-Pick schreibt die Machine hier {base_call: {psk_heard_us, snr_db,
+    # dt_s, band, ts}}; der Orchestrator liest+poppt es beim QSO-Ausgang
+    # (LOG_QSO/QSO_BAIL) und schreibt eine pick_attempt-Zeile. Reine
+    # Messung — beeinflusst die Pick-Logik NICHT.
+    hunt_attempt_meta: dict[str, dict] = field(default_factory=dict)
     # 5BWAS-Tracking: (dxcc_entity_name, band) Tuples die wir bereits
     # bestätigt haben. Vom Orchestrator beim Boot aus DB rekonstruiert
     # und bei jedem LOG_QSO upgedated.
