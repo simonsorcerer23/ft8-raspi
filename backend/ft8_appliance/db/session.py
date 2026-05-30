@@ -10,6 +10,7 @@ import contextlib
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -28,13 +29,37 @@ def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
 
     *db_path* of ``None`` or ``":memory:"`` creates an in-memory DB —
     used by tests. A real Path uses ``aiosqlite`` against that file.
+
+    Auf einer File-DB (Pi) setzen wir WAL + synchronous=NORMAL +
+    busy_timeout (v0.35.0, Audit 2026-05-30):
+      * WAL: Leser blockieren Schreiber nicht → die QRZ/ClubLog-Drain-Loops
+        konkurrieren nicht mehr toedlich mit dem QSO-Insert.
+      * busy_timeout=30s: ein kurzzeitiger Lock wartet statt sofort
+        "database is locked" zu werfen (das fuetterte den stillen
+        QSO-Verlust in _do_log_qso).
+      * synchronous=NORMAL: SD-karten-freundlich + unter WAL crash-safe.
     """
     global _engine, _sessionmaker
-    if db_path is None or str(db_path) == ":memory:":
+    is_memory = db_path is None or str(db_path) == ":memory:"
+    if is_memory:
         url = "sqlite+aiosqlite:///:memory:"
+        connect_args: dict = {}
     else:
         url = f"sqlite+aiosqlite:///{Path(db_path).absolute()}"
-    _engine = create_async_engine(url, future=True)
+        connect_args = {"timeout": 30.0}  # sqlite busy timeout (Sekunden)
+    _engine = create_async_engine(url, future=True, connect_args=connect_args)
+
+    if not is_memory:
+        @event.listens_for(_engine.sync_engine, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, _rec):  # noqa: ANN001
+            cur = dbapi_conn.cursor()
+            try:
+                cur.execute("PRAGMA journal_mode=WAL")
+                cur.execute("PRAGMA synchronous=NORMAL")
+                cur.execute("PRAGMA busy_timeout=30000")
+            finally:
+                cur.close()
+
     _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 

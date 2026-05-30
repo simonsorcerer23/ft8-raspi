@@ -230,3 +230,46 @@ def test_atomic_write_with_backup(tmp_path: Path) -> None:
     assert (tmp_path / "config.yaml.bak").read_text() == "alt: 1\n"
     # kein .tmp-Leftover
     assert not (tmp_path / "config.yaml.tmp").exists()
+
+
+def test_get_config_redacts_secrets() -> None:
+    """GET /api/config darf keine Klartext-Secrets mehr liefern (SEC-C2)."""
+    from ft8_appliance.web.routes.config import _redact_secrets
+    red = _redact_secrets(_two_op_config())
+    by = {o.callsign: o for o in red.operators}
+    assert by["DO3XR"].qrz_logbook_api_key is None
+    assert by["DO3XR"].clublog_api_key is None
+    assert by["DO3XR"].clublog_app_password is None
+    assert by["DK9XR"].qrz_logbook_api_key is None
+    assert all(v == "" for v in by["DO3XR"].qrz_logbooks.values())
+    assert red.integrations.hamqth.password is None
+    assert red.network.ap_fallback.psk == ""
+    assert all(w.psk is None for w in red.network.wifi_priority)
+    # Nicht-Secrets bleiben sichtbar
+    assert set(by) == {"DK9XR", "DO3XR"}
+    assert by["DO3XR"].qrz_user == "do3xr"
+    assert list(by["DO3XR"].qrz_logbooks.keys()) == ["DO3XR/AM"]
+    assert [w.ssid for w in red.network.wifi_priority] == ["Heimnetz", "Dad-Phone"]
+
+
+def test_config_save_preserves_ap_fallback_psk_when_blank() -> None:
+    """Maskiertes ap_fallback.psk ("") aus dem Post darf das echte PSK nicht
+    plaetten — es wird aus der laufenden Config wiederhergestellt."""
+    current = _two_op_config()
+    raw = _frontend_stub_post()
+    raw["network"]["ap_fallback"]["psk"] = ""
+    cfg = AppConfig.model_validate(preserve_secrets(raw, current))
+    assert cfg.network.ap_fallback.psk == "apsecret9"
+
+
+async def test_sqlite_wal_and_busy_timeout(tmp_path: Path) -> None:
+    """File-DB laeuft mit WAL + busy_timeout (DATA-C2)."""
+    from sqlalchemy import text
+
+    from ft8_appliance.db.session import get_engine, init_engine
+    init_engine(tmp_path / "qso.sqlite")
+    async with get_engine().connect() as conn:
+        jm = (await conn.execute(text("PRAGMA journal_mode"))).scalar()
+        bt = (await conn.execute(text("PRAGMA busy_timeout"))).scalar()
+    assert str(jm).lower() == "wal"
+    assert int(bt) >= 30000

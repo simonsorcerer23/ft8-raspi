@@ -11,29 +11,54 @@ target (atomic rename on POSIX).
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
 
-def atomic_write_with_backup(path: Path, text: str) -> None:
+def atomic_write_with_backup(path: Path, text: str, *, mode: int = 0o600) -> None:
     """Write *text* to *path* atomically, keeping a ``.bak`` of the prior
-    content.
+    content, with fsync durability and restrictive permissions.
 
     - Backup is best-effort (a failure to copy the old file is logged but
       does not abort the write — we still want the new content on disk).
-    - The actual write is tempfile + atomic rename, so readers never see a
-      half-written file and a crash leaves either the old or the new file
-      intact, never a truncated one.
+    - tempfile + ``fsync(file)`` + ``fsync(dir)`` + atomic rename: a crash
+      / power loss leaves either the old or the *fully-written* new file,
+      never a truncated/empty one (the dir-fsync makes the rename durable).
+    - *mode* defaults to ``0o600`` so config files holding plaintext
+      secrets (QRZ/ClubLog keys, WiFi PSKs) are not world-readable
+      (SEC-H2, Audit 2026-05-30).
     """
     path = Path(path)
     if path.exists():
         bak = path.with_suffix(path.suffix + ".bak")
         try:
             bak.write_bytes(path.read_bytes())
+            os.chmod(bak, mode)
         except OSError as exc:
             log.warning("atomic_write: backup to %s failed: %s (continuing)",
                         bak, exc)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)  # atomic on POSIX
+    # write + fsync the tmp file so its contents are durable before rename
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    try:
+        os.write(fd, text.encode("utf-8"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)  # atomic on POSIX
+    # fsync the directory so the rename itself survives a power loss
+    try:
+        dir_fd = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError as exc:
+        log.debug("atomic_write: dir-fsync of %s skipped: %s", path.parent, exc)
+    # ensure final mode (O_CREAT respects umask; chmod makes it explicit)
+    try:
+        os.chmod(path, mode)
+    except OSError as exc:
+        log.warning("atomic_write: chmod %o on %s failed: %s", mode, path, exc)

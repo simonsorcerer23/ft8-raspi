@@ -13,10 +13,36 @@ from ..deps import get_orchestrator
 router = APIRouter()
 
 
+def _redact_secrets(cfg: AppConfig) -> AppConfig:
+    """Maskiere Secrets fuer GET /api/config (SEC-C2, Audit 2026-05-30).
+
+    Bisher lieferte der Endpoint QRZ/ClubLog-Passwoerter + WLAN-PSKs im
+    Klartext an jeden Aufrufer. Wir nullen sie in einer Kopie. WICHTIG:
+    auf None/"" — NICHT auf einen Masken-String — damit ein Speichern mit
+    leerem Feld vom preserve_secrets-Guard als "weggelassen" behandelt und
+    aus der laufenden Config wiederhergestellt wird (statt die Maske als
+    echtes Secret zu speichern).
+    """
+    c = cfg.model_copy(deep=True)
+    for op in c.operators:
+        op.qrz_password = None
+        op.qrz_logbook_api_key = None
+        op.clublog_app_password = None
+        op.clublog_api_key = None
+        op.qrz_logbooks = {k: "" for k in op.qrz_logbooks}
+    c.integrations.qrz.password = None
+    c.integrations.qrz.logbook_api_key = None
+    c.integrations.hamqth.password = None
+    for w in c.network.wifi_priority:
+        w.psk = None
+    c.network.ap_fallback.psk = ""  # required str → leer statt None
+    return c
+
+
 @router.get("/config", response_model=AppConfig)
 async def read_config() -> AppConfig:
     try:
-        return get_config()
+        return _redact_secrets(get_config())
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
@@ -95,12 +121,18 @@ def preserve_secrets(raw: dict, current: AppConfig) -> dict:
         if active:
             raw["active_callsign"] = active
 
-    # --- 2. WLAN-Liste bewahren (Frontend emittiert nur ap_fallback) ------
+    # --- 2. WLAN bewahren --------------------------------------------------
     cur_net = cur.get("network") or {}
     if cur_net.get("wifi_priority"):
         net = raw.setdefault("network", {})
         if not net.get("wifi_priority"):
             net["wifi_priority"] = cur_net["wifi_priority"]
+    # ap_fallback.psk wird im GET maskiert ("") — leeres PSK aus dem Post
+    # aus der laufenden Config wiederherstellen statt es zu plaetten.
+    cur_ap = cur_net.get("ap_fallback") or {}
+    posted_ap = (raw.get("network") or {}).get("ap_fallback")
+    if posted_ap is not None and not posted_ap.get("psk") and cur_ap.get("psk"):
+        raw.setdefault("network", {}).setdefault("ap_fallback", {})["psk"] = cur_ap["psk"]
 
     # --- 3. Integrations-Secrets auffuellen (nie ueberschreiben) ----------
     cur_int = cur.get("integrations") or {}
