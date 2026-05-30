@@ -35,6 +35,49 @@ class SaveConfigRequest(BaseModel):
     yaml_text: str
 
 
+def preserve_operators(raw: dict, current: AppConfig) -> dict:
+    """DATENSCHUTZ-GUARD (Incident 2026-05-30).
+
+    Der Frontend-Config-Save serialisiert nur den Legacy-``operator:``-Block
+    ohne ``operators:``-Liste + ohne Credentials. Wuerde der direkt
+    uebernommen, plaettet JEDES "Speichern" auf der Konfig-Seite die
+    komplette Operator-Liste + alle QRZ/ClubLog-Keys + Sende-Call-Logbuecher.
+
+    Daher: Operatoren + active_callsign kommen AUSSCHLIESSLICH aus der
+    laufenden Config (autoritativ). Aus dem geposteten ``operator:``-Block
+    uebernehmen wir NUR die editierbaren Basisfelder (Locator/Power/Lizenz/
+    Callsign) des AKTIVEN Operators. Operator-/Credential-Verwaltung laeuft
+    sonst ausschliesslich ueber /api/operators.
+
+    Mutiert ``raw`` in-place und gibt es zurueck.
+    """
+    posted_op = raw.get("operator") or {}
+    raw.pop("operator", None)
+    raw.pop("operators", None)
+    raw.pop("active_callsign", None)
+
+    ops = [op.model_copy(deep=True) for op in current.operators]
+    active = current.active_callsign or (ops[0].callsign if ops else None)
+    for op in ops:
+        if op.callsign == active:
+            if posted_op.get("default_locator") is not None:
+                op.default_locator = posted_op["default_locator"]
+            if posted_op.get("default_power_w") is not None:
+                op.default_power_w = posted_op["default_power_w"]
+            if posted_op.get("license_class"):
+                op.license_class = posted_op["license_class"]
+            new_cs = (posted_op.get("callsign") or "").strip().upper()
+            if new_cs and new_cs != op.callsign:
+                op.callsign = new_cs
+                active = new_cs
+            break
+    if ops:
+        raw["operators"] = [op.model_dump() for op in ops]
+        if active:
+            raw["active_callsign"] = active
+    return raw
+
+
 @router.put("/config", response_model=AppConfig)
 async def save_config(
     req: SaveConfigRequest,
@@ -60,6 +103,10 @@ async def save_config(
 
     try:
         raw = yaml.safe_load(req.yaml_text) or {}
+        # DATENSCHUTZ-GUARD: Operatoren + Credentials NIE aus dem geposteten
+        # YAML uebernehmen — sie kommen autoritativ aus der laufenden Config.
+        # (Incident 2026-05-30: Config-Save plaettete sonst die Operatoren.)
+        raw = preserve_operators(raw, orch.config)
         cfg = AppConfig.model_validate(raw)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"invalid config: {exc}")
@@ -87,9 +134,22 @@ async def save_config(
                         bak_path, bak_exc,
                     )
             # 2. Atomic write: tempfile in same dir, dann rename
-            #    (rename ist atomic auf POSIX-Filesystems)
+            #    (rename ist atomic auf POSIX-Filesystems).
+            #    v0.33.0: NICHT mehr den rohen req.yaml_text schreiben —
+            #    der enthaelt den Stub-`operator:`-Block ohne Operatoren/
+            #    Creds und wuerde die Datei plaetten. Stattdessen die
+            #    kanonische, merge-korrigierte cfg serialisieren (analog
+            #    persist_config: computed `operator` + rig-Computed raus).
+            d = cfg.model_dump(
+                exclude_none=True,
+                exclude={
+                    "rig": {"hamlib_id", "effective_max_power_w"},
+                    "operator": True,
+                },
+            )
+            serialized = yaml.safe_dump(d, default_flow_style=False, sort_keys=False)
             tmp_path = path.with_suffix(path.suffix + ".tmp")
-            tmp_path.write_text(req.yaml_text, encoding="utf-8")
+            tmp_path.write_text(serialized, encoding="utf-8")
             tmp_path.replace(path)  # atomic rename
         except OSError as exc:
             raise HTTPException(

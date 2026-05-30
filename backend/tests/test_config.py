@@ -117,3 +117,58 @@ def test_unknown_field_rejected_strict() -> None:
         AppConfig.model_validate(
             {"operator": {"callsign": "DK9XR", "typo_field": "boom"}}
         )
+
+
+# ---------------------------------------------------------------------------
+# Incident 2026-05-30: Config-Save plaettete die Operator-Liste + Credentials,
+# weil der Frontend-YAML nur den Legacy-`operator:`-Stub schickt. Der Guard
+# preserve_operators() muss Operatoren/Creds autoritativ aus der laufenden
+# Config bewahren und nur Basisfelder des aktiven Operators uebernehmen.
+from ft8_appliance.web.routes.config import preserve_operators  # noqa: E402
+
+
+def _two_op_config() -> AppConfig:
+    return AppConfig.model_validate({
+        "operators": [
+            {"callsign": "DK9XR", "license_class": "A", "default_locator": "JN58",
+             "qrz_user": "dk9xr", "qrz_logbook_api_key": "KEY_DK",
+             "qrz_logbooks": {"DK9XR/AM": "AMKEY_DK"}},
+            {"callsign": "DO3XR", "license_class": "E", "default_locator": "JN58",
+             "qrz_user": "do3xr", "qrz_logbook_api_key": "KEY_DO",
+             "clublog_email": "x@y.z", "clublog_app_password": "pw",
+             "clublog_api_key": "CL", "qrz_logbooks": {"DO3XR/AM": "AMKEY_DO"}},
+        ],
+        "active_callsign": "DO3XR",
+    })
+
+
+def test_config_save_preserves_operators_and_creds() -> None:
+    current = _two_op_config()
+    # Frontend-Post: nur Legacy-Stub des aktiven Operators, KEINE creds/operators
+    raw = {
+        "operator": {"callsign": "DO3XR", "default_locator": "JN58td",
+                     "default_power_w": 25, "license_class": "E"},
+        "operating": {"qso_cooldown_min": 360},
+    }
+    cfg = AppConfig.model_validate(preserve_operators(raw, current))
+    by = {o.callsign: o for o in cfg.operators}
+    assert set(by) == {"DK9XR", "DO3XR"}, "beide Operatoren muessen ueberleben"
+    assert by["DK9XR"].qrz_logbook_api_key == "KEY_DK"
+    assert by["DK9XR"].qrz_logbooks == {"DK9XR/AM": "AMKEY_DK"}
+    assert by["DO3XR"].clublog_api_key == "CL"
+    assert by["DO3XR"].qrz_logbooks == {"DO3XR/AM": "AMKEY_DO"}
+    # Basisfeld-Edit am aktiven Operator greift
+    assert by["DO3XR"].default_locator == "JN58td"
+    assert by["DO3XR"].default_power_w == 25
+    assert cfg.active_callsign == "DO3XR"
+    assert cfg.operating.qso_cooldown_min == 360
+
+
+def test_config_save_ignores_injected_operators() -> None:
+    """Selbst eine boesartig mitgeschickte operators-Liste wird ignoriert."""
+    current = _two_op_config()
+    raw = {"operators": [{"callsign": "HACKER", "license_class": "A"}],
+           "active_callsign": "HACKER"}
+    cfg = AppConfig.model_validate(preserve_operators(raw, current))
+    assert {o.callsign for o in cfg.operators} == {"DK9XR", "DO3XR"}
+    assert cfg.active_callsign == "DO3XR"
