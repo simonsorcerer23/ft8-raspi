@@ -3301,13 +3301,22 @@ class Orchestrator:
                         try:
                             result = await upload_qso(qso_key, owner.callsign, qso)
                         except QrzLogbookError as exc:
-                            log.warning("QRZ rejected %s (%s) — won't retry",
-                                        qso.call, exc)
-                            # Hard reject (bad key, duplicate, etc.): mark
-                            # uploaded so we don't retry forever. Stored
-                            # logbook_id stays None so the operator can
-                            # tell something went wrong.
-                            qso.qrz_uploaded = True
+                            # v0.39.0 — nur bei KLAR hartem Reject aufgeben;
+                            # transiente/mehrdeutige Rejects erneut versuchen
+                            # (Ceiling als Backstop). Verhindert stillen
+                            # Upload-Verlust bei z.B. Rate-Limit.
+                            if self._upload_reject_is_hard(str(exc)):
+                                log.warning("QRZ hard-reject %s (%s) — won't retry",
+                                            qso.call, exc)
+                                qso.qrz_uploaded = True
+                            elif qso.qrz_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                                log.error("QRZ: %s nach %d Versuchen aufgegeben (%s)",
+                                          qso.call, qso.qrz_upload_attempts, exc)
+                                qso.qrz_uploaded = True
+                                self._alert_upload_giveup("QRZ", qso.call)
+                            else:
+                                log.info("QRZ deferred for %s: %s (Versuch %d)",
+                                         qso.call, exc, qso.qrz_upload_attempts)
                         except Exception as exc:
                             # Network / transient errors — leave for next round
                             log.info("QRZ upload deferred for %s: %s", qso.call, exc)
@@ -3395,20 +3404,21 @@ class Orchestrator:
                         try:
                             await bulk_upload(email, app_pw, api_key, my_call, eligible)
                         except ClubLogError as exc:
-                            msg = str(exc).lower()
-                            hard = any(
-                                k in msg for k in (
-                                    "403", "authentication", "login",
-                                    "bad password", "invalid adif",
-                                )
-                            )
-                            if hard:
-                                log.warning("ClubLog bulk hard-rejected (%s) — marking all %d as won't-retry",
+                            # v0.39.0 — nur bei KLAR hartem Reject die ganze
+                            # Charge aufgeben; sonst erneut versuchen (Ceiling
+                            # je QSO). Fixt "could not reach login server" →
+                            # frueher faelschlich hart → ganze Charge verloren.
+                            if self._upload_reject_is_hard(str(exc)):
+                                log.warning("ClubLog bulk hard-reject (%s) — alle %d won't-retry",
                                             exc, len(eligible))
                                 for qso in eligible:
                                     qso.clublog_uploaded = True
                             else:
-                                log.info("ClubLog bulk upload deferred (%d QSOs): %s",
+                                for qso in eligible:
+                                    if qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                                        qso.clublog_uploaded = True
+                                        self._alert_upload_giveup("ClubLog", qso.call)
+                                log.info("ClubLog bulk deferred (%d QSOs): %s",
                                          len(eligible), exc)
                         except Exception as exc:
                             log.info("ClubLog bulk upload deferred (%d QSOs): %s",
@@ -3429,20 +3439,18 @@ class Orchestrator:
                             try:
                                 await upload_qso(email, app_pw, api_key, my_call, qso)
                             except ClubLogError as exc:
-                                msg = str(exc).lower()
-                                hard = any(
-                                    k in msg for k in (
-                                        "403", "authentication", "login",
-                                        "bad password", "invalid adif",
-                                    )
-                                )
-                                if hard:
-                                    log.warning("ClubLog rejected %s (%s) — won't retry",
+                                if self._upload_reject_is_hard(str(exc)):
+                                    log.warning("ClubLog hard-reject %s (%s) — won't retry",
                                                 qso.call, exc)
                                     qso.clublog_uploaded = True
+                                elif qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                                    log.error("ClubLog: %s nach %d Versuchen aufgegeben (%s)",
+                                              qso.call, qso.clublog_upload_attempts, exc)
+                                    qso.clublog_uploaded = True
+                                    self._alert_upload_giveup("ClubLog", qso.call)
                                 else:
-                                    log.info("ClubLog upload deferred for %s: %s",
-                                             qso.call, exc)
+                                    log.info("ClubLog deferred for %s: %s (Versuch %d)",
+                                             qso.call, exc, qso.clublog_upload_attempts)
                             except Exception as exc:
                                 log.info("ClubLog upload deferred for %s: %s",
                                          qso.call, exc)
@@ -4902,6 +4910,49 @@ class Orchestrator:
             log.error("LOG_QSO db write failed: %s — sichere QSO %s in Spill-Datei",
                       exc, qso_kwargs.get("call"))
             await self._spill_qso(qso_kwargs)
+
+    # ------------------------------------------------------------------ v0.39.0 Upload-Klassifizierung
+    # DATA-H1/H2 (Audit 2026-05-30): QRZ/ClubLog markierten ein QSO bei
+    # JEDEM Fehler als "hochgeladen" → transiente Fehler (Rate-Limit,
+    # "could not reach login server") fuehrten zu stillem Upload-Verlust.
+    # Jetzt: nur bei KLAR harten Rejects aufgeben; transiente/mehrdeutige
+    # Fehler erneut versuchen, mit Ceiling als Backstop + Alarm.
+    _UPLOAD_MAX_ATTEMPTS: typing.ClassVar[int] = 15
+
+    _HARD_REJECT_MARKERS: typing.ClassVar[tuple[str, ...]] = (
+        "duplicate", "already", "401", "403", "authentication",
+        "bad password", "invalid adif", "invalid api", "invalid key",
+        "not authorized", "invalid call", "invalid date",
+    )
+    _TRANSIENT_MARKERS: typing.ClassVar[tuple[str, ...]] = (
+        "rate", "limit", "busy", "try again", "temporar", "timeout",
+        "timed out", "502", "503", "504", "unavailable", "overload",
+        "too many", "could not reach", "connection", "reset", "network",
+    )
+
+    @classmethod
+    def _upload_reject_is_hard(cls, msg: str) -> bool:
+        """True nur wenn der Reject KLAR hart ist (kein Retry sinnvoll).
+        Transiente Marker gewinnen — "could not reach login server" enthaelt
+        zwar 'login', ist aber durch 'could not reach' transient."""
+        m = (msg or "").lower()
+        if any(t in m for t in cls._TRANSIENT_MARKERS):
+            return False
+        return any(h in m for h in cls._HARD_REJECT_MARKERS)
+
+    def _alert_upload_giveup(self, service: str, call: str | None) -> None:
+        if self.integrations.ntfy and self.integrations.ntfy.enabled:
+            try:
+                asyncio.create_task(self.integrations.ntfy.notify(
+                    f"{service}-Upload fuer QSO {call} nach "
+                    f"{self._UPLOAD_MAX_ATTEMPTS} Versuchen aufgegeben. QSO bleibt "
+                    "lokal im Log + ADIF — bei Bedarf manuell hochladen.",
+                    title="\u26a0\ufe0f Upload aufgegeben",
+                    priority="default",
+                    tags=["warning"],
+                ))
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ v0.38.0 Wartung
     _TELEMETRY_RETENTION_DAYS: typing.ClassVar[int] = 90
