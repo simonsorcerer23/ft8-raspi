@@ -10,11 +10,24 @@ target (atomic rename on POSIX).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+# DATA-M2 (Audit 2026-05-30): serialisiert alle Config-Schreiber im Prozess
+# (persist_config, PUT /api/config, ap-fallback), damit der .bak-Snapshot
+# zweier interleavter Writer nicht eine Zwischenversion sichert.
+_write_lock = asyncio.Lock()
+
+
+async def async_atomic_write_with_backup(path: Path, text: str, *, mode: int = 0o600) -> None:
+    """Wie :func:`atomic_write_with_backup`, aber unter einem prozessweiten
+    Lock — fuer die konkurrierenden Config-Schreibpfade."""
+    async with _write_lock:
+        atomic_write_with_backup(path, text, mode=mode)
 
 
 def atomic_write_with_backup(path: Path, text: str, *, mode: int = 0o600) -> None:

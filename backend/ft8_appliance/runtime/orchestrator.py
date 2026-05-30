@@ -707,6 +707,14 @@ class Orchestrator:
                 self._solar_refresh_loop(), name="solar-refresh"
             ))
 
+        # v0.38.0 — taegliche Wartung: Telemetrie-Retention (DATA-M1) +
+        # QSO-DB-Backup (DATA-C3). Schuetzt die unersetzlichen Logdaten
+        # und verhindert das SD-voll→Korruption-Szenario.
+        if self.db_enabled:
+            self._bg_tasks.append(asyncio.create_task(
+                self._maintenance_loop(), name="db-maintenance"
+            ))
+
         # v0.19.0 — DXpedition-Schedule-Sync (Watchlist-Auto-Add + ntfy
         # 24h-Reminder). Laeuft immer, harmlos wenn Schedule leer.
         self._bg_tasks.append(asyncio.create_task(
@@ -1631,7 +1639,7 @@ class Orchestrator:
                 return
             import yaml
 
-            from ..util.atomicfile import atomic_write_with_backup
+            from ..util.atomicfile import async_atomic_write_with_backup
             d = self.config.model_dump(
                 exclude_none=True,
                 exclude={
@@ -1642,8 +1650,8 @@ class Orchestrator:
             # v0.34.0: atomar + .bak. Vorher plain write_text → ein Crash
             # mitten im Schreiben (haeufigster Write-Pfad: Operator-Edit,
             # boot_mode, DX-Standort, CQ-Start/Stop) konnte config.yaml
-            # abschneiden, ohne Rollback-Punkt.
-            atomic_write_with_backup(
+            # abschneiden, ohne Rollback-Punkt. v0.38.0: unter Write-Lock.
+            await async_atomic_write_with_backup(
                 path,
                 yaml.safe_dump(d, default_flow_style=False, sort_keys=False),
             )
@@ -4894,6 +4902,35 @@ class Orchestrator:
             log.error("LOG_QSO db write failed: %s — sichere QSO %s in Spill-Datei",
                       exc, qso_kwargs.get("call"))
             await self._spill_qso(qso_kwargs)
+
+    # ------------------------------------------------------------------ v0.38.0 Wartung
+    _TELEMETRY_RETENTION_DAYS: typing.ClassVar[int] = 90
+    _DB_BACKUP_KEEP: typing.ClassVar[int] = 7
+    _MAINTENANCE_INTERVAL_S: typing.ClassVar[int] = 86_400  # taeglich
+
+    async def _maintenance_loop(self) -> None:
+        """Taeglich: alte Telemetrie prunen (DATA-M1) + QSO-DB sichern
+        (DATA-C3). Erster Lauf 5 min nach Start (nicht im Boot-Stress)."""
+        from datetime import timedelta
+
+        from ..db import repository, session_scope
+        from ..db.session import backup_database
+        await asyncio.sleep(300)
+        while True:
+            try:
+                cutoff = datetime.now(UTC) - timedelta(days=self._TELEMETRY_RETENTION_DAYS)
+                async with session_scope() as s:
+                    counts = await repository.prune_telemetry(s, cutoff)
+                pruned = sum(counts.values())
+                if pruned:
+                    log.info("Wartung: %d alte Telemetrie-Zeilen geprunt (%s)",
+                             pruned, counts)
+                dest = await backup_database(keep=self._DB_BACKUP_KEEP)
+                if dest is not None:
+                    log.info("Wartung: QSO-DB gesichert → %s", dest)
+            except Exception as exc:  # noqa: BLE001 — Wartung darf nie crashen
+                log.warning("Wartungslauf fehlgeschlagen: %s", exc)
+            await asyncio.sleep(self._MAINTENANCE_INTERVAL_S)
 
     def _tok_actions(self, actions: list[str]) -> list[str]:
         """v0.37.0 — haengt den ntfy_action_token als ?token= an die

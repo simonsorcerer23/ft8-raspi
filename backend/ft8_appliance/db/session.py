@@ -31,6 +31,34 @@ def get_db_path() -> Path | None:
     return _db_path
 
 
+async def backup_database(keep: int = 7) -> Path | None:
+    """DATA-C3 (Audit 2026-05-30): konsistentes Online-Backup der QSO-DB
+    via ``VACUUM INTO`` (funktioniert auch bei offener DB). Legt
+    ``backups/qso-YYYYMMDD-HHMMSS.sqlite`` neben der DB an und rotiert auf
+    die letzten *keep*. None bei in-memory."""
+    from datetime import UTC, datetime
+
+    db = get_db_path()
+    if db is None:
+        return None
+    backup_dir = db.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+    dest = backup_dir / f"qso-{ts}.sqlite"
+    # VACUUM INTO braucht einen String-Literal-Pfad; dest ist von uns
+    # kontrolliert (Zeitstempel), kein User-Input → kein Injection-Risiko.
+    async with get_engine().begin() as conn:
+        await conn.exec_driver_sql(f"VACUUM INTO '{dest}'")
+    # Rotation: aelteste ueber *keep* hinaus loeschen
+    backups = sorted(backup_dir.glob("qso-*.sqlite"))
+    for old in backups[:-keep] if keep > 0 else []:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return dest
+
+
 def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
     """Create (or replace) the global engine.
 

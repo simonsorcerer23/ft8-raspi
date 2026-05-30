@@ -15,7 +15,7 @@ import logging
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ...config import get_config, set_config_for_tests
 from ...config.loader import get_current_path
@@ -50,11 +50,25 @@ class WifiOverview(BaseModel):
     scan: list[WifiScanOut]
 
 
+def _reject_dash_prefix(value: str, what: str) -> str:
+    """SEC-M2 (Audit 2026-05-30): SSID/Profilname gehen als argv an
+    `sudo nmcli` — ein fuehrendes '-' koennte als nmcli-Option statt als
+    Daten interpretiert werden (Option-Smuggling). Hart ablehnen."""
+    if value.startswith("-"):
+        raise ValueError(f"{what} darf nicht mit '-' beginnen")
+    return value
+
+
 class AddConnectionRequest(BaseModel):
     ssid: str = Field(min_length=1, max_length=32)
     psk: str | None = None       # None = open WiFi
     priority: int = 50
     autoconnect: bool = True
+
+    @field_validator("ssid")
+    @classmethod
+    def _ssid_safe(cls, v: str) -> str:
+        return _reject_dash_prefix(v, "SSID")
 
 
 class SetPriorityRequest(BaseModel):
@@ -101,6 +115,8 @@ async def add_wifi(req: AddConnectionRequest) -> dict:
 
 @router.delete("/network/wifi/connections/{name}")
 async def delete_wifi(name: str) -> dict:
+    if name.startswith("-"):
+        raise HTTPException(status_code=400, detail="Name darf nicht mit '-' beginnen")
     ok, msg = await net.delete_connection(name)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
@@ -109,6 +125,8 @@ async def delete_wifi(name: str) -> dict:
 
 @router.put("/network/wifi/connections/{name}/priority")
 async def set_wifi_priority(name: str, req: SetPriorityRequest) -> dict:
+    if name.startswith("-"):
+        raise HTTPException(status_code=400, detail="Name darf nicht mit '-' beginnen")
     ok, msg = await net.set_priority(name, req.priority)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
@@ -117,6 +135,8 @@ async def set_wifi_priority(name: str, req: SetPriorityRequest) -> dict:
 
 @router.post("/network/wifi/connections/{name}/activate")
 async def activate_wifi(name: str) -> dict:
+    if name.startswith("-"):
+        raise HTTPException(status_code=400, detail="Name darf nicht mit '-' beginnen")
     ok, msg = await net.activate(name)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
@@ -186,8 +206,8 @@ async def set_ap_fallback(
         try:
             # v0.34.0: atomar + .bak (war plain write_text → Truncation-
             # Risiko bei Crash mid-write).
-            from ...util.atomicfile import atomic_write_with_backup
-            atomic_write_with_backup(
+            from ...util.atomicfile import async_atomic_write_with_backup
+            await async_atomic_write_with_backup(
                 path,
                 yaml.safe_dump(new_dict, sort_keys=False, allow_unicode=True),
             )

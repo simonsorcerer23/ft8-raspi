@@ -10,10 +10,32 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
-from sqlalchemy import desc, select, update
+from sqlalchemy import delete, desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Decode, Heard, PickAttempt, Qso
+from .models import Decode, Heard, PickAttempt, PskReporterIn, Qso, SwrLog
+
+
+# DATA-M1 (Audit 2026-05-30): Telemetrie-Tabellen wachsen sonst unbegrenzt
+# → SD voll → DB-Korruption → QSO-Verlust. (Tabelle, Zeit-Spalte). Die
+# qso-Tabelle ist BEWUSST NICHT dabei — Logdaten werden NIE geprunt.
+_TELEMETRY_TABLES = (
+    (Decode, Decode.ts),
+    (PickAttempt, PickAttempt.ts),
+    (Heard, Heard.last_seen),
+    (SwrLog, SwrLog.ts),
+    (PskReporterIn, PskReporterIn.ts),
+)
+
+
+async def prune_telemetry(session: AsyncSession, older_than: datetime) -> dict[str, int]:
+    """Loesche Telemetrie-Zeilen aelter als *older_than*. Niemals qso.
+    Returns {tabelle: geloeschte_zeilen}."""
+    counts: dict[str, int] = {}
+    for model, tscol in _TELEMETRY_TABLES:
+        res = await session.execute(delete(model).where(tscol < older_than))
+        counts[model.__tablename__] = res.rowcount or 0
+    return counts
 
 
 async def insert_decode(session: AsyncSession, **fields: object) -> Decode:

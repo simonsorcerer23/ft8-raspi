@@ -211,7 +211,7 @@ async def save_config(
             # wuerde die Datei plaetten. Stattdessen die kanonische, merge-
             # korrigierte cfg serialisieren (analog persist_config: computed
             # `operator` + rig-Computed raus).
-            from ...util.atomicfile import atomic_write_with_backup
+            from ...util.atomicfile import async_atomic_write_with_backup
             d = cfg.model_dump(
                 exclude_none=True,
                 exclude={
@@ -219,7 +219,7 @@ async def save_config(
                     "operator": True,
                 },
             )
-            atomic_write_with_backup(
+            await async_atomic_write_with_backup(
                 path,
                 yaml.safe_dump(d, default_flow_style=False, sort_keys=False),
             )
