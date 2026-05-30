@@ -647,9 +647,15 @@ class StateMachine:
                     # ausloesen (selten, aber moeglich).
                     if len(self.ctx.hunt_attempt_meta) > 100:
                         self.ctx.hunt_attempt_meta.clear()
+                    call_u = (best.call_from or "").upper()
                     self.ctx.hunt_attempt_meta[tgt] = {
                         "psk_heard_us": tgt in self.ctx.psk_heard_us
-                        or (best.call_from or "").upper() in self.ctx.psk_heard_us,
+                        or call_u in self.ctx.psk_heard_us,
+                        # v0.31.0 weitere Mess-Dimensionen (reine Telemetrie):
+                        "was_worked": call_u in self.ctx.worked
+                        or tgt in self.ctx.worked,
+                        "was_new_dxcc": (best.call_from or "") in self.ctx.new_dxcc_calls,
+                        "n_decodes": len(decodes),
                         "snr_db": best.snr_db,
                         "dt_s": best.dt_s,
                         "band": best.band,

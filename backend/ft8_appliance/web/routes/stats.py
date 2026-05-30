@@ -33,6 +33,12 @@ class PickAttemptStats(BaseModel):
     with_psk: PickAbCell
     without_psk: PickAbCell
     by_snr: list[dict]
+    # v0.31.0 weitere Schnitte:
+    dupe: PickAbCell          # was_worked == True  (Dupe-Anrufe)
+    new_call: PickAbCell      # was_worked == False (nie gearbeitet)
+    new_dxcc: PickAbCell      # was_new_dxcc == True
+    by_occupancy: list[dict]  # Completion-Rate nach Band-Belegung (n_decodes)
+    bail_reasons: dict[str, int]  # Fehlermodus-Aufschluesselung
     note: str
 
 
@@ -54,6 +60,18 @@ def _snr_bucket(snr: int | None) -> str:
     if snr < 0:
         return "d -8..0"
     return "e >=0"
+
+
+def _occ_bucket(n: int | None) -> str:
+    if n is None:
+        return "n/a"
+    if n <= 5:
+        return "a leer (<=5)"
+    if n <= 15:
+        return "b ruhig (6-15)"
+    if n <= 30:
+        return "c normal (16-30)"
+    return "d voll (>30)"
 
 
 @router.get("/stats/pick-attempts", response_model=PickAttemptStats)
@@ -80,15 +98,44 @@ async def pick_attempts(
         }
         for b, v in sorted(buckets.items())
     ]
+
+    # v0.31.0 — Dupe vs neuer Call (beantwortet die skip_worked-Frage:
+    # bringen Anrufe auf schon gearbeitete Calls ueberhaupt Completions?).
+    # None (alte v0.30-Zeilen) wird aus dem Split ausgeschlossen.
+    dupe = [r for r in rows if r.was_worked is True]
+    new_call = [r for r in rows if r.was_worked is False]
+    new_dxcc = [r for r in rows if r.was_new_dxcc is True]
+
+    occ: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        occ.setdefault(_occ_bucket(r.n_decodes), []).append(r)
+    by_occupancy = [
+        {"occupancy": b, **_pick_cell(v).model_dump()}
+        for b, v in sorted(occ.items())
+    ]
+
+    bail_reasons: dict[str, int] = {}
+    for r in rows:
+        if r.outcome == "bailed":
+            bail_reasons[r.bail_reason or "unknown"] = (
+                bail_reasons.get(r.bail_reason or "unknown", 0) + 1
+            )
+
     return PickAttemptStats(
         total=len(rows),
         with_psk=_pick_cell(with_psk),
         without_psk=_pick_cell(without_psk),
         by_snr=by_snr,
+        dupe=_pick_cell(dupe),
+        new_call=_pick_cell(new_call),
+        new_dxcc=_pick_cell(new_dxcc),
+        by_occupancy=by_occupancy,
+        bail_reasons=dict(sorted(bail_reasons.items(), key=lambda kv: -kv[1])),
         note=(
-            "Hunt-Picks, outcome completed/bailed. Vergleiche rate(with_psk) "
-            "vs rate(without_psk) JE SNR-Bucket — nur dann ist der Tier-Effekt "
-            "vom SNR-Effekt getrennt. Aussagekraeftig ab ~paar hundert Zeilen."
+            "Hunt-Picks, outcome completed/bailed. psk-Effekt: rate(with_psk) "
+            "vs rate(without_psk) JE SNR-Bucket. dupe vs new_call beantwortet "
+            "skip_worked. by_occupancy trennt ruhiges vs volles Band. "
+            "Aussagekraeftig ab ~paar hundert Zeilen."
         ),
     )
 

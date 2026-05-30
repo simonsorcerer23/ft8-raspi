@@ -75,6 +75,30 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_watchlist_source_column(conn)
         await _migrate_clublog_columns(conn)
         await _migrate_station_callsign_column(conn)
+        await _migrate_pick_attempt_columns(conn)
+
+
+async def _migrate_pick_attempt_columns(conn) -> None:
+    """v0.31.0 — zusaetzliche Mess-Dimensionen fuer pick_attempt.
+
+    Reine Telemetrie-Spalten (was_worked, was_new_dxcc, n_decodes,
+    bail_reason). Tabelle existiert seit v0.30.0; hier additiv ergaenzt,
+    damit eine v0.30-DB nach dem Deploy die neuen Felder bekommt ohne
+    Datenverlust (alte Zeilen behalten NULL in den neuen Spalten).
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(pick_attempt)")
+    existing = {row[1] for row in res.fetchall()}
+    cols = {
+        "was_worked": "BOOLEAN",
+        "was_new_dxcc": "BOOLEAN",
+        "n_decodes": "INTEGER",
+        "bail_reason": "TEXT",
+    }
+    for name, ddl in cols.items():
+        if name not in existing:
+            await conn.exec_driver_sql(
+                f"ALTER TABLE pick_attempt ADD COLUMN {name} {ddl}"
+            )
 
 
 async def _migrate_station_callsign_column(conn) -> None:

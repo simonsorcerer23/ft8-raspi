@@ -305,3 +305,16 @@ class PickAttempt(Base):
     dt_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     band: Mapped[str | None] = mapped_column(String, nullable=True)
     outcome: Mapped[str] = mapped_column(String, index=True)  # completed | bailed
+    # v0.31.0 — weitere Mess-Dimensionen (alle nullable fuer Back-Compat
+    # mit v0.30-Zeilen, reine Telemetrie ohne Logik-Einfluss):
+    #  * was_worked   — Ziel war schon mal gearbeitet (Dupe). Beantwortet
+    #    die skip_worked-Frage: bringen Dupe-Anrufe ueberhaupt Completions?
+    #  * was_new_dxcc — Ziel war ein Neu-DXCC (Award-Wert des Picks).
+    #  * n_decodes    — Decodes im Slot zum Pick-Zeitpunkt (Band-Belegung;
+    #    Confound-Kontrolle: ruhiges vs volles Band).
+    #  * bail_reason  — warum gescheitert (went_silent/max_resends/…); NULL
+    #    bei completed. Schluesselt die Fehlermodi auf.
+    was_worked: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    was_new_dxcc: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    n_decodes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bail_reason: Mapped[str | None] = mapped_column(String, nullable=True)

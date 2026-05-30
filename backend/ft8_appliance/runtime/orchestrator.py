@@ -4923,9 +4923,11 @@ class Orchestrator:
                     )
         except Exception as exc:
             log.warning("reputation bail-update failed for %s: %s", call, exc)
-        await self._log_pick_attempt(call, "bailed")
+        await self._log_pick_attempt(call, "bailed", bail_reason=reason)
 
-    async def _log_pick_attempt(self, call: str | None, outcome: str) -> None:
+    async def _log_pick_attempt(
+        self, call: str | None, outcome: str, *, bail_reason: str | None = None
+    ) -> None:
         """v0.30.0 — schreibt beim QSO-Ausgang eine pick_attempt-Telemetrie-
         Zeile, sofern der Pick Hunt-Metadaten hinterlegt hat. Pop nach
         base_call (passend zu LOG_QSO/QSO_BAIL). Reine Messung, fail-soft.
@@ -4945,10 +4947,14 @@ class Orchestrator:
                     target_call=key,
                     user_callsign=self.config.operator.callsign,
                     psk_heard_us=bool(meta.get("psk_heard_us")),
+                    was_worked=meta.get("was_worked"),
+                    was_new_dxcc=meta.get("was_new_dxcc"),
+                    n_decodes=meta.get("n_decodes"),
                     snr_db=meta.get("snr_db"),
                     dt_s=meta.get("dt_s"),
                     band=meta.get("band"),
                     outcome=outcome,
+                    bail_reason=bail_reason,
                 )
         except Exception as exc:
             log.warning("pick_attempt write failed for %s: %s", key, exc)
