@@ -162,6 +162,21 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             "ntfy_action_token": cfg.ntfy_action_token,
         }
 
+    @app.post("/api/auth/token", include_in_schema=False)
+    async def _set_auth_token(payload: dict) -> dict:
+        """Master-Token auf einen eigenen (merkbaren) Wert setzen — fuer
+        Dad-freundliche Passwoerter. Min. 8 Zeichen. Authed via Middleware."""
+        from fastapi import HTTPException
+        new = (payload.get("token") or "").strip()
+        if len(new) < 8:
+            raise HTTPException(status_code=400, detail="mindestens 8 Zeichen")
+        orch = getattr(app.state, "orchestrator", None)
+        if orch is None:
+            raise HTTPException(status_code=503, detail="orchestrator not ready")
+        orch.config.api_token = new
+        await orch.persist_config()
+        return {"ok": True}
+
     # Captive-portal probe URLs — registered *before* SPA fallback so they win
     captive.register(app)
 

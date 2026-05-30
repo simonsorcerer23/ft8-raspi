@@ -30,9 +30,8 @@
 <div class="overlay">
   <form class="card" onsubmit={submit}>
     <h2>🔒 FT8 — Anmeldung</h2>
-    <p>API-Token eingeben. Auf dem Pi abrufbar mit:<br>
-      <code>curl -s localhost:8000/api/auth/token</code></p>
-    <input type="password" placeholder="API-Token" bind:value autocomplete="off"
+    <p>Passwort eingeben.</p>
+    <input type="password" placeholder="Passwort" bind:value autocomplete="current-password"
            autocapitalize="off" spellcheck="false" />
     {#if error}<div class="err">{error}</div>{/if}
     <button type="submit" disabled={busy}>{busy ? '…' : 'Anmelden'}</button>

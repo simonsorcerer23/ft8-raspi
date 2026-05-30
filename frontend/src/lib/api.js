@@ -186,4 +186,6 @@ export const api = {
   // v0.37.0 — API-Auth
   authToken:    ()       => getToken(),           // fuer SSE ?token=
   authTokens:   ()       => request('/auth/token'),  // {api_token, ntfy_action_token}
+  // v0.39.0 — Master-Token auf merkbares Passwort setzen
+  setAuthPassword: (token) => request('/auth/token', { method: 'POST', body: { token } }),
 };

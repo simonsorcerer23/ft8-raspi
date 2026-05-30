@@ -78,3 +78,16 @@ def test_fail_open_without_token() -> None:
     app.state.orchestrator = FakeOrchestrator()
     c = TestClient(app)
     assert c.get("/api/status").status_code != 401
+
+
+def test_set_password_rejects_short(client_authed: TestClient) -> None:
+    # zu kurzes Passwort wird vor jeglichem Orchestrator-Zugriff abgelehnt
+    r = client_authed.post("/api/auth/token",
+                           headers={"Authorization": f"Bearer {MASTER}"},
+                           json={"token": "short"})
+    assert r.status_code == 400
+
+
+def test_set_password_requires_auth(client_authed: TestClient) -> None:
+    r = client_authed.post("/api/auth/token", json={"token": "longenough123"})
+    assert r.status_code == 401
