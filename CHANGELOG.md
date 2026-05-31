@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.41.0 — 2026-05-31
+- fix: ntfy-Pushes komplett kaputt (.push existiert nicht, heisst .notify)
+- architecture.md auf Ist-Stand gebracht (war Planungsdokument)
+- README: fehlende Features ergänzt (Auth, CEPT/GPS, Daten-Sicherheit, Changelog)
+- Changelog: CHANGELOG.md (rückwirkend) + Auto-Generierung im Release
+
 ## v0.40.0 — 2026-05-30
 - DATA-H1/H2: QRZ/ClubLog Upload-Klassifizierung — kein stiller Upload-Verlust
 
