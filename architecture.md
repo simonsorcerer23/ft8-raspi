@@ -1,21 +1,26 @@
 # Architektur — Hochgericht FT8 Appliance
 
-**Version:** 2.0
-**Status:** Planung, vor Hardware-Eintreffen
-**Operator:** DK9XR
-**Rig:** Icom IC-705
+**Version:** 3.0
+**Status:** Im Feldbetrieb — zwei Pis (`ft8`, `ft8-2`) produktiv
+**Operatoren:** DK9XR + DO3XR (Multi-Operator)
+**Rigs:** Icom IC-705 / IC-7300
+
+> Hinweis: Dieses Dokument war ursprünglich ein Planungspapier. Es wird
+> laufend an den Ist-Stand angeglichen; die vollständige Release-Historie
+> steht in [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
 ## 1. Mission
 
-Eine "Fire-and-Forget"-FT8-Appliance auf Raspberry Pi 5, die am IC-705 angesteckt wird und per WLAN mit einem Android-Phone-Browser bedient wird. Bewusst **kein** WSJT-X/WSJT-Z. Nur die wirklich gebrauchten Funktionen, dafür stabil, narrensicher, mit echten Komfort-Features für portablen Urlaubsbetrieb.
+Eine "Fire-and-Forget"-FT8-Appliance auf Raspberry Pi 5, die am IC-705 / IC-7300 angesteckt wird und per WLAN mit einem Android-Phone-Browser bedient wird. Bewusst **kein** WSJT-X/WSJT-Z. Nur die wirklich gebrauchten Funktionen, dafür stabil, narrensicher, mit echten Komfort-Features für portablen Urlaubsbetrieb.
 
 Designprinzipien:
 - **Minimalismus:** kein GUI-Workaround via Xvfb, kein Subprocess-Zoo.
-- **Single-User**, single-Rufzeichen.
+- **Multi-Operator:** mehrere Profile/Rufzeichen (z.B. Vater + Sohn), Hot-Switch zur Laufzeit, je eigene Logs/Credentials/Lizenzklasse.
 - **Field-tauglich:** läuft komplett ohne Internet (mit eingeschränkten Features).
-- **Recovery first:** Jede Anomalie wird sofort gemeldet, nicht still geschluckt.
+- **Recovery first:** Jede Anomalie wird sofort gemeldet, nicht still geschluckt — und ein abgeschlossenes QSO geht nie verloren (Spill + Backup).
+- **Zugang geschützt:** die gesamte API ist passwort-/token-gesichert (localhost vertraut).
 
 ---
 
@@ -159,6 +164,18 @@ systemd-Units:
 | `hostapd@ap0.service` | AP-Fallback (auf Trigger) |
 | `NetworkManager.service` | WLAN-Roaming |
 | `avahi-daemon.service` | mDNS |
+| `ft8-self-update.timer/.service` | zieht alle 10 min getaggte Releases von GitHub, Health-Check + Auto-Rollback |
+
+### 4.6 Zugang & Sicherheit (API-Auth)
+
+Die Appliance steuert einen echten Sender und hält Credentials — die HTTP-API darf daher nicht offen sein. Durchgesetzt via ASGI-Middleware (`web/auth.py`):
+
+- **localhost (127.0.0.1/::1) wird vertraut** — wer auf dem Pi ist, hat via SSH ohnehin Vollzugriff; der Self-Update-Health-Probe läuft über localhost.
+- **Statische SPA / Assets / Tiles / Captive-Probes** sind offen (Login muss laden, AP-Captive-Portal muss funktionieren).
+- **Alles unter `/api` und `/sse`** braucht den **Master-Token** (`api_token`) via `Authorization: Bearer` ODER `?token=` (Query-Form für SSE, da `EventSource` keine Header setzen kann). Der Master-Token ist als **merkbares Login-Passwort** setzbar (`POST /api/auth/token`).
+- **Separater, eng begrenzter `ntfy_action_token`**: nur für operative Control-Toggles (stop/cq/hunt/reset-lock/set-mode/tx-power/set-freq/panic), eingebettet in die ntfy-Lockscreen-Buttons. Ein Topic-Leak erlaubt damit keinen Secret-/Shutdown-Zugriff.
+- **Secret-Redaction:** `GET /api/config` liefert keine Klartext-Secrets; `config.yaml` ist `0600`.
+- **Kein Netzwerk-Binding-Restriktion** (bindet `0.0.0.0`), weil der AP-Fallback Erreichbarkeit auf allen Interfaces braucht — der Token schützt überall gleich.
 
 ---
 
@@ -272,6 +289,22 @@ Zusätzliche Modi:
 
 ### 6.2 Smart Operating
 
+- **19-Tier Hunting-Picker** (konfigurierbare Prioritäts-Reihenfolge,
+  `OperatingConfig.hunt_priority`, Drag-and-Drop im UI): lexikografisches
+  Scoring über Tiers wie `not_bad_reputation`, `not_in_pileup`,
+  `tail_end_target`, `grayline`, `band_open`, `buddy_seen`, `new_dxcc(_band)`,
+  `psk_heard_us`, `new_grid(_band)`, `not_worked`, `dxcc_rarity`, `snr`.
+  Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
+- **Hard-Filter** zusätzlich zur Soft-Reihenfolge: `skip_worked` (nur nie
+  Gearbeitete), `dxcc_only` (Award-Modus: lieber Funkstille als Nicht-ATNO).
+- **Soft-Blacklist / Reputation** (DB-gestützt, GLOBAL über Operatoren,
+  Basis-Call-normalisiert): Stationen die wiederholt abbrechen/verstummen
+  werden abgewertet.
+- **Band-bewusster QSO-Cooldown:** Erfolgs-Cooldown pro (Call, Band) — ein
+  langer Cooldown blockt damit keinen neuen Band-Slot (5BWAS/VUCC).
+- **Pick-Telemetrie (`pick_attempt`):** misst pro Hunt-Pick
+  psk_heard_us/was_worked/was_new_dxcc/SNR/Band-Belegung/Bail-Grund +
+  Ausgang → datengetriebene A/B-Bewertung der Tiers (`/api/stats/pick-attempts`).
 - TX-Frequenz-Wahl mit Kollisions-Vermeidung: Rotation 1200/1500/1800/2100 Hz
   pro CQ-Sendung (`MachineContext.cq_freq_rotation`)
 - Smart-CQ-Throttling (passive Sondierung nach N erfolglosen CQs) — geparkt
@@ -312,10 +345,18 @@ Zusätzliche Modi:
 - TX-Lockout für Bänder ohne passende Antenne
 - SWR-Curve Logger pro Band
 
-### 6.4 Portable-Operation
+### 6.4 Portable-Operation & CEPT
 
 - Auto-QTH/Locator via GPS (Maidenhead 6-stellig)
-- Auto-Präfix bei Auslandsbetrieb (GPS-DXCC → IARU-konformes Rufzeichen `DK9XR/<area>`)
+- **GPS-Länder-Erkennung via Point-in-Polygon** (`integrations/cept.py` +
+  `data/cept_borders.json`, vereinfachte Natural-Earth-Grenzen): bbox als
+  Vorfilter, dann echte Polygone zur Disambiguierung (löst Balkan-/Adria-
+  Overlaps wie Kroatiens C-Form um Bosnien sauber, ohne Reihenfolge-Hacks).
+- **CEPT-Compliance:** kennt für deutsche **Klasse A (T/R 61-01)** und
+  **Klasse E (ECC/REC (05)06)**, wo man **ohne Gastlizenz** im Kurzzeit-
+  betrieb funken darf — Primärquelle ist die DARC-Länderliste. Ausgesetzte
+  Länder (Belarus, Russland) werden gesperrt. Vorschlag des korrekten
+  CEPT-Präfix (`<area>/DK9XR`); kein Auto-Switch, Operator bestätigt.
 - IARU-Bandplan-Lockout pro Region (R1/R2/R3)
 
 ### 6.5 Monitoring & Safety
@@ -328,6 +369,12 @@ Zusätzliche Modi:
 - PTT-Stuck-Detection (PTT-an aber kein Audio → sofort off)
 - Time-Guard (kein TX ohne GPS-Sync)
 - **Blitzortung.org** Live-Daten, Alarm bei Gewitter < 30 km
+
+**Daten-Sicherheit (Audit 2026-05-30):** Die unersetzlichen Logdaten sind mehrfach abgesichert:
+- **Atomare Config-Writes** (`util/atomicfile.py`): tmp + `fsync(file)` + `fsync(dir)` + rename, `.bak`-Snapshot, `0600`, prozessweiter Write-Lock gegen konkurrierende Schreiber. `PUT /api/config` plättet keine Operatoren/Secrets mehr (`preserve_secrets`: „leer = behalten").
+- **SQLite robust:** WAL + `synchronous=NORMAL` + `busy_timeout=30s` (eliminiert „database is locked" zwischen QSO-Insert und Upload-Drains).
+- **QSO-Spill:** schlägt der DB-Write eines abgeschlossenen QSO fehl (volle SD/Lock/Korruption) → Sicherung in `unlogged_qsos.jsonl` + ntfy-Alarm, automatischer Nachtrag beim nächsten Erfolg/Start. **Kein stiller QSO-Verlust.**
+- **Tägliches DB-Backup** (`VACUUM INTO`, Rotation 7) + **Telemetrie-Retention** (decode/pick_attempt/heard/swr/psk auf 90 Tage; `qso` nie).
 
 **Tamper-Detection (Sebastian 2026-05-24):** Wenn jemand am Rig-
 Frontpanel Settings dreht (häufiges Szenario: „Dad pfuscht heimlich")
@@ -356,11 +403,16 @@ Pfad via Frequenz-Drift-Watchdog mit 100-Hz-Toleranz, Rollback-Action
 
 ### 6.6 Integrations (online)
 
-- **QRZ.com XML API** (Dads Abo): Callsign-Lookup (Name, QTH, Locator, Bild)
-- **HamQTH** als kostenloser Fallback
+- **QRZ.com XML API** (Callsign-Lookup) + **QRZ Logbook API** (Auto-Upload der QSOs, pro On-Air-Call eigenes Logbuch/Key via `qrz_logbooks`)
+- **Club Log** Auto-Upload (realtime + putlogs-Bulk), per-Operator-Account
+- **HamQTH** als kostenloser Lookup-Fallback
 - **cty.dat** lokal als Offline-Fallback (DXCC-Präfix → Land/Kontinent)
-- **PSK Reporter:** Upload eigener Decodes + Download "wer hat mich gehört?"
+- **PSK Reporter:** Upload eigener Decodes + Download "wer hat mich gehört?" (speist den `psk_heard_us`-Reziprozitäts-Tier)
 - **hamqsl.com:** Solar-Indizes (SFI, A/K, MUF), kleines Widget
+- **NG3K ADXO:** Auto-Import des DXpeditions-Kalenders → Watchlist + 24h-ntfy-Reminder
+- **DX-Cluster** (Telnet) als zusätzliche Spot-Quelle
+- **Marinefunker (DF7PM-Liste):** ⚓-Badge + MF-Nr bei aktiven Mitgliedern, eigener Picker-Tier
+- **Upload-Resilience (v0.40.0):** QRZ/ClubLog markieren ein QSO nur bei *klar hartem* Reject als erledigt; transiente Fehler werden erneut versucht (Ceiling 15 + Alarm) — kein stiller Upload-Verlust
 
 **Resilience-Prinzip (gilt für alle Online-Features):**
 Jede Online-Integration muss **graceful degraden**:
@@ -415,6 +467,13 @@ operators:
     qrz_user: DK9XR
     qrz_password: secret
     qrz_logbook_api_key: ABCD-1234
+    clublog_email: dk9xr@example.org
+    clublog_app_password: "..."
+    clublog_api_key: "..."
+    qrz_logbooks:                # On-Air-Call → eigener QRZ-Logbook-Key
+      DK9XR/AM: WXYZ-9876        # QRZ braucht pro Prefix/Suffix ein Logbuch
+    home_country: DL
+    current_operating_country: null   # gesetzt bei CEPT-Auslandsbetrieb
   - callsign: DL2XYZ
     default_locator: JO31
     default_power_w: 100
@@ -422,7 +481,14 @@ operators:
 
 active_callsign: DK9XR           # aktueller Operator (Hot-Switch via API)
 operator_auto_login_seconds: 30  # nach Service-Start Auto-Default
+api_token: "..."                 # API-Login (als Passwort setzbar); 0600, aus GET redacted
+ntfy_action_token: "..."         # enger Token nur für ntfy-Control-Buttons
 ```
+
+> `operating:` hat über die unten gezeigten hinaus weitere Felder, u.a.
+> `mode` (FT8/FT4), `hunt_priority` (19-Tier-Reihenfolge), `hunt_skip_worked`,
+> `hunt_dxcc_only`, `qso_cooldown_min`, `psk_reciprocity_enabled`,
+> `tail_end_hunter_enabled`, `boot_mode`, `mode_watchdog_min`.
 
 Alte Form (immer noch akzeptiert, transparente Migration):
 ```yaml
@@ -480,6 +546,13 @@ ui:
 
 ### 7.2 SQLite Schema (Skizze)
 
+> Skizze — der reale Stand wird über additive Migrationen in
+> `db/session.py` gepflegt (nur `ALTER TABLE ADD COLUMN`, idempotent).
+> Zusätzlich zu den unten gezeigten existieren u.a.: **`pick_attempt`**
+> (Picker-A/B-Telemetrie), **`call_reputation`** (Soft-Blacklist, global),
+> **`watchlist`**, **`dxpedition_schedule`**, **`freq_reputation`** (Smart-CQ).
+> WAL ist aktiv. Mehrere Tabellen tragen `user_callsign` (Multi-Operator).
+
 ```sql
 CREATE TABLE qso (
   id          INTEGER PRIMARY KEY,
@@ -495,7 +568,17 @@ CREATE TABLE qso (
   my_grid     TEXT NOT NULL,
   my_power_w  INTEGER,
   swr_avg     REAL,
-  notes       TEXT
+  notes       TEXT,
+  -- Multi-Operator + DX + Upload-Tracking (spätere Migrationen):
+  user_callsign    TEXT,   -- welcher Operator (Heimat-Call)
+  station_callsign TEXT,   -- tatsächlich gesendeter Call (z.B. 9A/DK9XR)
+  mf_mfnr          INTEGER,-- Marinefunker-Nr (Snapshot)
+  qrz_uploaded     BOOLEAN DEFAULT 0,
+  qrz_upload_attempts INTEGER DEFAULT 0,
+  qrz_last_attempt_at TIMESTAMP,
+  clublog_uploaded BOOLEAN DEFAULT 0,
+  clublog_upload_attempts INTEGER DEFAULT 0,
+  clublog_last_attempt_at TIMESTAMP
 );
 
 CREATE TABLE decode (
@@ -643,6 +726,10 @@ hochgericht-ft8/
 
 ### 9.2 Bring-up Phasen
 
+> **Stand:** alle Phasen durchlaufen — die Appliance ist auf zwei Pis
+> (`ft8`, `ft8-2`) im produktiven Feldbetrieb. Die folgende Liste ist die
+> ursprüngliche Bring-up-Reihenfolge (historisch).
+
 1. **Phase 0:** Pi-OS Lite Install, SSH, NVMe-Boot, systemd-Grundlagen
 2. **Phase 1:** Hardware-Verify: ALSA findet IC-705, rigctld redet mit Rig, gpsd liefert Fix
 3. **Phase 2:** Decoder-Spike — ft8_lib auf gespeicherte WAV-Files anwenden
@@ -704,13 +791,17 @@ hochgericht-ft8/
 - Audio-Recording on demand
 - JSONL-Decode-Dump
 - USB-Stick-Backup
-- LotW / eQSL / ClubLog Auto-Upload
-- Remote-Support via Tailscale/WireGuard
-- DXCC-Award-Tracking
+- LotW / eQSL Auto-Upload (~~ClubLog~~ ist implementiert, siehe §6.6)
 - Easter-Egg-Animationen
 - Dual-WLAN-Chip Travel-Router-Modus
 
-Alle nachrüstbar wenn später gewünscht.
+Inzwischen umgesetzt (waren mal out of scope):
+- ~~Multi-User-Profile~~ — implementiert 2026-05-23, siehe §7.1
+- ~~ClubLog Auto-Upload~~ — implementiert, siehe §6.6
+- ~~DXCC-Award-Tracking~~ — Picker-Tiers `new_dxcc`/`new_dxcc_band` (5BWAS) + `new_grid(_band)` (VUCC), siehe §6.2
+- ~~Remote-Support via Tailscale/WireGuard~~ — beide Pis laufen über Tailscale (Zugang token-gesichert)
+
+Alle weiteren nachrüstbar wenn später gewünscht.
 
 ---
 
