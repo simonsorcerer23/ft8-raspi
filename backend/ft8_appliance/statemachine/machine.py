@@ -214,7 +214,14 @@ def _tier_not_in_pileup(d: "DecodedMsg", ctx: "MachineContext") -> int:
     """
     if not d.call_from:
         return 1
-    return 0 if d.call_from.upper() in ctx.pile_up_calls else 1
+    call = d.call_from.upper()
+    # v0.44.0 — Ausnahme: ein NEUES DXCC ist den Pile-Up-Kampf wert.
+    # Seltenheit schlaegt QRP-Effizienz; die Headless-Box soll auf den
+    # Sonderling losgehen statt ihn wegen Pile-Up zu meiden. Greift nur
+    # fuer echte neue DXCC (selten) — normale Calls werden weiter gemieden.
+    if call in ctx.new_dxcc_calls:
+        return 1
+    return 0 if call in ctx.pile_up_calls else 1
 
 
 def _tier_buddy_seen(d: "DecodedMsg", ctx: "MachineContext") -> int:

@@ -48,6 +48,17 @@ def test_pileup_tier_case_insensitive():
     assert _tier_not_in_pileup(_d("zl9hr"), ctx) == 0
 
 
+def test_pileup_tier_exempts_new_dxcc():
+    """v0.44.0 — ein NEUES DXCC ist den Pile-Up-Kampf wert: trotz Pile-Up
+    liefert der Tier 1 (kein Meiden), damit die Headless-Box den Sonderling
+    jagt statt ihn wegen Pile-Up zu uebergehen."""
+    ctx = _ctx(pile_up_calls={"ZL9HR"}, new_dxcc_calls={"ZL9HR"})
+    assert _tier_not_in_pileup(_d("ZL9HR"), ctx) == 1
+    # Gegenprobe: Pile-Up-Call der KEIN neues DXCC ist → weiter gemieden.
+    ctx2 = _ctx(pile_up_calls={"DL5ABC"}, new_dxcc_calls=set())
+    assert _tier_not_in_pileup(_d("DL5ABC"), ctx2) == 0
+
+
 def test_pileup_tier_no_call_from_returns_1():
     ctx = _ctx(pile_up_calls={"ZL9HR"})
     d = _d(None)

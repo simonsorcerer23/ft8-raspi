@@ -2891,8 +2891,7 @@ class Orchestrator:
             await asyncio.sleep(check_interval_s)
             try:
                 cluster = self.integrations.dx_cluster
-                ntfy = self.integrations.ntfy
-                if cluster is None or not cluster.enabled or ntfy is None or not ntfy.enabled:
+                if cluster is None or not cluster.enabled:
                     continue
                 cty = self.integrations.cty
                 if cty is None:
@@ -2920,18 +2919,14 @@ class Orchestrator:
                     seen_keys.add(key)
                     spot_cooldown[key] = now_t + 3600  # 1h pro call
                     band = spot.band or f"{spot.freq_hz / 1e6:.3f} MHz"
-                    from ..integrations.flags import flag_for_call
-                    spot_flag = flag_for_call(key, cty)
-                    await ntfy.notify(
-                        f"{key} aus {rec.entity.name} ({rec.entity.continent}) "
-                        f"auf {band}.  Aktuelles Band: {self.config.bands[0].name}"
-                        + (" — passt!" if (spot.band == self.config.bands[0].name) else " — Band-Wechsel nötig"),
-                        title=f"🆕 DXCC-Spot: {rec.entity.name}",
-                        priority="high",
-                        tags=["dart"],
-                        flag=spot_flag,
-                    )
-                    log.info("DX-Cluster-Hint pushed: %s (%s)", key, rec.entity.name)
+                    # v0.44.0 — KEIN Push mehr. Eine Headless-Box soll nicht
+                    # pingen, sondern selbst handeln: der Picker verfolgt neue
+                    # DXCC ohnehin autonom (Tier new_dxcc), und seit v0.44.0
+                    # kaempft er dafuer sogar im Pile-Up. Spot wird nur noch
+                    # geloggt (Forensik), nicht aufs Handy geschickt.
+                    log.info("DX-Cluster: neues DXCC %s (%s) auf %s aktiv — "
+                             "Picker verfolgt autonom, kein Push",
+                             key, rec.entity.name, band)
             except Exception as exc:
                 log.debug("dx-cluster-hint loop hiccup: %s", exc)
 
