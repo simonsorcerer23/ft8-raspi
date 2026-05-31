@@ -348,10 +348,8 @@
     if (!showCoverage) return;
     let data;
     try {
-      const qs = new URLSearchParams({ hours: String(coverageHours) });
-      if (coverageBand) qs.set('band', coverageBand);
-      const r = await fetch(`/api/stats/coverage-envelope?${qs}`);
-      data = await r.json();
+      data = await api.get('/stats/coverage-envelope',
+                           { hours: String(coverageHours), band: coverageBand || undefined });
     } catch { return; }
     if (!data?.bins?.length || data.home_lat == null) return;
 

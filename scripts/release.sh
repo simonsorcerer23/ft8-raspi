@@ -93,6 +93,11 @@ step "Typ-Gate (Crash-Bugklasse: attr-defined/call-arg/…)"
 # Baseline-Ratchet — Altbestand wird toleriert, Neues nicht.
 run "./scripts/typecheck.sh"
 
+step "Frontend-Gate (kein rohes fetch/EventSource am Auth-Layer vorbei)"
+# Faengt Panels die per rohem fetch() den Token-Header umgehen → 401 → leer
+# (Live-Konversation/Solar/Map-Debakel nach der Auth-Einfuehrung).
+run "./scripts/check_frontend_api.sh"
+
 step "Frontend bauen"
 
 if [ ! -d "frontend" ]; then

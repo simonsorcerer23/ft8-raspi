@@ -3,14 +3,14 @@
   // plus a "next action" hint so you always know what comes next.
   import { onMount } from 'svelte';
   import { fmtUtcTime } from '../lib/time.js';
+  import { api } from '../lib/api.js';
 
   let conv = $state({ op_mode: 'off', state: 'IDLE', entries: [],
                       next_action_hint: null });
 
   async function refresh() {
     try {
-      const r = await fetch('/api/qso/conversation');
-      conv = await r.json();
+      conv = await api.get('/qso/conversation');
     } catch { /* ignore */ }
   }
 

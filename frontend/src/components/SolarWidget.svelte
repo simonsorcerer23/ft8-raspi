@@ -3,13 +3,13 @@
   // erklärenden Tooltips. Werte kommen von hamqsl.com, alle 30 min
   // refreshed (Quelle updated ~3h cycle).
   import { onMount } from 'svelte';
+  import { api } from '../lib/api.js';
 
   let data = $state({ available: false });
 
   async function refresh() {
     try {
-      const r = await fetch('/api/solar');
-      data = await r.json();
+      data = await api.get('/solar');
     } catch { data = { available: false }; }
   }
 

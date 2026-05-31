@@ -188,4 +188,8 @@ export const api = {
   authTokens:   ()       => request('/auth/token'),  // {api_token, ntfy_action_token}
   // v0.39.0 — Master-Token auf merkbares Passwort setzen
   setAuthPassword: (token) => request('/auth/token', { method: 'POST', body: { token } }),
+
+  // v0.44.1 — generischer GET (haengt Token + 401-Handling an). Damit
+  // Panels NIE wieder rohes fetch() nutzen, das den Auth-Header umgeht.
+  get:          (path, query) => request(path, { query }),
 };
