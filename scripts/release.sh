@@ -123,10 +123,42 @@ fi
 echo "  ✓ ${VERSION_FILE} → ${TAG}"
 
 # -----------------------------------------------------------------------------
+step "Changelog"
+
+# Eintrag aus den Commit-Subjects seit dem letzten Tag bauen (HEAD ist hier
+# noch der letzte Feature-Commit; der release-Build-Commit kommt danach).
+LAST_TAG="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+ENTRY_FILE="$(mktemp)"
+trap 'rm -f "${ENTRY_FILE}" "${ENTRY_FILE}.x"' EXIT
+{
+    echo "## ${TAG} — $(date +%F)"
+    git log --no-merges --pretty='%s' "${LAST_TAG}..HEAD" 2>/dev/null \
+        | grep -vE '^(release: build for|Auto-generiert|Merge |Co-Authored-By)' \
+        | sed 's/^/- /'
+    echo
+} > "${ENTRY_FILE}"
+echo "  Eintrag für ${TAG} (seit ${LAST_TAG:-Anfang}):"
+sed 's/^/    /' "${ENTRY_FILE}"
+
+if [ ! -f CHANGELOG.md ]; then
+    ./scripts/gen_changelog.sh >/dev/null 2>&1 || true
+fi
+# Neuen Block nach dem Intro (vor dem ersten "## ") einfügen.
+if [ -f CHANGELOG.md ] && grep -q '^## ' CHANGELOG.md; then
+    awk -v ef="${ENTRY_FILE}" '
+        !ins && /^## / { while ((getline l < ef) > 0) print l; ins=1 }
+        { print }
+    ' CHANGELOG.md > "${ENTRY_FILE}.x" && mv "${ENTRY_FILE}.x" CHANGELOG.md
+else
+    cat "${ENTRY_FILE}" >> CHANGELOG.md
+fi
+echo "  ✓ CHANGELOG.md aktualisiert"
+
+# -----------------------------------------------------------------------------
 step "Commit (wenn Änderungen)"
 
 # Stage exakt die release-relevanten Pfade
-run "git add ${STATIC_DIR} ${VERSION_FILE}"
+run "git add ${STATIC_DIR} ${VERSION_FILE} CHANGELOG.md"
 
 if [ "${DRY_RUN}" = "0" ] && [ -z "$(git diff --cached --name-only)" ]; then
     echo "  (keine Änderungen — Frontend-Build war identisch)"
@@ -138,7 +170,8 @@ fi
 # -----------------------------------------------------------------------------
 step "Tag + Push"
 
-run "git tag -a ${TAG} -m 'Release ${TAG}'"
+# Annotation = der Changelog-Eintrag (echte Änderungen statt "Release X").
+run "git tag -a ${TAG} -F ${ENTRY_FILE}"
 
 if [ "${DRY_RUN}" = "0" ]; then
     echo
@@ -148,6 +181,16 @@ if [ "${DRY_RUN}" = "0" ]; then
         git push origin main
         git push origin "${TAG}"
         echo "  ✓ pushed origin/main + ${TAG}"
+        # Optional: GitHub-Release mit Notes anlegen, falls gh installiert+authed.
+        if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+            if gh release create "${TAG}" --title "${TAG}" --notes-file "${ENTRY_FILE}" >/dev/null 2>&1; then
+                echo "  ✓ GitHub-Release ${TAG} erstellt"
+            else
+                echo "  (GitHub-Release ${TAG} nicht erstellt — evtl. existiert es schon)"
+            fi
+        else
+            echo "  (gh nicht verfügbar/authed → kein GitHub-Release; Tag-Annotation reicht)"
+        fi
     else
         echo "  → Tag bleibt lokal. Push später mit: git push origin main && git push origin ${TAG}"
     fi
