@@ -102,3 +102,11 @@ def get_mf_lookup() -> MfLookup:
     if _singleton is None:
         _singleton = MfLookup()
     return _singleton
+
+
+def all_members() -> list[MfMember]:
+    """Alle (aktiven) Marinefunker-Member — fuer den Aufbau des Tier-Caches
+    (``marine``/``marine_psk``). Wurde frueher vom Orchestrator importiert,
+    existierte aber nie → ImportError, vom try/except verschluckt → die
+    Marine-Tiers waren still tot (gefunden im mypy-attr-defined-Audit)."""
+    return list(get_mf_lookup()._members.values())

@@ -5415,7 +5415,7 @@ class Orchestrator:
                                             f"{row.start_date:%Y-%m-%d %H:%M}–"
                                             f"{row.end_date:%Y-%m-%d %H:%M} UTC"
                                         ),
-                                        tags="satellite_antenna",
+                                        tags=["satellite_antenna"],
                                     )
                                 except Exception:
                                     pass

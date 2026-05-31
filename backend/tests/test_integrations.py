@@ -305,6 +305,32 @@ async def test_ntfy_disabled_when_no_topic() -> None:
     assert await client.notify("ignored") is False
 
 
+def test_mf_lookup_all_members_importable() -> None:
+    """Regression (v0.42.0): der Orchestrator importierte
+    ``from ...mf_lookup import all_members`` — die Funktion existierte aber
+    nie → ImportError, vom try/except verschluckt → die Marine-Tiers
+    (Prio #4/#5) waren still tot. Gefunden im mypy-attr-defined-Audit."""
+    from ft8_appliance.integrations.mf_lookup import MfMember, all_members
+
+    members = all_members()
+    assert isinstance(members, list)
+    for m in members[:3]:
+        assert isinstance(m, MfMember)
+        assert m.call
+
+
+def test_dxspot_has_band() -> None:
+    """Regression (v0.42.0): Orchestrator griff auf ``spot.band`` zu, das
+    DxSpot nie hatte → Crash bei DX-Cluster-Spots."""
+    from datetime import UTC, datetime
+
+    from ft8_appliance.integrations.dx_cluster import DxSpot
+
+    spot = DxSpot(ts=datetime.now(UTC), spotter="X", freq_hz=14_074_000,
+                  spotted="Y", comment="")
+    assert spot.band == "20m"
+
+
 def test_orchestrator_only_calls_real_ntfy_methods() -> None:
     """Regression-Guard (v0.41.0): der Orchestrator rief 4x ``ntfy.push(...)``
     auf — eine Methode die es NIE gab (heisst ``notify``). In den Tests ist

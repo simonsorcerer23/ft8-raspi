@@ -87,6 +87,12 @@ fi
 echo "  ✓ on main, clean, tag frei, upstream sync"
 
 # -----------------------------------------------------------------------------
+step "Typ-Gate (Crash-Bugklasse: attr-defined/call-arg/…)"
+# Blockt das Release wenn ein NEUER mypy-Crash-Bugklasse-Treffer dazukam
+# (z.B. Aufruf einer nicht-existenten Methode wie das ntfy.push-Debakel).
+# Baseline-Ratchet — Altbestand wird toleriert, Neues nicht.
+run "./scripts/typecheck.sh"
+
 step "Frontend bauen"
 
 if [ ! -d "frontend" ]; then

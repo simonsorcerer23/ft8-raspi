@@ -32,6 +32,15 @@ class DxSpot:
     spotted: str
     comment: str
 
+    @property
+    def band(self) -> str | None:
+        """Bandname aus der Frequenz (z.B. '20m'). Der Orchestrator griff
+        auf spot.band zu, das es nie gab (mypy-attr-defined-Audit) → Crash
+        sobald DX-Cluster-Spots verarbeitet wurden. Property statt Feld,
+        damit der frozen/slots-Dataclass unangetastet bleibt."""
+        from ..util.bandplan import band_from_freq_hz
+        return band_from_freq_hz(self.freq_hz)
+
 
 _SPOT_RE = re.compile(
     r"DX de\s+(?P<spotter>[A-Z0-9/]+)[:\s]*"
