@@ -78,8 +78,6 @@ def _mf_snapshot_mfnr(call: str | None) -> int | None:
     return m.mfnr if m else None
 from ..util.bandplan import (
     band_from_freq_hz as _band_from_freq_hz,
-    iaru_region_from_latlon,
-    is_in_ft8_segment,
 )
 from ..util.callsign import base_call
 from ..util.maidenhead import latlon_to_locator
@@ -102,6 +100,24 @@ class IntegrationContainer:
     dx_cluster: DxClusterClient | None = None
 
 log = logging.getLogger(__name__)
+
+# Programmierfehler, die in einem Background-Loop NICHT still sterben duerfen
+# (genau die ntfy.push / DxSpot.band / mf_lookup.all_members-Klasse: Methode/
+# Attribut/Name existiert nicht). Transiente Fehler (Netz, Rig busy, Parse)
+# bleiben leise auf debug, damit 1-Hz-Loops nicht fluten.
+_PROGRAMMING_ERRORS = (
+    AttributeError, TypeError, NameError, KeyError, IndexError, ImportError,
+)
+
+
+def _log_loop_exc(where: str, exc: Exception) -> None:
+    """Loop-Exception sichtbar machen: Programmierfehler laut (ERROR +
+    Traceback), transiente leise (debug). Verhindert, dass ein Bug eine
+    Background-Schleife dauerhaft still lahmlegt."""
+    if isinstance(exc, _PROGRAMMING_ERRORS):
+        log.error("%s: PROGRAMMIERFEHLER %r", where, exc, exc_info=True)
+    else:
+        log.debug("%s: %s", where, exc)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2748,7 +2764,7 @@ class Orchestrator:
                         pipeline_metrics.late_slot_count = 0  # Reset
 
             except Exception as exc:
-                log.debug("mode watchdog hiccup: %s", exc)
+                _log_loop_exc("mode watchdog", exc)
 
     async def _notify_freq_tamper(self, actual_hz: int, expected_hz: int, band) -> None:
         """Push wenn jemand am VFO dreht, mit Button zum Zurückstellen."""
@@ -2811,9 +2827,7 @@ class Orchestrator:
         Wird auf "schon heute gesendet"-Cache gehalten damit Restart
         nicht erneut feuert.
         """
-        import time as _time
         from datetime import datetime, time as dtime
-        from sqlalchemy import text
         last_pushed_date: str | None = None
         while True:
             # Zwischen 07:55 und 08:05 lokal — etwas Toleranz für
@@ -2928,7 +2942,7 @@ class Orchestrator:
                              "Picker verfolgt autonom, kein Push",
                              key, rec.entity.name, band)
             except Exception as exc:
-                log.debug("dx-cluster-hint loop hiccup: %s", exc)
+                _log_loop_exc("dx-cluster-hint loop", exc)
 
     async def _psk_reciprocity_refresh_loop(self) -> None:
         """v0.10.0: Periodisch pskreporter.info abfragen — wer hat uns gehört?
@@ -3255,14 +3269,14 @@ class Orchestrator:
         (oldest QSOs first), exponential backoff per row via
         qrz_upload_attempts.
         """
-        from datetime import UTC, datetime, timedelta
+        from datetime import UTC, datetime
         from sqlalchemy import select
         from ..db import session_scope
         from ..db.models import Qso
         from ..integrations.qrz_logbook import QrzLogbookError, upload_qso
 
-        api_key = self.config.integrations.qrz.logbook_api_key
-        my_call = self.config.operator.callsign
+        # (Key + Heimat-Call werden pro QSO aus dem Owner-Profil abgeleitet,
+        # siehe Schleife unten — kein Loop-weiter Singleton mehr seit v0.28.0.)
         interval_s = 300.0  # 5 min between sweeps — chatty enough, gentle on QRZ
         log.info("QRZ logbook drain loop active (interval=%.0fs)", interval_s)
 
@@ -3344,7 +3358,7 @@ class Orchestrator:
         bei 1h. Hard-Reject (auth/duplicate) → uploaded=True damit kein
         endloser Retry. Soft-Failure (Netz, 5xx) → leave for next round.
         """
-        from datetime import UTC, datetime, timedelta
+        from datetime import UTC, datetime
         from sqlalchemy import select
         from ..db import session_scope
         from ..db.models import Qso
@@ -3598,7 +3612,7 @@ class Orchestrator:
             try:
                 self._last_rig = await self.rig.snapshot()
             except Exception as exc:
-                log.debug("rig snapshot failed: %s", exc)
+                _log_loop_exc("rig snapshot", exc)
                 await asyncio.sleep(1.0)
                 continue
 
@@ -5265,7 +5279,7 @@ class Orchestrator:
                     row.attempts = (row.attempts or 0) + 1
                     row.last_used_at = now
         except Exception as exc:
-            log.debug("freq-rep attempt persist failed: %s", exc)
+            _log_loop_exc("freq-rep attempt persist", exc)
 
     async def _persist_freq_reputation_success(self, key: tuple[str, int]) -> None:
         """v0.18.0 — Inkrementiere successes-Counter im DB-Eintrag."""
@@ -5283,7 +5297,7 @@ class Orchestrator:
                     row.successes = (row.successes or 0) + 1
                     row.last_used_at = now
         except Exception as exc:
-            log.debug("freq-rep success persist failed: %s", exc)
+            _log_loop_exc("freq-rep success persist", exc)
 
     async def handle_dxpedition_add(
         self, call: str, start_date: datetime, end_date: datetime,

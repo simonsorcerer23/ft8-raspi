@@ -29,6 +29,8 @@ __all__ = [
     "CircuitBreaker",
     "CircuitOpenError",
     "CtyDat",
+    "DxClusterClient",
+    "DxSpot",
     "DxccEntity",
     "DxccLookupResult",
     "HamQslClient",

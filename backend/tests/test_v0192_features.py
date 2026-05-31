@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, AsyncMock
 import pytest
 
 from ft8_appliance.config.models import OperatingConfig
+from ft8_appliance.integrations.ntfy import NtfyClient
 from ft8_appliance.statemachine.states import DecodedMsg
 
 
@@ -74,7 +75,7 @@ async def _build_mock_orch(
     orch.config = config
     # ntfy-Mock
     integrations = MagicMock()
-    ntfy_mock = MagicMock()
+    ntfy_mock = MagicMock(spec=NtfyClient)  # spec → verbietet Tippfehler-Methoden
     ntfy_mock.enabled = True
     ntfy_mock.notify = AsyncMock()
     integrations.ntfy = ntfy_mock

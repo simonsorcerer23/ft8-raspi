@@ -131,7 +131,9 @@ async def healthcheck(
     # and how many decodes the last pass yielded. The noop source has
     # neither, so it shows up as "fail" — that's correct: no capture
     # means we'll never decode anything.
-    decode_source = orch.decode_source
+    # getattr-Guard: FakeOrchestrator in den Tests hat kein decode_source.
+    # None → audio_status bleibt "fail" (kein metrics-Objekt), korrekt.
+    decode_source = getattr(orch, "decode_source", None)
     audio_status = "fail"
     audio_details: dict[str, object] = {"note": "no capture wired"}
     metrics = getattr(decode_source, "metrics", None)

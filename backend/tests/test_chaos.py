@@ -100,10 +100,18 @@ async def test_chaos_swr_spike_locks_tx() -> None:
     async with MockRigctld() as mock_rig, MockGpsd() as mock_gps:
         orch = await _make_orch(mock_rig, mock_gps)
         await orch.handle_start_cq()
-        # Wait for the rig poll to refresh _last_rig.swr
-        await asyncio.sleep(1.2)
+        # Deterministisch warten bis der erste Rig-Poll die SWR kennt
+        # (timing-robust statt fixem sleep).
+        for _ in range(50):
+            await asyncio.sleep(0.1)
+            if orch.status().rig.swr is not None:
+                break
         mock_rig.set_swr(5.5)  # antenna fell over
-        await asyncio.sleep(1.2)  # next rig poll picks up the new SWR
+        # Warten bis der Poll die neue (hohe) SWR gesehen hat.
+        for _ in range(50):
+            await asyncio.sleep(0.1)
+            if (orch.status().rig.swr or 0) >= 5.0:
+                break
         await orch.process_slot(_tick(0))
         snap = orch.status()
         assert snap.state == "TX_LOCKED"

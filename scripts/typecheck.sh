@@ -63,3 +63,16 @@ if [[ -n "$NEW" ]]; then
     exit 1
 fi
 echo "✓ keine neuen Crash-Bugklasse-Findings (Baseline: $(wc -l < "$BASELINE"))"
+
+# Zusaetzlich: ruff F-Codes (pyflakes) MUESSEN sauber sein — fangen undefinierte
+# Namen (F821 = NameError-Crash), tote Imports/Vars (F401/F841), Redefinitionen.
+# Kein Baseline-Ratchet noetig: F ist aktuell auf null und soll's bleiben.
+if .venv/bin/python -c "import ruff" 2>/dev/null || .venv/bin/ruff --version >/dev/null 2>&1; then
+    if ! .venv/bin/python -m ruff check ft8_appliance --select F --no-cache --quiet; then
+        echo "✗ ruff F-Codes (undefinierte Namen / tote Imports) — bitte fixen" >&2
+        exit 1
+    fi
+    echo "✓ ruff F-Codes sauber"
+else
+    echo "⚠ ruff nicht installiert — F-Code-Gate übersprungen"
+fi

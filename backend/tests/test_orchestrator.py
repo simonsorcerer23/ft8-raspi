@@ -84,8 +84,14 @@ async def test_orchestrator_boots_and_reports_status() -> None:
             slot_clock=FakeSlotClock(count=1),
         )
         await orch.start()
-        await asyncio.sleep(0.3)  # let slot_loop + gpsd settle
+        # Deterministisch auf den ersten Rig-Poll + GPS-Fix warten statt
+        # fixem sleep (timing-robust): bis freq + GPS da sind, max ~5 s.
         snap = orch.status()
+        for _ in range(50):
+            await asyncio.sleep(0.1)
+            snap = orch.status()
+            if snap.rig.freq_hz is not None and snap.gps.mode == 3:
+                break
         assert snap.callsign == "DK9XR"
         assert snap.state == "IDLE"
         assert snap.rig.freq_hz == 14_074_000

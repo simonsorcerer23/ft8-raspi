@@ -199,7 +199,6 @@ class ConversationResponse(BaseModel):
 async def conversation(
     orch: Orchestrator = Depends(get_orchestrator),
 ) -> ConversationResponse:
-    s = orch.status()
     sm = orch.state_machine
     qso = sm.qso
     state = sm.state.name

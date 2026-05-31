@@ -10,6 +10,7 @@ import pytest
 
 from ft8_appliance.integrations.blitzortung import BlitzortungClient, Strike
 from ft8_appliance.integrations.blitzortung_ws import lzw_decode, parse_strike
+from ft8_appliance.integrations.ntfy import NtfyClient
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +144,7 @@ class _FakeOrch:
         from ft8_appliance.runtime.orchestrator import IntegrationContainer
         self.integrations = IntegrationContainer()
         self.integrations.blitzortung = BlitzortungClient(alarm_radius_km=30)
-        self.integrations.ntfy = MagicMock()
+        self.integrations.ntfy = MagicMock(spec=NtfyClient)  # spec → keine Phantom-Methoden
         self.integrations.ntfy.enabled = True
         self.integrations.ntfy.notify = MagicMock()  # not awaited — create_task
         # GPS-Snapshot Fake

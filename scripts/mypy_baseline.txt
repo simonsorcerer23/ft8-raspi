@@ -12,7 +12,6 @@ ft8_appliance/runtime/orchestrator.py: error: "Callable[[SlotTick], Awaitable[li
 ft8_appliance/runtime/orchestrator.py: error: "Callable[[SlotTick], Awaitable[list[DecodedMsg]]]" has no attribute "notch_detector"  [attr-defined]
 ft8_appliance/runtime/orchestrator.py: error: Item "None" of "str | None" has no attribute "upper"  [union-attr]
 ft8_appliance/runtime/orchestrator.py: error: Module "ft8_appliance.decode.ft8_native" does not explicitly export attribute "lib"  [attr-defined]
-ft8_appliance/runtime/orchestrator.py: error: Module "ft8_appliance.integrations" does not explicitly export attribute "DxClusterClient"  [attr-defined]
 ft8_appliance/statemachine/machine.py: error: Argument 1 to "int" has incompatible type "int | None"; expected "str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc"  [arg-type]
 ft8_appliance/statemachine/machine.py: error: Function "builtins.callable" is not valid as a type  [valid-type]
 ft8_appliance/statemachine/machine.py: error: Incompatible types in assignment (expression has type "float", variable has type "int")  [assignment]

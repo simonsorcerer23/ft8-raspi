@@ -130,7 +130,6 @@ def parse_adif(adif_text: str) -> list[dict[str, str]]:
     records: list[dict[str, str]] = []
     current: dict[str, str] = {}
     pos = 0
-    text_lower = text  # case-sensitive match via flags below
     while pos < len(text):
         m = _ADIF_TAG.search(text, pos)
         if m is None:

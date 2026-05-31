@@ -26,7 +26,6 @@ from ..audio.slot_sync import SlotBuffer, SlotExtraction
 from ..runtime.slot_clock import SlotTick
 from ..statemachine import DecodedMsg
 from .ft8_native import (
-    SAMPLES_PER_SLOT_FT4,
     ShimDecode,
     decode_slot,
     decode_slot_ft4,
