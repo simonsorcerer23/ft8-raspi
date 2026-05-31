@@ -2897,6 +2897,13 @@ class Orchestrator:
                 cty = self.integrations.cty
                 if cty is None:
                     continue
+                # Empty-Log-Guard: bei zu duennem Log saehe JEDES Land "neu"
+                # aus (die worked-DXCC-Pruefung greift ins Leere) → Spam.
+                # ft8-2/DK9XR ohne Rig (0 QSOs) feuerte sogar fuer Belgien.
+                # Erst ab genug gearbeiteten DXCC ist "neu" aussagekraeftig;
+                # die Schwelle hebt sich selbst, sobald der Op loslegt.
+                if len(self._worked_dxccs) < self._MIN_WORKED_DXCC_FOR_SPOTS:
+                    continue
                 spots = cluster.recent(ft8_only=True, minutes=10)
                 now_t = _time.time()
                 for spot in spots:
@@ -5102,6 +5109,9 @@ class Orchestrator:
     }
     _SOFT_BLACKLIST_THRESHOLD: typing.ClassVar[int] = 5
     _MIN_ATTEMPTS_FOR_BLACKLIST: typing.ClassVar[int] = 3
+    # DX-Cluster-DXCC-Spots erst pushen, wenn das Log genug gearbeitete
+    # DXCC kennt — sonst saehe jede frische/rig-lose Station alles als "neu".
+    _MIN_WORKED_DXCC_FOR_SPOTS: typing.ClassVar[int] = 20
     _SUCCESS_SCORE_DELTA: typing.ClassVar[int] = -5
 
     async def _do_qso_bail(self, payload: dict) -> None:
