@@ -32,6 +32,18 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
   strike lands inside a configurable radius.
 - **License-aware safety** — Power cap, band lockout, SWR watchdog with
   live PTT-cut, ALC PI-loop instead of bang-bang.
+- **CEPT / overseas operation** — GPS country detection via real border
+  polygons (point-in-polygon, not crude rectangles), suggests the correct
+  CEPT call-sign prefix, and knows where German **Klasse A vs Klasse E**
+  may operate without a guest licence (DARC primary-source country list).
+- **Password-protected API** — token auth on every endpoint (set a
+  memorable login password from the config page); localhost is trusted so
+  on-Pi tooling / self-update keep working. The ntfy lockscreen buttons use
+  a separate, narrowly-scoped token.
+- **Crash-safe data** — atomic config writes with `.bak` + fsync, WAL
+  SQLite with busy-timeout, **QSO-log spill-to-file + alert** if a DB write
+  ever fails (a completed contact is never silently lost), daily DB backup,
+  telemetry retention, and secrets redacted from the API responses.
 - **Self-update** — Pi pulls tagged releases from GitHub every 10 min,
   health-checks after restart, auto-rollback on failure.
 
@@ -78,8 +90,12 @@ Subsequent releases roll out automatically via `ft8-self-update.timer`.
 Cut a new release on the workstation with:
 
 ```bash
-./scripts/release.sh v0.21.2
+./scripts/release.sh v0.41.0
 ```
+
+This also updates [CHANGELOG.md](./CHANGELOG.md) (generated from the commit
+log) and writes the change list into the tag annotation. The full version
+history lives in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Hardware
 
@@ -94,8 +110,10 @@ Cut a new release on the workstation with:
 
 External services (QRZ, Club Log, ntfy, HamQTH, …) require per-operator
 credentials. **Credentials live only in `/etc/ft8-appliance/config.yaml`
-on the Pi**, never in this repository or in version control. See
-[CREDITS.md](./CREDITS.md) for the full list of integrated services.
+on the Pi** (`0600`), never in this repository or in version control. The
+API redacts all secrets from its responses, and the web UI is gated by a
+login password. See [CREDITS.md](./CREDITS.md) for the full list of
+integrated services.
 
 ## License
 
@@ -112,10 +130,12 @@ and used by a father-son team of amateur radio operators in Germany.
 # Deutsch (Kurzfassung)
 
 Headless FT8/FT4-Steuerung auf Raspberry Pi 5 für IC-705 / IC-7300. Sitzt
-zwischen Rig und Welt, Bedienung komplett übers Handy. **Ersetzt WSJT-X**
-für portablen / unbeaufsichtigten Betrieb mit Features, die WSJT-X nicht
-out of the box hat — 19-Tier-Picker mit Pile-Up-Avoidance, Tail-End-Hunter,
-Watchlist, Auto-Upload zu QRZ + Club Log, Gewitter-Warnung, lizenz-
-abhängige Sicherheits-Caps, Selbst-Update.
+zwischen Rig und Welt, Bedienung komplett übers Handy (passwortgeschützt).
+**Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb mit Features,
+die WSJT-X nicht out of the box hat — 19-Tier-Picker mit Pile-Up-Avoidance,
+Tail-End-Hunter, Watchlist, Auto-Upload zu QRZ + Club Log, Gewitter-Warnung,
+lizenzabhängige Sicherheits-Caps, CEPT-/Ausland-Erkennung (GPS → Land →
+Klasse-A/E-Regeln + Präfix-Vorschlag), bruchsicheres QSO-Log (Spill +
+tägliches Backup) und Selbst-Update.
 
 73 de DK9XR & DO3XR
