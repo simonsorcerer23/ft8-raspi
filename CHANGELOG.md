@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.42.0 — 2026-05-31
+- fix: 3 weitere 'existiert-gar-nicht'-Bugs + mypy-Typ-Gate gegen die Klasse
+
 ## v0.41.0 — 2026-05-31
 - fix: ntfy-Pushes komplett kaputt (.push existiert nicht, heisst .notify)
 - architecture.md auf Ist-Stand gebracht (war Planungsdokument)
