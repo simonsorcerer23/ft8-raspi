@@ -13,7 +13,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, select
 
 from ...util.timefmt import UtcDateTime, UtcDateTimeOpt
 from ...db import session_scope
@@ -50,6 +50,11 @@ class QsoOut(BaseModel):
     # Marinefunker-Mitgliedsnummer ZUM QSO-Zeitpunkt eingefroren
     # (Sebastian v0.9.0). Null wenn Partner kein MF-Mitglied war.
     mf_mfnr: int | None = None
+    # v0.45.0 — on-the-fly via cty.dat/mf_lookup berechnet (nicht gespeichert),
+    # fuer Spalten + Filter (DXCC/Kontinent/Marinefunker).
+    dxcc: str | None = None
+    continent: str | None = None
+    marine: bool = False
 
 
 class LogResponse(BaseModel):
@@ -89,6 +94,9 @@ async def get_log(
     sort_dir: Literal["asc", "desc"] = Query("desc"),
     since_days: int | None = Query(None, ge=1, le=3650),
     min_snr_rcvd: int | None = Query(None),
+    continent: str | None = Query(None, description="EU/AF/AS/NA/SA/OC/AN (via cty.dat)"),
+    dxcc: str | None = Query(None, description="Substring auf DXCC-Land (via cty.dat)"),
+    marine: bool = Query(False, description="nur Marinefunker-Mitglieder"),
     orch: Orchestrator = Depends(get_orchestrator),
 ) -> LogResponse:
     """Paginated QSO list with multi-axis filters and sortable columns.
@@ -126,25 +134,44 @@ async def get_log(
         if min_snr_rcvd is not None:
             stmt = stmt.where(Qso.rst_rcvd >= min_snr_rcvd)
 
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = (await s.execute(count_stmt)).scalar_one()
-
         sort_col = SORTABLE_QSO_COLUMNS.get(sort_by, Qso.qso_start)
         stmt = stmt.order_by(sort_col.desc() if sort_dir == "desc" else sort_col.asc())
-        stmt = stmt.limit(page_size).offset((page - 1) * page_size)
+        # ALLE (SQL-gefilterten) Rows laden — DXCC/Kontinent/Marine sind nicht
+        # gespeichert, werden gleich on-the-fly annotiert + gefiltert, danach
+        # erst paginiert. Bei Appliance-Log-Groessen unproblematisch.
         rows = list((await s.execute(stmt)).scalars())
 
     cty = orch.integrations.cty
-    qsos_out: list[QsoOut] = []
+    from ...integrations.mf_lookup import get_mf_lookup
+    mf = get_mf_lookup()
+    cont = continent.upper().strip() if continent else None
+    dxcc_q = dxcc.lower().strip() if dxcc else None
+
+    annotated: list[QsoOut] = []
     for q in rows:
         item = QsoOut.model_validate(q, from_attributes=True)
         item.flag = flag_for_call(item.call, cty)
-        qsos_out.append(item)
+        rec = cty.lookup(item.call) if cty else None
+        if rec is not None:
+            item.dxcc = rec.entity.name
+            item.continent = rec.entity.continent
+        item.marine = mf.lookup(item.call) is not None
+        # Computed-Filter (nach der Annotation):
+        if cont and (item.continent or "").upper() != cont:
+            continue
+        if dxcc_q and dxcc_q not in (item.dxcc or "").lower():
+            continue
+        if marine and not item.marine:
+            continue
+        annotated.append(item)
+
+    total = len(annotated)
+    start = (page - 1) * page_size
     return LogResponse(
         total=total,
         page=page,
         page_size=page_size,
-        qsos=qsos_out,
+        qsos=annotated[start:start + page_size],
     )
 
 

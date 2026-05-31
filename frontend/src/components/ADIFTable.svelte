@@ -100,6 +100,26 @@
            value={logStore.filters.min_snr ?? ''}
            style="max-width: 6rem"
            oninput={(e) => logStore.setFilter('min_snr', e.target.value === '' ? null : parseInt(e.target.value))}/>
+    <select value={logStore.filters.continent}
+            onchange={(e) => logStore.setFilter('continent', e.target.value)}>
+      <option value="">Alle Kontinente</option>
+      <option value="EU">Europa</option>
+      <option value="AF">Afrika</option>
+      <option value="AS">Asien</option>
+      <option value="NA">Nordamerika</option>
+      <option value="SA">Südamerika</option>
+      <option value="OC">Ozeanien</option>
+      <option value="AN">Antarktis</option>
+    </select>
+    <input type="text" placeholder="DXCC-Land (z.B. Spain)"
+           value={logStore.filters.dxcc}
+           style="max-width: 9rem"
+           oninput={(e) => logStore.setFilter('dxcc', e.target.value)}/>
+    <label class="mf-filter" title="nur Marinefunker-Mitglieder">
+      <input type="checkbox" checked={logStore.filters.marine}
+             onchange={(e) => logStore.setFilter('marine', e.target.checked)}/>
+      ⚓ Marine
+    </label>
     <button class="clear" onclick={() => logStore.clearFilters()}>↺ Reset</button>
     <span class="count">{logStore.total} Treffer</span>
   </div>

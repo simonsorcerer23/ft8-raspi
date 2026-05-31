@@ -53,6 +53,7 @@ function makeLogStore() {
   let filters = $state({
     call: '', prefix: '', band: '', mode: '', grid: '',
     since_days: null, min_snr: null,
+    continent: '', dxcc: '', marine: false,
   });
   let sortBy = $state('qso_start');
   let sortDir = $state('desc');
@@ -70,6 +71,9 @@ function makeLogStore() {
         grid_filter: filters.grid || undefined,
         since_days: filters.since_days || undefined,
         min_snr_rcvd: filters.min_snr || undefined,
+        continent: filters.continent || undefined,
+        dxcc: filters.dxcc || undefined,
+        marine: filters.marine || undefined,
         sort_by: sortBy,
         sort_dir: sortDir,
       });
@@ -89,7 +93,8 @@ function makeLogStore() {
     setPage(p)      { page = p; refresh(); },
     setFilter(k, v) { filters[k] = v; page = 1; refresh(); },
     clearFilters()  { filters = { call:'', prefix:'', band:'', mode:'', grid:'',
-                                   since_days:null, min_snr:null };
+                                   since_days:null, min_snr:null,
+                                   continent:'', dxcc:'', marine:false };
                       page = 1; refresh(); },
     setSort(col) {
       // toggle dir if same col; otherwise switch with default desc
