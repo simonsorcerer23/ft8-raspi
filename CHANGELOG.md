@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.43.0 — 2026-05-31
+- fix: DX-Cluster-DXCC-Spots — Empty-Log-Guard gegen Fehlalarme
+
 ## v0.42.0 — 2026-05-31
 - fix: 3 weitere 'existiert-gar-nicht'-Bugs + mypy-Typ-Gate gegen die Klasse
 
