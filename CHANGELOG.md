@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.44.0 — 2026-05-31
+- feat: Headless-Autonomie statt DXCC-Spot-Notifications
+
 ## v0.43.0 — 2026-05-31
 - fix: DX-Cluster-DXCC-Spots — Empty-Log-Guard gegen Fehlalarme
 
