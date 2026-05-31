@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.44.1 — 2026-05-31
+- fix: leere Panels (Live-Konversation/Solar/Map) — rohes fetch umging Token-Auth
+
 ## v0.44.0 — 2026-05-31
 - feat: Headless-Autonomie statt DXCC-Spot-Notifications
 
