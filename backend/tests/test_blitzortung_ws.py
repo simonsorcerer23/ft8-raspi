@@ -145,7 +145,7 @@ class _FakeOrch:
         self.integrations.blitzortung = BlitzortungClient(alarm_radius_km=30)
         self.integrations.ntfy = MagicMock()
         self.integrations.ntfy.enabled = True
-        self.integrations.ntfy.push = MagicMock()  # not awaited — create_task
+        self.integrations.ntfy.notify = MagicMock()  # not awaited — create_task
         # GPS-Snapshot Fake
         self.gps = MagicMock()
         self.gps.snapshot = MagicMock(lat=lat, lon=lon)

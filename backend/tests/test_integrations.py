@@ -282,21 +282,52 @@ async def test_psk_reporter_upload_is_noop_when_disabled() -> None:
 # ntfy
 # ============================================================================
 @respx.mock
-async def test_ntfy_post_includes_headers() -> None:
-    route = respx.post("https://ntfy.sh/my-topic").mock(return_value=Response(200))
+async def test_ntfy_post_sends_json_body() -> None:
+    # notify() postet einen JSON-Body an den Server-Root "/", nicht an
+    # /<topic> mit Header-Feldern. Mock + Asserts an der echten Form.
+    import json as _json
+
+    route = respx.post("https://ntfy.sh/").mock(return_value=Response(200))
     client = NtfyClient(topic="my-topic")
     ok = await client.notify("hello", title="FT8", priority="high", tags=["radio"])
     assert ok is True
     assert route.called
-    req = route.calls.last.request
-    assert req.headers.get("Title") == "FT8"
-    assert req.headers.get("Priority") == "high"
-    assert req.headers.get("Tags") == "radio"
+    body = _json.loads(route.calls.last.request.content)
+    assert body["topic"] == "my-topic"
+    assert body["message"] == "hello"
+    assert body["title"] == "FT8"
+    assert body["tags"] == ["radio"]
+    assert "priority" in body  # auf int gemappt
 
 
 async def test_ntfy_disabled_when_no_topic() -> None:
     client = NtfyClient(topic=None)
     assert await client.notify("ignored") is False
+
+
+def test_orchestrator_only_calls_real_ntfy_methods() -> None:
+    """Regression-Guard (v0.41.0): der Orchestrator rief 4x ``ntfy.push(...)``
+    auf — eine Methode die es NIE gab (heisst ``notify``). In den Tests ist
+    ntfy gemockt, daher schluckte ein Mock den AttributeError und ALLE Pushes
+    (Watchlist, Sturmwarnung, DXpedition, Country-Mismatch) scheiterten still
+    erst zur Laufzeit. Aufgeflogen waehrend eines Gewitters 1 km vom QTH.
+
+    Dieser Test scannt die Orchestrator-Quelle nach ``ntfy.<methode>(`` und
+    stellt sicher, dass jede aufgerufene Methode real auf NtfyClient existiert.
+    """
+    import re
+    from pathlib import Path
+
+    from ft8_appliance.integrations.ntfy import NtfyClient
+
+    src = (Path(__file__).resolve().parent.parent
+           / "ft8_appliance" / "runtime" / "orchestrator.py").read_text()
+    # Immediate '(' (kein Whitespace) → echte Aufrufe, nicht der Domain-String
+    # "ntfy.sh (...)" in Kommentaren/URLs.
+    called = set(re.findall(r"\bntfy\.([a-z_]+)\(", src))
+    assert called, "kein ntfy-Aufruf gefunden — Test-Annahme kaputt?"
+    missing = [m for m in called if not hasattr(NtfyClient, m)]
+    assert not missing, f"Orchestrator ruft nicht-existente NtfyClient-Methoden: {missing}"
 
 
 # ============================================================================

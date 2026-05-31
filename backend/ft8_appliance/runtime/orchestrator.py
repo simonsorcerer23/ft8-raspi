@@ -1821,11 +1821,11 @@ class Orchestrator:
             snr_str = f"{decoded.snr_db:+d} dB" if decoded.snr_db is not None else "?"
             msg_kind = "CQ" if decoded.call_to is None else f"→ {decoded.call_to}"
             badge = "🎯 DXpedition" if source == "ng3k_auto" else "👀 Watchlist"
-            await ntfy.push(
+            await ntfy.notify(
                 title=f"{badge}: {norm}",
                 message=f"{msg_kind} auf {band_tag} ({snr_str})",
                 priority="default",
-                tags="eyes",
+                tags=["eyes"],
             )
             log.info(
                 "Watchlist-Alert: %s decoded on %s (%s) source=%s",
@@ -3155,7 +3155,7 @@ class Orchestrator:
             msg = f"Gewitter in {km} km Entfernung (Radius {bz.alarm_radius_km} km)"
         log.warning("blitzortung: storm alert — %s", msg)
         # Fire-and-forget — Push darf nicht den Watchdog blockieren.
-        asyncio.create_task(ntfy.push(
+        asyncio.create_task(ntfy.notify(
             message=msg,
             title="Gewitterwarnung",
             priority="high",
@@ -3578,7 +3578,7 @@ class Orchestrator:
             ntfy = self.integrations.ntfy
             if ntfy is None or not ntfy.enabled:
                 return
-            await ntfy.push(title=title, message=msg, priority="default")
+            await ntfy.notify(title=title, message=msg, priority="default")
         except Exception as exc:
             log.warning("ntfy country-mismatch push failed: %s", exc)
 
@@ -5408,7 +5408,7 @@ class Orchestrator:
                             ntfy = self.integrations.ntfy
                             if ntfy and ntfy.enabled:
                                 try:
-                                    await ntfy.push(
+                                    await ntfy.notify(
                                         title=f"📡 DXpedition morgen QRV: {row.call}",
                                         message=(
                                             f"{row.note or ''} · "

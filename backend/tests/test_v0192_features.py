@@ -76,7 +76,7 @@ async def _build_mock_orch(
     integrations = MagicMock()
     ntfy_mock = MagicMock()
     ntfy_mock.enabled = True
-    ntfy_mock.push = AsyncMock()
+    ntfy_mock.notify = AsyncMock()
     integrations.ntfy = ntfy_mock
     orch.integrations = integrations
     # state_machine-Mock
@@ -95,7 +95,7 @@ async def test_manual_source_pushes_without_rarity_gate():
         watchlist_sources={"DL5ABC": "manual"},
     )
     await orch._fire_watchlist_alert("DL5ABC", _decode("DL5ABC"))
-    ntfy.push.assert_awaited_once()
+    ntfy.notify.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -106,7 +106,7 @@ async def test_ng3k_source_blocked_when_globally_disabled():
         watchlist_sources={"ZL9HR": "ng3k_auto"},
     )
     await orch._fire_watchlist_alert("ZL9HR", _decode("ZL9HR"))
-    ntfy.push.assert_not_awaited()
+    ntfy.notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -118,7 +118,7 @@ async def test_ng3k_source_blocked_below_rarity_threshold():
         watchlist_sources={"HD8R": "ng3k_auto"},  # Galapagos, rarity ~30
     )
     await orch._fire_watchlist_alert("HD8R", _decode("HD8R"))
-    ntfy.push.assert_not_awaited()
+    ntfy.notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -130,7 +130,7 @@ async def test_ng3k_source_pushes_above_rarity_threshold():
         watchlist_sources={"P5RYL": "ng3k_auto"},  # P5, rarity ~100
     )
     await orch._fire_watchlist_alert("P5RYL", _decode("P5RYL"))
-    ntfy.push.assert_awaited_once()
+    ntfy.notify.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -143,7 +143,7 @@ async def test_throttle_manual_1h():
         last_alert={"DL5ABC": now - 600},  # vor 10 min
     )
     await orch._fire_watchlist_alert("DL5ABC", _decode("DL5ABC"))
-    ntfy.push.assert_not_awaited()
+    ntfy.notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -157,7 +157,7 @@ async def test_throttle_ng3k_24h():
         last_alert={"P5RYL": now - 3700},  # vor ~1h
     )
     await orch._fire_watchlist_alert("P5RYL", _decode("P5RYL"))
-    ntfy.push.assert_not_awaited()
+    ntfy.notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -169,7 +169,7 @@ async def test_throttle_manual_after_1h_pushes_again():
         last_alert={"DL5ABC": now - 3700},  # vor 1h+
     )
     await orch._fire_watchlist_alert("DL5ABC", _decode("DL5ABC"))
-    ntfy.push.assert_awaited_once()
+    ntfy.notify.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -179,4 +179,4 @@ async def test_unknown_source_defaults_to_manual():
         watchlist_sources={},  # keine source-Info
     )
     await orch._fire_watchlist_alert("DL5ABC", _decode("DL5ABC"))
-    ntfy.push.assert_awaited_once()
+    ntfy.notify.assert_awaited_once()
