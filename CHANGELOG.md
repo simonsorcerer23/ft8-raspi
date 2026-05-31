@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.46.0 — 2026-05-31
+- chore: Audit-Welle 2 — Exception-Sichtbarkeit, ruff-Gate, Mock-spec, Suite gruen
+
 ## v0.45.0 — 2026-05-31
 - feat: Log-Filter fuer DXCC-Land, Kontinent & Marinefunker
 
