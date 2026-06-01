@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.48.1 — 2026-06-01
+- feat: Demo-Modus ueberzeugend — Sim-Rig + Health-Demo-Awareness + frischere Seeds
+
 ## v0.48.0 — 2026-06-01
 - feat: Demo-Modus per Konfig-Button umschaltbar
 
