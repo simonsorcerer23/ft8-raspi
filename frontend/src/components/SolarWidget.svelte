@@ -4,6 +4,7 @@
   // refreshed (Quelle updated ~3h cycle).
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let data = $state({ available: false });
 
@@ -120,7 +121,7 @@ Klassen-Skala:
 </script>
 
 {#if data.available}
-  <div class="solar" title="Space-Weather — Quelle: hamqsl.com, Update alle 30 min">
+  <div class="solar" title={t('solar.tooltip')}>
     <div class="cell" style="color: {sfiQuality(data.sfi).color}" title={sfiTip(data.sfi)}>
       <span class="icon">☀️</span>
       <span class="lbl">SFI</span>

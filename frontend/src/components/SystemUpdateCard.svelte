@@ -13,6 +13,7 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let info = $state(null);
   let error = $state(null);
@@ -86,7 +87,7 @@
       siehe <code>docs/self_update.md</code>.
     </p>
     <dl class="kv">
-      <dt>Installiert</dt><dd>{info.current_version || '—'}</dd>
+      <dt>{t('sysupd.installed')}</dt><dd>{info.current_version || '—'}</dd>
       <dt>Git-State</dt><dd><code>{info.git_describe || '—'}</code></dd>
     </dl>
   {:else}
@@ -97,7 +98,7 @@
         <span class="muted">({info.current_version})</span>
       </dd>
 
-      <dt>Latest bekannt</dt>
+      <dt>{t('sysupd.latest')}</dt>
       <dd>
         {#if info.latest_version}
           <strong>{info.latest_version}</strong>
@@ -111,7 +112,7 @@
         {/if}
       </dd>
 
-      <dt>Letzter Fetch</dt>
+      <dt>{t('sysupd.last_fetch')}</dt>
       <dd class="muted">{fmtTs(info.last_fetch_at)}</dd>
 
       <dt>Git-Describe</dt>
@@ -127,7 +128,7 @@
         </button>
       {:else}
         <button class="primary" onclick={triggerUpdate} disabled={triggering}>
-          {triggering ? 'Starte…' : 'Update-Check erzwingen'}
+          {triggering ? t('sysupd.starting') : t('sysupd.force')}
         </button>
       {/if}
       {#if triggerMsg}
