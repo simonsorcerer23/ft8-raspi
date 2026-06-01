@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.47.1 — 2026-06-01
+- feat: demo_mode deaktiviert Uploads + Seed-Skript fuer Demo-QSOs
+
 ## v0.47.0 — 2026-06-01
 - feat: Demo-Modus (Band-Simulator) fuer Onboarding & Doku-Screenshots
 
