@@ -38,6 +38,7 @@ class PickAttemptStats(BaseModel):
     new_call: PickAbCell      # was_worked == False (nie gearbeitet)
     new_dxcc: PickAbCell      # was_new_dxcc == True
     by_occupancy: list[dict]  # Completion-Rate nach Band-Belegung (n_decodes)
+    by_latency: list[dict]    # v0.62.0 — Completion + went_silent nach Pick-Alter
     bail_reasons: dict[str, int]  # Fehlermodus-Aufschluesselung
     note: str
 
@@ -72,6 +73,36 @@ def _occ_bucket(n: int | None) -> str:
     if n <= 30:
         return "c normal (16-30)"
     return "d voll (>30)"
+
+
+def _age_bucket(age: float | None) -> str:
+    # FT8-Slot = 15 s. "Frisch" = Decode aus dem eben beendeten Slot.
+    if age is None:
+        return "n/a"
+    if age < 5:
+        return "a <5s (frisch)"
+    if age < 15:
+        return "b 5-15s"
+    if age < 30:
+        return "c 15-30s (~1 Slot alt)"
+    if age < 60:
+        return "d 30-60s (2-4 Slots)"
+    return "e >60s (alt)"
+
+
+def _age_cell(items: list[PickAttempt]) -> dict:
+    """Wie _pick_cell, plus went_silent-Anteil — der Kern der Frage:
+    steigt went_silent mit dem Alter des gepickten Decodes?"""
+    n = len(items)
+    completed = sum(1 for r in items if r.outcome == "completed")
+    went = sum(1 for r in items if r.bail_reason == "went_silent")
+    return {
+        "n": n,
+        "completed": completed,
+        "rate": round(completed / n, 3) if n else 0.0,
+        "went_silent": went,
+        "went_silent_rate": round(went / n, 3) if n else 0.0,
+    }
 
 
 @router.get("/stats/pick-attempts", response_model=PickAttemptStats)
@@ -114,6 +145,14 @@ async def pick_attempts(
         for b, v in sorted(occ.items())
     ]
 
+    # v0.62.0 — Pick-Latenz: went_silent-Rate je Alter des gepickten Decodes.
+    age_groups: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        age_groups.setdefault(_age_bucket(r.pick_age_s), []).append(r)
+    by_latency = [
+        {"latency": b, **_age_cell(v)} for b, v in sorted(age_groups.items())
+    ]
+
     bail_reasons: dict[str, int] = {}
     for r in rows:
         if r.outcome == "bailed":
@@ -130,12 +169,15 @@ async def pick_attempts(
         new_call=_pick_cell(new_call),
         new_dxcc=_pick_cell(new_dxcc),
         by_occupancy=by_occupancy,
+        by_latency=by_latency,
         bail_reasons=dict(sorted(bail_reasons.items(), key=lambda kv: -kv[1])),
         note=(
             "Hunt-Picks, outcome completed/bailed. psk-Effekt: rate(with_psk) "
             "vs rate(without_psk) JE SNR-Bucket. dupe vs new_call beantwortet "
             "skip_worked. by_occupancy trennt ruhiges vs volles Band. "
-            "Aussagekraeftig ab ~paar hundert Zeilen."
+            "by_latency: steigt went_silent_rate mit pick_age, sind stale Picks "
+            "schuld; flach = Gegenstation. pick_age_s erst ab v0.62.0 (alte "
+            "Zeilen n/a). Aussagekraeftig ab ~paar hundert Zeilen."
         ),
     )
 

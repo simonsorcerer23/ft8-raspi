@@ -664,6 +664,17 @@ class StateMachine:
                     if len(self.ctx.hunt_attempt_meta) > 100:
                         self.ctx.hunt_attempt_meta.clear()
                     call_u = (best.call_from or "").upper()
+                    # v0.62.0 — Alter des gepickten Decodes (s) zum Pick-
+                    # Zeitpunkt. Defensiv: best.ts kann theoretisch naiv sein.
+                    _now = datetime.now(UTC)
+                    pick_age_s: float | None
+                    try:
+                        _bts = best.ts
+                        if _bts.tzinfo is None:
+                            _bts = _bts.replace(tzinfo=UTC)
+                        pick_age_s = (_now - _bts).total_seconds()
+                    except Exception:
+                        pick_age_s = None
                     self.ctx.hunt_attempt_meta[tgt] = {
                         "psk_heard_us": tgt in self.ctx.psk_heard_us
                         or call_u in self.ctx.psk_heard_us,
@@ -675,7 +686,8 @@ class StateMachine:
                         "snr_db": best.snr_db,
                         "dt_s": best.dt_s,
                         "band": best.band,
-                        "ts": datetime.now(UTC),
+                        "ts": _now,
+                        "pick_age_s": pick_age_s,
                     }
                 self.state = State.QSO_RESPOND
                 self._emit_respond_with_grid()

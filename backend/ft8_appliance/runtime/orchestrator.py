@@ -5215,6 +5215,7 @@ class Orchestrator:
                     snr_db=meta.get("snr_db"),
                     dt_s=meta.get("dt_s"),
                     band=meta.get("band"),
+                    pick_age_s=meta.get("pick_age_s"),
                     outcome=outcome,
                     bail_reason=bail_reason,
                 )

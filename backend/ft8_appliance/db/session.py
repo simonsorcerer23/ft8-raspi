@@ -155,6 +155,8 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "was_new_dxcc": "BOOLEAN",
         "n_decodes": "INTEGER",
         "bail_reason": "TEXT",
+        # v0.62.0 — Pick-Latenz (Alter des gepickten Decodes in s).
+        "pick_age_s": "FLOAT",
     }
     for name, ddl in cols.items():
         if name not in existing:

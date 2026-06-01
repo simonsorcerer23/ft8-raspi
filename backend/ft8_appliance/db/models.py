@@ -318,3 +318,9 @@ class PickAttempt(Base):
     was_new_dxcc: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     n_decodes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bail_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    # v0.62.0 — pick_age_s: Sekunden zwischen dem Decode, auf den wir
+    # gepickt haben, und dem Pick-Zeitpunkt. Instrumentiert die went_silent-
+    # Ursache: pickt der Hunter veraltete Decodes (Station laengst weg), oder
+    # frische? Steigt die went_silent-Rate mit pick_age, sind stale Picks
+    # schuld; ist sie flach, liegt's an der Gegenstation (nicht an uns).
+    pick_age_s: Mapped[float | None] = mapped_column(Float, nullable=True)
