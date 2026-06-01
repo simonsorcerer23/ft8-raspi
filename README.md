@@ -13,59 +13,60 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 
 ## 📸 Screenshots
 
-> Aufgenommen im eingebauten **Demo-Modus** — alle Rufzeichen/Daten sind rein
-> fiktiv (Simulator), keine echten Dritt-Stationen.
+> Captured in the built-in **demo mode** — all callsigns/data are purely
+> fictional (simulator), no real third-party stations.
+> *(The UI itself is German — the operators are German hams.)*
 
-![Funk-Ansicht: Rig-Status, Decode-Liste, Tagesstatistik](docs/screenshots/funk.png)
+![Operating view: rig status, decode list, daily stats](docs/screenshots/funk.png)
 
 <details>
-<summary><b>Karte &amp; Logbuch</b></summary>
+<summary><b>Map &amp; Log</b></summary>
 
-### Weltkarte — Decodes, Coverage-Envelope, Gray-Line, Locator-Raster
-![Karte](docs/screenshots/map.png)
+### World map — decodes, coverage envelope, gray-line, locator grid
+![Map](docs/screenshots/map.png)
 
-### Logbuch — mit DXCC-, Kontinent- und Marinefunker-Filter
-![Logbuch](docs/screenshots/log.png)
+### Log — with DXCC / continent / Marinefunker filters
+![Log](docs/screenshots/log.png)
 
 </details>
 
 <details>
-<summary><b>DX-Jagd</b> — Watchlist · Reputation · DXpedition · Blacklist · Empfänger</summary>
+<summary><b>DX hunting</b> — watchlist · reputation · DXpedition · blacklist · who-heard-me</summary>
 
-### Watchlist — Wunsch-DX/DXpeditionen mit ntfy-Alarm
+### Watchlist — wanted DX / DXpeditions with ntfy alert
 ![Watchlist](docs/screenshots/watchlist.png)
 
-### Reputation — Soft-Blacklist nach Stationsverhalten
+### Reputation — soft-blacklist based on station behaviour
 ![Reputation](docs/screenshots/reputation.png)
 
-### DXpedition — NG3K-Kalender-Integration
+### DXpedition — NG3K calendar integration
 ![DXpedition](docs/screenshots/DXpedition.png)
 
-### Blacklist — manuell gesperrte Rufzeichen
+### Blacklist — manually blocked callsigns
 ![Blacklist](docs/screenshots/blacklist.png)
 
-### Empfänger — wer hat uns gehört (PSK-Reporter)
-![Empfänger](docs/screenshots/psk.png)
+### Who-heard-me — PSK Reporter reception reports
+![Who-heard-me](docs/screenshots/psk.png)
 
 </details>
 
 <details>
-<summary><b>Statistik &amp; Konfiguration</b></summary>
+<summary><b>Stats &amp; configuration</b></summary>
 
-### Statistik &amp; Steuerung — SWR-Trend, beste Zeiten, Pi-Status, TX-Controls
-![Statistik](docs/screenshots/stats.png)
+### Stats &amp; controls — SWR trend, best times, Pi status, TX controls
+![Stats](docs/screenshots/stats.png)
 
-### Hunt-Priorität — die 19 frei sortierbaren Picker-Stufen
-![Hunt-Priorität](docs/screenshots/config_3.png)
+### Hunt priority — the 19 freely sortable picker tiers
+![Hunt priority](docs/screenshots/config_3.png)
 
-### Operatoren &amp; Logbücher — Multi-Op, QRZ/ClubLog, Demo-Schalter
-![Konfiguration: Operatoren](docs/screenshots/config_1.png)
+### Operators &amp; logbooks — multi-op, QRZ/ClubLog, demo toggle
+![Config: operators](docs/screenshots/config_1.png)
 
-### Bänder &amp; Antennen
-![Konfiguration: Bänder](docs/screenshots/config_2.png)
+### Bands &amp; antennas
+![Config: bands](docs/screenshots/config_2.png)
 
-### Integrationen — QRZ/ClubLog/PSK/Blitzortung, ALC, ntfy
-![Konfiguration: Integrationen](docs/screenshots/config_4.png)
+### Integrations — QRZ/ClubLog/PSK/lightning, ALC, ntfy
+![Config: integrations](docs/screenshots/config_4.png)
 
 </details>
 
