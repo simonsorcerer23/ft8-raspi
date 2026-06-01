@@ -24,6 +24,7 @@ import contextlib
 import json
 import logging
 import os
+import socket
 import typing
 
 import sdnotify
@@ -1977,7 +1978,7 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        host = self.config.operating.public_hostname or "ft8"
+        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (
                 f"http, ⏮ Auf {expected_w}W zurueck, "
@@ -2000,7 +2001,7 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        host = self.config.operating.public_hostname or "ft8"
+        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (
                 f"http, ⏮ Auf {expected_mode} zurueck, "
@@ -2026,7 +2027,7 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        host = self.config.operating.public_hostname or "ft8"
+        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (f"http, ⏹ STOP CQ, http://{host}:8000/api/control/stop, method=POST"),
             (
@@ -2568,6 +2569,11 @@ class Orchestrator:
                 ntfy = self.integrations.ntfy
                 if ntfy is None or not ntfy.enabled:
                     continue
+                # Demo-Modus: der SimRig liefert eine Freq (≠ None) und
+                # umgeht damit den Rig-Guard unten — eine Demo-Box soll aber
+                # NIE „Pi steht still"-Alarme schicken. Explizit raus.
+                if self.config.demo_mode:
+                    continue
                 # Kein Rig angeschlossen (z.B. ft8-2 als Standby-Pi ohne
                 # IC-Anschluss) → Mode-Watchdog macht keinen Sinn, der
                 # Pi soll ja gar nicht senden. Sebastian-Feedback
@@ -2772,7 +2778,7 @@ class Orchestrator:
         if ntfy is None or not ntfy.enabled:
             return
         delta = actual_hz - expected_hz
-        host = self.config.operating.public_hostname or "ft8"
+        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (
                 f"http, 🔄 Auf {band.name} zurück, "
@@ -2798,7 +2804,7 @@ class Orchestrator:
         inaktiv" — Sebastian-Feedback: „off-Modus inaktiv" liest sich
         widersprüchlich, der User-mentale Begriff ist „Auto-Modus".
         """
-        host = self.config.operating.public_hostname or "ft8"
+        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         # ntfy-Action-Format: "http, <label>, <url>, method=POST, body=<json>"
         actions = [
             (
@@ -4147,7 +4153,7 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        host = self.config.operating.public_hostname or "ft8"
+        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (
                 f"http, 🔓 Sperre loesen, "
@@ -4851,7 +4857,7 @@ class Orchestrator:
             # Action-Buttons damit Dad nach jedem QSO direkt vom
             # Lockscreen aus den Modus wechseln kann ohne in die
             # Web-UI rein zu müssen. Tap = HTTP POST gegen Pi-Tailnet.
-            host = self.config.operating.public_hostname or "ft8"
+            host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
             actions = [
                 (
                     f"http, ⏹ Stoppen, http://{host}:8000/api/control/stop, "
@@ -5539,7 +5545,7 @@ class Orchestrator:
         # priority=urgent damit das Handy klingelt auch bei stumm-Modus.
         ntfy = self.integrations.ntfy
         if ntfy and ntfy.enabled:
-            host = self.config.operating.public_hostname or "ft8"
+            host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
             actions = [
                 f"http, Sperre lösen, http://{host}:8000/api/control/reset-lock, method=POST, clear=true",
             ]
