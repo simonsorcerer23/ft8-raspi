@@ -19,7 +19,7 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 ![Funk-Ansicht: Rig-Status, Decode-Liste, Tagesstatistik](docs/screenshots/funk.png)
 
 <details>
-<summary><b>Weitere Ansichten</b> — Weltkarte · Logbuch · Statistik &amp; Steuerung</summary>
+<summary><b>Karte &amp; Logbuch</b></summary>
 
 ### Weltkarte — Decodes, Coverage-Envelope, Gray-Line, Locator-Raster
 ![Karte](docs/screenshots/map.png)
@@ -27,8 +27,45 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 ### Logbuch — mit DXCC-, Kontinent- und Marinefunker-Filter
 ![Logbuch](docs/screenshots/log.png)
 
+</details>
+
+<details>
+<summary><b>DX-Jagd</b> — Watchlist · Reputation · DXpedition · Blacklist · Empfänger</summary>
+
+### Watchlist — Wunsch-DX/DXpeditionen mit ntfy-Alarm
+![Watchlist](docs/screenshots/watchlist.png)
+
+### Reputation — Soft-Blacklist nach Stationsverhalten
+![Reputation](docs/screenshots/reputation.png)
+
+### DXpedition — NG3K-Kalender-Integration
+![DXpedition](docs/screenshots/DXpedition.png)
+
+### Blacklist — manuell gesperrte Rufzeichen
+![Blacklist](docs/screenshots/blacklist.png)
+
+### Empfänger — wer hat uns gehört (PSK-Reporter)
+![Empfänger](docs/screenshots/psk.png)
+
+</details>
+
+<details>
+<summary><b>Statistik &amp; Konfiguration</b></summary>
+
 ### Statistik &amp; Steuerung — SWR-Trend, beste Zeiten, Pi-Status, TX-Controls
 ![Statistik](docs/screenshots/stats.png)
+
+### Hunt-Priorität — die 19 frei sortierbaren Picker-Stufen
+![Hunt-Priorität](docs/screenshots/config_3.png)
+
+### Operatoren &amp; Logbücher — Multi-Op, QRZ/ClubLog, Demo-Schalter
+![Konfiguration: Operatoren](docs/screenshots/config_1.png)
+
+### Bänder &amp; Antennen
+![Konfiguration: Bänder](docs/screenshots/config_2.png)
+
+### Integrationen — QRZ/ClubLog/PSK/Blitzortung, ALC, ntfy
+![Konfiguration: Integrationen](docs/screenshots/config_4.png)
 
 </details>
 
