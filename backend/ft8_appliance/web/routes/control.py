@@ -421,3 +421,49 @@ async def switch_band(
         ok=True, state=orch.status().state,
         detail=f"band={req.band} freq={freq_hz}Hz",
     )
+
+
+class DemoModeRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/demo-mode", response_model=ControlResponse)
+async def set_demo_mode(
+    req: DemoModeRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> ControlResponse:
+    """Demo-Modus an/aus + Service-Neustart.
+
+    demo_mode bestimmt die Decode-Quelle (Simulator vs. ALSA) und wird beim
+    Start gewaehlt — daher persistieren wir das Flag und starten den Dienst
+    neu (systemctl restart ist NOPASSWD-erlaubt, siehe sudoers). Ein Live-
+    Swap waere auf echter Hardware riskant (ALSA-Geraet doppelt geoeffnet).
+    """
+    import subprocess
+
+    orch.config.demo_mode = req.enabled
+    await orch.persist_config()
+
+    try:
+        r = subprocess.run(
+            ["sudo", "-n", "/bin/systemctl", "restart", "--no-block",
+             "ft8-controller.service"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        # Flag ist persistiert — beim naechsten manuellen Neustart greift es.
+        raise HTTPException(
+            status_code=500,
+            detail=f"gespeichert, aber Neustart fehlgeschlagen: {e}",
+        ) from e
+    if r.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=("demo_mode gespeichert, aber `systemctl restart` "
+                    f"fehlgeschlagen (rc={r.returncode}): "
+                    f"{r.stderr.strip() or r.stdout.strip()}"),
+        )
+    return ControlResponse(
+        ok=True, state=orch.status().state,
+        detail=f"demo_mode={req.enabled} — Dienst startet neu",
+    )

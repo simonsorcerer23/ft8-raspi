@@ -21,6 +21,7 @@
   import OperatingLocationCard from './components/OperatingLocationCard.svelte';
   import OperatorAdminPanel from './components/OperatorAdminPanel.svelte';
   import AccessPanel    from './components/AccessPanel.svelte';
+  import DemoModeToggle from './components/DemoModeToggle.svelte';
   import FirstBootWizard from './components/FirstBootWizard.svelte';
   import QsoConversation from './components/QsoConversation.svelte';
   import RigPanel       from './components/RigPanel.svelte';
@@ -220,6 +221,7 @@
     <WifiManager />
   {:else if tab === 'cfg'}
     <AccessPanel />
+    <DemoModeToggle />
     <OperatorAdminPanel />
     <ConfigPanel />
   {/if}

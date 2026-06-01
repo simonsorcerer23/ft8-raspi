@@ -192,4 +192,8 @@ export const api = {
   // v0.44.1 — generischer GET (haengt Token + 401-Handling an). Damit
   // Panels NIE wieder rohes fetch() nutzen, das den Auth-Header umgeht.
   get:          (path, query) => request(path, { query }),
+
+  // v0.48.0 — Demo-Modus (Simulator statt ALSA) umschalten → Dienst-Neustart.
+  setDemoMode:  (enabled) => request('/control/demo-mode',
+                                     { method: 'POST', body: { enabled } }),
 };
