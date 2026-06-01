@@ -92,17 +92,17 @@
 
 <div class="wrap">
   <header>
-    <h2>Decodes</h2>
+    <h2>{t('dl.title')}</h2>
     <label class="filter">
       <input type="checkbox" bind:checked={onlyToMe}/>
-      <span>nur an mich</span>
+      <span>{t('dl.only_me')}</span>
     </label>
   </header>
   {#if visible.length === 0}
     <p class="empty">
       {onlyToMe
         ? 'Keine Decodes an dich in dieser Liste.'
-        : 'Noch keine Decodes. Warte auf nächsten Slot…'}
+        : t('dl.empty')}
     </p>
   {:else}
     <ul>
@@ -121,10 +121,10 @@
             {#if d.flag}<span class="flag" title={d.call_from ?? ''}>{d.flag}</span>{/if}
             {#if d.mf_mfnr}<span class="badge mf" title="Marinefunker MF #{d.mf_mfnr}">⚓MF</span>{/if}
             {#if d.is_new_dxcc}<span class="badge ndxcc" title="Neue DXCC-Entity">🏆DXCC</span>{/if}
-            {#if d.is_new_grid && !d.is_new_dxcc}<span class="badge ngrid" title="Neuer Grid">🆕Grid</span>{/if}
-            {#if d.is_new_grid_on_band && !d.is_new_grid && !d.is_new_dxcc}<span class="badge ngridb" title="Neuer Grid auf diesem Band">🎯Band</span>{/if}
+            {#if d.is_new_grid && !d.is_new_dxcc}<span class="badge ngrid" title={t('dl.tip_newgrid')}>🆕Grid</span>{/if}
+            {#if d.is_new_grid_on_band && !d.is_new_grid && !d.is_new_dxcc}<span class="badge ngridb" title={t('dl.tip_newgrid_band')}>🎯Band</span>{/if}
             {#if d.psk_heard_us}<span class="badge psk" title="laut PSK Reporter hat diese Station uns gehört → Asymmetrie-Pfad lohnt">📡PSK</span>{/if}
-            {#if d.call_from && pileUpSet.has(d.call_from.toUpperCase())}<span class="badge pileup" title="Pile-Up: viele andere Stationen rufen → Picker laesst aus">🌪️Pile-Up</span>{/if}
+            {#if d.call_from && pileUpSet.has(d.call_from.toUpperCase())}<span class="badge pileup" title={t('dl.tip_pileup')}>🌪️Pile-Up</span>{/if}
             {#if d.worked_before}<span class="badge worked" title="schon gearbeitet">B4</span>{/if}
             {#if d.blacklisted}<span class="badge bl" title="auf Blacklist">⛔</span>{/if}
             {d.message}
@@ -134,10 +134,10 @@
               <button class="reply" onclick={() => doReply(d)}>Reply</button>
             {:else if d.call_from && d.call_from !== myCall && d.call_to !== myCall && isClosing(d.message)}
               <button class="tail-end" onclick={() => doTailEnd(d)}
-                      title="Tail-End: nach diesem RR73 anrufen wie nach CQ">🎯 Tail-End</button>
+                      title={t('dl.tip_tailend')}>🎯 Tail-End</button>
             {/if}
             {#if d.call_from && !d.blacklisted}
-              <button class="bl-btn" title="Blacklisten"
+              <button class="bl-btn" title={t('dl.tip_blacklist')}
                       onclick={() => blacklist(d.call_from)} disabled={busy}>⛔</button>
             {/if}
           </span>

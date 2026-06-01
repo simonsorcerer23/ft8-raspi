@@ -2,6 +2,7 @@
   // v0.39.0 — Login-Passwort. Setzt das Master-Passwort auf etwas
   // Merkbares, das Dad eingeben kann (statt des Zufalls-Tokens).
   import { api, setToken } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let pw = $state('');
   let busy = $state(false);
@@ -9,7 +10,7 @@
 
   async function setPassword(e) {
     e?.preventDefault();
-    if (pw.trim().length < 8 || busy) { msg = 'Mindestens 8 Zeichen.'; return; }
+    if (pw.trim().length < 8 || busy) { msg = t('access.min8'); return; }
     busy = true; msg = null;
     try {
       await api.setAuthPassword(pw.trim());
@@ -17,19 +18,19 @@
       // Browser beim nächsten Call selbst aus.
       setToken(pw.trim());
       pw = '';
-      msg = 'Passwort gesetzt ✓';
+      msg = t('access.pw_set');
     } catch (err) {
-      msg = `Fehlgeschlagen: ${err.message}`;
+      msg = t('access.failed') + err.message;
     } finally { busy = false; }
   }
 </script>
 
 <div class="panel">
-  <h3>Login-Passwort</h3>
+  <h3>{t('access.login_pw')}</h3>
   <form class="pw-box" onsubmit={setPassword}>
-    <input type="text" placeholder="z.B. hochgericht-73" bind:value={pw}
+    <input type="text" placeholder={t('access.login_pw_ph')} bind:value={pw}
            autocapitalize="off" spellcheck="false" />
-    <button class="btn primary" type="submit" disabled={busy}>{busy ? '…' : 'setzen'}</button>
+    <button class="btn primary" type="submit" disabled={busy}>{busy ? '…' : t('access.set')}</button>
   </form>
   {#if msg}<div class="msg">{msg}</div>{/if}
 </div>

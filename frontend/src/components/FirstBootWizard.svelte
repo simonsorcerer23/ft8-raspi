@@ -3,6 +3,7 @@
   // PSK Reporter is implicit (default on), ntfy.sh isn't in the wizard
   // (configurable later in ConfigPanel for those who want push alerts).
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let { onDone = () => {} } = $props();
 
@@ -113,16 +114,16 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
   </div>
 
   {#if step === 1}
-    <h2>1/2 — Operator + Rig</h2>
+    <h2>{t('wiz.step1')}</h2>
     <div class="form">
       <label>
-        <span>Rufzeichen</span>
+        <span>{t('wiz.callsign')}</span>
         <input type="text" bind:value={cfg.operator.callsign} required
                style="text-transform: uppercase; font-family: ui-monospace, monospace"
                placeholder="DK9XR"/>
       </label>
       <label>
-        <span>Locator (leer lassen = GPS-Auto)</span>
+        <span>{t('wiz.locator')}</span>
         <input type="text" bind:value={cfg.operator.default_locator} maxlength="6"
                style="font-family: ui-monospace, monospace"
                placeholder="JN58td"/>
@@ -152,18 +153,18 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
     </div>
     <div class="nav">
       <button class="primary" onclick={next}
-              disabled={!cfg.operator.callsign}>Weiter →</button>
+              disabled={!cfg.operator.callsign}>{t('wiz.next')}</button>
     </div>
 
   {:else if step === 2}
     <h2>2/2 — Antenne (+ optional QRZ)</h2>
     <div class="form">
       <label>
-        <span>Antennen-Name</span>
+        <span>{t('wiz.antenna_name')}</span>
         <input type="text" bind:value={cfg.antennas[0].name} placeholder="endfed_2040"/>
       </label>
       <label>
-        <span>Bänder (Komma-separiert)</span>
+        <span>{t('wiz.bands')}</span>
         <input type="text" value={cfg.antennas[0].bands.join(', ')}
                onchange={(e) => {
                  cfg.antennas[0].bands = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
@@ -186,18 +187,18 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
       <hr style="border: 0; border-top: 1px solid #334155; margin: 0.6rem 0 0.2rem;"/>
       <p class="qrz-hint">QRZ.com (optional):</p>
       <label>
-        <span>QRZ User</span>
+        <span>{t('wiz.qrz_user')}</span>
         <input type="text" bind:value={cfg.qrz.user} placeholder="dk9xr"/>
       </label>
       <label>
-        <span>QRZ Passwort</span>
+        <span>{t('wiz.qrz_pw')}</span>
         <input type="password" bind:value={cfg.qrz.password}/>
       </label>
     </div>
     <div class="nav">
-      <button onclick={back}>← Zurück</button>
+      <button onclick={back}>{t('wiz.back')}</button>
       <button class="primary" onclick={finish} disabled={saving}>
-        {saving ? 'Speichere…' : 'Fertig — Setup abschließen ✓'}
+        {saving ? t('wiz.saving') : t('wiz.finish')}
       </button>
     </div>
     {#if error}<div class="err">⚠ {error}</div>{/if}

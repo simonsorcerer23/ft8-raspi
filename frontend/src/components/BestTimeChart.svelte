@@ -3,6 +3,7 @@
   // No charting library — plain CSS bars. Saves ~50KB bundle.
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let { band = '20m' } = $props();
 
@@ -25,7 +26,7 @@
 </script>
 
 <div class="wrap">
-  <h3>Beste Zeit für {band}</h3>
+  <h3>{t('chart.best_time', { band })}</h3>
   {#if buckets.every(b => b.count === 0)}
     <p class="empty">Noch keine QSOs auf {band} in den letzten 30 Tagen.</p>
   {:else}

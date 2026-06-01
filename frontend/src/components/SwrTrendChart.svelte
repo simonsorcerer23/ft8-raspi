@@ -11,6 +11,7 @@
    */
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   import { utcMillis, fmtUtcDateTime } from '../lib/time.js';
 
@@ -97,7 +98,7 @@
 
 <div class="swr-trend">
   <div class="head">
-    <h3>SWR-Trend</h3>
+    <h3>{t('chart.swr_trend')}</h3>
     <select bind:value={hours} onchange={load}>
       <option value={3}>letzte 3h</option>
       <option value={12}>letzte 12h</option>
