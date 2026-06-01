@@ -12,6 +12,7 @@
   // existieren).
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let operators = $state([]);
   let active = $state('');
@@ -108,7 +109,7 @@
 
   async function deleteOperator(callsign) {
     if (busy) return;
-    if (!confirm(`${callsign} wirklich loeschen?`)) return;
+    if (!confirm(t('opsw.confirm_delete', { call: callsign }))) return;
     busy = true;
     error = null;
     try {
@@ -118,7 +119,7 @@
       // Backend wirft 409 wenn QSOs in der DB sind — dann nochmal
       // mit force=true nachfragen.
       if (/QSOs in der DB/.test(err.message)) {
-        if (confirm(`${callsign} hat QSO-Historie in der DB. Profil trotzdem loeschen? Die QSO-Rows bleiben (kannst den Operator mit gleichem Callsign neu anlegen und siehst die alten QSOs wieder).`)) {
+        if (confirm(t('opsw.confirm_delete_force', { call: callsign }))) {
           try {
             await api.operatorDelete(callsign, true);
             await refresh();
@@ -163,7 +164,7 @@
           {#if !op.is_active}
             <button
               class="del"
-              title="Operator loeschen"
+              title={t('opsw.delete_title')}
               onclick={(e) => { e.stopPropagation(); deleteOperator(op.callsign); }}
               disabled={busy}
             >✕</button>
@@ -173,62 +174,62 @@
 
       {#if !showCreate}
         <button class="add-btn" onclick={() => { showCreate = true; resetCreateForm(); }} disabled={busy}>
-          + Neuer Operator
+          {t('opsw.add_new')}
         </button>
       {:else}
         <form class="create-form" onsubmit={submitCreate}>
-          <div class="form-title">Neuen Operator anlegen</div>
+          <div class="form-title">{t('opsw.new_op')}</div>
           <label>
-            <span>Rufzeichen *</span>
+            <span>{t('opsw.callsign_required')}</span>
             <input type="text" required bind:value={newOp.callsign}
                    placeholder="DK1ABC" autocapitalize="characters" />
           </label>
           <label>
-            <span>Locator</span>
+            <span>{t('opsw.locator')}</span>
             <input type="text" bind:value={newOp.default_locator}
                    placeholder="JN58" />
           </label>
           <div class="row-2">
             <label>
-              <span>Klasse</span>
+              <span>{t('opsw.class')}</span>
               <select bind:value={newOp.license_class}>
-                <option value="A">A (Klasse A — 750W HF)</option>
-                <option value="E">E (Klasse E — 100W, eingeschr. Bänder)</option>
-                <option value="N">N (Klasse N — 10W)</option>
+                <option value="A">{t('opsw.class_a')}</option>
+                <option value="E">{t('opsw.class_e')}</option>
+                <option value="N">{t('opsw.class_n')}</option>
               </select>
             </label>
             <label>
-              <span>Standard-Power (W)</span>
+              <span>{t('opsw.default_power')}</span>
               <input type="number" min="1" max="750" bind:value={newOp.default_power_w} />
             </label>
           </div>
-          <div class="form-section">QRZ-Logbook (optional)</div>
+          <div class="form-section">{t('opsw.qrz_optional')}</div>
           <label>
-            <span>QRZ User</span>
+            <span>{t('opsw.qrz_user')}</span>
             <input type="text" bind:value={newOp.qrz_user} placeholder="DK1ABC" />
           </label>
           <label>
-            <span>QRZ Passwort</span>
+            <span>{t('opsw.qrz_password')}</span>
             <input type="password" bind:value={newOp.qrz_password} />
           </label>
           <label>
-            <span>QRZ Logbook API-Key</span>
+            <span>{t('opsw.qrz_api_key')}</span>
             <input type="text" bind:value={newOp.qrz_logbook_api_key}
                    placeholder="XXXX-XXXX-XXXX-XXXX" />
           </label>
-          <div class="form-section">ClubLog (optional)</div>
+          <div class="form-section">{t('opsw.clublog_optional')}</div>
           <label>
-            <span>ClubLog Email</span>
+            <span>{t('opsw.clublog_email')}</span>
             <input type="email" bind:value={newOp.clublog_email}
                    placeholder="me@example.com" />
           </label>
           <label>
-            <span>ClubLog Application Password</span>
+            <span>{t('opsw.clublog_app_pw')}</span>
             <input type="password" bind:value={newOp.clublog_app_password}
                    placeholder="xxx-xxxx-xxxx-..." />
           </label>
           <label>
-            <span>ClubLog API-Key (40-char hex)</span>
+            <span>{t('opsw.clublog_api_key')}</span>
             <input type="text" bind:value={newOp.clublog_api_key}
                    placeholder="0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33" />
           </label>
@@ -237,9 +238,9 @@
           {/if}
           <div class="form-actions">
             <button type="button" onclick={() => { showCreate = false; resetCreateForm(); }}
-                    disabled={busy}>Abbrechen</button>
+                    disabled={busy}>{t('opsw.cancel')}</button>
             <button type="submit" class="primary" disabled={busy || !newOp.callsign}>
-              Anlegen
+              {t('opsw.create')}
             </button>
           </div>
         </form>

@@ -22,102 +22,51 @@
 
   function sfiQuality(s) {
     if (s == null) return { color: '#94a3b8', label: '—' };
-    if (s < 80)  return { color: '#ef4444', label: 'schlecht' };
-    if (s < 120) return { color: '#fbbf24', label: 'mässig' };
-    if (s < 180) return { color: '#22c55e', label: 'gut' };
-    return { color: '#38bdf8', label: 'top' };
+    if (s < 80)  return { color: '#ef4444', label: t('solar.q_poor') };
+    if (s < 120) return { color: '#fbbf24', label: t('solar.q_moderate') };
+    if (s < 180) return { color: '#22c55e', label: t('solar.q_good') };
+    return { color: '#38bdf8', label: t('solar.q_top') };
   }
   function kQuality(k) {
     if (k == null) return { color: '#94a3b8', label: '—' };
-    if (k <= 2) return { color: '#22c55e', label: 'ruhig' };
-    if (k <= 3) return { color: '#fbbf24', label: 'unruhig' };
-    if (k <= 4) return { color: '#f59e0b', label: 'aktiv' };
-    return { color: '#ef4444', label: 'Sturm' };
+    if (k <= 2) return { color: '#22c55e', label: t('solar.q_calm') };
+    if (k <= 3) return { color: '#fbbf24', label: t('solar.q_unsettled') };
+    if (k <= 4) return { color: '#f59e0b', label: t('solar.q_active') };
+    return { color: '#ef4444', label: t('solar.storm') };
   }
   function aQuality(a) {
     if (a == null) return { color: '#94a3b8', label: '—' };
-    if (a <= 15)  return { color: '#22c55e', label: 'ruhig' };
-    if (a <= 30)  return { color: '#fbbf24', label: 'erhöht' };
-    return { color: '#ef4444', label: 'gestört' };
+    if (a <= 15)  return { color: '#22c55e', label: t('solar.q_calm') };
+    if (a <= 30)  return { color: '#fbbf24', label: t('solar.q_elevated') };
+    return { color: '#ef4444', label: t('solar.q_disturbed') };
   }
   function snQuality(n) {
     if (n == null) return { color: '#94a3b8', label: '—' };
-    if (n < 30)   return { color: '#ef4444', label: 'wenig' };
-    if (n < 80)   return { color: '#fbbf24', label: 'moderat' };
-    if (n < 150)  return { color: '#22c55e', label: 'viel' };
-    return { color: '#38bdf8', label: 'maximum' };
+    if (n < 30)   return { color: '#ef4444', label: t('solar.q_few') };
+    if (n < 80)   return { color: '#fbbf24', label: t('solar.q_moderate2') };
+    if (n < 150)  return { color: '#22c55e', label: t('solar.q_many') };
+    return { color: '#38bdf8', label: t('solar.q_maximum') };
   }
   function xQuality(x) {
-    if (!x || x === 'A0.0') return { color: '#22c55e', label: 'ruhig' };
+    if (!x || x === 'A0.0') return { color: '#22c55e', label: t('solar.q_calm') };
     const cls = x[0];
-    if (cls === 'A' || cls === 'B') return { color: '#22c55e', label: 'ruhig' };
-    if (cls === 'C') return { color: '#fbbf24', label: 'mild' };
-    if (cls === 'M') return { color: '#f59e0b', label: 'flare' };
-    if (cls === 'X') return { color: '#ef4444', label: 'starker Flare' };
-    return { color: '#94a3b8', label: '?' };
+    if (cls === 'A' || cls === 'B') return { color: '#22c55e', label: t('solar.q_calm') };
+    if (cls === 'C') return { color: '#fbbf24', label: t('solar.q_mild') };
+    if (cls === 'M') return { color: '#f59e0b', label: t('solar.q_flare') };
+    if (cls === 'X') return { color: '#ef4444', label: t('solar.q_strong_flare') };
+    return { color: '#94a3b8', label: t('solar.q_unknown') };
   }
 
   const sfiTip = (s) =>
-`SFI = Solar Flux Index (10.7cm-Radiostrahlung der Sonne)
-Aktuell: ${s ?? '?'} — ${sfiQuality(s).label}
-
-Skala:
-  < 80    schlechte HF-Bedingungen
-  80-120  mässig (20m/40m gehen, höhere Bänder zäh)
-  120-180 gut (15m/10m offen)
-  > 180   top (alle Bänder offen, DX leicht)`;
-
+    t('solar.tip_sfi', { val: s ?? '?', label: sfiQuality(s).label });
   const kTip = (k) =>
-`K-Index = aktuelle geomagnetische Störung (live, 0-9 Skala)
-Aktuell: ${k ?? '?'} — ${kQuality(k).label}
-
-Hoher K = Polarlichter, gestörtes Magnetfeld,
-HF-Propagation leidet (besonders Nordrouten).
-
-Skala:
-  0-2  ruhig — Bedingungen wie erwartet
-  3    unruhig
-  4    aktiv (HF wird wackelig)
-  5-9  Sturm (HF zusammengebrochen, NVIS gestört)`;
-
+    t('solar.tip_k', { val: k ?? '?', label: kQuality(k).label });
   const aTip = (a) =>
-`A-Index = Tagesschnitt der geomagnetischen Aktivität
-Aktuell: ${a ?? '?'} — ${aQuality(a).label}
-
-Abgeleitet aus den 8 K-Werten des Tages.
-Lange-Zeitraum-Indikator (K zeigt Live-Zustand).
-
-Skala:
-  ≤ 15  ruhig — gutes Long-Path-DX möglich
-  16-30 erhöht
-  > 30  gestört — Magnetfeld lädiert`;
-
+    t('solar.tip_a', { val: a ?? '?', label: aQuality(a).label });
   const snTip = (n) =>
-`SN = Sunspot Number (sichtbare Sonnenflecken)
-Aktuell: ${n ?? '?'} — ${snQuality(n).label}
-
-Mehr Flecken = mehr UV/Röntgen → stärkere F-Layer-
-Ionisation → bessere HF-Reflexion auf höheren Bändern.
-
-Im aktuellen Solar-Cycle (24/25) typisch:
-  < 30   Cycle-Minimum
-  30-80  steigende/fallende Phase
-  80-150 normales Maximum
-  > 150  Peak-Cycle`;
-
+    t('solar.tip_sn', { val: n ?? '?', label: snQuality(n).label });
   const xTip = (x) =>
-`X-Ray-Flux = aktuelle Solar-Röntgenstrahlung (Flare-Klasse)
-Aktuell: ${x ?? '?'} — ${xQuality(x).label}
-
-Stärkere Flares (M/X) ionisieren die D-Schicht
-übermässig → tiefe Bänder (80m/40m) bleiben kurz-
-zeitig blockiert (Tagsüber, "SID"-Effekt).
-
-Klassen-Skala:
-  A/B  ruhig — alles offen
-  C    mild — kaum Auswirkung
-  M    mittlerer Flare — 10-30 Min D-Layer-Absorption
-  X    starker Flare — Blackout möglich`;
+    t('solar.tip_x', { val: x ?? '?', label: xQuality(x).label });
 </script>
 
 {#if data.available}

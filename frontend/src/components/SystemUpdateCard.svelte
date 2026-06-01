@@ -40,12 +40,12 @@
   }
 
   async function triggerUpdate() {
-    if (!confirm('Self-Update jetzt starten?\n\nWird abgebrochen wenn gerade ein QSO läuft (PTT on / state != IDLE). ntfy-Push danach.')) return;
+    if (!confirm(t('sysupd.confirm'))) return;
     triggering = true;
     triggerMsg = null;
     try {
       const r = await api.triggerSelfUpdate();
-      triggerMsg = { kind: 'ok', text: r.detail || 'Update gestartet' };
+      triggerMsg = { kind: 'ok', text: r.detail || t('sysupd.started') };
       // sofort refresh + auf fast-poll umschalten
       await refresh();
       reschedule();
@@ -59,10 +59,10 @@
     const d = new Date(unix * 1000);
     const now = Date.now();
     const ageS = Math.round((now - d.getTime()) / 1000);
-    if (ageS < 60) return `vor ${ageS}s`;
-    if (ageS < 3600) return `vor ${Math.round(ageS / 60)}m`;
-    if (ageS < 86400) return `vor ${Math.round(ageS / 3600)}h`;
-    return d.toLocaleString('de-DE');
+    if (ageS < 60) return t('sysupd.ago_s', { n: ageS });
+    if (ageS < 3600) return t('sysupd.ago_m', { n: Math.round(ageS / 60) });
+    if (ageS < 86400) return t('sysupd.ago_h', { n: Math.round(ageS / 3600) });
+    return d.toLocaleString();
   }
 
   onMount(async () => {
@@ -74,27 +74,25 @@
 </script>
 
 <section class="card">
-  <h3>System-Update</h3>
+  <h3>{t('sysupd.title')}</h3>
 
   {#if error}
     <p class="err">⚠ {error}</p>
   {:else if !info}
-    <p class="muted">Lade Version-Info…</p>
+    <p class="muted">{t('sysupd.loading')}</p>
   {:else if !info.repo_is_git}
     <p class="warn">
-      ⚠ Dieser Pi läuft noch auf einer rsync-Installation (kein git-Workdir).
-      Self-Update ist deaktiviert bis zur einmaligen Migration —
-      siehe <code>docs/self_update.md</code>.
+      {t('sysupd.rsync_warn')} <code>docs/self_update.md</code>.
     </p>
     <dl class="kv">
       <dt>{t('sysupd.installed')}</dt><dd>{info.current_version || '—'}</dd>
-      <dt>Git-State</dt><dd><code>{info.git_describe || '—'}</code></dd>
+      <dt>{t('sysupd.git_state')}</dt><dd><code>{info.git_describe || '—'}</code></dd>
     </dl>
   {:else}
     <dl class="kv">
-      <dt>Installiert</dt>
+      <dt>{t('sysupd.installed')}</dt>
       <dd>
-        <strong>{info.current_tag || '(kein Tag)'}</strong>
+        <strong>{info.current_tag || t('sysupd.no_tag')}</strong>
         <span class="muted">({info.current_version})</span>
       </dd>
 
@@ -103,9 +101,9 @@
         {#if info.latest_version}
           <strong>{info.latest_version}</strong>
           {#if info.update_available}
-            <span class="badge new">neu</span>
+            <span class="badge new">{t('sysupd.badge_new')}</span>
           {:else}
-            <span class="badge ok">aktuell</span>
+            <span class="badge ok">{t('sysupd.badge_current')}</span>
           {/if}
         {:else}
           <span class="muted">—</span>
@@ -115,16 +113,16 @@
       <dt>{t('sysupd.last_fetch')}</dt>
       <dd class="muted">{fmtTs(info.last_fetch_at)}</dd>
 
-      <dt>Git-Describe</dt>
+      <dt>{t('sysupd.git_describe')}</dt>
       <dd><code>{info.git_describe || '—'}</code></dd>
     </dl>
 
     <div class="actions">
       {#if info.update_in_progress}
-        <span class="status running">⟳ Self-Update läuft…</span>
+        <span class="status running">{t('sysupd.running')}</span>
       {:else if info.update_available}
         <button class="primary" onclick={triggerUpdate} disabled={triggering}>
-          {triggering ? 'Starte…' : `Jetzt updaten auf ${info.latest_version}`}
+          {triggering ? t('sysupd.starting') : t('sysupd.update_to', { ver: info.latest_version })}
         </button>
       {:else}
         <button class="primary" onclick={triggerUpdate} disabled={triggering}>

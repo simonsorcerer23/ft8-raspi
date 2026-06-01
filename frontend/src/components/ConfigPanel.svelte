@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
   import SystemUpdateCard from './SystemUpdateCard.svelte';
 
   // Stock max-power per rig. Mirrors backend RigConfig._RIG_TABLE — used
@@ -12,12 +13,12 @@
     ic7610:   { label: 'Icom IC-7610 (Top-Class, 100 W)', max_power_w: 100 },
     qmx_plus: { label: 'QRP Labs QMX/QMX+ (QRP, 5 W)',    max_power_w: 5   },
   };
-  // Deutsche Lizenzklassen — Label fürs Dropdown.
-  const LICENSE_LABELS = {
-    A: 'Klasse A — Volllizenz (alle Bänder, 750W)',
-    E: 'Klasse E — Einsteiger (80/15/10/2/70cm, 100W HF)',
-    N: 'Klasse N — Newcomer (160/2/70cm, 10W)',
-  };
+  // Lizenzklassen — Label fürs Dropdown ($derived: reagiert auf Sprachwechsel).
+  const LICENSE_LABELS = $derived({
+    A: t('lic.A'),
+    E: t('lic.E'),
+    N: t('lic.N'),
+  });
   // v0.10.0 Hunt-Priority-Tier-Labels (deutsch, kompakt) + Icons.
   // Muss synchron sein mit HUNT_TIERS in backend/statemachine/machine.py.
   const TIER_ICONS = {
@@ -41,27 +42,27 @@
     dxcc_rarity:     '⭐',
     snr:             '📶',
   };
-  const TIER_LABELS = {
-    not_bad_reputation: 'Soft-Blacklist meiden (Bail-Reason-aware)',
-    not_his_tx_slot:    'Nicht in SEINEM TX-Slot anrufen',
-    not_in_pileup:      'Pile-Up meiden (rare DX mit vielen Callern)',
-    marine_psk:      'Marinefunker + PSK sagt "hört uns"',
-    marine:          'Marinefunker (auch ohne PSK)',
-    tail_end_target: 'Tail-End: Station hat gerade QSO beendet',
-    grayline:        'Grayline: Station in eigener Dämmerung',
-    band_open:       'Band laut hamqsl gerade "Good"',
-    active_hour:     'Aktuelle Stunde laut DB-History für Kontinent aktiv',
-    buddy_seen:      'Schon gearbeitet (anderes Band) — RX-Pfad bekannt',
-    new_dxcc_psk:    'Neues DXCC + PSK sagt "hört uns"',
-    new_dxcc:        'Neues DXCC (auch ohne PSK)',
-    psk_heard_us:    'PSK sagt "hört uns" (Asymmetrie ausnutzen)',
-    new_dxcc_band:   'Neues Band für DXCC (5BWAS)',
-    new_grid:        'Neues Maidenhead-Grid (VUCC)',
-    new_grid_band:   'Neues Grid auf diesem Band',
-    not_worked:      'Noch nie gearbeitet',
-    dxcc_rarity:     'DXCC-Rarity-Bonus',
-    snr:             'SNR (bestes Signal als Tie-Breaker)',
-  };
+  const TIER_LABELS = $derived({
+    not_bad_reputation: t('tier.not_bad_reputation'),
+    not_his_tx_slot:    t('tier.not_his_tx_slot'),
+    not_in_pileup:      t('tier.not_in_pileup'),
+    marine_psk:      t('tier.marine_psk'),
+    marine:          t('tier.marine'),
+    tail_end_target: t('tier.tail_end_target'),
+    grayline:        t('tier.grayline'),
+    band_open:       t('tier.band_open'),
+    active_hour:     t('tier.active_hour'),
+    buddy_seen:      t('tier.buddy_seen'),
+    new_dxcc_psk:    t('tier.new_dxcc_psk'),
+    new_dxcc:        t('tier.new_dxcc'),
+    psk_heard_us:    t('tier.psk_heard_us'),
+    new_dxcc_band:   t('tier.new_dxcc_band'),
+    new_grid:        t('tier.new_grid'),
+    new_grid_band:   t('tier.new_grid_band'),
+    not_worked:      t('tier.not_worked'),
+    dxcc_rarity:     t('tier.dxcc_rarity'),
+    snr:             t('tier.snr'),
+  });
 
   let cfg = $state(null);
   let error = $state(null);
@@ -78,7 +79,7 @@
       const r = await api.detectRig();
       const cands = r.candidates || [];
       if (cands.length === 0) {
-        detectMsg = { kind: 'warn', text: 'Kein bekanntes Rig am USB gefunden.' };
+        detectMsg = { kind: 'warn', text: t('cfg.no_rig_found') };
       } else {
         const top = cands[0];
         cfg.rig.model = top.model;
@@ -86,10 +87,10 @@
         cfg.rig.max_power_w = null;  // reset override → rig stock max
         const cap = RIG_DEFAULTS[top.model].max_power_w;
         if (cfg.operator.default_power_w > cap) cfg.operator.default_power_w = cap;
-        detectMsg = { kind: 'ok', text: `Erkannt: ${top.description}` };
+        detectMsg = { kind: 'ok', text: t('cfg.detected', { desc: top.description }) };
       }
     } catch (e) {
-      detectMsg = { kind: 'warn', text: `Erkennung fehlgeschlagen: ${e.message}` };
+      detectMsg = { kind: 'warn', text: t('cfg.detect_failed', { err: e.message }) };
     } finally { detecting = false; }
   }
 
@@ -302,10 +303,10 @@
 
 <div class="wrap">
   <header>
-    <h2>Konfiguration</h2>
+    <h2>{t('cfg.title')}</h2>
     <label class="mode-toggle">
       <input type="checkbox" bind:checked={yamlMode}/>
-      <span>YAML-Modus</span>
+      <span>{t('cfg.yaml_mode')}</span>
     </label>
   </header>
 
@@ -315,33 +316,33 @@
   <SystemUpdateCard />
 
   {#if !cfg && !error}
-    <p class="empty">Lade Konfig…</p>
+    <p class="empty">{t('cfg.loading')}</p>
   {:else if cfg}
     {#if yamlMode}
       <textarea bind:value={yamlText} spellcheck="false"></textarea>
     {:else}
       <!-- Operator -->
       <section>
-        <h3>Operator</h3>
+        <h3>{t('cfg.operator')}</h3>
         <div class="grid">
           <label>
-            <span>Rufzeichen</span>
+            <span>{t('cfg.callsign')}</span>
             <input type="text" bind:value={cfg.operator.callsign}
                    style="text-transform: uppercase; font-family: ui-monospace, monospace"/>
           </label>
           <label>
-            <span>Locator (leer = GPS)</span>
+            <span>{t('cfg.locator')}</span>
             <input type="text" bind:value={cfg.operator.default_locator}
                    placeholder="JN58td" maxlength="6"
                    style="font-family: ui-monospace, monospace"/>
           </label>
           <label>
-            <span>TX-Power Default (W, max {powerCap(cfg)})</span>
+            <span>{t('cfg.tx_power', { max: powerCap(cfg) })}</span>
             <input type="number" bind:value={cfg.operator.default_power_w}
                    min="1" max={powerCap(cfg)}/>
           </label>
           <label>
-            <span>Lizenzklasse (BNetzA AFuV)</span>
+            <span>{t('cfg.license')}</span>
             <select bind:value={cfg.operator.license_class}>
               {#each Object.entries(LICENSE_LABELS) as [id, label]}
                 <option value={id}>{label}</option>
@@ -354,9 +355,9 @@
       <!-- Rig -->
       {#if cfg.rig}
       <section>
-        <h3>Funkgerät
+        <h3>{t('cfg.rig_section')}
           <button class="add" onclick={detectRig} disabled={detecting}>
-            {detecting ? '🔍…' : '🔍 Auto-Detect'}
+            {detecting ? '🔍…' : t('cfg.auto_detect')}
           </button>
           {#if detectMsg}
             <small style:color={detectMsg.kind === 'ok' ? 'var(--ok)' : 'var(--danger)'}
@@ -367,7 +368,7 @@
         </h3>
         <div class="grid">
           <label>
-            <span>Modell</span>
+            <span>{t('cfg.model')}</span>
             <select bind:value={cfg.rig.model} onchange={() => {
               // Snap default_power_w into the new rig's max when switching.
               const cap = RIG_DEFAULTS[cfg.rig.model].max_power_w;
@@ -386,12 +387,12 @@
             </select>
           </label>
           <label>
-            <span>CAT-Serial-Device</span>
+            <span>{t('cfg.cat_device')}</span>
             <input type="text" bind:value={cfg.rig.serial_device}
                    style="font-family: ui-monospace, monospace; font-size: 0.78rem"/>
           </label>
           <label>
-            <span>CAT-Baud</span>
+            <span>{t('cfg.cat_baud')}</span>
             <select bind:value={cfg.rig.cat_baud}>
               <option value={4800}>4800</option>
               <option value={9600}>9600</option>
@@ -402,7 +403,7 @@
             </select>
           </label>
           <label>
-            <span>Max-Power Override (leer = Rig-Default)</span>
+            <span>{t('cfg.max_power_override')}</span>
             <input type="number" placeholder={String(RIG_DEFAULTS[cfg.rig.model].max_power_w)}
                    bind:value={cfg.rig.max_power_w} min="1" max="200"/>
           </label>
@@ -412,7 +413,7 @@
 
       <!-- Bänder (definieren erst die Frequenzen) -->
       <section>
-        <h3>Bänder <button class="add" onclick={addBand}>+ Band</button></h3>
+        <h3>{t('cfg.bands')}<button class="add" onclick={addBand}>{t('cfg.add_band')}</button></h3>
         {#each cfg.bands as b, i}
           {@const ft4Default = FT4_DEFAULT_DIALS[b.name]}
           <!-- FT8-Reihe (immer vorhanden) -->
@@ -423,7 +424,7 @@
             <input type="number" bind:value={b.freq_khz} placeholder="14074" min="1800"
                    class="band-freq"/>
             <button class="rm" onclick={() => removeBand(i)}
-                    title="Band entfernen (beide Modi)">×</button>
+                    title={t('cfg.remove_band_title')}>×</button>
           </div>
           <!-- FT4-Reihe (gleicher Band-Index, b.freq_khz_ft4) -->
           {#if b.freq_khz_ft4 != null || ft4Default != null}
@@ -435,14 +436,14 @@
                      class="band-freq"/>
               <button class="rm-ft4"
                       onclick={() => { b.freq_khz_ft4 = null; cfg.bands = cfg.bands; }}
-                      title="FT4 für dieses Band entfernen">×&nbsp;FT4</button>
+                      title={t('cfg.remove_ft4_title')}>×&nbsp;FT4</button>
             </div>
           {:else}
             <div class="row band-row band-row-ft4-add">
               <span class="band-name-mirror">↪ {b.name}</span>
               <button class="add-ft4"
                       onclick={() => { b.freq_khz_ft4 = FT4_DEFAULT_DIALS[b.name] ?? null; cfg.bands = cfg.bands; }}>
-                + FT4 für {b.name} aktivieren
+                {t('cfg.enable_ft4', { band: b.name })}
               </button>
             </div>
           {/if}
@@ -451,7 +452,7 @@
 
       <!-- Antennen (verweisen auf Bänder die sie abdecken) -->
       <section>
-        <h3>Antennen <button class="add" onclick={addAntenna}>+ Antenne</button></h3>
+        <h3>{t('cfg.antennas')}<button class="add" onclick={addAntenna}>{t('cfg.add_antenna')}</button></h3>
         {#each cfg.antennas as a, i}
           <div class="ant-row">
             <input type="text" bind:value={a.name} placeholder="endfed_2040"
@@ -479,26 +480,26 @@
 
       <!-- Operating -->
       <section>
-        <h3>Operating</h3>
+        <h3>{t('cfg.operating')}</h3>
 
-        <h5 class="subgroup">Slot & Decoder</h5>
+        <h5 class="subgroup">{t('cfg.slot_decoder')}</h5>
         <div class="grid">
-          <label class="field"><span>Mode</span>
+          <label class="field"><span>{t('cfg.mode')}</span>
             <select bind:value={cfg.operating.mode}>
-              <option value="FT8">FT8 — 15 s Slots (Standard)</option>
-              <option value="FT4">FT4 — 7.5 s Slots (schneller, weniger DX)</option>
+              <option value="FT8">{t('cfg.mode_ft8')}</option>
+              <option value="FT4">{t('cfg.mode_ft4')}</option>
             </select>
           </label>
-          <label class="field"><span>Decoder-Mode</span>
+          <label class="field"><span>{t('cfg.decoder_mode')}</span>
             <select bind:value={cfg.operating.decoder_mode}>
-              <option value="standard">Standard — schnellste (Pi 4)</option>
-              <option value="deep">Deep — JTDX-Niveau (1.5-2× CPU)</option>
-              <option value="multi">Multi — Pass1+Pass2 (2-2.5× CPU, Pi 5)</option>
-              <option value="extreme">Extreme — Subtract+Hint (3-4× CPU, Pi 5)</option>
+              <option value="standard">{t('cfg.dec_standard')}</option>
+              <option value="deep">{t('cfg.dec_deep')}</option>
+              <option value="multi">{t('cfg.dec_multi')}</option>
+              <option value="extreme">{t('cfg.dec_extreme')}</option>
             </select>
           </label>
           <label class="field toggle-field">
-            <span>Auto-Notch</span>
+            <span>{t('cfg.auto_notch')}</span>
             <button type="button" class="toggle"
                     class:on={cfg.operating.auto_notch_enabled}
                     onclick={() => cfg.operating.auto_notch_enabled = !cfg.operating.auto_notch_enabled}
@@ -508,36 +509,36 @@
           </label>
         </div>
 
-        <h5 class="subgroup">CQ-Verhalten</h5>
+        <h5 class="subgroup">{t('cfg.cq_behavior')}</h5>
         <div class="grid">
-          <label class="field"><span>Auto-CQ Intervall <small>(s)</small></span>
+          <label class="field"><span>{t('cfg.auto_cq_interval')}<small>(s)</small></span>
             <input type="number" bind:value={cfg.operating.auto_cq_interval_s} min="15" max="300"/>
           </label>
         </div>
 
-        <h5 class="subgroup">Sicherheits-Limits</h5>
+        <h5 class="subgroup">{t('cfg.safety_limits')}</h5>
         <div class="grid">
-          <label class="field"><span>Max PTT <small>(s)</small></span>
+          <label class="field"><span>{t('cfg.max_ptt')}<small>(s)</small></span>
             <input type="number" bind:value={cfg.operating.max_ptt_s} min="15" max="60"/>
           </label>
-          <label class="field"><span>Max SWR</span>
+          <label class="field"><span>{t('cfg.max_swr')}</span>
             <input type="number" step="0.1" bind:value={cfg.operating.swr_max} min="1" max="5"/>
           </label>
         </div>
 
-        <h5 class="subgroup">QSO-Verhalten</h5>
+        <h5 class="subgroup">{t('cfg.qso_behavior')}</h5>
         <div class="grid">
-          <label class="field"><span>QSO-Cooldown <small>(min/Band)</small></span>
+          <label class="field"><span>{t('cfg.qso_cooldown')}<small>{t('cfg.unit_min_band')}</small></span>
             <input type="number" min="0" max="1440"
                    bind:value={cfg.operating.qso_cooldown_min}/>
           </label>
-          <label class="field"><span>QSO-Geduld <small>(Slots)</small></span>
+          <label class="field"><span>{t('cfg.qso_patience')}<small>(Slots)</small></span>
             <input type="number" min="2" max="20"
                    bind:value={cfg.operating.qso_max_stale_slots}/>
           </label>
         </div>
 
-        <h4>Hunt-Priorität — wer wird zuerst gepickt?</h4>
+        <h4>{t('cfg.hunt_priority_title')}</h4>
         <div class="hunt-tier-list">
           {#each (cfg.operating.hunt_priority ?? []) as tier, idx (tier)}
             <div class="hunt-tier-row"
@@ -545,23 +546,23 @@
                  ondragstart={(e) => onTierDragStart(e, idx)}
                  ondragover={(e) => e.preventDefault()}
                  ondrop={(e) => onTierDrop(e, idx)}>
-              <span class="drag-handle" title="Drag um neu zu sortieren">☰</span>
+              <span class="drag-handle" title={t('cfg.drag_title')}>☰</span>
               <span class="tier-rank">#{idx + 1}</span>
               <span class="tier-icon">{TIER_ICONS[tier] ?? '•'}</span>
               <span class="tier-label">{TIER_LABELS[tier] ?? tier}</span>
-              <button type="button" class="tier-btn" title="Hoch"
+              <button type="button" class="tier-btn" title={t('cfg.up')}
                       disabled={idx === 0}
                       onclick={() => moveTier(idx, -1)}>▲</button>
-              <button type="button" class="tier-btn" title="Runter"
+              <button type="button" class="tier-btn" title={t('cfg.down')}
                       disabled={idx === (cfg.operating.hunt_priority?.length ?? 0) - 1}
                       onclick={() => moveTier(idx, +1)}>▼</button>
             </div>
           {/each}
         </div>
-        <h5 class="subgroup">🎯 Tail-End-Hunter</h5>
+        <h5 class="subgroup">{t('cfg.tail_end_hunter')}</h5>
         <div class="grid">
           <label class="field toggle-field">
-            <span>Tail-End-Hunter aktiv</span>
+            <span>{t('cfg.tailend_active')}</span>
             <button type="button" class="toggle"
                     class:on={cfg.operating.tail_end_hunter_enabled}
                     onclick={() => cfg.operating.tail_end_hunter_enabled = !cfg.operating.tail_end_hunter_enabled}
@@ -570,10 +571,10 @@
             </button>
           </label>
         </div>
-        <h5 class="subgroup">📡 DXpedition-Pushes (NG3K-Auto-Watchlist)</h5>
+        <h5 class="subgroup">{t('cfg.dxped_pushes')}</h5>
         <div class="grid">
           <label class="field toggle-field">
-            <span>Push bei Decode aktiv</span>
+            <span>{t('cfg.push_on_decode')}</span>
             <button type="button" class="toggle"
                     class:on={cfg.operating.dxped_ng3k_push_enabled}
                     onclick={() => cfg.operating.dxped_ng3k_push_enabled = !cfg.operating.dxped_ng3k_push_enabled}
@@ -582,15 +583,15 @@
             </button>
           </label>
           <label class="field">
-            <span>Rarity-Schwellwert <small>(0–100)</small></span>
+            <span>{t('cfg.rarity_threshold')}<small>(0–100)</small></span>
             <input type="number" min="0" max="100" step="5"
                    bind:value={cfg.operating.dxped_ng3k_push_min_rarity}/>
           </label>
         </div>
-        <h5 class="subgroup">PSK-Reciprocity</h5>
+        <h5 class="subgroup">{t('cfg.psk_recip')}</h5>
         <div class="grid">
           <label class="field toggle-field">
-            <span>PSK-Reciprocity aktiv</span>
+            <span>{t('cfg.psk_recip_active')}</span>
             <button type="button" class="toggle"
                     class:on={cfg.operating.psk_reciprocity_enabled}
                     onclick={() => cfg.operating.psk_reciprocity_enabled = !cfg.operating.psk_reciprocity_enabled}
@@ -599,23 +600,23 @@
             </button>
           </label>
           <label class="field">
-            <span>Refresh-Intervall <small>(s)</small></span>
+            <span>{t('cfg.refresh_interval')}<small>(s)</small></span>
             <input type="number" min="120" max="3600"
                    bind:value={cfg.operating.psk_reciprocity_refresh_s}/>
           </label>
         </div>
 
-        <h4>Auto-ALC (Audio-Gain-Regelung beim TX)</h4>
+        <h4>{t('cfg.auto_alc')}</h4>
         <div class="grid grid-bottom">
-          <label><span>ALC-Ziel unten <small>(%)</small></span>
+          <label><span>{t('cfg.alc_low')}<small>(%)</small></span>
             <input type="number" min="0" max="50"
                    bind:value={cfg.operating.alc_target_low}/>
           </label>
-          <label><span>ALC-Ziel oben <small>(%)</small></span>
+          <label><span>{t('cfg.alc_high')}<small>(%)</small></span>
             <input type="number" min="0" max="80"
                    bind:value={cfg.operating.alc_target_high}/>
           </label>
-          <label><span>Start-Audio-Gain <small>(0.0–1.0)</small></span>
+          <label><span>{t('cfg.start_gain')}<small>(0.0–1.0)</small></span>
             <input type="number" step="0.05" min="0.1" max="1.0"
                    bind:value={cfg.operating.audio_gain}/>
           </label>
@@ -624,44 +625,44 @@
 
       <!-- Integrations -->
       <section>
-        <h3>Online-Dienste</h3>
+        <h3>{t('cfg.online_services')}</h3>
         <div class="grid integration-toggles">
           <label class="check">
             <input type="checkbox" bind:checked={cfg.integrations.qrz.enabled}/>
-            <span>QRZ.com (Dads Abo)</span>
+            <span>{t('cfg.qrz_com')}</span>
           </label>
           <label class="check">
             <input type="checkbox" bind:checked={cfg.integrations.hamqth.enabled}/>
-            <span>HamQTH (kostenlos)</span>
+            <span>{t('cfg.hamqth')}</span>
           </label>
           <label class="check">
             <input type="checkbox" bind:checked={cfg.integrations.psk_reporter.enabled}/>
-            <span>PSK Reporter</span>
+            <span>{t('cfg.psk_reporter')}</span>
           </label>
           <label class="check">
             <input type="checkbox" bind:checked={cfg.integrations.psk_reporter.upload_decodes}/>
-            <span>Decodes hochladen</span>
+            <span>{t('cfg.upload_decodes')}</span>
           </label>
           <label class="check">
             <input type="checkbox" bind:checked={cfg.integrations.hamqsl.enabled}/>
-            <span>hamqsl Solar</span>
+            <span>{t('cfg.hamqsl_solar')}</span>
           </label>
           {#if cfg.integrations.dx_cluster}
             <label class="check">
               <input type="checkbox" bind:checked={cfg.integrations.dx_cluster.enabled}/>
-              <span>DX-Cluster (Telnet)</span>
+              <span>{t('cfg.dxcluster')}</span>
             </label>
           {/if}
         </div>
 
-        <h4>🌩️ Blitzortung-Warnung</h4>
+        <h4>{t('cfg.blitzortung')}</h4>
         <div class="grid two-col">
           <label class="check">
             <input type="checkbox" bind:checked={cfg.integrations.blitzortung.enabled}/>
-            <span>Live-Stream + ntfy-Push aktiv</span>
+            <span>{t('cfg.lightning_active')}</span>
           </label>
           {#if cfg.integrations.blitzortung.enabled}
-            <label><span>Alarm-Radius <small>(km)</small></span>
+            <label><span>{t('cfg.alarm_radius')}<small>(km)</small></span>
               <input type="number" min="1" max="500"
                      bind:value={cfg.integrations.blitzortung.alarm_radius_km}/>
             </label>
@@ -669,35 +670,35 @@
         </div>
 
         {#if cfg.integrations.qrz.enabled}
-          <h4>QRZ-Credentials</h4>
+          <h4>{t('cfg.qrz_credentials')}</h4>
           <div class="grid">
-            <label><span>QRZ User</span>
+            <label><span>{t('cfg.qrz_user')}</span>
               <input type="text" bind:value={cfg.integrations.qrz.user}/>
             </label>
-            <label><span>QRZ Passwort</span>
+            <label><span>{t('cfg.qrz_password')}</span>
               <input type="password" bind:value={cfg.integrations.qrz.password}/>
             </label>
-            <label><span>QRZ Logbook API-Key</span>
+            <label><span>{t('cfg.qrz_api_key')}</span>
               <input type="password"
                      bind:value={cfg.integrations.qrz.logbook_api_key}
-                     placeholder="aus QRZ-Logbook-Settings"/>
+                     placeholder={t('cfg.qrz_api_key_ph')}/>
             </label>
           </div>
           <label class="check">
             <input type="checkbox"
                    bind:checked={cfg.integrations.qrz.logbook_auto_upload}/>
-            <span>QSOs automatisch hochladen (auch nach Offline-Phase)</span>
+            <span>{t('cfg.qso_autoupload')}</span>
           </label>
         {/if}
 
-        <h4>Push-Notifications (ntfy.sh)</h4>
+        <h4>{t('cfg.push_notif')}</h4>
         <label class="check">
           <input type="checkbox" bind:checked={cfg.integrations.ntfy.enabled}/>
-          <span>Push-Notifications aktiv</span>
+          <span>{t('cfg.push_notif_active')}</span>
         </label>
         {#if cfg.integrations.ntfy.enabled}
           <div class="grid">
-            <label><span>ntfy.sh Topic</span>
+            <label><span>{t('cfg.ntfy_topic')}</span>
               <input type="text" bind:value={cfg.integrations.ntfy.topic}
                      placeholder="ft8-hochgericht-xyz"/>
             </label>
@@ -714,9 +715,9 @@
 
     <div class="actions">
       <button class="primary" onclick={save} disabled={saving}>
-        {saving ? 'Speichere…' : 'Speichern'}
+        {saving ? t('cfg.saving') : t('cfg.save')}
       </button>
-      {#if saved}<span class="status ok">✅ gespeichert</span>{/if}
+      {#if saved}<span class="status ok">{t('cfg.saved')}</span>{/if}
       {#if error}<span class="status err">⚠ {error}</span>{/if}
     </div>
   {/if}
