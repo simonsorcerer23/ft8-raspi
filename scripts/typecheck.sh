@@ -11,9 +11,18 @@
 #         scripts/typecheck.sh --update  → schreibt Baseline neu (bewusst!)
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$(dirname "$0")/../backend"
 BASELINE="../scripts/mypy_baseline.txt"
 MYPY=".venv/bin/python -m mypy"
+
+# i18n-Gate (läuft unabhängig von mypy, da dependency-frei): Key-Parität DE/EN,
+# Platzhalter-Konsistenz, Format-Spec-Verbot, Call-Site-Param-Deckung.
+if [[ -x .venv/bin/python ]]; then
+    .venv/bin/python "$SCRIPT_DIR/i18n_audit_backend.py" || exit 1
+else
+    echo "⚠ .venv fehlt — Backend-i18n-Audit übersprungen"
+fi
 
 # Fehlt mypy (frischer Checkout / Pi), Gate ueberspringen statt blockieren.
 if ! .venv/bin/python -c "import mypy" 2>/dev/null; then

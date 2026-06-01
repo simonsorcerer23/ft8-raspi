@@ -11,6 +11,7 @@
 # Ausserhalb dieser zwei Dateien ist rohes fetch()/new EventSource verboten.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$(dirname "$0")/../frontend/src"
 
 # Erlaubte Dateien (die DEN Layer bilden):
@@ -55,3 +56,11 @@ if [[ -n "$bad_i18n" ]]; then
     exit 1
 fi
 echo "✓ Frontend: jede t()-Nutzung importiert i18n"
+
+# i18n-Katalog-Gate: Key-Parität DE/EN, Platzhalter-Konsistenz, jeder literale
+# t('key') existiert im Katalog. node ist im Frontend-Toolchain ohnehin da.
+if command -v node >/dev/null 2>&1; then
+    node "$SCRIPT_DIR/i18n_audit_frontend.mjs" || exit 1
+else
+    echo "⚠ node fehlt — Frontend-i18n-Katalog-Audit übersprungen"
+fi
