@@ -99,14 +99,14 @@
         <div class="val" style="color: {memColor(info.mem_used_mb, info.mem_total_mb)}">
           {info.mem_used_mb}<small>/{info.mem_total_mb} MB</small>
         </div>
-        <div class="sub">{Math.round(100 * info.mem_used_mb / Math.max(1, info.mem_total_mb))}% belegt</div>
+        <div class="sub">{t('system.percent_used', { p: Math.round(100 * info.mem_used_mb / Math.max(1, info.mem_total_mb)) })}</div>
       </div>
       <div class="cell">
         <div class="lbl">Disk</div>
         <div class="val" style="color: {diskColor(info.disk_used_gb, info.disk_total_gb)}">
           {info.disk_used_gb}<small>/{info.disk_total_gb} GB</small>
         </div>
-        <div class="sub">{Math.round(100 * info.disk_used_gb / Math.max(1, info.disk_total_gb))}% belegt</div>
+        <div class="sub">{t('system.percent_used', { p: Math.round(100 * info.disk_used_gb / Math.max(1, info.disk_total_gb)) })}</div>
       </div>
       <div class="cell">
         <div class="lbl">Uptime</div>
@@ -126,7 +126,7 @@
       </div>
     </div>
   {:else}
-    <div class="loading">Lade …</div>
+    <div class="loading">{t('common.loading')}</div>
   {/if}
 </div>
 

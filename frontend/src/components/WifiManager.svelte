@@ -48,7 +48,7 @@
 
   async function saveApFallback() {
     if (!apFb.ssid || apFb.psk.length < 8) {
-      error = 'AP-Fallback: SSID + Passwort (mind. 8 Zeichen) nötig';
+      error = t('wifi.ap_validation');
       return;
     }
     apSaving = true; error = null;
@@ -87,7 +87,7 @@
   }
 
   async function deleteConnection(name) {
-    if (!confirm(`WLAN-Profil "${name}" wirklich löschen?`)) return;
+    if (!confirm(t('wifi.confirm_delete', { name }))) return;
     error = null;
     try {
       await api.wifiDelete(name);
@@ -124,13 +124,13 @@
     <h2>{t('wifi.title')}</h2>
     <div class="actions-h">
       <button class="ghost" onclick={refresh} disabled={loading}>
-        {loading ? '…' : '↻ Profile'}
+        {loading ? '…' : t('wifi.refresh_profiles')}
       </button>
       <button class="ghost" onclick={refreshScan} disabled={scanning}>
-        {scanning ? 'Scanne…' : '🔍 Scan'}
+        {scanning ? t('wifi.scanning') : '🔍 Scan'}
       </button>
       <button class="primary" onclick={() => addOpen = !addOpen}>
-        {addOpen ? '× Abbrechen' : '＋ Neues WLAN'}
+        {addOpen ? t('wifi.cancel') : t('wifi.new_wlan')}
       </button>
     </div>
   </header>
@@ -144,15 +144,15 @@
         <label><span>SSID</span>
           <input type="text" bind:value={newSsid} placeholder={t('wifi.home_ph')}/>
         </label>
-        <label><span>Passwort (leer = offenes WLAN)</span>
+        <label><span>{t('wifi.pw_open_label')}</span>
           <input id="wifi-new-psk" type="password" bind:value={newPsk}/>
         </label>
-        <label><span>Priorität (höher = bevorzugt)</span>
+        <label><span>{t('wifi.prio_label')}</span>
           <input type="number" bind:value={newPriority} min="-999" max="999"/>
         </label>
       </div>
       <button class="primary" onclick={addConnection} disabled={!newSsid || saving}>
-        {saving ? 'Speichere…' : 'Hinzufügen'}
+        {saving ? t('common.saving') : t('common.add')}
       </button>
     </section>
   {/if}
@@ -176,7 +176,7 @@
           {#each connections as c}
             <tr class:active={c.active}>
               <td class="ssid">
-                {#if c.active}<span class="dot ok" title="verbunden"></span>{/if}
+                {#if c.active}<span class="dot ok" title={t('wifi.connected_title')}></span>{/if}
                 {c.ssid}
               </td>
               <td>
@@ -186,17 +186,17 @@
               </td>
               <td>
                 {#if c.active}
-                  <span class="badge ok">aktiv</span>
+                  <span class="badge ok">{t('wifi.active')}</span>
                 {:else if c.autoconnect}
                   <span class="badge">auto</span>
                 {:else}
-                  <span class="badge muted">manuell</span>
+                  <span class="badge muted">{t('wifi.manual')}</span>
                 {/if}
               </td>
               <td class="row-actions">
                 {#if !c.active}
                   <button class="ghost-sm" onclick={() => activateConnection(c.name)}>
-                    verbinden
+                    {t('wifi.connect')}
                   </button>
                 {/if}
                 <button class="rm" onclick={() => deleteConnection(c.name)} title={t('wifi.delete')}>×</button>
@@ -210,25 +210,25 @@
 
   <!-- AP-Fallback (Notfall-Hotspot) -->
   <section class="ap-fallback">
-    <h3>📡 Notfall-Hotspot</h3>
+    <h3>{t('wifi.emergency_hotspot')}</h3>
     <div class="grid">
       <label><span>SSID</span>
         <input type="text" bind:value={apFb.ssid} placeholder="ft8-hochgericht"
                maxlength="32"/>
       </label>
-      <label><span>Passwort (8–63 Zeichen)</span>
+      <label><span>{t('wifi.pw_label')}</span>
         <input type="text" bind:value={apFb.psk} placeholder={t('wifi.pw_ph')}
                maxlength="63"/>
       </label>
     </div>
     <button class="primary" onclick={saveApFallback} disabled={apSaving}>
-      {apSaving ? 'Speichere…' : (apSavedFlash ? '✓ Gespeichert' : 'AP-Fallback speichern')}
+      {apSaving ? t('common.saving') : (apSavedFlash ? t('wifi.saved') : t('wifi.save_ap'))}
     </button>
   </section>
 
   <!-- Scan results -->
   <section>
-    <h3>In Reichweite {#if scanning}<small style="font-weight:400">(scanne…)</small>{/if}</h3>
+    <h3>{t('wifi.in_range')} {#if scanning}<small style="font-weight:400">({t('wifi.scanning_inline')})</small>{/if}</h3>
     {#if scan.length === 0 && !scanning}
       <p class="empty">{t('wifi.no_wlans')}</p>
     {:else}
@@ -241,12 +241,12 @@
             <tr>
               <td class="ssid">{ap.ssid}</td>
               <td><span class="bars">{sigBars(ap.signal)}</span> {ap.signal}</td>
-              <td>{ap.security === '--' ? 'offen' : ap.security}</td>
+              <td>{ap.security === '--' ? t('wifi.open') : ap.security}</td>
               <td class="row-actions">
                 {#if !connections.some(c => c.ssid === ap.ssid)}
-                  <button class="ghost-sm" onclick={() => pickFromScan(ap)}>＋ hinzufügen</button>
+                  <button class="ghost-sm" onclick={() => pickFromScan(ap)}>{t('wifi.add_btn')}</button>
                 {:else}
-                  <small class="muted">bereits gespeichert</small>
+                  <small class="muted">{t('wifi.already_saved')}</small>
                 {/if}
               </td>
             </tr>

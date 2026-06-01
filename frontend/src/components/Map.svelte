@@ -184,8 +184,8 @@
         marker.bindPopup(
           `<strong>📍 Operating location</strong><br>` +
           `${loc.qso_count} QSOs<br>` +
-          `Bänder: ${loc.bands.join(', ')}<br>` +
-          `Zeit: ${fmtUtcDateTime(loc.first_qso).slice(0,10)} – ${fmtUtcDateTime(loc.last_qso).slice(0,10)}`
+          `${t('map.popup_bands')}: ${loc.bands.join(', ')}<br>` +
+          `${t('map.popup_time')}: ${fmtUtcDateTime(loc.first_qso).slice(0,10)} – ${fmtUtcDateTime(loc.last_qso).slice(0,10)}`
         );
         marker.addTo(locLayer);
       }

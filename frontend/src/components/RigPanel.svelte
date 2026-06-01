@@ -178,7 +178,7 @@
     </div>
   {:else}
     {@const dbfs = statusStore.value.rx_audio_dbfs}
-    <div class="meter s-meter" title="RX-Audio-Pegel direkt aus dem ALSA-Capture (RMS letzter 250 ms). Hamlib STRENGTH ist beim IC-7300 kaputt — dieser Wert zappelt mit echter Signal-Aktivität.">
+    <div class="meter s-meter" title={t('rig.rx_level_tip')}>
       <small class="lbl">{t('rig.rx_level')}</small>
       <div class="bar"><div class="fill" style="width: {audioBarPct(dbfs)}%; background: {audioColor(dbfs)}"></div></div>
       <strong>{dbfs != null ? `${dbfs.toFixed(1)} dBFS` : '—'}</strong>

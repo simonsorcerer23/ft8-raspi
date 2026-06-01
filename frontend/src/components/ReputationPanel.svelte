@@ -37,11 +37,11 @@
 
   function reasonLabel(r) {
     return {
-      success:                'erfolgreiches QSO',
-      picked_another:         'Andere stärker',
-      max_resends:            'Ignoriert uns wiederholt',
-      went_silent:            'Plötzlich verstummt',
-      report_never_closed:    'RR73 kam nie',
+      success:                t('rep.reason_success'),
+      picked_another:         t('rep.reason_picked_another'),
+      max_resends:            t('rep.reason_max_resends'),
+      went_silent:            t('rep.reason_went_silent'),
+      report_never_closed:    t('rep.reason_report_never_closed'),
     }[r] || r || '—';
   }
 
@@ -106,7 +106,7 @@
             <td>{reasonLabel(e.last_reason)}</td>
             <td class="ts">{fmtTs(e.last_attempt_at)}</td>
             <td><button class="rm" onclick={() => reset(e.call)}
-                        title="Reputation zurücksetzen (Call wird wieder neutral)">
+                        title={t('rep.reset_title')}>
               Reset
             </button></td>
           </tr>

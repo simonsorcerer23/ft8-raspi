@@ -100,20 +100,20 @@
   <div class="head">
     <h3>{t('chart.swr_trend')}</h3>
     <select bind:value={hours} onchange={load}>
-      <option value={3}>letzte 3h</option>
-      <option value={12}>letzte 12h</option>
-      <option value={24}>letzte 24h</option>
-      <option value={72}>letzte 3 Tage</option>
-      <option value={168}>letzte Woche</option>
+      <option value={3}>{t('chart.last_3h')}</option>
+      <option value={12}>{t('chart.last_12h')}</option>
+      <option value={24}>{t('chart.last_24h')}</option>
+      <option value={72}>{t('chart.last_3d')}</option>
+      <option value={168}>{t('chart.last_week')}</option>
     </select>
   </div>
 
   {#if loading}
-    <p class="muted">lädt…</p>
+    <p class="muted">{t('common.loading')}</p>
   {:else if error}
     <p class="err">{error}</p>
   {:else if !data || data.length === 0}
-    <p class="muted">Noch keine QSOs mit SWR-Daten in diesem Zeitraum.</p>
+    <p class="muted">{t('chart.no_swr')}</p>
   {:else}
     <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="chart">
       <!-- Grid + Y-Achse -->

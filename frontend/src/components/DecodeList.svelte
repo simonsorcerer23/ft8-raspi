@@ -120,14 +120,14 @@
           <span class="freq">{d.freq_offset_hz ?? ''}</span>
           <span class="msg">
             {#if d.flag}<span class="flag" title={d.call_from ?? ''}>{d.flag}</span>{/if}
-            {#if d.mf_mfnr}<span class="badge mf" title="Marinefunker MF #{d.mf_mfnr}">⚓MF</span>{/if}
-            {#if d.is_new_dxcc}<span class="badge ndxcc" title="Neue DXCC-Entity">🏆DXCC</span>{/if}
+            {#if d.mf_mfnr}<span class="badge mf" title={t('dl.tip_mf', { nr: d.mf_mfnr })}>⚓MF</span>{/if}
+            {#if d.is_new_dxcc}<span class="badge ndxcc" title={t('dl.tip_newdxcc')}>🏆DXCC</span>{/if}
             {#if d.is_new_grid && !d.is_new_dxcc}<span class="badge ngrid" title={t('dl.tip_newgrid')}>🆕Grid</span>{/if}
             {#if d.is_new_grid_on_band && !d.is_new_grid && !d.is_new_dxcc}<span class="badge ngridb" title={t('dl.tip_newgrid_band')}>🎯Band</span>{/if}
-            {#if d.psk_heard_us}<span class="badge psk" title="laut PSK Reporter hat diese Station uns gehört → Asymmetrie-Pfad lohnt">📡PSK</span>{/if}
+            {#if d.psk_heard_us}<span class="badge psk" title={t('dl.tip_psk')}>📡PSK</span>{/if}
             {#if d.call_from && pileUpSet.has(d.call_from.toUpperCase())}<span class="badge pileup" title={t('dl.tip_pileup')}>🌪️Pile-Up</span>{/if}
-            {#if d.worked_before}<span class="badge worked" title="schon gearbeitet">B4</span>{/if}
-            {#if d.blacklisted}<span class="badge bl" title="auf Blacklist">⛔</span>{/if}
+            {#if d.worked_before}<span class="badge worked" title={t('dl.tip_worked')}>B4</span>{/if}
+            {#if d.blacklisted}<span class="badge bl" title={t('dl.tip_blacklisted')}>⛔</span>{/if}
             {d.message}
           </span>
           <span class="actions">

@@ -41,16 +41,16 @@
       const r = await api.detectRig();
       const cands = r.candidates || [];
       if (cands.length === 0) {
-        detectMsg = { kind: 'warn', text: 'Kein bekanntes Rig am USB gefunden. Ist der Stecker drin?' };
+        detectMsg = { kind: 'warn', text: t('wiz.no_rig_found') };
       } else {
         const top = cands[0];
         cfg.rig.model = top.model;
         cfg.rig.serial_device = top.serial_device;
         cfg.operator.default_power_w = RIG_DEFAULTS[top.model].max_power_w;
-        detectMsg = { kind: 'ok', text: `Erkannt: ${top.description}` };
+        detectMsg = { kind: 'ok', text: t('wiz.detected', { desc: top.description }) };
       }
     } catch (e) {
-      detectMsg = { kind: 'warn', text: `Erkennung fehlgeschlagen: ${e.message}` };
+      detectMsg = { kind: 'warn', text: t('wiz.detect_failed', { err: e.message }) };
     } finally { detecting = false; }
   }
 
@@ -129,9 +129,9 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
                placeholder="JN58td"/>
       </label>
       <label>
-        <span>Funkgerät
+        <span>{t('wiz.rig')}
           <button type="button" class="detect-btn" onclick={detectRig} disabled={detecting}>
-            {detecting ? '🔍…' : '🔍 Auto-Detect'}
+            {detecting ? '🔍…' : t('wiz.auto_detect')}
           </button>
         </span>
         <select bind:value={cfg.rig.model} onchange={onRigChange}>

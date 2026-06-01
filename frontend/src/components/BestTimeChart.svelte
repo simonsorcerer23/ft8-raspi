@@ -28,7 +28,7 @@
 <div class="wrap">
   <h3>{t('chart.best_time', { band })}</h3>
   {#if buckets.every(b => b.count === 0)}
-    <p class="empty">Noch keine QSOs auf {band} in den letzten 30 Tagen.</p>
+    <p class="empty">{t('chart.no_qsos_band', { band })}</p>
   {:else}
     <div class="bars">
       {#each buckets as b}
@@ -39,7 +39,7 @@
         </div>
       {/each}
     </div>
-    <div class="legend">UTC-Stunde · aktuelle Stunde markiert</div>
+    <div class="legend">{t('chart.legend_besttime')}</div>
   {/if}
 </div>
 

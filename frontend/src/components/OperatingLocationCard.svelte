@@ -132,12 +132,12 @@
         <div class="banner-actions">
           {#if loc.gps_detected_country && loc.gps_detected_country !== loc.home_country}
             <button onclick={() => setCountry(loc.gps_detected_country)} disabled={busy}>
-              Auf {loc.gps_detected_country} umstellen
+              {t('oploc.switch_to', { country: loc.gps_detected_country })}
             </button>
           {/if}
           {#if loc.current_country}
             <button onclick={() => setCountry(null)} disabled={busy}>
-              Zurück auf Heimat
+              {t('oploc.back_home')}
             </button>
           {/if}
         </div>
@@ -149,10 +149,10 @@
         <span>{t('oploc.choose_country')}</span>
         <select bind:value={loc.current_country} onchange={(e) => setCountry(e.target.value)}
                 disabled={busy}>
-          <option value="">🏠 Heimat ({loc.home_country})</option>
+          <option value="">{t('oploc.home_option', { home: loc.home_country })}</option>
           {#each countries as c}
             {#if c.code !== loc.home_country}
-              <option value={c.code}>{c.name} ({c.code}){c.cept_class_e_allowed ? '' : ' · ⚠️ keine Klasse-E'}</option>
+              <option value={c.code}>{c.name} ({c.code}){c.cept_class_e_allowed ? '' : t('oploc.no_class_e')}</option>
             {/if}
           {/each}
         </select>

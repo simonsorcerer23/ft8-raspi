@@ -147,7 +147,7 @@
           <tr>
             <td><span class="pfx-tag"
                        onclick={() => logStore.setFilter('prefix', extractPrefix(q.call))}
-                       title="Filter auf diesen Präfix">{extractPrefix(q.call)}</span></td>
+                       title={t('log.filter_prefix_title')}>{extractPrefix(q.call)}</span></td>
             <td class="ts">{shortTs(q.qso_start)}</td>
             <td class="call-col">
               {#if q.flag}<span class="flag" title={q.call}>{q.flag}</span>{/if}

@@ -36,7 +36,7 @@
 <div class="wrap">
   <h3>{t('chart.active_hours')}</h3>
   {#if totalBuckets === 0}
-    <p class="empty">Noch keine ausreichende QSO-Historie für die Auswertung.</p>
+    <p class="empty">{t('chart.no_history')}</p>
   {:else}
     <div class="grid">
       <div class="hour-row header">
@@ -53,7 +53,7 @@
               <div class="cell"
                    class:active={isActive(cont, h)}
                    class:now={h === currentHour}
-                   title="{cont} {h}:00 UTC{isActive(cont, h) ? ' — aktive Stunde' : ''}"></div>
+                   title="{cont} {h}:00 UTC{isActive(cont, h) ? t('chart.active_hour_suffix') : ''}"></div>
             {/each}
           </div>
         {/if}
