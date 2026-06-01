@@ -112,7 +112,7 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 
 ## Architektur
 
-Vollständige Spezifikation: [architecture.md](./architecture.md)
+Vollständige Spezifikation: [architecture.de.md](./architecture.de.md)
 
 ```
 backend/         Python 3.12 + FastAPI-Controller, ft8_lib via cffi

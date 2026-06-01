@@ -1,108 +1,123 @@
-# Architektur — Hochgericht FT8 Appliance
+# Architecture — Hochgericht FT8 Appliance
+
+**🇬🇧 English** · [🇩🇪 Deutsch](architecture.de.md)
 
 **Version:** 3.0
-**Status:** Im Feldbetrieb — zwei Pis (`ft8`, `ft8-2`) produktiv
-**Operatoren:** DK9XR + DO3XR (Multi-Operator)
+**Status:** In field use — two Pis (`ft8`, `ft8-2`) in production
+**Operators:** DK9XR + DO3XR (multi-operator)
 **Rigs:** Icom IC-705 / IC-7300
 
-> Hinweis: Dieses Dokument war ursprünglich ein Planungspapier. Es wird
-> laufend an den Ist-Stand angeglichen; die vollständige Release-Historie
-> steht in [CHANGELOG.md](./CHANGELOG.md).
+> Note: this document started life as a planning paper. It is continuously
+> reconciled with the actual state; the full release history lives in
+> [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
 ## 1. Mission
 
-Eine "Fire-and-Forget"-FT8-Appliance auf Raspberry Pi 5, die am IC-705 / IC-7300 angesteckt wird und per WLAN mit einem Android-Phone-Browser bedient wird. Bewusst **kein** WSJT-X/WSJT-Z. Nur die wirklich gebrauchten Funktionen, dafür stabil, narrensicher, mit echten Komfort-Features für portablen Urlaubsbetrieb.
+A "fire-and-forget" FT8 appliance on a Raspberry Pi 5 that plugs into the
+IC-705 / IC-7300 and is operated over Wi-Fi from an Android phone browser.
+Deliberately **no** WSJT-X/WSJT-Z. Only the functions actually needed — but
+those stable, foolproof, and with genuine convenience features for portable
+holiday operation.
 
-Designprinzipien:
-- **Minimalismus:** kein GUI-Workaround via Xvfb, kein Subprocess-Zoo.
-- **Multi-Operator:** mehrere Profile/Rufzeichen (z.B. Vater + Sohn), Hot-Switch zur Laufzeit, je eigene Logs/Credentials/Lizenzklasse.
-- **Field-tauglich:** läuft komplett ohne Internet (mit eingeschränkten Features).
-- **Recovery first:** Jede Anomalie wird sofort gemeldet, nicht still geschluckt — und ein abgeschlossenes QSO geht nie verloren (Spill + Backup).
-- **Zugang geschützt:** die gesamte API ist passwort-/token-gesichert (localhost vertraut).
+Design principles:
+- **Minimalism:** no GUI workaround via Xvfb, no subprocess zoo.
+- **Multi-operator:** several profiles/callsigns (e.g. father + son), hot-switch at runtime, each with its own logs/credentials/licence class.
+- **Field-capable:** runs entirely without internet (with reduced features).
+- **Recovery first:** any anomaly is reported immediately, never silently swallowed — and a completed QSO is never lost (spill + backup).
+- **Access protected:** the entire API is password-/token-secured (localhost trusted).
 
 ---
 
-## 2. Hardware-Stack
+## 2. Hardware stack
 
-| Komponente | Modell |
+| Component | Model |
 |---|---|
 | Computer | Raspberry Pi 5 (16 GB RAM) |
-| Gehäuse | Argon ONE V3 M.2 NVMe |
-| Massenspeicher | 1 TB Samsung 990 EVO Plus NVMe |
-| Zeit-/Standort-Quelle | u-blox VK-162 USB-GPS |
-| Funkgerät | Icom IC-705 (USB: CAT + Audio) |
-| Strom | USB-PD Powerbank (5 V / 5 A) |
-| Netzwerk | onboard WLAN (BCM43455), kein zweiter Chip |
+| Case | Argon ONE V3 M.2 NVMe |
+| Storage | 1 TB Samsung 990 EVO Plus NVMe |
+| Time/location source | u-blox VK-162 USB GPS |
+| Rig | Icom IC-705 (USB: CAT + audio) |
+| Power | USB-PD power bank (5 V / 5 A) |
+| Network | onboard Wi-Fi (BCM43455), no second chip |
 
-**HF-Hygiene-Pflicht:** Der IC-705 wird **zwingend in einen USB-2.0-Port (schwarz)** des Pi 5 gesteckt. USB-3.0-Signaling (5 Gbps) emittiert Breitband-RF-Müll ab ~500 MHz aufwärts (siehe Intel-Whitepaper "USB 3.0 Radio Frequency Interference Impact on 2.4 GHz Wireless Devices"). Bei direkter Kabelnähe zum HF-Frontend des IC-705 hebt das den Rausch-Pegel auf 2 m / 70 cm merklich an und kann auch auf HF-Bändern stören. USB 2.0 (480 Mbps) hat mehr als ausreichende Bandbreite für Audio (~768 kbps) + CAT (~38 kbps).
+**RF-hygiene rule:** the IC-705 **must** be plugged into a **USB 2.0 port (black)** on the Pi 5. USB 3.0 signalling (5 Gbps) emits broadband RF garbage from ~500 MHz upwards (see the Intel whitepaper "USB 3.0 Radio Frequency Interference Impact on 2.4 GHz Wireless Devices"). With the cable close to the IC-705's RF front end this noticeably raises the noise floor on 2 m / 70 cm and can also disturb HF bands. USB 2.0 (480 Mbps) has more than enough bandwidth for audio (~768 kbps) + CAT (~38 kbps).
 
 ---
 
-## 3. Konnektivität
+## 3. Connectivity
 
-### 3.1 WLAN-Roaming
+### 3.1 Wi-Fi roaming
 
-NetworkManager mit priorisierter Profilliste:
+NetworkManager with a prioritised profile list:
 
 ```
-1. Daheim-WLAN
-2. Sebastians Android-Hotspot
-3. Dads Android-Hotspot
-4..N. Manuell via Web nachgepflegte Netze (Camping, Hotel etc.)
+1. Home Wi-Fi
+2. Sebastian's Android hotspot
+3. Dad's Android hotspot
+4..N. Networks added manually via the web UI (camping, hotel, etc.)
 
-→ keiner verfügbar nach 60s → AP-Fallback
+→ none available after 60s → AP fallback
 ```
 
-### 3.2 AP-Fallback
+### 3.2 AP fallback
 
 - SSID: `ft8-hochgericht`
-- WPA2-PSK, Passwort in `config.yaml`
-- Eigenes Captive Portal: `hostapd` + `dnsmasq` + nftables-DNAT auf den lokalen Webserver
-- Android öffnet die UI automatisch beim WLAN-Beitritt
+- WPA2-PSK, password in `config.yaml`
+- Own captive portal: `hostapd` + `dnsmasq` + nftables DNAT to the local web server
+- Android opens the UI automatically when joining the Wi-Fi
 
-**Android Connectivity-Check Handling (Pflicht):**
-Modernes Android (und iOS) testet nach WLAN-Beitritt automatisch ob Internet vorhanden ist. Antwortet der DNS/HTTP-Stack falsch, zeigt das Phone "Verbunden, kein Internet" und **kann sich vom WLAN abkoppeln** sobald LTE/Mobilfunk wieder verfügbar wird. Im AP-Fallback wird das verhindert durch:
+**Android connectivity-check handling (mandatory):**
+Modern Android (and iOS) automatically tests for internet after joining a
+Wi-Fi. If the DNS/HTTP stack answers wrongly, the phone shows "Connected,
+no internet" and **may drop off the Wi-Fi** as soon as LTE/cellular becomes
+available again. In AP fallback this is prevented by:
 
-| Probe-URL | Antwort vom Pi |
+| Probe URL | Response from the Pi |
 |---|---|
 | `connectivitycheck.gstatic.com/generate_204` | HTTP 204 No Content |
 | `www.google.com/generate_204` | HTTP 204 No Content |
 | `clients3.google.com/generate_204` | HTTP 204 No Content |
 | `connectivity-check.ubuntu.com` | HTTP 204 No Content |
-| alle anderen HTTP-Anfragen | 302 Redirect → `http://ft8.local/` |
+| all other HTTP requests | 302 redirect → `http://ft8.local/` |
 
-`dnsmasq` löst dafür *alle* DNS-Anfragen auf die Pi-IP auf, der lokale Webserver hat dedizierte 204-Handler für die Probe-Pfade.
+`dnsmasq` resolves *all* DNS queries to the Pi's IP, and the local web
+server has dedicated 204 handlers for the probe paths.
 
-### 3.3 Fremde Captive Portals
+### 3.3 Third-party captive portals
 
-Werden **nicht** vom Pi durchgereicht. Lösungsweg: Dads Android verbindet sich mit dem Fremd-WLAN (Hotel etc.), authentifiziert dort selbst am Portal, teilt das Ergebnis dann per Hotspot weiter an den Pi. Damit fällt das Problem in den Normalfall "Pi connectet zu Android-Hotspot".
+These are **not** proxied through the Pi. Workaround: Dad's Android connects
+to the foreign Wi-Fi (hotel etc.), authenticates at the portal itself, then
+shares the result onward to the Pi via its hotspot. This reduces the problem
+to the normal case "Pi connects to an Android hotspot".
 
 ### 3.4 mDNS
 
-`avahi-daemon` exposed den Pi als `ft8.local`.
+`avahi-daemon` exposes the Pi as `ft8.local`.
 
-### 3.5 Zeit-Quelle (essentiell)
+### 3.5 Time source (essential)
 
 ```
-GPS-Satelliten → VK-162 → gpsd → chrony → Systemzeit
-                                ↑
-                                └─ NTP nur als Backup wenn Internet da
+GPS satellites → VK-162 → gpsd → chrony → system clock
+                                  ↑
+                                  └─ NTP only as backup when internet is present
 ```
 
-GPS-Zeit ist mit ±100 ns extrem genau. FT8 verlangt < 500 ms. Zeit ist damit **unabhängig vom Internet** garantiert, solange GPS Sky-View hat.
+GPS time is extremely accurate at ±100 ns. FT8 requires < 500 ms. Time is
+therefore guaranteed **independently of the internet** as long as GPS has
+sky view.
 
 ---
 
-## 4. Software-Stack
+## 4. Software stack
 
-### 4.1 Schichtenübersicht
+### 4.1 Layer overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Browser (Android Chrome, als PWA installiert)              │
-│  Svelte 5 SPA: Decodes, Map, ADIF-Log, Config, Status       │
+│  Browser (Android Chrome, installed as PWA)                 │
+│  Svelte 5 SPA: decodes, map, ADIF log, config, status       │
 └──────────────┬──────────────────────────────────────────────┘
                │  HTTP/JSON + Server-Sent Events
 ┌──────────────▼──────────────────────────────────────────────┐
@@ -119,67 +134,68 @@ GPS-Zeit ist mit ±100 ns extrem genau. FT8 verlangt < 500 ms. Zeit ist damit **
   │ TCP    │ TCP           │ FFI (cffi)    │ ALSA
   │ 4532   │ 2947          │               │
   ▼        ▼               ▼               ▼
-rigctld   gpsd          ft8_lib       IC-705 USB-Audio
-(Hamlib)  (GPS)         (Decode/Enc)
+rigctld   gpsd          ft8_lib       IC-705 USB audio
+(Hamlib)  (GPS)         (decode/enc)
 ```
 
-### 4.2 Decoder/Encoder: `ft8_lib`
+### 4.2 Decoder/encoder: `ft8_lib`
 
-- Karlis Goba (YL3JG), MIT-Lizenz, ~2000 LoC C
-- Decoder: LDPC + CRC FT8-Standard, voll
-- Encoder: vollständiger FT8-Protokoll-Stack
-- Integration: `cffi`-Wrapper, im Python-Prozess geladen, kein Subprocess
-- Wenn später schwache-Signal-Performance unzureichend: `jt9` aus dem WSJT-X-Quellbaum nachrüstbar als Subprocess (Architektur unverändert)
+- Karlis Goba (YL3JG), MIT licence, ~2000 LoC of C
+- Decoder: LDPC + CRC, full FT8 standard
+- Encoder: complete FT8 protocol stack
+- Integration: `cffi` wrapper, loaded inside the Python process, no subprocess
+- If weak-signal performance turns out insufficient later: `jt9` from the WSJT-X source tree can be added as a subprocess (architecture unchanged)
 
 ### 4.3 Backend: Python 3.12 + FastAPI
 
-- **HTTP + SSE:** FastAPI auf uvicorn (uvloop)
-- **Audio:** `python-alsaaudio` für Capture (12000 Hz mono) und Playback
-- **Rig-Steuerung:** TCP-Client zu `rigctld` (Port 4532). Hamlib >= 4.6 für IC-705
-- **GPS:** TCP-Client zu `gpsd` (Port 2947)
-- **Persistenz:** `aiosqlite` + leichter Repository-Pattern
-- **Slot-Timing:** asyncio-Task synchron zur Systemzeit (xx:00, xx:15, xx:30, xx:45)
+- **HTTP + SSE:** FastAPI on uvicorn (uvloop)
+- **Audio:** `python-alsaaudio` for capture (12000 Hz mono) and playback
+- **Rig control:** TCP client to `rigctld` (port 4532). Hamlib >= 4.6 for the IC-705
+- **GPS:** TCP client to `gpsd` (port 2947)
+- **Persistence:** `aiosqlite` + a lightweight repository pattern
+- **Slot timing:** asyncio task synchronised to the system clock (xx:00, xx:15, xx:30, xx:45)
 
 ### 4.4 Frontend: Svelte 5
 
-- Build mit Vite → statische Files → von FastAPI gemountet
-- SSE (kein WebSocket) für Push: Decodes, Status, Heard-Updates
-- **Map:** Leaflet, Offline-Tiles vom NVMe vorinstalliert (Welt @ Zoom 1-5, Europa @ Zoom 6-10, ca. 5 GB)
-- **PWA-Manifest:** "zum Startbildschirm hinzufügen"
-- **Sprachen:** Deutsch (Dad), Englisch — Toggle in der UI
-- **Theme:** Auto Day/Night basierend auf GPS-Uhrzeit + Sonnenstand
+- Built with Vite → static files → mounted by FastAPI
+- SSE (not WebSocket) for push: decodes, status, heard updates
+- **Map:** Leaflet, offline tiles preinstalled on the NVMe (world @ zoom 1-5, Europe @ zoom 6-10, ~5 GB)
+- **PWA manifest:** "add to home screen"
+- **Languages:** German (Dad), English — toggle in the UI
+- **Theme:** auto day/night based on GPS time + sun position
 
-**Tile-Serving-Trennung (Pflicht):** Die Offline-Tiles liegen physisch in `/var/lib/ft8-appliance/tiles/` (neben der `qso.sqlite`) und werden von FastAPI als eigener `StaticFiles`-Mount unter `/tiles/{z}/{x}/{y}.png` ausgeliefert — **nicht** als Teil des Vite-Build-Bundles. Leaflet referenziert sie per URL-Template. Damit bleibt `backend/ft8_appliance/web/static/` (der Vite-Build-Output) klein (<10 MB), und Tiles lassen sich unabhängig vom App-Update aktualisieren oder regenerieren. Wichtig: tiles liegen explizit **außerhalb** des git-Workdirs (`/home/sebastian/ft8-appliance/`), damit `ft8-self-update.service` (= `git checkout vX.Y.Z`) sie nie anfasst.
+**Tile-serving separation (mandatory):** the offline tiles physically live in `/var/lib/ft8-appliance/tiles/` (next to `qso.sqlite`) and are served by FastAPI as its own `StaticFiles` mount under `/tiles/{z}/{x}/{y}.png` — **not** as part of the Vite build bundle. Leaflet references them via a URL template. This keeps `backend/ft8_appliance/web/static/` (the Vite build output) small (<10 MB), and tiles can be updated or regenerated independently of an app update. Important: tiles deliberately live **outside** the git workdir (`/home/sebastian/ft8-appliance/`) so that `ft8-self-update.service` (= `git checkout vX.Y.Z`) never touches them.
 
-### 4.5 Process-Management
+### 4.5 Process management
 
-systemd-Units:
+systemd units:
 
-| Unit | Aufgabe |
+| Unit | Purpose |
 |---|---|
-| `ft8-controller.service` | Python App |
-| `rigctld.service` | Hamlib Daemon |
-| `gpsd.service` | GPS Daemon |
-| `chrony.service` | Zeit |
-| `hostapd@ap0.service` | AP-Fallback (auf Trigger) |
-| `NetworkManager.service` | WLAN-Roaming |
+| `ft8-controller.service` | Python app |
+| `rigctld.service` | Hamlib daemon |
+| `gpsd.service` | GPS daemon |
+| `chrony.service` | time |
+| `hostapd@ap0.service` | AP fallback (on trigger) |
+| `NetworkManager.service` | Wi-Fi roaming |
 | `avahi-daemon.service` | mDNS |
-| `ft8-self-update.timer/.service` | zieht alle 10 min getaggte Releases von GitHub, Health-Check + Auto-Rollback |
+| `ft8-self-update.timer/.service` | pulls tagged releases from GitHub every 10 min, health check + auto rollback |
 
-### 4.6 Zugang & Sicherheit (API-Auth)
+### 4.6 Access & security (API auth)
 
-Die Appliance steuert einen echten Sender und hält Credentials — die HTTP-API darf daher nicht offen sein. Durchgesetzt via ASGI-Middleware (`web/auth.py`):
+The appliance controls a real transmitter and holds credentials — so the
+HTTP API must not be open. Enforced via ASGI middleware (`web/auth.py`):
 
-- **localhost (127.0.0.1/::1) wird vertraut** — wer auf dem Pi ist, hat via SSH ohnehin Vollzugriff; der Self-Update-Health-Probe läuft über localhost.
-- **Statische SPA / Assets / Tiles / Captive-Probes** sind offen (Login muss laden, AP-Captive-Portal muss funktionieren).
-- **Alles unter `/api` und `/sse`** braucht den **Master-Token** (`api_token`) via `Authorization: Bearer` ODER `?token=` (Query-Form für SSE, da `EventSource` keine Header setzen kann). Der Master-Token ist als **merkbares Login-Passwort** setzbar (`POST /api/auth/token`).
-- **Separater, eng begrenzter `ntfy_action_token`**: nur für operative Control-Toggles (stop/cq/hunt/reset-lock/set-mode/tx-power/set-freq/panic), eingebettet in die ntfy-Lockscreen-Buttons. Ein Topic-Leak erlaubt damit keinen Secret-/Shutdown-Zugriff.
-- **Secret-Redaction:** `GET /api/config` liefert keine Klartext-Secrets; `config.yaml` ist `0600`.
-- **Kein Netzwerk-Binding-Restriktion** (bindet `0.0.0.0`), weil der AP-Fallback Erreichbarkeit auf allen Interfaces braucht — der Token schützt überall gleich.
+- **localhost (127.0.0.1/::1) is trusted** — anyone on the Pi has full access via SSH anyway, and the self-update health probe runs over localhost.
+- **Static SPA / assets / tiles / captive probes** are open (login must load, the AP captive portal must work).
+- **Everything under `/api` and `/sse`** needs the **master token** (`api_token`) via `Authorization: Bearer` OR `?token=` (query form for SSE, since `EventSource` cannot set headers). The master token can be set as a **memorable login password** (`POST /api/auth/token`).
+- **Separate, tightly scoped `ntfy_action_token`:** only for operational control toggles (stop/cq/hunt/reset-lock/set-mode/tx-power/set-freq/panic), embedded in the ntfy lock-screen buttons. A topic leak therefore grants no secret/shutdown access.
+- **Secret redaction:** `GET /api/config` returns no plaintext secrets; `config.yaml` is `0600`.
+- **No network binding restriction** (binds `0.0.0.0`), because the AP fallback needs reachability on all interfaces — the token protects everywhere equally.
 
 ---
 
-## 5. State Machine (QSO-Flow)
+## 5. State machine (QSO flow)
 
 ```
                           ┌──────┐
@@ -191,7 +207,7 @@ Die Appliance steuert einen echten Sender und hält Credentials — die HTTP-API
                   │           ▼               │
                   │    ┌─────────────┐        │
                   │    │ CQ_CALLING  │        │
-                  │    │ alle 30s TX │        │
+                  │    │ TX every 30s│        │
                   │    └─────┬───────┘        │
                   │          │                │
                   │ [someone answers me]      │
@@ -224,279 +240,281 @@ Die Appliance steuert einen echten Sender und hält Credentials — die HTTP-API
                   │          ▼                │
                   │   ┌──────────────┐        │
                   └───┤ QSO_GRACE    │────────┘
-                      │ 1 Slot warten│
-                      │ ggf. Tx6=73  │
+                      │ wait 1 slot  │
+                      │ maybe Tx6=73 │
                       └──────────────┘
 ```
 
-**QSO_GRACE-Mechanik (Sebastian 2026-05-24, Audit-Finding 2):** Nach
-RR73 + LOG_QSO sitzen wir 1 Slot lang in QSO_GRACE und lauschen ob der
-Partner sein RR73 wiederholt (= unser RR73 nicht decodiert). Wenn ja:
-ein 73 (Tx6) hinterher als Closure-Bestätigung — analog WSJT-X. Sonst
-nach 1 Slot weiter zu CQ_CALLING (auto_cq=True) oder IDLE.
+**QSO_GRACE mechanics (Sebastian 2026-05-24, audit finding 2):** after
+RR73 + LOG_QSO we sit in QSO_GRACE for one slot and listen whether the
+partner repeats their RR73 (= our RR73 was not decoded). If so: we send a
+73 (Tx6) afterwards as a closure confirmation — analogous to WSJT-X.
+Otherwise, after one slot, on to CQ_CALLING (auto_cq=True) or IDLE.
 
-**Vor jedem TX-Transition prüft die State Machine:**
-- Time-Guard: GPS-Sync OK, DT < 0.5 s
-- PTT-Watchdog: max. 18 s pro Aussendung
-- ALC: Pegel im grünen Bereich
-- SWR: < konfigurierter Schwellwert (default 2.0)
-- Battery: IC-705 internal voltage > 12 V (falls auf Akku-Betrieb)
-- Band-Lockout: aktive Antenne deckt das Band ab
-- IARU-Bandplan-Lockout: TX-Frequenz im erlaubten FT8-Segment der GPS-bestimmten Region
+**Before every TX transition the state machine checks:**
+- Time guard: GPS sync OK, DT < 0.5 s
+- PTT watchdog: max. 18 s per transmission
+- ALC: level in the green zone
+- SWR: < configured threshold (default 2.0)
+- Battery: IC-705 internal voltage > 12 V (if on battery)
+- Band lockout: the active antenna covers the band
+- IARU band-plan lockout: TX frequency within the permitted FT8 segment of the GPS-determined region
 
-Bei Verletzung einer Bedingung: TX wird verweigert, UI zeigt Alarm-Badge.
+On violation of any condition: TX is refused, the UI shows an alarm badge.
 
-Zusätzliche Modi:
-- **Hunting:** statt CQ wird auf fremde CQs reagiert (Button-Auswahl welche)
-- **Run vs. S&P:** "Run" stay-on-frequency, "S&P" answer + move on
-- **Panic-Stop:** sofortiges PTT-Off + State → IDLE, TX-Lock bis Button-Reset
+Additional modes:
+- **Hunting:** instead of calling CQ, respond to other stations' CQs (button selects which)
+- **Run vs. S&P:** "Run" stays on frequency, "S&P" answers + moves on
+- **Panic stop:** immediate PTT off + state → IDLE, TX lock until button reset
 
 ---
 
-## 6. Feature-Set
+## 6. Feature set
 
-> UI-Eindruck (Demo-Modus, fiktive Daten): Decode-Liste, Tagesstatistik,
-> Weltkarte mit Coverage und das gefilterte Logbuch.
+> UI impression (demo mode, fictional data): decode list, daily statistics,
+> world map with coverage, and the filtered logbook.
 >
-> ![Funk-Ansicht](docs/screenshots/funk.png)
-> ![Weltkarte](docs/screenshots/map.png)
+> ![Radio view](docs/screenshots/funk.png)
+> ![World map](docs/screenshots/map.png)
 
 ### 6.1 Core (MVP)
 
-- FT8-Decode über volle 3 kHz Passband
-- **FT4-Decode + -Encode** parallel (7.5 s Slot, 4-FSK, 105 Symbole) —
-  Mode-Switch in `OperatingConfig.mode`, separate Shim-Funktionen
+- FT8 decode across the full 3 kHz passband
+- **FT4 decode + encode** in parallel (7.5 s slot, 4-FSK, 105 symbols) —
+  mode switch in `OperatingConfig.mode`, separate shim functions
   `ft4_shim_decode_slot` / `ft4_shim_synth_message`, `SlotClock(slot_seconds=…)`
-- FT8-Encode + TX via CAT-PTT
+- FT8 encode + TX via CAT PTT
 - Auto-CQ
-- Auto-Reply auf Anrufer (komplette QSO-Sequenz)
-- Hunting-Mode (auf fremde CQs antworten)
-- Slot-synchrones TX/RX-Timing aus GPS-Zeit
-- Watchdog-Familie:
-  - PTT-Max-Zeit (Hard-Limit pro Aussendung)
-  - **CQ-Idle-Watchdog** (`cq_idle_timeout_min`, Default 10 min): wenn
-    seit X Minuten CQ ohne Pickup → ntfy-Push mit Action-Buttons
-    („STOP CQ" / „Auf Hunting"). Pi schaltet **nie** selbst ab —
-    Sebastians ausdrückliche Regel 2026-05-24
-  - **Mode-Watchdog** (`mode_watchdog_min`, Default 15 min): keine
-    Decodes mehr → Funkstille-Push (Antenne/Audio prüfen)
-  - **Boot-Mode-Mismatch-Watchdog**: `boot_mode != "off"` aber kein
-    Auto-Modus aktiv → Push „Pi steht still"
-  - **Tamper-Detection** (Sebastian 2026-05-24): externe Änderungen am
-    Rig (Power, Mode, Filter, Frequenz) lösen ntfy-Push mit Rollback-
-    Action aus; Eigene CAT-Befehle werden via Echo-Window-Helper
-    erkannt und nicht alarmiert (siehe §6.5)
-- ADIF-Log (live in der UI, exportierbar)
-- Band-Presets (Standard-FT8-Frequenzen)
-- Rufzeichen, Locator (oder GPS-Auto), Power-Profile
-- Decode-Liste live
-- Audio-Gain Kalibrierung + Live-Monitoring + Alarm bei Drift
-- TX-Power per CAT setzbar (Default: max, manuell wählbar)
+- Auto-reply to callers (full QSO sequence)
+- Hunting mode (answer other stations' CQs)
+- Slot-synchronous TX/RX timing from GPS time
+- Watchdog family:
+  - PTT max time (hard limit per transmission)
+  - **CQ-idle watchdog** (`cq_idle_timeout_min`, default 10 min): if
+    CQ has run for X minutes without a pickup → ntfy push with action
+    buttons ("STOP CQ" / "Switch to hunting"). The Pi **never** shuts
+    itself off — Sebastian's explicit rule 2026-05-24
+  - **Mode watchdog** (`mode_watchdog_min`, default 15 min): no more
+    decodes → radio-silence push (check antenna/audio)
+  - **Boot-mode-mismatch watchdog:** `boot_mode != "off"` but no auto
+    mode active → push "Pi is idle"
+  - **Tamper detection** (Sebastian 2026-05-24): external changes at the
+    rig (power, mode, filter, frequency) trigger an ntfy push with a
+    rollback action; the appliance's own CAT commands are recognised via
+    an echo-window helper and not alarmed (see §6.5)
+- ADIF log (live in the UI, exportable)
+- Band presets (standard FT8 frequencies)
+- Callsign, locator (or GPS auto), power profile
+- Live decode list
+- Audio-gain calibration + live monitoring + drift alarm
+- TX power settable via CAT (default: max, manually selectable)
 
-### 6.2 Smart Operating
+### 6.2 Smart operating
 
-- **19-Tier Hunting-Picker** (konfigurierbare Prioritäts-Reihenfolge,
-  `OperatingConfig.hunt_priority`, Drag-and-Drop im UI): lexikografisches
-  Scoring über Tiers wie `not_bad_reputation`, `not_in_pileup`,
+- **19-tier hunting picker** (configurable priority order,
+  `OperatingConfig.hunt_priority`, drag-and-drop in the UI): lexicographic
+  scoring across tiers such as `not_bad_reputation`, `not_in_pileup`,
   `tail_end_target`, `grayline`, `band_open`, `buddy_seen`, `new_dxcc(_band)`,
   `psk_heard_us`, `new_grid(_band)`, `not_worked`, `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
-- **Hard-Filter** zusätzlich zur Soft-Reihenfolge: `skip_worked` (nur nie
-  Gearbeitete), `dxcc_only` (Award-Modus: lieber Funkstille als Nicht-ATNO).
-- **Soft-Blacklist / Reputation** (DB-gestützt, GLOBAL über Operatoren,
-  Basis-Call-normalisiert): Stationen die wiederholt abbrechen/verstummen
-  werden abgewertet.
-- **Band-bewusster QSO-Cooldown:** Erfolgs-Cooldown pro (Call, Band) — ein
-  langer Cooldown blockt damit keinen neuen Band-Slot (5BWAS/VUCC).
-- **Pick-Telemetrie (`pick_attempt`):** misst pro Hunt-Pick
-  psk_heard_us/was_worked/was_new_dxcc/SNR/Band-Belegung/Bail-Grund +
-  Ausgang → datengetriebene A/B-Bewertung der Tiers (`/api/stats/pick-attempts`).
-- TX-Frequenz-Wahl mit Kollisions-Vermeidung: Rotation 1200/1500/1800/2100 Hz
-  pro CQ-Sendung (`MachineContext.cq_freq_rotation`)
-- Smart-CQ-Throttling (passive Sondierung nach N erfolglosen CQs) — geparkt
-- Run vs. S&P Mode-Switch
-- "Only answer calls to me" Filter
-- Worked-B4-Anzeige
-- **Tail-Ender**: direkter Report-Empfang ohne Grid-Stage springt
-  CQ_CALLING → QSO_REPORT (zwei Slots gespart)
-- **Auto-CQ-Loop** (WSJT-Z-style): nach LOG_QSO zurück nach CQ_CALLING bis
-  User Stop drückt — gesteuert über `MachineContext.auto_cq`
-- **ALC Closed-Loop**: `_observe_alc_during_tx` trimmt Audio-Gain
-  (0.05..1.0) in den Target-Window-Range; Operating-Config:
+- **Hard filters** on top of the soft order: `skip_worked` (only stations
+  never worked), `dxcc_only` (award mode: prefer radio silence over a non-ATNO).
+- **Soft blacklist / reputation** (DB-backed, GLOBAL across operators,
+  base-call normalised): stations that repeatedly bail/go silent get
+  downgraded.
+- **Band-aware QSO cooldown:** success cooldown per (call, band) — a long
+  cooldown therefore never blocks a new band slot (5BWAS/VUCC).
+- **Pick telemetry (`pick_attempt`):** measures per hunt pick
+  psk_heard_us/was_worked/was_new_dxcc/SNR/band occupancy/bail reason +
+  outcome → data-driven A/B evaluation of the tiers (`/api/stats/pick-attempts`).
+- TX frequency choice with collision avoidance: rotation 1200/1500/1800/2100 Hz
+  per CQ transmission (`MachineContext.cq_freq_rotation`)
+- Smart-CQ throttling (passive probing after N unsuccessful CQs) — parked
+- Run vs. S&P mode switch
+- "Only answer calls to me" filter
+- Worked-B4 display
+- **Tail-ender:** a direct report receive without a grid stage jumps
+  CQ_CALLING → QSO_REPORT (two slots saved)
+- **Auto-CQ loop** (WSJT-Z style): after LOG_QSO back to CQ_CALLING until
+  the user presses Stop — controlled via `MachineContext.auto_cq`
+- **ALC closed loop:** `_observe_alc_during_tx` trims the audio gain
+  (0.05..1.0) into the target-window range; operating config:
   `audio_gain` / `alc_target_low` / `alc_target_high`
-- **Multi-Color-Highlighting**: Decodes annotiert mit `is_new_dxcc`,
-  `is_new_grid`, `is_new_grid_on_band` (Sets `_worked_grids` +
-  `_worked_grid_band` hydriert aus DB, gepflegt in `_do_log_qso`)
-- **WSJT-X-konforme QSO-Resilience** (Sebastian 2026-05-24 nach
-  UN7JO-/Audit-Session):
-  - **R-Report-Resend** in QSO_REPORT: wenn Partner statt RR73 nochmal
-    seinen Report schickt (= unsere R-Report nicht decodiert), senden
-    wir R-Report 1× erneut bevor wir aufgeben. Config:
-    `qso_max_report_resends` (Default 1, Range 0..3)
-  - **Tx6/73-Closure-Ack** über QSO_GRACE-State: 1-Slot-Fenster nach
-    RR73 + LOG_QSO; wenn Partner sein RR73 wiederholt → 73 hinterher
-    als finale Bestätigung
-  - **Grid-Resend** in QSO_RESPOND: wenn Partner uns ignoriert und
-    weiter CQ ruft, senden wir Grid bis zu `qso_max_cq_resends`
-    Mal nach, dann bail + Failed-Cooldown
-  - Laufendes WSJT-X-Korrektheits-Audit der State-Machine:
-    siehe [`docs/wsjtx_qso_state_audit.md`](./docs/wsjtx_qso_state_audit.md)
-    + Memory `feedback_wsjtx_korrektheit.md`. **Achtung:** dies ist
-    **kein** Feature-Parity-Sweep (der ist via
-    `project_ft8_wsjtx_tier.md` separat gescoped und gecappt)
+- **Multi-colour highlighting:** decodes annotated with `is_new_dxcc`,
+  `is_new_grid`, `is_new_grid_on_band` (sets `_worked_grids` +
+  `_worked_grid_band` hydrated from the DB, maintained in `_do_log_qso`)
+- **WSJT-X-compliant QSO resilience** (Sebastian 2026-05-24 after the
+  UN7JO / audit session):
+  - **R-report resend** in QSO_REPORT: if the partner sends their report
+    again instead of RR73 (= our R-report not decoded), we resend the
+    R-report once before giving up. Config:
+    `qso_max_report_resends` (default 1, range 0..3)
+  - **Tx6/73 closure ack** via the QSO_GRACE state: a 1-slot window after
+    RR73 + LOG_QSO; if the partner repeats their RR73 → send 73 afterwards
+    as a final confirmation
+  - **Grid resend** in QSO_RESPOND: if the partner ignores us and keeps
+    calling CQ, we resend the grid up to `qso_max_cq_resends`
+    times, then bail + failed cooldown
+  - Ongoing WSJT-X correctness audit of the state machine:
+    see [`docs/wsjtx_qso_state_audit.md`](./docs/wsjtx_qso_state_audit.md)
+    + memory `feedback_wsjtx_korrektheit.md`. **Note:** this is **not**
+    a feature-parity sweep (that is separately scoped and capped via
+    `project_ft8_wsjtx_tier.md`)
 
-### 6.3 Antennen-Schutz
+### 6.3 Antenna protection
 
-- Aktive Antennen-Profile (z.B. "Endfed 20m", "Doublet 80/40/20")
-- TX-Lockout für Bänder ohne passende Antenne
-- SWR-Curve Logger pro Band
+- Active antenna profiles (e.g. "Endfed 20m", "Doublet 80/40/20")
+- TX lockout for bands without a matching antenna
+- SWR-curve logger per band
 
-### 6.4 Portable-Operation & CEPT
+### 6.4 Portable operation & CEPT
 
-- Auto-QTH/Locator via GPS (Maidenhead 6-stellig)
-- **GPS-Länder-Erkennung via Point-in-Polygon** (`integrations/cept.py` +
-  `data/cept_borders.json`, vereinfachte Natural-Earth-Grenzen): bbox als
-  Vorfilter, dann echte Polygone zur Disambiguierung (löst Balkan-/Adria-
-  Overlaps wie Kroatiens C-Form um Bosnien sauber, ohne Reihenfolge-Hacks).
-- **CEPT-Compliance:** kennt für deutsche **Klasse A (T/R 61-01)** und
-  **Klasse E (ECC/REC (05)06)**, wo man **ohne Gastlizenz** im Kurzzeit-
-  betrieb funken darf — Primärquelle ist die DARC-Länderliste. Ausgesetzte
-  Länder (Belarus, Russland) werden gesperrt. Vorschlag des korrekten
-  CEPT-Präfix (`<area>/DK9XR`); kein Auto-Switch, Operator bestätigt.
-- IARU-Bandplan-Lockout pro Region (R1/R2/R3)
+- Auto QTH/locator via GPS (Maidenhead, 6 characters)
+- **GPS country detection via point-in-polygon** (`integrations/cept.py` +
+  `data/cept_borders.json`, simplified Natural Earth borders): bbox as a
+  pre-filter, then real polygons for disambiguation (cleanly resolves
+  Balkan/Adriatic overlaps such as Croatia's C-shape around Bosnia, without
+  ordering hacks).
+- **CEPT compliance:** for German **Class A (T/R 61-01)** and
+  **Class E (ECC/REC (05)06)** it knows where one may operate
+  **without a guest licence** for short-term operation — the primary source
+  is the DARC country list. Suspended countries (Belarus, Russia) are
+  blocked. Suggests the correct CEPT prefix (`<area>/DK9XR`); no auto-switch,
+  the operator confirms.
+- IARU band-plan lockout per region (R1/R2/R3)
 
-### 6.5 Monitoring & Safety
+### 6.5 Monitoring & safety
 
-- SWR-Alarm + TX-Stop bei Überschreitung
-- IC-705 Batterie-Monitor (Vbus via CAT)
-- Pi-CPU-Temperatur (Alarm > 75 °C)
-- Storage-Watcher (SSD-Wear, Plattenplatz)
-- Multi-Level Watchdog: in-process Heartbeat + systemd Watchdog + optional GPIO HW-Watchdog
-- PTT-Stuck-Detection (PTT-an aber kein Audio → sofort off)
-- Time-Guard (kein TX ohne GPS-Sync)
-- **Blitzortung.org** Live-Daten, Alarm bei Gewitter < 30 km
+- SWR alarm + TX stop on overshoot
+- IC-705 battery monitor (Vbus via CAT)
+- Pi CPU temperature (alarm > 75 °C)
+- Storage watcher (SSD wear, disk space)
+- Multi-level watchdog: in-process heartbeat + systemd watchdog + optional GPIO HW watchdog
+- PTT-stuck detection (PTT on but no audio → immediate off)
+- Time guard (no TX without GPS sync)
+- **Blitzortung.org** live data, alarm for thunderstorms < 30 km
 
-**Daten-Sicherheit (Audit 2026-05-30):** Die unersetzlichen Logdaten sind mehrfach abgesichert:
-- **Atomare Config-Writes** (`util/atomicfile.py`): tmp + `fsync(file)` + `fsync(dir)` + rename, `.bak`-Snapshot, `0600`, prozessweiter Write-Lock gegen konkurrierende Schreiber. `PUT /api/config` plättet keine Operatoren/Secrets mehr (`preserve_secrets`: „leer = behalten").
-- **SQLite robust:** WAL + `synchronous=NORMAL` + `busy_timeout=30s` (eliminiert „database is locked" zwischen QSO-Insert und Upload-Drains).
-- **QSO-Spill:** schlägt der DB-Write eines abgeschlossenen QSO fehl (volle SD/Lock/Korruption) → Sicherung in `unlogged_qsos.jsonl` + ntfy-Alarm, automatischer Nachtrag beim nächsten Erfolg/Start. **Kein stiller QSO-Verlust.**
-- **Tägliches DB-Backup** (`VACUUM INTO`, Rotation 7) + **Telemetrie-Retention** (decode/pick_attempt/heard/swr/psk auf 90 Tage; `qso` nie).
+**Data safety (audit 2026-05-30):** the irreplaceable log data is protected several ways over:
+- **Atomic config writes** (`util/atomicfile.py`): tmp + `fsync(file)` + `fsync(dir)` + rename, `.bak` snapshot, `0600`, process-wide write lock against concurrent writers. `PUT /api/config` no longer flattens operators/secrets (`preserve_secrets`: "empty = keep").
+- **SQLite robust:** WAL + `synchronous=NORMAL` + `busy_timeout=30s` (eliminates "database is locked" between QSO insert and upload drains).
+- **QSO spill:** if the DB write of a completed QSO fails (full SD/lock/corruption) → backup to `unlogged_qsos.jsonl` + ntfy alarm, automatic retry on the next success/start. **No silent QSO loss.**
+- **Daily DB backup** (`VACUUM INTO`, rotation 7) + **telemetry retention** (decode/pick_attempt/heard/swr/psk to 90 days; `qso` never).
 
-**Tamper-Detection (Sebastian 2026-05-24):** Wenn jemand am Rig-
-Frontpanel Settings dreht (häufiges Szenario: „Dad pfuscht heimlich")
-soll der Pi pingen statt blind nachzuziehen. Mechanik:
+**Tamper detection (Sebastian 2026-05-24):** if someone turns settings on
+the rig's front panel (a common scenario: "Dad fiddles in secret") the Pi
+should ping rather than blindly follow. Mechanics:
 
-1. **Echo-Window**: jede App-initiierte CAT-Änderung wird in
-   `_recent_app_commands[key] = (sollwert, monotonic_ts)` registriert
-   (Helper `Orchestrator._register_app_command`, TTL 3 s).
-2. **Rig-Poll-Sync** (alle 1 s): wenn rig-Wert ≠ unser interner Stand
-   → Echo-Check via `_is_app_echo(key, rig_value, tolerance=...)`:
-   - Match innerhalb Window → eigener Befehl, silent sync
-   - Mismatch ODER Window abgelaufen → **externe Änderung** →
+1. **Echo window:** every app-initiated CAT change is registered in
+   `_recent_app_commands[key] = (target_value, monotonic_ts)`
+   (helper `Orchestrator._register_app_command`, TTL 3 s).
+2. **Rig poll sync** (every 1 s): if the rig value ≠ our internal state
+   → echo check via `_is_app_echo(key, rig_value, tolerance=...)`:
+   - match inside the window → our own command, silent sync
+   - mismatch OR window expired → **external change** →
      `asyncio.create_task(self._notify_xxx_tamper(...))`
-3. **Throttle pro Setting**: nur 1 Push pro neuem Wert. Dreht jemand
-   von 50W → 30W → 5W, kommen 2 Pushes (für 30 und 5), bleibt's bei
-   30W kein weiterer.
-4. **Boot-Gate**: `_tamper_armed`-Flag erst nach dem ersten kompletten
-   Sync gesetzt — beim Service-Restart wissen wir nicht was vorher
-   gedreht wurde, daher silent initial-sync.
+3. **Throttle per setting:** only 1 push per new value. If someone turns
+   from 50W → 30W → 5W, two pushes arrive (for 30 and 5); if it stays at
+   30W, no further one.
+4. **Boot gate:** the `_tamper_armed` flag is only set after the first
+   complete sync — on a service restart we do not know what was turned
+   beforehand, hence a silent initial sync.
 
-Überwachte Settings: TX-Power (`rfpower_norm`), Mode (`mode`),
-Filterbreite (`bandwidth_hz`, nur < 2000 Hz oder > 6000 Hz alarmiert
-weil IC-7300 FIL1/2/3-Slots regulär 2700/3600 sind), Frequenz (eigener
-Pfad via Frequenz-Drift-Watchdog mit 100-Hz-Toleranz, Rollback-Action
-„Auf XXm zurück").
+Monitored settings: TX power (`rfpower_norm`), mode (`mode`),
+filter width (`bandwidth_hz`, only < 2000 Hz or > 6000 Hz alarms because
+the IC-7300's FIL1/2/3 slots are regularly 2700/3600), frequency (its own
+path via the frequency-drift watchdog with 100 Hz tolerance, rollback
+action "Back to XXm").
 
 ### 6.6 Integrations (online)
 
-- **QRZ.com XML API** (Callsign-Lookup) + **QRZ Logbook API** (Auto-Upload der QSOs, pro On-Air-Call eigenes Logbuch/Key via `qrz_logbooks`)
-- **Club Log** Auto-Upload (realtime + putlogs-Bulk), per-Operator-Account
-- **HamQTH** als kostenloser Lookup-Fallback
-- **cty.dat** lokal als Offline-Fallback (DXCC-Präfix → Land/Kontinent)
-- **PSK Reporter:** Upload eigener Decodes + Download "wer hat mich gehört?" (speist den `psk_heard_us`-Reziprozitäts-Tier)
-- **hamqsl.com:** Solar-Indizes (SFI, A/K, MUF), kleines Widget
-- **NG3K ADXO:** Auto-Import des DXpeditions-Kalenders → Watchlist + 24h-ntfy-Reminder
-- **DX-Cluster** (Telnet) als zusätzliche Spot-Quelle
-- **Marinefunker (DF7PM-Liste):** ⚓-Badge + MF-Nr bei aktiven Mitgliedern, eigener Picker-Tier
-- **Upload-Resilience (v0.40.0):** QRZ/ClubLog markieren ein QSO nur bei *klar hartem* Reject als erledigt; transiente Fehler werden erneut versucht (Ceiling 15 + Alarm) — kein stiller Upload-Verlust
+- **QRZ.com XML API** (callsign lookup) + **QRZ Logbook API** (auto-upload of QSOs, a separate logbook/key per on-air call via `qrz_logbooks`)
+- **Club Log** auto-upload (realtime + putlogs bulk), per-operator account
+- **HamQTH** as a free lookup fallback
+- **cty.dat** locally as an offline fallback (DXCC prefix → country/continent)
+- **PSK Reporter:** upload of own decodes + download of "who heard me?" (feeds the `psk_heard_us` reciprocity tier)
+- **hamqsl.com:** solar indices (SFI, A/K, MUF), a small widget
+- **NG3K ADXO:** auto-import of the DXpedition calendar → watchlist + 24h ntfy reminder
+- **DX cluster** (telnet) as an additional spot source
+- **Maritime operators (DF7PM list):** ⚓ badge + MF number for active members, its own picker tier
+- **Upload resilience (v0.40.0):** QRZ/ClubLog mark a QSO done only on a *clearly hard* reject; transient errors are retried (ceiling 15 + alarm) — no silent upload loss
 
-**Resilience-Prinzip (gilt für alle Online-Features):**
-Jede Online-Integration muss **graceful degraden**:
-- Aggressive Timeouts (max 5 s pro Request, kein Blocking)
-- Lokaler Cache mit TTL; UI zeigt Cache-Alter ("Daten von vor 12 min")
-- Bei Ausfall: Badge `offline` an der jeweiligen UI-Komponente, kein Error-Popup, keine Fehlerkaskade
-- Core-Funktionalität (Decode, TX, QSO-Sequence, Log) ist **niemals** von Online-Diensten abhängig
-- Failure einer Integration darf keine andere beeinflussen (Kreis-Breaker pro Service)
+**Resilience principle (applies to all online features):**
+Every online integration must **degrade gracefully**:
+- Aggressive timeouts (max 5 s per request, no blocking)
+- Local cache with TTL; the UI shows the cache age ("data from 12 min ago")
+- On failure: an `offline` badge on the respective UI component, no error popup, no error cascade
+- Core functionality (decode, TX, QSO sequence, log) is **never** dependent on online services
+- The failure of one integration must not affect another (circuit breaker per service)
 
-### 6.7 UI / Maps
+### 6.7 UI / maps
 
-- Live-Map: gearbeitete Stationen (eine Farbe) + aktuell gehörte (andere Farbe)
-- Heard-Heatmap History (letzte 24 h)
-- Offline-Tiles
-- ADIF-Tabelle suchbar/filterbar
-- Status-Badges: GPS-Fix, Zeit-Sync, Rig-Verbindung, WLAN-Status, SWR, ALC, Akku, Temperatur
-- Panic-Stop Button (groß, rot, immer sichtbar)
-- QSO-Skip Button (während laufender Sequenz)
-- Callsign-Blacklist
-- Best-Time-Predictor Widget (basierend auf PSK Reporter History)
+- Live map: worked stations (one colour) + currently heard ones (another colour)
+- Heard heatmap history (last 24 h)
+- Offline tiles
+- Searchable/filterable ADIF table
+- Status badges: GPS fix, time sync, rig connection, Wi-Fi status, SWR, ALC, battery, temperature
+- Panic-stop button (large, red, always visible)
+- QSO-skip button (during a running sequence)
+- Callsign blacklist
+- Best-time-predictor widget (based on PSK Reporter history)
 
-### 6.8 Push & Remote (out)
+### 6.8 Push & remote (out)
 
-- **ntfy.sh** Push-Notifications: neue DXCC, neue Region, QSO-complete, kritische Alarme
-- Sound-Alerts in der Web-UI (Browser-Notification API)
+- **ntfy.sh** push notifications: new DXCC, new region, QSO complete, critical alarms
+- Sound alerts in the web UI (Browser Notification API)
 
-### 6.9 Konfig-Quality
+### 6.9 Config quality
 
-- Alle Settings via Web (kein SSH-Gefummel im Feld)
-- Hot-Reload bei Config-Änderungen
-- Config-Versionierung mit Rollback-Möglichkeit
-- First-Boot Setup-Wizard
+- All settings via the web (no SSH fiddling in the field)
+- Hot-reload on config changes
+- Config versioning with rollback option
+- First-boot setup wizard
 
 ---
 
-## 7. Daten-Modell
+## 7. Data model
 
 ### 7.1 `config.yaml`
 
-**Multi-Operator-Modell** (Sebastian 2026-05-23): mehrere Operator-Profile
-mit eigenen Logs, QRZ-Accounts und Lizenzklassen sind moeglich.
-Backward-Compat: alte single-`operator:`-Configs werden beim Load
-automatisch in `operators: [...]` + `active_callsign` umgewandelt.
+**Multi-operator model** (Sebastian 2026-05-23): several operator profiles
+with their own logs, QRZ accounts and licence classes are possible.
+Backward compat: old single-`operator:` configs are converted automatically
+on load into `operators: [...]` + `active_callsign`.
 
 ```yaml
-# Neue Form (mehrere Operatoren)
+# New form (several operators)
 operators:
   - callsign: DK9XR
-    default_locator: JN58td      # leer = GPS auto
+    default_locator: JN58td      # empty = GPS auto
     default_power_w: 50
-    license_class: A             # A | E | N (deutsche AfuV)
+    license_class: A             # A | E | N (German AfuV)
     qrz_user: DK9XR
     qrz_password: secret
     qrz_logbook_api_key: ABCD-1234
     clublog_email: dk9xr@example.org
     clublog_app_password: "..."
     clublog_api_key: "..."
-    qrz_logbooks:                # On-Air-Call → eigener QRZ-Logbook-Key
-      DK9XR/AM: WXYZ-9876        # QRZ braucht pro Prefix/Suffix ein Logbuch
+    qrz_logbooks:                # on-air call → its own QRZ logbook key
+      DK9XR/AM: WXYZ-9876        # QRZ needs a logbook per prefix/suffix
     home_country: DL
-    current_operating_country: null   # gesetzt bei CEPT-Auslandsbetrieb
+    current_operating_country: null   # set during CEPT foreign operation
   - callsign: DL2XYZ
     default_locator: JO31
     default_power_w: 100
     license_class: E
 
-active_callsign: DK9XR           # aktueller Operator (Hot-Switch via API)
-operator_auto_login_seconds: 30  # nach Service-Start Auto-Default
-api_token: "..."                 # API-Login (als Passwort setzbar); 0600, aus GET redacted
-ntfy_action_token: "..."         # enger Token nur für ntfy-Control-Buttons
+active_callsign: DK9XR           # current operator (hot-switch via API)
+operator_auto_login_seconds: 30  # auto-default after service start
+api_token: "..."                 # API login (settable as password); 0600, redacted from GET
+ntfy_action_token: "..."         # tight token only for ntfy control buttons
 ```
 
-> `operating:` hat über die unten gezeigten hinaus weitere Felder, u.a.
-> `mode` (FT8/FT4), `hunt_priority` (19-Tier-Reihenfolge), `hunt_skip_worked`,
+> `operating:` has further fields beyond the ones shown below, among them
+> `mode` (FT8/FT4), `hunt_priority` (19-tier order), `hunt_skip_worked`,
 > `hunt_dxcc_only`, `qso_cooldown_min`, `psk_reciprocity_enabled`,
 > `tail_end_hunter_enabled`, `boot_mode`, `mode_watchdog_min`.
 
-Alte Form (immer noch akzeptiert, transparente Migration):
+Old form (still accepted, transparent migration):
 ```yaml
 operator:
   callsign: DK9XR
@@ -523,11 +541,11 @@ operating:
   max_ptt_s: 18
   cq_idle_timeout_min: 10
   swr_max: 2.0
-  alc_max: 0                     # 0 = nie kompressionsfähig
+  alc_max: 0                     # 0 = never compression-capable
 
 network:
   wifi_priority:
-    - { ssid: "Heimnetz", psk: "..." }
+    - { ssid: "Home", psk: "..." }
     - { ssid: "Seb-iPhone", psk: "..." }
     - { ssid: "Dad-Android", psk: "..." }
   ap_fallback:
@@ -550,14 +568,15 @@ ui:
   theme: auto
 ```
 
-### 7.2 SQLite Schema (Skizze)
+### 7.2 SQLite schema (sketch)
 
-> Skizze — der reale Stand wird über additive Migrationen in
-> `db/session.py` gepflegt (nur `ALTER TABLE ADD COLUMN`, idempotent).
-> Zusätzlich zu den unten gezeigten existieren u.a.: **`pick_attempt`**
-> (Picker-A/B-Telemetrie), **`call_reputation`** (Soft-Blacklist, global),
-> **`watchlist`**, **`dxpedition_schedule`**, **`freq_reputation`** (Smart-CQ).
-> WAL ist aktiv. Mehrere Tabellen tragen `user_callsign` (Multi-Operator).
+> Sketch — the real state is maintained via additive migrations in
+> `db/session.py` (only `ALTER TABLE ADD COLUMN`, idempotent).
+> In addition to the tables shown below, there are also, among others:
+> **`pick_attempt`** (picker A/B telemetry), **`call_reputation`** (soft
+> blacklist, global), **`watchlist`**, **`dxpedition_schedule`**,
+> **`freq_reputation`** (smart CQ). WAL is active. Several tables carry
+> `user_callsign` (multi-operator).
 
 ```sql
 CREATE TABLE qso (
@@ -575,10 +594,10 @@ CREATE TABLE qso (
   my_power_w  INTEGER,
   swr_avg     REAL,
   notes       TEXT,
-  -- Multi-Operator + DX + Upload-Tracking (spätere Migrationen):
-  user_callsign    TEXT,   -- welcher Operator (Heimat-Call)
-  station_callsign TEXT,   -- tatsächlich gesendeter Call (z.B. 9A/DK9XR)
-  mf_mfnr          INTEGER,-- Marinefunker-Nr (Snapshot)
+  -- multi-operator + DX + upload tracking (later migrations):
+  user_callsign    TEXT,   -- which operator (home call)
+  station_callsign TEXT,   -- the call actually transmitted (e.g. 9A/DK9XR)
+  mf_mfnr          INTEGER,-- maritime-operator number (snapshot)
   qrz_uploaded     BOOLEAN DEFAULT 0,
   qrz_upload_attempts INTEGER DEFAULT 0,
   qrz_last_attempt_at TIMESTAMP,
@@ -640,58 +659,58 @@ CREATE TABLE config_history (
 
 ---
 
-## 8. Datenfluss (Hot Loop)
+## 8. Data flow (hot loop)
 
 ```
-t=0s   ┌─ ALSA-Capture läuft kontinuierlich (Ringbuffer)
+t=0s   ┌─ ALSA capture runs continuously (ring buffer)
        │
-       │  Slot-Start (UTC xx:00/15/30/45 ± 0.5s vom Time-Guard verifiziert)
+       │  Slot start (UTC xx:00/15/30/45 ± 0.5s verified by the time guard)
        ▼
-t=0s   Slot beginnt, RX-Modus
-       Audio-Samples werden gepuffert
+t=0s   Slot begins, RX mode
+       Audio samples are buffered
        ...
-t=13.5s Slot fast voll, Decode-Task startet (parallel zum letzten Audio)
-       ft8_lib decoded → Liste von Decodes mit Call/Grid/SNR/DT
+t=13.5s Slot almost full, decode task starts (parallel to the last audio)
+       ft8_lib decodes → list of decodes with call/grid/SNR/DT
        ▼
-t=14.0s Decodes ins SQLite, an State Machine, an Frontend-SSE
-       State Machine entscheidet: was tun im nächsten Slot?
+t=14.0s Decodes into SQLite, to the state machine, to the frontend SSE
+       State machine decides: what to do in the next slot?
        ▼
-t=14.5s Wenn TX entschieden:
-         - Pre-flight checks (alle Guards)
+t=14.5s If TX decided:
+         - pre-flight checks (all guards)
          - rigctld set_freq, set_mode
          - ft8_lib encode message → 12000 Hz PCM
          - rigctld set_ptt 1
        ▼
-t=15.0s Neuer Slot, ALSA-Playback der encoded Symbole
-       PTT-Watchdog Timer läuft
+t=15.0s New slot, ALSA playback of the encoded symbols
+       PTT watchdog timer runs
        ▼
-t=27.5s TX fertig, PTT off, RX wieder aktiv
-       Audio-Capture läuft eh weiter
+t=27.5s TX done, PTT off, RX active again
+       Audio capture keeps running anyway
        ▼
-t=30.0s Nächster Slot beginnt, Schleife schließt
+t=30.0s Next slot begins, the loop closes
 ```
 
-### 8.1 Audio-Slot-Synchronisation (Anti-Drift)
+### 8.1 Audio slot synchronisation (anti-drift)
 
-**Problem:** Der IC-705 USB-Audio hat einen eigenen Quartz (~±50 ppm). Der Pi-Systemtakt kommt von GPS (±100 ns). Über mehrere Slots driften beide auseinander. Würde man die Slot-Position nur aus Sample-Count rechnen, akkumuliert der Drift bis zu DT-Verletzung.
+**Problem:** the IC-705 USB audio has its own crystal (~±50 ppm). The Pi system clock comes from GPS (±100 ns). Over several slots the two drift apart. If you computed slot position from sample count alone, the drift would accumulate up to a DT violation.
 
-**Lösung (Phase-Locking, nicht Resampling):**
+**Solution (phase-locking, not resampling):**
 
-1. **GPS-Zeit ist Master-Clock.** Slot-Grenzen werden allein aus `chrony`-Systemzeit bestimmt, nie aus ALSA-Sample-Positionen.
-2. **Anker bei Slot-Start:** Beim Slot-Beginn (`t = xx:00.000` UTC ± 1 ms aus chrony) wird die aktuelle ALSA-Capture-Position über `snd_pcm_status_get_avail` als Anker-Sample notiert (`anchor_frame`).
-3. **Harter Cut nach 15 s:** Aus dem Ringbuffer werden exakt `12000 × 15 = 180000` Samples ab `anchor_frame` herausgeschnitten und an `ft8_lib` übergeben.
-4. **Pro Slot rekalibriert:** Beim nächsten Slot wird `anchor_frame` neu gesetzt — Drift akkumuliert nicht über Slot-Grenzen hinweg.
-5. **TX-Pfad analog:** ALSA-Playback wird gestartet wenn `chrony.now() == nächste_slot_start`, nicht wenn Encoder fertig ist (Encoder muss vorher fertig sein, sonst Late-TX-Penalty).
-6. **Drift-Monitoring:** Differenz `expected_samples_per_slot` vs. `actual_samples_per_slot` wird geloggt. Bei > 5 Samples (0.4 ms) Diff → Warnung in UI; bei > 50 Samples → Audio-Kalibrier-Alarm (ALSA-Karte oder Quartz defekt).
-7. **Erst wenn Drift > 0.5 % über mehrere Slots auftritt** (was nicht passieren sollte) wird Resampling als Workaround in Erwägung gezogen — derzeit nicht im Scope.
+1. **GPS time is the master clock.** Slot boundaries are determined solely from the `chrony` system time, never from ALSA sample positions.
+2. **Anchor at slot start:** at slot start (`t = xx:00.000` UTC ± 1 ms from chrony) the current ALSA capture position is noted as an anchor sample (`anchor_frame`) via `snd_pcm_status_get_avail`.
+3. **Hard cut after 15 s:** exactly `12000 × 15 = 180000` samples from `anchor_frame` onward are cut out of the ring buffer and handed to `ft8_lib`.
+4. **Recalibrated per slot:** on the next slot, `anchor_frame` is set anew — drift does not accumulate across slot boundaries.
+5. **TX path analogous:** ALSA playback is started when `chrony.now() == next_slot_start`, not when the encoder is done (the encoder must be finished beforehand, otherwise a late-TX penalty).
+6. **Drift monitoring:** the difference `expected_samples_per_slot` vs. `actual_samples_per_slot` is logged. At > 5 samples (0.4 ms) diff → warning in the UI; at > 50 samples → audio-calibration alarm (ALSA card or crystal defective).
+7. **Only if drift > 0.5 % occurs over several slots** (which should not happen) is resampling considered as a workaround — currently out of scope.
 
-Diese Strategie entspricht dem Phase-Lock-Prinzip aus WSJT-X' eigenem Audio-Handling und vermeidet aufwändige Echtzeit-Resampling-Logik im Hot Path.
+This strategy matches the phase-lock principle from WSJT-X's own audio handling and avoids costly real-time resampling logic in the hot path.
 
 ---
 
-## 9. Build & Deploy
+## 9. Build & deploy
 
-### 9.1 Repo-Struktur (geplant)
+### 9.1 Repo structure (planned)
 
 ```
 hochgericht-ft8/
@@ -700,12 +719,12 @@ hochgericht-ft8/
 │   ├── ft8_appliance/
 │   │   ├── main.py
 │   │   ├── audio/
-│   │   ├── decode/        ← cffi-wrapper für ft8_lib
+│   │   ├── decode/        ← cffi wrapper for ft8_lib
 │   │   ├── statemachine/
-│   │   ├── rig/           ← rigctld-Client
+│   │   ├── rig/           ← rigctld client
 │   │   ├── gps/
 │   │   ├── integrations/  ← QRZ, HamQTH, PSK Reporter, hamqsl, Blitzortung
-│   │   ├── web/           ← FastAPI Routes + SSE
+│   │   ├── web/           ← FastAPI routes + SSE
 │   │   ├── db/
 │   │   └── config/
 │   └── tests/
@@ -717,7 +736,7 @@ hochgericht-ft8/
 │       ├── lib/
 │       └── components/
 ├── vendor/
-│   └── ft8_lib/           ← als git submodule
+│   └── ft8_lib/           ← as a git submodule
 ├── deploy/
 │   ├── systemd/
 │   ├── networkmanager/
@@ -725,120 +744,120 @@ hochgericht-ft8/
 │   └── install.sh
 ├── data/
 │   └── cty.dat            ← offline DXCC database
-├── tiles/                 ← offline map tiles (gitignored, generiert)
-├── architecture.md        ← dieses Dokument
+├── tiles/                 ← offline map tiles (gitignored, generated)
+├── architecture.md        ← this document
 └── README.md
 ```
 
-### 9.2 Bring-up Phasen
+### 9.2 Bring-up phases
 
-> **Stand:** alle Phasen durchlaufen — die Appliance ist auf zwei Pis
-> (`ft8`, `ft8-2`) im produktiven Feldbetrieb. Die folgende Liste ist die
-> ursprüngliche Bring-up-Reihenfolge (historisch).
+> **Status:** all phases completed — the appliance is in productive field
+> use on two Pis (`ft8`, `ft8-2`). The following list is the original
+> bring-up order (historical).
 
-1. **Phase 0:** Pi-OS Lite Install, SSH, NVMe-Boot, systemd-Grundlagen
-2. **Phase 1:** Hardware-Verify: ALSA findet IC-705, rigctld redet mit Rig, gpsd liefert Fix
-3. **Phase 2:** Decoder-Spike — ft8_lib auf gespeicherte WAV-Files anwenden
-4. **Phase 3:** Live-Decode-Loop in Python, Decodes auf stdout
-5. **Phase 4:** Encoder + TX-Pfad, PTT-Watchdog hart getestet
-6. **Phase 5:** State Machine + Logging
-7. **Phase 6:** Web-Backend + minimale Svelte-UI (Decode-Liste + Buttons)
-8. **Phase 7:** Map + ADIF-Tabelle + Status-Badges
-9. **Phase 8:** Online-Integrations (QRZ, PSK Reporter, hamqsl)
-10. **Phase 9:** Antennen-Profile, Band-Lockouts, IARU-Logik
-11. **Phase 10:** AP-Fallback + Captive Portal + WLAN-Roaming
-12. **Phase 11:** Push (ntfy), Sounds, Theming, PWA-Polish
-13. **Phase 12:** Feldtest
+1. **Phase 0:** Pi OS Lite install, SSH, NVMe boot, systemd basics
+2. **Phase 1:** hardware verify: ALSA finds the IC-705, rigctld talks to the rig, gpsd delivers a fix
+3. **Phase 2:** decoder spike — apply ft8_lib to stored WAV files
+4. **Phase 3:** live decode loop in Python, decodes to stdout
+5. **Phase 4:** encoder + TX path, PTT watchdog hard-tested
+6. **Phase 5:** state machine + logging
+7. **Phase 6:** web backend + minimal Svelte UI (decode list + buttons)
+8. **Phase 7:** map + ADIF table + status badges
+9. **Phase 8:** online integrations (QRZ, PSK Reporter, hamqsl)
+10. **Phase 9:** antenna profiles, band lockouts, IARU logic
+11. **Phase 10:** AP fallback + captive portal + Wi-Fi roaming
+12. **Phase 11:** push (ntfy), sounds, theming, PWA polish
+13. **Phase 12:** field test
 
 ---
 
-## 10. Decisions Journal
+## 10. Decisions journal
 
-| Entscheidung | Gewählt | Verworfen | Begründung |
+| Decision | Chosen | Rejected | Rationale |
 |---|---|---|---|
-| Decoder | ft8_lib | jt9, WSJT-X/Z headless | MIT, klein, kein Fortran, kein Xvfb, kein Subprocess |
-| Backend | Python 3.12 + FastAPI | Go, Rust | Audio/GPS/Ham-Ökosystem, Dev-Speed |
-| Frontend | Svelte 5 (statisch) | Vanilla JS, Vue, React, HTMX, SvelteKit | Kleinste Bundles, scaling mit Features, kein Node-Server |
-| Push-Protokoll | SSE | WebSocket | Einseitig reicht, robuster, einfacher |
-| Persistenz | YAML (Config) + SQLite (Daten) | Pure SQLite, Pure YAML | YAML menschen-editierbar, SQLite für strukturierte Daten |
-| Multi-User | Multi-Operator-Profile in YAML | DB-Tabelle | YAML konsistent mit Bands/Antennas, diff-friendly, Hot-Switch via /api/operators/select |
-| WLAN-Topologie | Single-Chip + AP-Fallback | Dual-Chip Travel-Router | User-Entscheidung |
-| Captive-Portal Fremd-WLAN | nicht durchgereicht | Travel-Router-Modus | Phone-Hotspot löst es transparent |
-| Zeit-Quelle | GPS (chrony) | NTP allein | Internet-Unabhängigkeit |
-| PTT-Methode | CAT (Hamlib) | RTS/DTR, VOX | Deterministisch, Watchdog-tauglich |
-| Audio-Capture | ALSA direkt | PulseAudio, PipeWire | Latenz, weniger Abhängigkeiten |
-| USB-Port für IC-705 | USB 2.0 (schwarz) | USB 3.0 (blau) | USB 3.0 emittiert HF-Müll → RX-Noise-Floor |
-| Audio-Slot-Sync | Phase-Lock zu GPS-Zeit, harter Cut pro Slot | Sample-Count, Resampling | Drift akkumuliert nicht, kein Echtzeit-DSP nötig |
-| Captive-Portal Connectivity-Check | 204-Antworten für Google/Ubuntu-Probes | nichts tun | Android koppelt sonst vom Pi-WLAN ab |
-| Online-Integrations-Resilience | Cache + Graceful Degrade + Circuit Breaker | Hard-Dependencies | Field-Tauglichkeit ohne Internet |
-| Decoder-Mode-Mix | standard / deep / multi / extreme (Default extreme seit v0.7.1) | nur 1 fixer Mode | Pi 5 hat CPU-Reserve, Subtract+Hint+Notch bringen ~5-6% mehr Decodes; CPU-Adaptive Fallback bei Überlast |
-| Decoder-Subtract-Pfad | echter Subtract-and-Rerun (synth → in-place subtract → re-decode) | nur Pass1+Pass2-Merge | JTDX-Style maskierte schwächere Signale werden sichtbar |
-| Hint-Pass-Validation | Decoded text muss known-call enthalten | AP-Decoding | False-Positive-Filter äquivalent zu JTDX Type-2; vermeidet AP-Phantome |
-| Auto-Notch-Pfad | FFT-Spektral-Notch pro Slot, numpy-only | scipy biquad-cascade | scipy 150MB Dep auf Pi vermieden |
-| Pass-Stats-Tracking | Per-Pass-Counts in `/api/status.decoder_pass_stats` | nur Gesamt-Counter | datengetriebene Insight welcher Pass real Mehrwert bringt |
-| DT-Offset-Korrektur | Auto-Kalibrierung via rolling-Median | nur Diagnose-Push | Self-correcting bei systematischen Audio-Buffer-Offsets |
-| PSK-Reporter | Upload aus Decode-Pfad aktiv (`upload_decode()` aus dem Slot-Handler) | Client implementiert aber unangetastet | Reziproker Community-Wert ohne PII |
+| Decoder | ft8_lib | jt9, WSJT-X/Z headless | MIT, small, no Fortran, no Xvfb, no subprocess |
+| Backend | Python 3.12 + FastAPI | Go, Rust | audio/GPS/ham ecosystem, dev speed |
+| Frontend | Svelte 5 (static) | Vanilla JS, Vue, React, HTMX, SvelteKit | smallest bundles, scales with features, no Node server |
+| Push protocol | SSE | WebSocket | one-way is enough, more robust, simpler |
+| Persistence | YAML (config) + SQLite (data) | pure SQLite, pure YAML | YAML human-editable, SQLite for structured data |
+| Multi-user | multi-operator profiles in YAML | DB table | YAML consistent with bands/antennas, diff-friendly, hot-switch via /api/operators/select |
+| Wi-Fi topology | single chip + AP fallback | dual-chip travel router | user decision |
+| Captive portal, foreign Wi-Fi | not proxied | travel-router mode | phone hotspot solves it transparently |
+| Time source | GPS (chrony) | NTP alone | internet independence |
+| PTT method | CAT (Hamlib) | RTS/DTR, VOX | deterministic, watchdog-capable |
+| Audio capture | ALSA directly | PulseAudio, PipeWire | latency, fewer dependencies |
+| USB port for IC-705 | USB 2.0 (black) | USB 3.0 (blue) | USB 3.0 emits RF garbage → RX noise floor |
+| Audio slot sync | phase-lock to GPS time, hard cut per slot | sample count, resampling | drift does not accumulate, no real-time DSP needed |
+| Captive-portal connectivity check | 204 answers for Google/Ubuntu probes | do nothing | otherwise Android drops off the Pi Wi-Fi |
+| Online-integration resilience | cache + graceful degrade + circuit breaker | hard dependencies | field-capability without internet |
+| Decoder mode mix | standard / deep / multi / extreme (default extreme since v0.7.1) | only 1 fixed mode | the Pi 5 has CPU headroom, subtract+hint+notch yield ~5-6% more decodes; CPU-adaptive fallback on overload |
+| Decoder subtract path | real subtract-and-rerun (synth → in-place subtract → re-decode) | only pass1+pass2 merge | JTDX-style: masked weaker signals become visible |
+| Hint-pass validation | decoded text must contain a known call | AP decoding | false-positive filter equivalent to JTDX type 2; avoids AP phantoms |
+| Auto-notch path | FFT spectral notch per slot, numpy-only | scipy biquad cascade | avoids the 150 MB scipy dep on the Pi |
+| Pass-stats tracking | per-pass counts in `/api/status.decoder_pass_stats` | only a total counter | data-driven insight into which pass adds real value |
+| DT-offset correction | auto-calibration via rolling median | only a diagnostic push | self-correcting for systematic audio-buffer offsets |
+| PSK Reporter | upload from the decode path active (`upload_decode()` from the slot handler) | client implemented but untouched | reciprocal community value without PII |
 
-> **Detail-Doku zu allen Decoder-Releases v0.5.2 – v0.8.0**:
-> siehe [`docs/decoder_evolution.md`](docs/decoder_evolution.md)
-
----
-
-## 11. Out of Scope (bewusst gestrichen)
-
-- Wasserfall-Anzeige
-- JT9/JT65/MSK144 oder andere Modi (FT4 ist *in* Scope, siehe §6.x)
-- DXpedition Hound-Mode
-- Manuelle Message-Templates
-- WSJT-X/Z Tier 2 Reste (Punkte 1/2/3/4/6) — explizit verworfen 15.05.2026
-- WSJT-X/Z Tier 3 komplett — explizit verworfen 15.05.2026
-- ~~Multi-User-Profile (vorerst)~~ — implementiert 2026-05-23, siehe §7.1
-- Trip-Modus mit Voice-Memos
-- Audio-Recording on demand
-- JSONL-Decode-Dump
-- USB-Stick-Backup
-- LotW / eQSL Auto-Upload (~~ClubLog~~ ist implementiert, siehe §6.6)
-- Easter-Egg-Animationen
-- Dual-WLAN-Chip Travel-Router-Modus
-
-Inzwischen umgesetzt (waren mal out of scope):
-- ~~Multi-User-Profile~~ — implementiert 2026-05-23, siehe §7.1
-- ~~ClubLog Auto-Upload~~ — implementiert, siehe §6.6
-- ~~DXCC-Award-Tracking~~ — Picker-Tiers `new_dxcc`/`new_dxcc_band` (5BWAS) + `new_grid(_band)` (VUCC), siehe §6.2
-- ~~Remote-Support via Tailscale/WireGuard~~ — beide Pis laufen über Tailscale (Zugang token-gesichert)
-
-Alle weiteren nachrüstbar wenn später gewünscht.
+> **Detailed docs for all decoder releases v0.5.2 – v0.8.0:**
+> see [`docs/decoder_evolution.md`](docs/decoder_evolution.md)
 
 ---
 
-## 12. Open Questions
+## 11. Out of scope (deliberately dropped)
 
-1. **TX-Audio-Tiefpass:** Filter auf dem Pi vor ALSA-Out, oder vertrauen wir dem IC-705 dass er sauber begrenzt? — TBD im Feldtest.
-2. **HW-Watchdog auf GPIO:** Pi 5 hat einen, lohnt der Aufwand? Wahrscheinlich später, nicht im MVP.
-3. **Theme-Switch-Logik:** Sonnen-Auf-/Untergangsberechnung aus Lat/Lon oder simples UTC-Stunden-Schema?
-4. **Map-Tile-Pre-Download:** wie viel Welt-Coverage realistisch (Speicher vs. Nutzen)?
-5. **WLAN-Country-Code:** muss zur GPS-Position passen (gesetzlich!) — automatische Umstellung?
-6. **NetworkManager vs. wpa_supplicant pur:** beide gehen, NM hat schönere D-Bus-API für Web-Config.
-7. **i18n der Backend-Strings:** Lock-Reason-Texte aus `statemachine/guards.py`
-   (z.B. „active antenna doesn't cover the current band", „SWR 2.50 exceeds 2.00")
-   sind englisch und werden 1:1 ins UI durchgereicht. Frontend-eigene
-   UI-Strings sind deutsch. Sebastian 2026-05-24: „auf deutsch wäre cool,
-   aber nebensächlich" — Backlog-Item für später wenn UI poliert wird.
-   Betrifft `guards.py` (~10 Strings) + ntfy-Push-Bodies in `orchestrator.py`
-   (mit gemischtem DE/EN-Bestand).
+- Waterfall display
+- JT9/JT65/MSK144 or other modes (FT4 *is* in scope, see §6.x)
+- DXpedition hound mode
+- Manual message templates
+- WSJT-X/Z tier 2 remnants (points 1/2/3/4/6) — explicitly rejected 2026-05-15
+- WSJT-X/Z tier 3 entirely — explicitly rejected 2026-05-15
+- ~~Multi-user profiles (for now)~~ — implemented 2026-05-23, see §7.1
+- Trip mode with voice memos
+- Audio recording on demand
+- JSONL decode dump
+- USB-stick backup
+- LotW / eQSL auto-upload (~~ClubLog~~ is implemented, see §6.6)
+- Easter-egg animations
+- Dual-Wi-Fi-chip travel-router mode
+
+Implemented since (were once out of scope):
+- ~~Multi-user profiles~~ — implemented 2026-05-23, see §7.1
+- ~~ClubLog auto-upload~~ — implemented, see §6.6
+- ~~DXCC award tracking~~ — picker tiers `new_dxcc`/`new_dxcc_band` (5BWAS) + `new_grid(_band)` (VUCC), see §6.2
+- ~~Remote support via Tailscale/WireGuard~~ — both Pis run over Tailscale (access token-secured)
+
+All others retrofittable if wanted later.
+
+---
+
+## 12. Open questions
+
+1. **TX-audio low-pass:** a filter on the Pi before ALSA out, or do we trust the IC-705 to limit cleanly? — TBD in field test.
+2. **HW watchdog on GPIO:** the Pi 5 has one, is the effort worth it? Probably later, not in the MVP.
+3. **Theme-switch logic:** sunrise/sunset calculation from lat/lon, or a simple UTC-hour scheme?
+4. **Map-tile pre-download:** how much world coverage is realistic (storage vs. benefit)?
+5. **Wi-Fi country code:** must match the GPS position (legally required!) — automatic switching?
+6. **NetworkManager vs. plain wpa_supplicant:** both work, NM has a nicer D-Bus API for web config.
+7. **i18n of the backend strings:** lock-reason texts from `statemachine/guards.py`
+   (e.g. "active antenna doesn't cover the current band", "SWR 2.50 exceeds 2.00")
+   are English and passed 1:1 into the UI. The frontend's own UI strings are
+   fully bilingual (DE/EN). Sebastian 2026-05-24: "German would be cool, but
+   secondary" — a backlog item for later when the UI is polished. Affects
+   `guards.py` (~10 strings) + ntfy push bodies in `orchestrator.py`
+   (with a mixed DE/EN inventory).
 
 ---
 
 ## 13. Glossary
 
-- **FT8:** digitaler Mode für schwache Signale, 15-Sekunden-Slots, 50 Hz Bandbreite pro Signal
-- **DT (Delta Time):** zeitlicher Offset eines Decodes zum Slot-Start. > 0.5 s = nicht decodierbar
-- **ALC (Automatic Level Control):** Rig-interne Limitierung, sollte bei FT8 = 0 sein (sonst Splatter)
-- **SWR (Standing Wave Ratio):** Maß für Antennen-Anpassung. > 2.0 = problematisch, > 3.0 = TX-Stopp
-- **Maidenhead Locator:** Geokoordinaten-Kürzel, z.B. `JN58td` (6-stellig)
-- **DXCC:** ARRL-Länderliste, ~340 "Entitäten" weltweit
-- **CAT (Computer-Aided Transceiver):** serielle Steuerung des Rigs
-- **PTT (Push to Talk):** sendeschalter
-- **CQ:** allgemeiner Anruf "wer hört mich?"
-- **RR73:** "Roger, 73" — QSO-Bestätigung am Ende
-- **PSK Reporter:** crowd-sourced Empfangs-Reports, https://pskreporter.info
+- **FT8:** digital weak-signal mode, 15-second slots, 50 Hz bandwidth per signal
+- **DT (delta time):** temporal offset of a decode relative to slot start. > 0.5 s = not decodable
+- **ALC (Automatic Level Control):** rig-internal limiting, should be 0 for FT8 (otherwise splatter)
+- **SWR (Standing Wave Ratio):** measure of antenna match. > 2.0 = problematic, > 3.0 = TX stop
+- **Maidenhead locator:** geo-coordinate shorthand, e.g. `JN58td` (6 characters)
+- **DXCC:** ARRL country list, ~340 "entities" worldwide
+- **CAT (Computer-Aided Transceiver):** serial control of the rig
+- **PTT (Push to Talk):** transmit switch
+- **CQ:** general call "who can hear me?"
+- **RR73:** "Roger, 73" — QSO confirmation at the end
+- **PSK Reporter:** crowd-sourced reception reports, https://pskreporter.info
