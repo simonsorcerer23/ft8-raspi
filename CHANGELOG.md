@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.64.0 — 2026-06-01
+- feat: Pick-Telemetrie komplett — winning_tier, PSK-SNR, Distanz & mehr
+
 ## v0.63.0 — 2026-06-01
 - feat: Pick-Telemetrie erweitern — alles JETZT sammeln statt in einer Woche
 
