@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.53.0 — 2026-06-01
+- feat: i18n Welle 5 — ADIFTable-Filter + Kontinent-Namen (cont.*)
+
 ## v0.52.0 — 2026-06-01
 - feat: i18n Welle 4 — 9 Komponenten (Panels, Charts, Stats, RigPanel)
 
