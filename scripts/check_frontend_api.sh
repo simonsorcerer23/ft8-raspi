@@ -41,3 +41,17 @@ if [[ "$fail" -ne 0 ]]; then
     exit 1
 fi
 echo "✓ Frontend: kein roher fetch()/EventSource ausserhalb des Auth-Layers"
+
+# i18n-Guard: t('…') benutzen aber i18n.svelte.js NICHT importieren = Laufzeit-
+# Crash (ReferenceError, vom Build NICHT gefangen). Genau so kam DecodeList
+# kaputt raus (Migrations-Skript-Anker verfehlt).
+bad_i18n=""
+for f in $(grep -rlE "\bt\('" . --include='*.svelte'); do
+    grep -q "i18n.svelte.js" "$f" || bad_i18n="$bad_i18n $f"
+done
+if [[ -n "$bad_i18n" ]]; then
+    echo "✗ t('…') ohne i18n-Import (Laufzeit-Crash):" >&2
+    for f in $bad_i18n; do echo "    $f" >&2; done
+    exit 1
+fi
+echo "✓ Frontend: jede t()-Nutzung importiert i18n"

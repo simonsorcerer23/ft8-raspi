@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { decodeStore, statusStore } from '../lib/stores.svelte.js';
+  import { t } from '../lib/i18n.svelte.js';
   import { fmtUtcTime } from '../lib/time.js';
 
   let { onReply = () => {}, onTailEnd = () => {} } = $props();
