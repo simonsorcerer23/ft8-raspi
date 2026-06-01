@@ -114,6 +114,33 @@ async def psk_who_heard_me(
     hours: int = Query(24, ge=1, le=72),
     orch: Orchestrator = Depends(get_orchestrator),
 ) -> PskHeardResponse:
+    # Demo-Modus: pskreporter.info ist nicht erreichbar/aktiv → die geseedeten
+    # PskReporterIn-Zeilen aus der DB zurueckgeben (sonst bleibt „Empfaenger"
+    # leer). Vor dem enabled-Check, damit's auch ohne aktiven PSK-Client greift.
+    if getattr(getattr(orch, "config", None), "demo_mode", False):
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import desc, select
+
+        from ...db import session_scope
+        from ...db.models import PskReporterIn
+        from ...integrations.flags import flag_for_call
+        _cty = getattr(getattr(orch, "integrations", None), "cty", None)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
+        async with session_scope() as s:
+            rows = list((await s.execute(
+                select(PskReporterIn).where(PskReporterIn.ts >= cutoff)
+                .order_by(desc(PskReporterIn.ts)).limit(200)
+            )).scalars())
+        return PskHeardResponse(reports=[
+            PskHeardRow(
+                rx_call=r.rx_call, rx_grid=r.rx_grid, snr_db=r.snr_db,
+                band=r.band, mode="FT8", received_at=r.ts.isoformat(),
+                flag=flag_for_call(r.rx_call, _cty),
+            )
+            for r in rows
+        ])
+
     if not orch.integrations.psk_reporter or not orch.integrations.psk_reporter.enabled:
         return PskHeardResponse(reports=[])
     callsign = orch.state_machine.ctx.callsign
