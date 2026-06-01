@@ -89,9 +89,11 @@ async def healthcheck(
     # The pill should reflect *fix quality*, not "is gpsd running" —
     # otherwise an indoor Pi with the daemon up but no satellites shows
     # green and misleads the operator. Mode 1 = no fix → fail.
+    demo = getattr(getattr(orch, "config", None), "demo_mode", False)
     gps = orch.gps.snapshot
     if gps.mode <= 1:
-        gps_status = "fail"
+        # Im Demo-Modus ist „kein GPS" erwartet → warn statt rotem fail.
+        gps_status = "warn" if demo else "fail"
     elif gps.mode == 2:
         gps_status = "warn"
     else:
@@ -134,8 +136,14 @@ async def healthcheck(
     # getattr-Guard: FakeOrchestrator in den Tests hat kein decode_source.
     # None → audio_status bleibt "fail" (kein metrics-Objekt), korrekt.
     decode_source = getattr(orch, "decode_source", None)
-    audio_status = "fail"
-    audio_details: dict[str, object] = {"note": "no capture wired"}
+    audio_details: dict[str, object]
+    if demo:
+        # Demo-Modus: Decodes kommen aus dem Simulator (keine ALSA-Metrics).
+        audio_status = "warn"
+        audio_details = {"note": "Demo-Modus — Simulator-Decodes"}
+    else:
+        audio_status = "fail"
+        audio_details = {"note": "no capture wired"}
     metrics = getattr(decode_source, "metrics", None)
     if metrics is not None:
         # |drift| > 50 samples per slot is the FT8-lib soft limit. We use

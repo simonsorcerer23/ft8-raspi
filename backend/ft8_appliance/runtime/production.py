@@ -172,7 +172,22 @@ async def build_production_orchestrator(config: AppConfig) -> Orchestrator:
     instance lets the FastAPI lifespan attach it to ``app.state`` and start
     it as part of the shared startup phase.
     """
-    rig = RigctldClient(host="127.0.0.1", port=4532)
+    # Demo-Modus: Sim-Rig statt echtem rigctld → Rig-Panel lebt (Freq/Mode/
+    # SWR/Status) ohne Hardware. GPS bleibt real (kein Fix ist fuer eine
+    # Heimstation ok; Healthcheck zeigt im Demo „warn" statt „fail").
+    if getattr(config, "demo_mode", False):
+        from typing import cast
+
+        from ..rig.sim_rig import SimRig
+        band0 = config.bands[0].name if config.bands else "20m"
+        _band_freq = {"160m": 1_840_000, "80m": 3_573_000, "40m": 7_074_000,
+                      "30m": 10_136_000, "20m": 14_074_000, "17m": 18_100_000,
+                      "15m": 21_074_000, "12m": 24_915_000, "10m": 28_074_000,
+                      "6m": 50_313_000, "2m": 144_174_000, "70cm": 432_174_000}
+        # SimRig duck-typed bewusst die vom Orchestrator genutzte Rig-API.
+        rig = cast(RigctldClient, SimRig(freq_hz=_band_freq.get(band0, 14_074_000)))
+    else:
+        rig = RigctldClient(host="127.0.0.1", port=4532)
     gps = GpsdClient(host="127.0.0.1", port=2947)
     decode_source = _build_decode_source(config)
     playback = _build_playback(config)

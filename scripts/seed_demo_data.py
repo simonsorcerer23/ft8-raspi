@@ -72,9 +72,10 @@ async def main(callsign: str, count: int, wipe: bool) -> None:
         for i in range(count):
             call, grid = rng.choice(DEMO_QSO_CALLS)
             band = rng.choice(BANDS)
-            # ueber die letzten ~45 Tage verteilen
+            # ueber die letzten ~14 Tage verteilen (inkl. heute → Dashboard
+            # zeigt „QSOs heute" + „7 Tage" gefuellt).
             start = now - timedelta(
-                days=rng.uniform(0, 45), minutes=rng.uniform(0, 1440)
+                days=rng.uniform(0, 14), minutes=rng.uniform(0, 1440)
             )
             s.add(Qso(
                 call=call,
