@@ -1,5 +1,6 @@
 <script>
   // v0.22.0 — DX-Operating-Location.
+  import { t } from '../lib/i18n.svelte.js';
   // Zeigt aktuellen TX-Call (mit Prefix wenn Auslandsbetrieb), GPS-Detection,
   // Mismatch-Warnung und Country-Selector. Bei Mismatch (GPS != current
   // Setting) wird ein oranges Banner mit Tap-to-fix-Action gezeigt.
@@ -42,7 +43,7 @@
 
   // v0.29.0 — Modifier-Suffix (Aeronautical/Maritime Mobile, Portable …)
   const SUFFIXES = [
-    { v: '',    label: '🏠 keiner (Heimat)' },
+    { v: '',    label: t('oploc.tx_home') },
     { v: 'AM',  label: '/AM · Aeronautical Mobile' },
     { v: 'MM',  label: '/MM · Maritime Mobile' },
     { v: 'P',   label: '/P · Portable' },
@@ -74,13 +75,13 @@
   function gpsStatusText(mode) {
     if (mode === 3) return 'Fix (3D)';
     if (mode === 2) return 'Fix (2D)';
-    return 'kein Fix';
+    return t('oploc.no_fix');
   }
 </script>
 
 <div class="card" class:dx={loc?.current_country} class:mismatch={loc?.mismatch}>
   <header>
-    <h3>📍 Operating-Location</h3>
+    <h3>📍 {t('oploc.title')}</h3>
     {#if loc?.current_country}
       <span class="badge dx-badge">{loc.tx_callsign}</span>
     {:else}
@@ -95,12 +96,12 @@
   {#if loc}
     <div class="grid">
       <div class="row">
-        <span class="lbl">Aktuell</span>
+        <span class="lbl">{t('oploc.current')}</span>
         <span class="val">
           {#if loc.current_country}
             🌐 {loc.current_country_name} ({loc.current_country})
           {:else}
-            🏠 {loc.home_country_name} (Heimat)
+            🏠 {loc.home_country_name} ({t('oploc.home_suffix')})
           {/if}
         </span>
       </div>
@@ -145,7 +146,7 @@
 
     <div class="picker">
       <label>
-        <span>Land manuell wählen</span>
+        <span>{t('oploc.choose_country')}</span>
         <select bind:value={loc.current_country} onchange={(e) => setCountry(e.target.value)}
                 disabled={busy}>
           <option value="">🏠 Heimat ({loc.home_country})</option>
@@ -157,7 +158,7 @@
         </select>
       </label>
       <label>
-        <span>Funke als</span>
+        <span>{t('oploc.tx_as')}</span>
         <select value={loc.current_suffix ?? ''} onchange={(e) => setSuffix(e.target.value)}
                 disabled={busy}>
           {#each SUFFIXES as s}

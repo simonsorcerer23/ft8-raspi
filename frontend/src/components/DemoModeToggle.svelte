@@ -4,6 +4,7 @@
   // nach Service-Neustart → der Button persistiert + startet neu.
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let enabled = $state(false);
   let busy = $state(false);
@@ -23,13 +24,13 @@
     if (busy) return;
     const target = !enabled;
     if (!confirm(target
-        ? 'Demo-Modus AN: Simulator-Decodes statt echtem RX. Dienst startet neu (~10s). Fortfahren?'
-        : 'Demo-Modus AUS: zurück auf echten RX. Dienst startet neu (~10s). Fortfahren?')) return;
+        ? t('demo.confirm_on')
+        : t('demo.confirm_off'))) return;
     busy = true; msg = null;
     try {
       await api.setDemoMode(target);
       enabled = target;
-      msg = 'Dienst startet neu … Seite in ~10 s neu laden.';
+      msg = t('demo.restarting');
     } catch (e) {
       msg = `Fehler: ${e.message}`;
     } finally { busy = false; }
@@ -37,17 +38,17 @@
 </script>
 
 <div class="panel">
-  <h3>Demo-Modus</h3>
+  <h3>{t('demo.title')}</h3>
   {#if loaded}
     <div class="row">
-      <span class="state {enabled ? 'on' : 'off'}">{enabled ? 'AN — Simulator' : 'AUS — echter RX'}</span>
+      <span class="state {enabled ? 'on' : 'off'}">{enabled ? t('demo.on') : t('demo.off')}</span>
       <button class="btn" class:danger={enabled} onclick={toggle} disabled={busy}>
-        {busy ? '…' : (enabled ? 'Demo ausschalten' : 'Demo einschalten')}
+        {busy ? '…' : (enabled ? t('demo.turn_off') : t('demo.turn_on'))}
       </button>
     </div>
     {#if msg}<div class="msg">{msg}</div>{/if}
   {:else}
-    <div class="msg">lädt …</div>
+    <div class="msg">{t('demo.loading')}</div>
   {/if}
 </div>
 

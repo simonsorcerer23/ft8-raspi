@@ -3,6 +3,7 @@
   // plus a "next action" hint so you always know what comes next.
   import { onMount } from 'svelte';
   import { fmtUtcTime } from '../lib/time.js';
+  import { t } from '../lib/i18n.svelte.js';
   import { api } from '../lib/api.js';
 
   let conv = $state({ op_mode: 'off', state: 'IDLE', entries: [],
@@ -32,7 +33,7 @@
 
 <div class="wrap">
   <header>
-    <h2>Live-Konversation</h2>
+    <h2>{t('qso.title')}</h2>
     {#if conv.partner_call}
       <div class="partner">
         <strong>📡 {#if conv.partner_flag}<span class="flag" title={conv.partner_call}>{conv.partner_flag}</span> {/if}{conv.partner_call}</strong>
@@ -45,7 +46,7 @@
   </header>
 
   {#if conv.entries.length === 0}
-    <p class="empty">Noch keine Aktivität — wenn du CQ oder Antworten startest, taucht hier alles auf.</p>
+    <p class="empty">{t('qso.empty')}</p>
   {:else}
     <div class="transcript">
       {#each conv.entries as e, i (i + '-' + e.message)}
@@ -62,7 +63,7 @@
 
   {#if conv.next_action_hint}
     <div class="next">
-      <strong>Nächste Aktion:</strong> {conv.next_action_hint}
+      <strong>{t('qso.next_action')}</strong> {conv.next_action_hint}
     </div>
   {/if}
 </div>

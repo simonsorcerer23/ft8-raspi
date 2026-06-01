@@ -57,4 +57,41 @@ export const en = {
   'control.reboot_confirm': 'Really restart the Pi? (~30 s downtime)',
   'control.shutdown': '🌙 Shut down Pi',
   'control.shutdown_confirm': 'Really shut down the Pi?',
+
+  // LoginGate
+  'login.title': '🔒 FT8 — Sign in',
+  'login.prompt': 'Enter password.',
+  'login.placeholder': 'Password',
+  'login.submit': 'Sign in',
+  'login.rejected': 'Token rejected — please check.',
+
+  // QsoConversation
+  'qso.title': 'Live conversation',
+  'qso.empty': 'No activity yet — once you start CQ or answering, everything shows up here.',
+  'qso.next_action': 'Next action:',
+
+  // OperatingLocationCard
+  'oploc.title': 'Operating location',
+  'oploc.current': 'Current',
+  'oploc.gps': 'GPS',
+  'oploc.no_fix': 'no fix',
+  'oploc.home_suffix': 'home',
+  'oploc.home': 'Germany (home)',
+  'oploc.choose_country': 'Choose country manually',
+  'oploc.tx_as': 'Transmit as',
+  'oploc.tx_home': 'none (home)',
+
+  // DemoModeToggle
+  'demo.title': 'Demo mode',
+  'demo.on': 'ON — simulator',
+  'demo.off': 'OFF — real RX',
+  'demo.turn_on': 'Enable demo',
+  'demo.turn_off': 'Disable demo',
+  'demo.confirm_on': 'Demo mode ON: simulator decodes instead of real RX. Service restarts (~10s). Continue?',
+  'demo.confirm_off': 'Demo mode OFF: back to real RX. Service restarts (~10s). Continue?',
+  'demo.restarting': 'Service restarting … reload the page in ~10 s.',
+  'demo.loading': 'loading …',
+
+  // SolarWidget
+  'solar.unavailable': 'Solar data unavailable',
 };

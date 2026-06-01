@@ -57,4 +57,41 @@ export const de = {
   'control.reboot_confirm': 'Pi wirklich neu starten? (~30 s Downtime)',
   'control.shutdown': '🌙 Pi herunterfahren',
   'control.shutdown_confirm': 'Pi wirklich herunterfahren?',
+
+  // LoginGate
+  'login.title': '🔒 FT8 — Anmeldung',
+  'login.prompt': 'Passwort eingeben.',
+  'login.placeholder': 'Passwort',
+  'login.submit': 'Anmelden',
+  'login.rejected': 'Token abgelehnt — bitte prüfen.',
+
+  // QsoConversation
+  'qso.title': 'Live-Konversation',
+  'qso.empty': 'Noch keine Aktivität — wenn du CQ oder Antworten startest, taucht hier alles auf.',
+  'qso.next_action': 'Nächste Aktion:',
+
+  // OperatingLocationCard
+  'oploc.title': 'Operating-Location',
+  'oploc.current': 'Aktuell',
+  'oploc.gps': 'GPS',
+  'oploc.no_fix': 'kein Fix',
+  'oploc.home_suffix': 'Heimat',
+  'oploc.home': 'Deutschland (Heimat)',
+  'oploc.choose_country': 'Land manuell wählen',
+  'oploc.tx_as': 'Funke als',
+  'oploc.tx_home': 'keiner (Heimat)',
+
+  // DemoModeToggle
+  'demo.title': 'Demo-Modus',
+  'demo.on': 'AN — Simulator',
+  'demo.off': 'AUS — echter RX',
+  'demo.turn_on': 'Demo einschalten',
+  'demo.turn_off': 'Demo ausschalten',
+  'demo.confirm_on': 'Demo-Modus AN: Simulator-Decodes statt echtem RX. Dienst startet neu (~10s). Fortfahren?',
+  'demo.confirm_off': 'Demo-Modus AUS: zurück auf echten RX. Dienst startet neu (~10s). Fortfahren?',
+  'demo.restarting': 'Dienst startet neu … Seite in ~10 s neu laden.',
+  'demo.loading': 'lädt …',
+
+  // SolarWidget
+  'solar.unavailable': 'Solar-Daten nicht verfügbar',
 };

@@ -4,6 +4,7 @@
   // localStorage; danach laeuft alles ueber den Authorization-Header.
   import { onMount } from 'svelte';
   import { api, getToken, setToken } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let { onAuthed } = $props();
   let value = $state('');
@@ -21,7 +22,7 @@
       await api.status();
       onAuthed?.();
     } catch (err) {
-      error = 'Token abgelehnt — bitte prüfen.';
+      error = t('login.rejected');
       busy = false;
     }
   }
@@ -29,12 +30,12 @@
 
 <div class="overlay">
   <form class="card" onsubmit={submit}>
-    <h2>🔒 FT8 — Anmeldung</h2>
-    <p>Passwort eingeben.</p>
-    <input type="password" placeholder="Passwort" bind:value autocomplete="current-password"
+    <h2>{t('login.title')}</h2>
+    <p>{t('login.prompt')}</p>
+    <input type="password" placeholder={t('login.placeholder')} bind:value autocomplete="current-password"
            autocapitalize="off" spellcheck="false" />
     {#if error}<div class="err">{error}</div>{/if}
-    <button type="submit" disabled={busy}>{busy ? '…' : 'Anmelden'}</button>
+    <button type="submit" disabled={busy}>{busy ? '…' : t('login.submit')}</button>
   </form>
 </div>
 
