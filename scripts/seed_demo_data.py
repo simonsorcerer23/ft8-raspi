@@ -72,11 +72,14 @@ async def main(callsign: str, count: int, wipe: bool) -> None:
         for i in range(count):
             call, grid = rng.choice(DEMO_QSO_CALLS)
             band = rng.choice(BANDS)
-            # ueber die letzten ~14 Tage verteilen (inkl. heute → Dashboard
-            # zeigt „QSOs heute" + „7 Tage" gefuellt).
-            start = now - timedelta(
-                days=rng.uniform(0, 14), minutes=rng.uniform(0, 1440)
-            )
+            # Die ersten ~6 garantiert HEUTE (Dashboard „QSOs heute" gefuellt),
+            # der Rest ueber die letzten ~14 Tage verteilt.
+            if i < 6:
+                start = now - timedelta(hours=rng.uniform(0.5, 8))
+            else:
+                start = now - timedelta(
+                    days=rng.uniform(0, 14), minutes=rng.uniform(0, 1440)
+                )
             s.add(Qso(
                 call=call,
                 band=band,
