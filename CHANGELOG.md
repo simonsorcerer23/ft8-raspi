@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.62.0 — 2026-06-01
+- feat: Pick-Latenz-Telemetrie — went_silent-Ursache instrumentieren
+
 ## v0.61.0 — 2026-06-01
 - feat: 3. Frontend-i18n-Gate — hartcodiertes Deutsch ohne t() erkennen
 
