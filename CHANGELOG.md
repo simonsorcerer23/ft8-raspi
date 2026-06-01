@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.56.0 — 2026-06-01
+- feat: i18n Welle 9 — ConfigPanel, OperatorSwitcher, SystemUpdateCard, SolarWidget
+
 ## v0.55.2 — 2026-06-01
 - feat: i18n Welle 8 — StateIndicator, SystemUpdateCard, SolarWidget
 
