@@ -41,6 +41,9 @@ class PickAttemptStats(BaseModel):
     by_latency: list[dict]    # v0.62.0 — Completion + went_silent nach Pick-Alter
     by_pick_kind: list[dict]  # v0.62.0 — cq vs to_us vs to_other
     by_resends: list[dict]    # v0.62.0 — 0 vs 1 vs 2+ eigene Anrufe
+    by_winning_tier: list[dict]  # v0.64.0 — Tier-Wirksamkeit (Kernfrage)
+    by_continent: list[dict]     # v0.64.0 — Completion je Kontinent
+    by_psk_snr: list[dict]       # v0.64.0 — wie laut wir bei ihnen sind
     bail_reasons: dict[str, int]  # Fehlermodus-Aufschluesselung
     note: str
 
@@ -100,6 +103,19 @@ def _resend_bucket(n: int | None) -> str:
     if n == 1:
         return "b 1"
     return "c 2+"
+
+
+def _psk_snr_bucket(snr: int | None) -> str:
+    # Wie laut WIR bei der Gegenstation ankommen (PSK rx report).
+    if snr is None:
+        return "n/a (kein PSK)"
+    if snr < -18:
+        return "a <-18 (kaum hoerbar)"
+    if snr < -13:
+        return "b -18..-13"
+    if snr < -8:
+        return "c -13..-8"
+    return "d >=-8 (laut)"
 
 
 def _age_cell(items: list[PickAttempt]) -> dict:
@@ -179,6 +195,26 @@ async def pick_attempts(
         {"resends": b, **_age_cell(v)} for b, v in sorted(resend_groups.items())
     ]
 
+    # v0.64.0 — Tier-Wirksamkeit (die Kernfrage), Kontinent, PSK-Lautstaerke.
+    tier_groups: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        tier_groups.setdefault(r.winning_tier or "n/a", []).append(r)
+    by_winning_tier = [
+        {"tier": b, **_age_cell(v)} for b, v in sorted(tier_groups.items())
+    ]
+    cont_groups: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        cont_groups.setdefault(r.continent or "n/a", []).append(r)
+    by_continent = [
+        {"continent": b, **_age_cell(v)} for b, v in sorted(cont_groups.items())
+    ]
+    psk_snr_groups: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        psk_snr_groups.setdefault(_psk_snr_bucket(r.psk_snr), []).append(r)
+    by_psk_snr = [
+        {"psk_snr": b, **_age_cell(v)} for b, v in sorted(psk_snr_groups.items())
+    ]
+
     bail_reasons: dict[str, int] = {}
     for r in rows:
         if r.outcome == "bailed":
@@ -198,6 +234,9 @@ async def pick_attempts(
         by_latency=by_latency,
         by_pick_kind=by_pick_kind,
         by_resends=by_resends,
+        by_winning_tier=by_winning_tier,
+        by_continent=by_continent,
+        by_psk_snr=by_psk_snr,
         bail_reasons=dict(sorted(bail_reasons.items(), key=lambda kv: -kv[1])),
         note=(
             "Hunt-Picks, outcome completed/bailed. psk-Effekt: rate(with_psk) "
@@ -206,8 +245,11 @@ async def pick_attempts(
             "by_latency: steigt went_silent_rate mit pick_age, sind stale Picks "
             "schuld; flach = Gegenstation. by_pick_kind: to_other = Station busy "
             "(erwartbar silent). by_resends: 0 = nie geantwortet (Geist) vs 2+ "
-            "= engagiert dann verloren. Erweiterte Felder erst ab v0.62.0 (alte "
-            "Zeilen n/a). Aussagekraeftig ab ~paar hundert Zeilen."
+            "= engagiert dann verloren. by_winning_tier: Completion JE "
+            "entscheidendem hunt_priority-Tier (direkte Tier-Wirksamkeit). "
+            "by_psk_snr: hoeren die uns leise (<-18) → erklaert went_silent. "
+            "Erweiterte Felder erst ab v0.62/0.64 (alte Zeilen n/a). "
+            "Aussagekraeftig ab ~paar hundert Zeilen."
         ),
     )
 

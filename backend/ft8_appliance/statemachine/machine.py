@@ -424,6 +424,10 @@ class StateMachine:
     # Class-Default 900 s = 15 min; Orchestrator ueberschreibt aus
     # config.operating.qso_failed_cooldown_min beim Boot + Hot-Reload.
     qso_failed_cooldown_s: float = 900.0
+    # v0.64.0 — Picker-Diagnose vom letzten _pick_hunt_target (reine
+    # Telemetrie): {winning_tier, n_candidates, was_tailend}. Wird direkt
+    # nach dem Pick in die hunt_attempt_meta uebernommen.
+    _last_pick_diag: dict = field(default_factory=dict)
 
     # ------------------------------------------------------------------ I/O
     def drain_actions(self) -> list[Action]:
@@ -702,6 +706,14 @@ class StateMachine:
                         "pick_kind": pick_kind,
                         "freq_offset_hz": best.freq_offset_hz,
                         "target_grid": best.grid,
+                        # v0.64.0 — Picker-Diagnose + Kontext:
+                        "winning_tier": self._last_pick_diag.get("winning_tier"),
+                        "n_candidates": self._last_pick_diag.get("n_candidates"),
+                        "was_tailend": self._last_pick_diag.get("was_tailend"),
+                        "hunt_priority": ",".join(self.ctx.hunt_priority or []) or None,
+                        "psk_snr": self.ctx.psk_snr.get(call_u)
+                        if call_u in self.ctx.psk_snr
+                        else self.ctx.psk_snr.get(tgt),
                     }
                 self.state = State.QSO_RESPOND
                 self._emit_respond_with_grid()
@@ -1144,6 +1156,14 @@ class StateMachine:
             return
         meta["n_resends"] = self.qso.cq_resends + self.qso.report_resends
         meta["stale_slots"] = self.qso.stale_slots
+        meta["our_snr_received"] = self.qso.our_snr_received
+        try:
+            _st = self.qso.started
+            if _st.tzinfo is None:
+                _st = _st.replace(tzinfo=UTC)
+            meta["qso_duration_s"] = (datetime.now(UTC) - _st).total_seconds()
+        except Exception:
+            meta["qso_duration_s"] = None
 
     def _bail_qso_with_cooldown(self, their_call: str, reason: str) -> None:
         """Abbrechen eines QSO-Versuchs + Cooldown-Eintrag fuer den Partner.
@@ -1361,6 +1381,35 @@ class StateMachine:
             ))
         return synth
 
+    def _decisive_tier(self, winner: "DecodedMsg", cqs: list["DecodedMsg"]) -> str:
+        """v0.64.0 — welcher hunt_priority-Tier den Pick entschied: der erste
+        Tier (in Prioritaetsreihenfolge), an dem der Gewinner den besten
+        Mitbewerber strikt schlaegt. 'sole' bei nur einem Kandidaten, 'tie'
+        bei identischem Score (Gewinn nur per Listenreihenfolge). Fail-soft."""
+        try:
+            others = [d for d in cqs if d is not winner]
+            if not others:
+                return "sole"
+            priority = self.ctx.hunt_priority or []
+            names = [nm for nm in priority if nm in HUNT_TIERS]
+            if "snr" not in priority:
+                names = [*names, "snr"]
+            if not names:
+                return "snr"
+            w = _compute_tier_score(winner, self.ctx)
+            runner = max(others, key=lambda d: _compute_tier_score(d, self.ctx))
+            r = _compute_tier_score(runner, self.ctx)
+            for i, nm in enumerate(names):
+                if i >= len(w) or i >= len(r):
+                    break
+                if w[i] > r[i]:
+                    return nm
+                if w[i] < r[i]:
+                    break  # darf nicht passieren (winner ist der max)
+            return "tie"
+        except Exception:
+            return "unknown"
+
     def _pick_hunt_target(self, decodes: Iterable[DecodedMsg]) -> DecodedMsg | None:
         """Pick the strongest non-blacklisted CQ from this slot's decodes.
 
@@ -1518,8 +1567,21 @@ class StateMachine:
                 return (is_new, d.snr_db if d.snr_db is not None else -99)
 
             winner = max(cqs, key=legacy_score)
+            decisive = "legacy"
         else:
             winner = max(cqs, key=lambda d: _compute_tier_score(d, self.ctx))
+            decisive = self._decisive_tier(winner, cqs)
+        # v0.64.0 — Picker-Diagnose fuer die pick_attempt-Telemetrie.
+        was_tail = bool(
+            self.ctx.tail_end_hunter_enabled
+            and winner.call_from
+            and winner.call_from.upper() in self.ctx.tail_end_candidates
+        )
+        self._last_pick_diag = {
+            "winning_tier": decisive,
+            "n_candidates": len(cqs),
+            "was_tailend": was_tail,
+        }
 
         # v0.11.0: wenn Tail-End-Candidate gewonnen hat, 24h-Cooldown
         # setzen. Auch wenn der Tier nicht in hunt_priority steht — wir

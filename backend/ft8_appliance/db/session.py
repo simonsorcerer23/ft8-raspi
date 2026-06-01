@@ -164,6 +164,16 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "tx_power_w": "INTEGER",
         "n_resends": "INTEGER",
         "stale_slots": "INTEGER",
+        # v0.64.0 — letzte Tranche.
+        "winning_tier": "TEXT",
+        "n_candidates": "INTEGER",
+        "was_tailend": "BOOLEAN",
+        "hunt_priority": "TEXT",
+        "psk_snr": "INTEGER",
+        "qso_duration_s": "FLOAT",
+        "our_snr_received": "INTEGER",
+        "distance_km": "INTEGER",
+        "continent": "TEXT",
     }
     for name, ddl in cols.items():
         if name not in existing:

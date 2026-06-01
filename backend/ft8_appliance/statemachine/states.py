@@ -195,6 +195,12 @@ class MachineContext:
     # haben (laut pskreporter.info). Vom Orchestrator alle paar Minuten
     # aktualisiert. Leer wenn psk_reciprocity_enabled=False.
     psk_heard_us: set[str] = field(default_factory=set)
+    # v0.64.0 — paralleler Telemetrie-Dict {call: snr_db} = wie laut PSK-
+    # Reporter uns bei der Gegenstation gehoert hat. Bewusst SEPARAT vom
+    # psk_heard_us-Set gehalten (das die Tier-Logik fuettert) — null Risiko
+    # fuer die Pick-Auswahl, nur Mess-Anreicherung (erklaert went_silent:
+    # "die hoeren uns mit -22 → klar antworten sie nicht").
+    psk_snr: dict[str, int] = field(default_factory=dict)
     # v0.30.0 — Pick-Attempt-Telemetrie fuer das psk_heard_us-A/B. Beim
     # Hunt-Pick schreibt die Machine hier {base_call: {psk_heard_us, snr_db,
     # dt_s, band, ts}}; der Orchestrator liest+poppt es beim QSO-Ausgang

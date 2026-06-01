@@ -342,3 +342,25 @@ class PickAttempt(Base):
     tx_power_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     n_resends: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stale_slots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # v0.64.0 — "ALLES analysieren": die letzte Tranche (alle nullable):
+    #  * winning_tier   — WELCHE hunt_priority-Regel den Pick entschied (erster
+    #    Tier, an dem der Gewinner den Zweitplatzierten schlaegt). Misst
+    #    Tier-Wirksamkeit DIREKT statt sie zu inferieren — die Kernfrage.
+    #  * n_candidates   — wie viele CQs zur Auswahl standen (Selektionsdruck).
+    #  * was_tailend    — kam der Pick ueber den Tail-End-Hunter (anderes Profil).
+    #  * hunt_priority  — Snapshot der Prioritaetsliste (A/B ueber Config-Aenderungen).
+    #  * psk_snr        — wie laut PSK uns bei der Gegenstation hoerte (leise →
+    #    erklaert went_silent). NULL wenn kein PSK-Report.
+    #  * qso_duration_s — Dauer des Versuchs (started→Ausgang).
+    #  * our_snr_received — RST den der Partner uns gab (nur completed).
+    #  * distance_km    — Grosskreis my_grid↔target_grid (Distanz-Korrelation).
+    #  * continent      — Kontinent des Ziels (cty), fuer Kontinent-Schnitte.
+    winning_tier: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    n_candidates: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    was_tailend: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    hunt_priority: Mapped[str | None] = mapped_column(String, nullable=True)
+    psk_snr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    qso_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    our_snr_received: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    distance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    continent: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

@@ -329,6 +329,10 @@ class Orchestrator:
     # gehört haben. Vom Background-Refresh-Loop _psk_reciprocity_refresh
     # alle paar Minuten upgedated. Leer wenn psk_reciprocity_enabled=False.
     _psk_heard_us_cache: set[str] = field(default_factory=set, init=False)
+    # v0.64.0 — paralleler {call: best_snr_db}-Cache fuer Telemetrie (wie laut
+    # uns die Gegenstation laut PSK hoerte). Getrennt vom Set oben → kein
+    # Einfluss auf die Tier-Logik.
+    _psk_snr_cache: dict[str, int] = field(default_factory=dict, init=False)
     _psk_last_refresh_at: float = field(default=0.0, init=False)
     _psk_last_refresh_ok: bool = field(default=False, init=False)
     # v0.14.0 — Watchlist + Band-Conditions + Solar-Refresh-Throttle.
@@ -3035,6 +3039,7 @@ class Orchestrator:
         #     bis max 30 min — wenn pskreporter ueberlastet ist hauen wir
         #     nicht stur weiter drauf.
         per_call_heard: dict[str, set[str]] = {}
+        per_call_snr: dict[str, dict[str, int]] = {}  # v0.64.0 telemetry
         rotate_idx = 0
         consecutive_fail = 0
         base_interval = float(self.config.operating.psk_reciprocity_refresh_s)
@@ -3048,6 +3053,14 @@ class Orchestrator:
                         per_call_heard[call] = {
                             r.rx_call.upper() for r in reports if r.rx_call
                         }
+                        # v0.64.0 — bester (hoechster) SNR den ein RX uns gab.
+                        snr_map: dict[str, int] = {}
+                        for r in reports:
+                            if r.rx_call and r.snr_db is not None:
+                                k = r.rx_call.upper()
+                                if k not in snr_map or r.snr_db > snr_map[k]:
+                                    snr_map[k] = int(r.snr_db)
+                        per_call_snr[call] = snr_map
                         consecutive_fail = 0
                         self._psk_last_refresh_ok = True
                     except Exception as exc:
@@ -3062,6 +3075,13 @@ class Orchestrator:
                     for s in per_call_heard.values():
                         merged |= s
                     self._psk_heard_us_cache = merged
+                    # v0.64.0 — SNR-Merge (bester Wert ueber alle Op-Calls).
+                    merged_snr: dict[str, int] = {}
+                    for sm in per_call_snr.values():
+                        for k, v in sm.items():
+                            if k not in merged_snr or v > merged_snr[k]:
+                                merged_snr[k] = v
+                    self._psk_snr_cache = merged_snr
                     self._psk_last_refresh_at = time.time()
                     log.info(
                         "psk-reciprocity: %s → %d unique total (über %d Call-Sets)",
@@ -4552,6 +4572,7 @@ class Orchestrator:
         # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;
         # hier nur in den ctx kopieren damit der Picker O(1) lookup hat.
         self.state_machine.ctx.psk_heard_us = set(self._psk_heard_us_cache)
+        self.state_machine.ctx.psk_snr = dict(self._psk_snr_cache)  # v0.64.0 telemetry
         # marine_calls + worked_dxcc_band werden beim Boot/Operator-Switch
         # gesetzt — siehe _refresh_worked_sets. Hier nicht jeden Slot
         # neu laden (statische Daten).
@@ -5201,6 +5222,29 @@ class Orchestrator:
         meta = self.state_machine.ctx.hunt_attempt_meta.pop(key, None)
         if meta is None or not self.db_enabled:
             return
+        # v0.64.0 — Distanz (Grosskreis my_grid↔target_grid) + Kontinent (cty),
+        # beide fail-soft (None bei fehlendem Grid / Lookup-Fehler).
+        distance_km: int | None = None
+        try:
+            my_grid = self.config.operator.default_locator or self.state_machine.ctx.my_grid
+            tgt_grid = meta.get("target_grid")
+            if my_grid and tgt_grid:
+                from ..util.maidenhead import great_circle, locator_to_latlon
+                la1, lo1 = locator_to_latlon(my_grid)
+                la2, lo2 = locator_to_latlon(tgt_grid)
+                _dist_km, _bearing = great_circle(la1, lo1, la2, lo2)
+                distance_km = int(round(_dist_km))
+        except Exception:
+            distance_km = None
+        continent: str | None = None
+        try:
+            cty = self.integrations.cty
+            if cty is not None:
+                rec = cty.lookup(key)
+                if rec is not None and rec.entity is not None:
+                    continent = rec.entity.continent or None
+        except Exception:
+            continent = None
         try:
             async with session_scope() as s:
                 await repository.insert_pick_attempt(
@@ -5223,6 +5267,15 @@ class Orchestrator:
                     stale_slots=meta.get("stale_slots"),
                     mode=self.config.operating.mode,
                     tx_power_w=self._tx_power_w,
+                    winning_tier=meta.get("winning_tier"),
+                    n_candidates=meta.get("n_candidates"),
+                    was_tailend=meta.get("was_tailend"),
+                    hunt_priority=meta.get("hunt_priority"),
+                    psk_snr=meta.get("psk_snr"),
+                    qso_duration_s=meta.get("qso_duration_s"),
+                    our_snr_received=meta.get("our_snr_received"),
+                    distance_km=distance_km,
+                    continent=continent,
                     outcome=outcome,
                     bail_reason=bail_reason,
                 )
