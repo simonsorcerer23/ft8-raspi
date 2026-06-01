@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.50.0 — 2026-06-01
+- feat: i18n Welle 2 (StatusBar + ControlPanel) + zweisprachige README (DE/EN)
+
 ## v0.49.0 — 2026-06-01
 - feat: i18n-Fundament (DE/EN) + Welle 1 (Header/Tabs/Footer) + Sprach-Umschalter
 - docs: Screenshot-Galerie auf Englisch (README ist sonst eh EN + DE-Kurzfassung)
