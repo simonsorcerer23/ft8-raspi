@@ -32,7 +32,7 @@
       enabled = target;
       msg = t('demo.restarting');
     } catch (e) {
-      msg = `Fehler: ${e.message}`;
+      msg = `${t('common.error')}: ${e.message}`;
     } finally { busy = false; }
   }
 </script>

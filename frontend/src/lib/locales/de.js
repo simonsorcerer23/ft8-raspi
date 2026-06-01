@@ -69,6 +69,8 @@ export const de = {
   'qso.title': 'Live-Konversation',
   'qso.empty': 'Noch keine Aktivität — wenn du CQ oder Antworten startest, taucht hier alles auf.',
   'qso.next_action': 'Nächste Aktion:',
+  'qso.b4_reply': '{call} wurde schon gearbeitet (B4).\nTrotzdem antworten?',
+  'qso.b4_tailend': '{call} wurde schon gearbeitet (B4).\nTrotzdem Tail-End anrufen?',
 
   // OperatingLocationCard
   'oploc.title': 'Operating-Location',
@@ -106,6 +108,8 @@ export const de = {
   'common.note': 'Notiz',
   'common.reason': 'Grund',
   'common.error': 'Fehler',
+  'common.reply_failed': 'Reply fehlgeschlagen',
+  'common.tailend_failed': 'Tail-End fehlgeschlagen',
 
   // StatsDashboard
   'stats.today': 'Heute',

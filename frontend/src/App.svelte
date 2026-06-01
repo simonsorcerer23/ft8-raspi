@@ -129,7 +129,7 @@
       await api.reply(decode);
     } catch (e) {
       console.error('reply failed', e);
-      alert(`Reply fehlgeschlagen: ${e.message}`);
+      alert(`${t('common.reply_failed')}: ${e.message}`);
     }
   }
 
@@ -138,7 +138,7 @@
       await api.tailEnd(decode);
     } catch (e) {
       console.error('tail-end failed', e);
-      alert(`Tail-End fehlgeschlagen: ${e.message}`);
+      alert(`${t('common.tailend_failed')}: ${e.message}`);
     }
   }
 

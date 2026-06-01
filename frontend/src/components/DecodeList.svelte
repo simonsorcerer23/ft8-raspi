@@ -70,10 +70,7 @@
 
   function doReply(d) {
     if (d.worked_before) {
-      const ok = confirm(
-        `${d.call_from} wurde schon gearbeitet (B4).\n` +
-        `Trotzdem antworten?`
-      );
+      const ok = confirm(t('qso.b4_reply', { call: d.call_from }));
       if (!ok) return;
     }
     onReply(d);
@@ -81,10 +78,7 @@
 
   function doTailEnd(d) {
     if (d.worked_before) {
-      const ok = confirm(
-        `${d.call_from} wurde schon gearbeitet (B4).\n` +
-        `Trotzdem Tail-End anrufen?`
-      );
+      const ok = confirm(t('qso.b4_tailend', { call: d.call_from }));
       if (!ok) return;
     }
     onTailEnd(d);

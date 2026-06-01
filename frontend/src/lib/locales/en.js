@@ -69,6 +69,8 @@ export const en = {
   'qso.title': 'Live conversation',
   'qso.empty': 'No activity yet — once you start CQ or answering, everything shows up here.',
   'qso.next_action': 'Next action:',
+  'qso.b4_reply': '{call} already worked (B4).\nReply anyway?',
+  'qso.b4_tailend': '{call} already worked (B4).\nCall tail-end anyway?',
 
   // OperatingLocationCard
   'oploc.title': 'Operating location',
@@ -106,6 +108,8 @@ export const en = {
   'common.note': 'Note',
   'common.reason': 'Reason',
   'common.error': 'Error',
+  'common.reply_failed': 'Reply failed',
+  'common.tailend_failed': 'Tail-end failed',
 
   // StatsDashboard
   'stats.today': 'Today',
