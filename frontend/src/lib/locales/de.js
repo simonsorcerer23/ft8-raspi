@@ -165,4 +165,29 @@ export const de = {
 
   // Charts
   'chart.active_hours': 'Aktive Stunden pro Kontinent',
+
+  // ADIFTable / Log-Filter
+  'log.f_call_ph': 'Call (Substring)',
+  'log.f_prefix_ph': 'Präfix (z.B. "9A")',
+  'log.all_bands': 'Alle Bänder',
+  'log.all_modes': 'Alle Modi',
+  'log.any_period': 'Beliebiger Zeitraum',
+  'log.last_24h': 'letzte 24 h',
+  'log.last_7d': 'letzte 7 Tage',
+  'log.last_30d': 'letzte 30 Tage',
+  'log.last_year': 'letztes Jahr',
+  'log.all_continents': 'Alle Kontinente',
+  'log.dxcc_ph': 'DXCC-Land (z.B. Spain)',
+  'log.marine': 'Marine',
+  'log.hits': 'Treffer',
+  'log.loading': 'Lade…',
+  'log.empty': 'Keine QSOs mit diesen Filtern.',
+  'log.prefix': 'Präfix',
+  'cont.EU': 'Europa',
+  'cont.AF': 'Afrika',
+  'cont.AS': 'Asien',
+  'cont.NA': 'Nordamerika',
+  'cont.SA': 'Südamerika',
+  'cont.OC': 'Ozeanien',
+  'cont.AN': 'Antarktis',
 };

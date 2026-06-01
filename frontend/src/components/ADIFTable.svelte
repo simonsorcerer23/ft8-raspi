@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { logStore, statusStore } from '../lib/stores.svelte.js';
+  import { t } from '../lib/i18n.svelte.js';
   import { fmtUtcDateTime } from '../lib/time.js';
 
   const activeCall = $derived(statusStore.value.callsign ?? null);
@@ -64,23 +65,23 @@
   </div>
 
   <div class="filters">
-    <input type="text" placeholder="Call (Substring)"
+    <input type="text" placeholder={t('log.f_call_ph')}
            value={logStore.filters.call}
            oninput={(e) => logStore.setFilter('call', e.target.value)}/>
-    <input type="text" placeholder='Präfix (z.B. "9A")'
+    <input type="text" placeholder={t('log.f_prefix_ph')}
            value={logStore.filters.prefix}
            style="text-transform: uppercase; max-width: 8rem"
            oninput={(e) => logStore.setFilter('prefix', e.target.value)}/>
     <select value={logStore.filters.band}
             onchange={(e) => logStore.setFilter('band', e.target.value)}>
-      <option value="">Alle Bänder</option>
+      <option value="">{t('log.all_bands')}</option>
       {#each ['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm'] as b}
         <option value={b}>{b}</option>
       {/each}
     </select>
     <select value={logStore.filters.mode}
             onchange={(e) => logStore.setFilter('mode', e.target.value)}>
-      <option value="">Alle Modi</option>
+      <option value="">{t('log.all_modes')}</option>
       <option value="FT8">FT8</option>
       <option value="FT4">FT4</option>
     </select>
@@ -90,11 +91,11 @@
            oninput={(e) => logStore.setFilter('grid', e.target.value)}/>
     <select value={logStore.filters.since_days}
             onchange={(e) => logStore.setFilter('since_days', parseInt(e.target.value) || null)}>
-      <option value="">Beliebiger Zeitraum</option>
-      <option value={1}>letzte 24 h</option>
-      <option value={7}>letzte 7 Tage</option>
-      <option value={30}>letzte 30 Tage</option>
-      <option value={365}>letztes Jahr</option>
+      <option value="">{t('log.any_period')}</option>
+      <option value={1}>{t('log.last_24h')}</option>
+      <option value={7}>{t('log.last_7d')}</option>
+      <option value={30}>{t('log.last_30d')}</option>
+      <option value={365}>{t('log.last_year')}</option>
     </select>
     <input type="number" placeholder="min RST↓"
            value={logStore.filters.min_snr ?? ''}
@@ -102,37 +103,37 @@
            oninput={(e) => logStore.setFilter('min_snr', e.target.value === '' ? null : parseInt(e.target.value))}/>
     <select value={logStore.filters.continent}
             onchange={(e) => logStore.setFilter('continent', e.target.value)}>
-      <option value="">Alle Kontinente</option>
-      <option value="EU">Europa</option>
-      <option value="AF">Afrika</option>
-      <option value="AS">Asien</option>
-      <option value="NA">Nordamerika</option>
-      <option value="SA">Südamerika</option>
-      <option value="OC">Ozeanien</option>
-      <option value="AN">Antarktis</option>
+      <option value="">{t('log.all_continents')}</option>
+      <option value="EU">{t('cont.EU')}</option>
+      <option value="AF">{t('cont.AF')}</option>
+      <option value="AS">{t('cont.AS')}</option>
+      <option value="NA">{t('cont.NA')}</option>
+      <option value="SA">{t('cont.SA')}</option>
+      <option value="OC">{t('cont.OC')}</option>
+      <option value="AN">{t('cont.AN')}</option>
     </select>
-    <input type="text" placeholder="DXCC-Land (z.B. Spain)"
+    <input type="text" placeholder={t('log.dxcc_ph')}
            value={logStore.filters.dxcc}
            style="max-width: 9rem"
            oninput={(e) => logStore.setFilter('dxcc', e.target.value)}/>
     <label class="mf-filter" title="nur Marinefunker-Mitglieder">
       <input type="checkbox" checked={logStore.filters.marine}
              onchange={(e) => logStore.setFilter('marine', e.target.checked)}/>
-      ⚓ Marine
+      ⚓ {t('log.marine')}
     </label>
     <button class="clear" onclick={() => logStore.clearFilters()}>↺ Reset</button>
-    <span class="count">{logStore.total} Treffer</span>
+    <span class="count">{logStore.total} {t('log.hits')}</span>
   </div>
 
   {#if logStore.loading && logStore.qsos.length === 0}
-    <p class="empty">Lade…</p>
+    <p class="empty">{t('log.loading')}</p>
   {:else if logStore.qsos.length === 0}
-    <p class="empty">Keine QSOs mit diesen Filtern.</p>
+    <p class="empty">{t('log.empty')}</p>
   {:else}
     <table>
       <thead>
         <tr>
-          <th class="pfx-col">Präfix</th>
+          <th class="pfx-col">{t('log.prefix')}</th>
           {#each headers as h}
             <th class="sortable {h.col === 'call' ? 'call-col' : ''}"
                 onclick={() => logStore.setSort(h.col)}>
