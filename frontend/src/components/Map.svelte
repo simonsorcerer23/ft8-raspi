@@ -3,6 +3,7 @@
   import L from 'leaflet';
   import 'leaflet/dist/leaflet.css';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
   import { mapStore, decodeStore, statusStore } from '../lib/stores.svelte.js';
   import { utcMillis, fmtUtcTime, fmtUtcDateTime, parseUtc } from '../lib/time.js';
   import { greatCircle, gridToLatLon } from '../lib/geo.js';
@@ -487,59 +488,59 @@
   <div class="controls">
     <div class="modes">
       <button class:active={mapStore.mode === 'all'}
-              onclick={() => mapStore.setMode('all')}>Alle</button>
+              onclick={() => mapStore.setMode('all')}>{t('map.all')}</button>
       <button class:active={mapStore.mode === 'worked'}
-              onclick={() => mapStore.setMode('worked')}>Gearbeitet</button>
+              onclick={() => mapStore.setMode('worked')}>{t('map.worked')}</button>
       <button class:active={mapStore.mode === 'heard'}
-              onclick={() => mapStore.setMode('heard')}>Gehört</button>
+              onclick={() => mapStore.setMode('heard')}>{t('map.heard')}</button>
     </div>
     <div class="legend">
-      <span class="dot" style="background: {COLOURS.worked}"></span> gearbeitet
-      <span class="dot" style="background: {COLOURS.heard}"></span> gehört
-      <span class="dot" style="background: {COLOURS.both}"></span> beides
-      <span class="dot" style="background: {COLOURS.operator}"></span> du
+      <span class="dot" style="background: {COLOURS.worked}"></span> {t('map.legend_worked')}
+      <span class="dot" style="background: {COLOURS.heard}"></span> {t('map.legend_heard')}
+      <span class="dot" style="background: {COLOURS.both}"></span> {t('map.legend_both')}
+      <span class="dot" style="background: {COLOURS.operator}"></span> {t('map.legend_you')}
     </div>
   </div>
 
   <div class="layers">
-    <label><input type="checkbox" bind:checked={showStations}/> Stationen</label>
+    <label><input type="checkbox" bind:checked={showStations}/> {t('map.stations')}</label>
     <label><input type="checkbox" bind:checked={showLiveArcs}/>
       <span class="dot-inline" style="background:{COLOURS.live}"></span>
-      Live-Decodes (Großkreis)
+      {t('map.live_decodes')}
     </label>
-    <label><input type="checkbox" bind:checked={showHeatmap}/> Heard-Heatmap</label>
+    <label><input type="checkbox" bind:checked={showHeatmap}/> {t('map.heatmap')}</label>
     <label><input type="checkbox" bind:checked={showOperatingLocations}/>
       <span class="dot-inline" style="background:{COLOURS.loc}"></span>
-      Eigene Standorte
+      {t('map.own_loc')}
     </label>
     <label><input type="checkbox" bind:checked={showDxCluster}/>
       <span class="dot-inline" style="background:{COLOURS.dx}"></span>
-      DX-Cluster
+      {t('map.dxcluster')}
     </label>
     <label><input type="checkbox" bind:checked={showGrid}/>
-      📐 Locator-Raster
+      {t('map.grid')}
     </label>
     <label><input type="checkbox" bind:checked={showTerminator}/>
-      🌗 Gray-Line (Tag/Nacht)
+      {t('map.grayline')}
     </label>
     <label><input type="checkbox" bind:checked={showCoverage}/>
-      📡 Coverage (wer hört mich)
+      {t('map.coverage')}
     </label>
     {#if showCoverage}
       <label class="inline-filter">
-        Zeitraum
+        {t('map.period')}
         <select bind:value={coverageHours}>
           <option value={1}>1 h</option>
           <option value={6}>6 h</option>
           <option value={24}>24 h</option>
-          <option value={72}>3 Tage</option>
-          <option value={168}>7 Tage</option>
+          <option value={72}>{t('map.days_3')}</option>
+          <option value={168}>{t('map.days_7')}</option>
         </select>
       </label>
       <label class="inline-filter">
-        Band
+        {t('map.band')}
         <select bind:value={coverageBand}>
-          <option value="">alle</option>
+          <option value="">{t('map.all_bands_opt')}</option>
           <option value="160m">160m</option>
           <option value="80m">80m</option>
           <option value="60m">60m</option>
@@ -562,7 +563,7 @@
     <span>{mapStore.data.markers.length} Stationen</span>
     {#if mapStore.mode !== 'worked'}
       <label>
-        Gehört letzte
+        {t('map.heard_last')}
         <select value={mapStore.minutesHeard}
                 onchange={(e) => mapStore.setMinutesHeard(parseInt(e.target.value))}>
           <option value={15}>15 min</option>
@@ -576,15 +577,15 @@
 
   <!-- Sortable station list — tabular twin of the markers -->
   <details class="station-list" open>
-    <summary>Stationen als Liste ({sortedFilteredStations.length}/{mapStore.data.markers.length})</summary>
-    <input type="text" placeholder="Call / Grid filtern…"
+    <summary>{t('map.stations_list')} ({sortedFilteredStations.length}/{mapStore.data.markers.length})</summary>
+    <input type="text" placeholder={t('map.filter_ph')}
            bind:value={stationFilter} class="filter"/>
     <div class="list-wrap">
       <table>
         <thead>
           <tr>
             <th class="sort" onclick={() => toggleSort('call')}>Call{sortArr('call')}</th>
-            <th class="sort" onclick={() => toggleSort('kind')}>Typ{sortArr('kind')}</th>
+            <th class="sort" onclick={() => toggleSort('kind')}>{t('map.col_type')}{sortArr('kind')}</th>
             <th class="sort" onclick={() => toggleSort('grid')}>Grid{sortArr('grid')}</th>
             <th class="sort" onclick={() => toggleSort('band')}>Band{sortArr('band')}</th>
             <th class="sort" onclick={() => toggleSort('snr_best')}>SNR{sortArr('snr_best')}</th>

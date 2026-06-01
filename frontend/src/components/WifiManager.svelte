@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let connections = $state([]);
   let scan = $state([]);
@@ -120,7 +121,7 @@
 
 <div class="wrap">
   <header>
-    <h2>WLAN</h2>
+    <h2>{t('wifi.title')}</h2>
     <div class="actions-h">
       <button class="ghost" onclick={refresh} disabled={loading}>
         {loading ? '…' : '↻ Profile'}
@@ -141,7 +142,7 @@
     <section class="add-form">
       <div class="grid">
         <label><span>SSID</span>
-          <input type="text" bind:value={newSsid} placeholder="Heim-WLAN"/>
+          <input type="text" bind:value={newSsid} placeholder={t('wifi.home_ph')}/>
         </label>
         <label><span>Passwort (leer = offenes WLAN)</span>
           <input id="wifi-new-psk" type="password" bind:value={newPsk}/>
@@ -158,16 +159,16 @@
 
   <!-- Saved profiles -->
   <section>
-    <h3>Gespeicherte Profile</h3>
+    <h3>{t('wifi.saved_profiles')}</h3>
     {#if connections.length === 0 && !loading}
-      <p class="empty">Noch keine WLAN-Profile gespeichert.</p>
+      <p class="empty">{t('wifi.no_profiles')}</p>
     {:else}
       <table>
         <thead>
           <tr>
             <th>SSID</th>
-            <th>Prio</th>
-            <th>Status</th>
+            <th>{t('wifi.prio')}</th>
+            <th>{t('wifi.status')}</th>
             <th></th>
           </tr>
         </thead>
@@ -198,7 +199,7 @@
                     verbinden
                   </button>
                 {/if}
-                <button class="rm" onclick={() => deleteConnection(c.name)} title="Löschen">×</button>
+                <button class="rm" onclick={() => deleteConnection(c.name)} title={t('wifi.delete')}>×</button>
               </td>
             </tr>
           {/each}
@@ -216,7 +217,7 @@
                maxlength="32"/>
       </label>
       <label><span>Passwort (8–63 Zeichen)</span>
-        <input type="text" bind:value={apFb.psk} placeholder="mind. 8 Zeichen"
+        <input type="text" bind:value={apFb.psk} placeholder={t('wifi.pw_ph')}
                maxlength="63"/>
       </label>
     </div>
@@ -229,11 +230,11 @@
   <section>
     <h3>In Reichweite {#if scanning}<small style="font-weight:400">(scanne…)</small>{/if}</h3>
     {#if scan.length === 0 && !scanning}
-      <p class="empty">Keine WLANs in Reichweite. Sind WiFi-Radio + Antenne an?</p>
+      <p class="empty">{t('wifi.no_wlans')}</p>
     {:else}
       <table>
         <thead>
-          <tr><th>SSID</th><th>Signal</th><th>Sicherheit</th><th></th></tr>
+          <tr><th>SSID</th><th>{t('wifi.signal')}</th><th>{t('wifi.security')}</th><th></th></tr>
         </thead>
         <tbody>
           {#each scan as ap}

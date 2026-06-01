@@ -6,6 +6,7 @@
   // Mini-Fenster im Header ab.
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let operators = $state([]);
   let active = $state('');
@@ -57,7 +58,7 @@
   }
 
   async function removeLogbook(cs, call) {
-    if (busy || !confirm(`Sende-Call ${call} entfernen?`)) return;
+    if (busy || !confirm(t('opadmin.confirm_remove', { call }))) return;
     busy = true; error = null;
     try {
       await api.operatorDeleteLogbook(cs, call);
@@ -68,7 +69,7 @@
 </script>
 
 <div class="panel">
-  <h3>Operatoren & Logbücher</h3>
+  <h3>{t('opadmin.title')}</h3>
   {#if error}<div class="error">⚠ {error}</div>{/if}
 
   {#each operators as op (op.callsign)}
@@ -82,7 +83,7 @@
         </span>
         <button class="btn" onclick={() => check(op.callsign)}
                 disabled={preflight[op.callsign]?.busy}>
-          {preflight[op.callsign]?.busy ? '…' : 'prüfen'}
+          {preflight[op.callsign]?.busy ? '…' : t('opadmin.check')}
         </button>
       </div>
       {#if preflight[op.callsign] && !preflight[op.callsign].busy}
@@ -98,9 +99,9 @@
       {/if}
 
       <div class="lb">
-        <div class="lb-title">Sende-Calls (Prefix/Suffix, eigener QRZ-Key)</div>
+        <div class="lb-title">{t('opadmin.send_calls')}</div>
         {#if op.station_logbooks.length === 0}
-          <div class="lb-empty">keine — nur Heimat-Logbuch</div>
+          <div class="lb-empty">{t('opadmin.no_logbooks')}</div>
         {/if}
         {#each op.station_logbooks as call (call)}
           <div class="lb-row">
@@ -108,10 +109,10 @@
             <span class="chip on">Key ✓</span>
             <button class="btn sm" onclick={() => check(call)}
                     disabled={preflight[call]?.busy}>
-              {preflight[call]?.busy ? '…' : 'prüfen'}
+              {preflight[call]?.busy ? '…' : t('opadmin.check')}
             </button>
             <button class="btn sm del" onclick={() => removeLogbook(op.callsign, call)}
-                    disabled={busy}>entfernen</button>
+                    disabled={busy}>{t('opadmin.remove')}</button>
           </div>
           {#if preflight[call] && !preflight[call].busy && !preflight[call].error}
             <div class="pf-line {pfClass(preflight[call].qrz.status)}">QRZ: {preflight[call].qrz.detail}</div>
@@ -122,9 +123,9 @@
           <div class="lb-add">
             <input type="text" placeholder="{op.callsign}/AM" autocapitalize="characters"
                    bind:value={lbForm[op.callsign].call} />
-            <input type="text" placeholder="QRZ-Logbook-API-Key"
+            <input type="text" placeholder={t('opadmin.api_key_ph')}
                    bind:value={lbForm[op.callsign].key} />
-            <button class="btn" onclick={() => addLogbook(op.callsign)} disabled={busy}>+ hinzufügen</button>
+            <button class="btn" onclick={() => addLogbook(op.callsign)} disabled={busy}>{t('opadmin.add')}</button>
           </div>
         {/if}
       </div>
