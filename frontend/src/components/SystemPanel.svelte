@@ -4,6 +4,7 @@
   // für SSE oder höhere Frequenz.
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let info = $state(null);
   let lastError = $state(null);
@@ -68,14 +69,14 @@
 
 <div class="wrap">
   <div class="head">
-    <h2>Pi-Status</h2>
+    <h2>{t('system.title')}</h2>
     {#if info?.pi_model}
       <span class="model">{info.pi_model}</span>
     {/if}
   </div>
 
   {#if lastError}
-    <div class="err">Fehler: {lastError}</div>
+    <div class="err">{t('common.error')}: {lastError}</div>
   {/if}
 
   {#if info}

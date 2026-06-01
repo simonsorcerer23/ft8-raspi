@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { fmtUtcDateTime } from '../lib/time.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let entries = $state([]);
   let threshold = $state(5);
@@ -53,7 +54,7 @@
 
 <div class="wrap">
   <header>
-    <h2>✋ Soft-Blacklist (Call-Reputation)</h2>
+    <h2>{t('rep.title')}</h2>
   </header>
 
   <div class="stats">
@@ -83,12 +84,12 @@
     <table>
       <thead>
         <tr>
-          <th>Call</th>
-          <th>Score</th>
-          <th>Versuche</th>
-          <th>Erfolge</th>
-          <th>Letzter Grund</th>
-          <th>Letzter Versuch</th>
+          <th>{t('common.call')}</th>
+          <th>{t('rep.score')}</th>
+          <th>{t('rep.attempts')}</th>
+          <th>{t('rep.successes')}</th>
+          <th>{t('rep.last_reason')}</th>
+          <th>{t('rep.last_attempt')}</th>
           <th></th>
         </tr>
       </thead>

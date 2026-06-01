@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let stats = $state({ qso_today: 0, dxccs_today: 0, qso_7d: 0, qso_total: 0,
                        decodes_last_hour: 0, best_dx_today: null });
@@ -31,32 +32,32 @@
 
 <div class="wrap">
   <div class="head">
-    <h2>Heute</h2>
+    <h2>{t('stats.today')}</h2>
     <a class="export" href={api.adifUrl()} download="dk9xr_ft8.adif">⬇ ADIF Export</a>
   </div>
 
   <div class="grid">
     <div class="card">
       <div class="big">{stats.qso_today}</div>
-      <div class="lbl">QSOs heute</div>
+      <div class="lbl">{t('stats.qsos_today')}</div>
     </div>
     <div class="card">
       <div class="big">{stats.dxccs_today}</div>
-      <div class="lbl">DXCC heute</div>
+      <div class="lbl">{t('stats.dxcc_today')}</div>
     </div>
     <div class="card">
       <div class="big">{stats.qso_7d}</div>
-      <div class="lbl">QSOs 7 Tage</div>
+      <div class="lbl">{t('stats.qsos_7d')}</div>
     </div>
     <div class="card">
       <div class="big">{stats.decodes_last_hour}</div>
-      <div class="lbl">Decodes / h</div>
+      <div class="lbl">{t('stats.decodes_h')}</div>
     </div>
   </div>
 
   {#if stats.best_dx_today}
     <div class="best-dx">
-      <strong>Beste DX heute:</strong>
+      <strong>{t('stats.best_dx_today')}:</strong>
       {stats.best_dx_today.call} ({stats.best_dx_today.grid}, {stats.best_dx_today.band})
       {#if stats.best_dx_today.distance_km_estimate}
         — ~{stats.best_dx_today.distance_km_estimate} km
@@ -65,7 +66,7 @@
   {/if}
 
   {#if suggestions.length > 0}
-    <h3>Band-Vorschlag</h3>
+    <h3>{t('stats.band_suggest')}</h3>
     <div class="bands">
       {#each suggestions.slice(0, 5) as s}
         <button

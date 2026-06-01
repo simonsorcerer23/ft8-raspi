@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { parseUtc } from '../lib/time.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let reports = $state([]);
   let loading = $state(true);
@@ -60,7 +61,7 @@
 
 <div class="wrap">
   <header>
-    <h2>📡 Wer hat mich gehört? (PSK Reporter)</h2>
+    <h2>{t('who.title')}</h2>
     <div class="ctrl">
       <select bind:value={hours} onchange={refresh}>
         <option value={1}>1 h</option>
@@ -82,12 +83,12 @@
     <table>
       <thead>
         <tr>
-          <th>Reporter</th>
-          <th>Grid</th>
-          <th>Best SNR</th>
-          <th>Reports</th>
-          <th>Bänder</th>
-          <th>Letzter</th>
+          <th>{t('who.reporter')}</th>
+          <th>{t('who.grid')}</th>
+          <th>{t('who.best_snr')}</th>
+          <th>{t('who.reports')}</th>
+          <th>{t('who.bands')}</th>
+          <th>{t('who.last')}</th>
         </tr>
       </thead>
       <tbody>

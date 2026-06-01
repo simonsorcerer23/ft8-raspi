@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { fmtUtcDateTime } from '../lib/time.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let entries = $state([]);
   let newCall = $state('');
@@ -40,14 +41,14 @@
 
 <div class="wrap">
   <header>
-    <h2>👀 Watchlist</h2>
+    <h2>{t('wl.title')}</h2>
   </header>
 
   <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
-    <input type="text" placeholder="Call (z.B. ZL9HR)"
+    <input type="text" placeholder={t('wl.call_ph')}
            bind:value={newCall} required style="text-transform: uppercase"/>
-    <input type="text" placeholder="Notiz (optional)" bind:value={newNote}/>
-    <button class="add-btn" type="submit">Beobachten</button>
+    <input type="text" placeholder={t('wl.note_ph')} bind:value={newNote}/>
+    <button class="add-btn" type="submit">{t('wl.watch')}</button>
   </form>
 
   {#if error}<div class="err">⚠ {error}</div>{/if}
@@ -59,7 +60,7 @@
   {:else}
     <table>
       <thead>
-        <tr><th>Call</th><th>Notiz</th><th>Hinzugefügt</th><th>Letzter Alarm</th><th></th></tr>
+        <tr><th>{t('common.call')}</th><th>{t('common.note')}</th><th>{t('common.added')}</th><th>{t('wl.last_alert')}</th><th></th></tr>
       </thead>
       <tbody>
         {#each entries as e (e.call)}
@@ -68,7 +69,7 @@
             <td>{e.note ?? '—'}</td>
             <td class="ts">{fmtTs(e.added)}</td>
             <td class="ts">{fmtTs(e.last_alert_at)}</td>
-            <td><button class="rm" onclick={() => remove(e.call)}>Entfernen</button></td>
+            <td><button class="rm" onclick={() => remove(e.call)}>{t('common.remove')}</button></td>
           </tr>
         {/each}
       </tbody>

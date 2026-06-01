@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { fmtUtcDateTime } from '../lib/time.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let entries = $state([]);
   let newCall = $state('');
@@ -40,14 +41,14 @@
 
 <div class="wrap">
   <header>
-    <h2>Blacklist</h2>
+    <h2>{t('bl.title')}</h2>
   </header>
 
   <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
-    <input type="text" placeholder="Call (z.B. W1ABC)"
+    <input type="text" placeholder={t('bl.call_ph')}
            bind:value={newCall} required style="text-transform: uppercase"/>
-    <input type="text" placeholder="Grund (optional)" bind:value={newReason}/>
-    <button class="add-btn" type="submit">Hinzufügen</button>
+    <input type="text" placeholder={t('bl.reason_ph')} bind:value={newReason}/>
+    <button class="add-btn" type="submit">{t('common.add')}</button>
   </form>
 
   {#if error}<div class="err">⚠ {error}</div>{/if}
@@ -59,7 +60,7 @@
   {:else}
     <table>
       <thead>
-        <tr><th>Call</th><th>Grund</th><th>Hinzugefügt</th><th></th></tr>
+        <tr><th>{t('common.call')}</th><th>{t('common.reason')}</th><th>{t('common.added')}</th><th></th></tr>
       </thead>
       <tbody>
         {#each entries as e (e.call)}
@@ -67,7 +68,7 @@
             <td class="call">{e.call}</td>
             <td>{e.reason ?? '—'}</td>
             <td class="ts">{fmtTs(e.added)}</td>
-            <td><button class="rm" onclick={() => remove(e.call)}>Entfernen</button></td>
+            <td><button class="rm" onclick={() => remove(e.call)}>{t('common.remove')}</button></td>
           </tr>
         {/each}
       </tbody>

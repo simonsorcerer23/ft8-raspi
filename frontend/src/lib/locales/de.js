@@ -94,4 +94,75 @@ export const de = {
 
   // SolarWidget
   'solar.unavailable': 'Solar-Daten nicht verfügbar',
+
+  // RigPanel
+  'rig.rx_level': 'RX-PEGEL',
+
+  // Gemeinsame Tabellen-/Formular-Begriffe
+  'common.call': 'Call',
+  'common.add': 'Hinzufügen',
+  'common.remove': 'Entfernen',
+  'common.added': 'Hinzugefügt',
+  'common.note': 'Notiz',
+  'common.reason': 'Grund',
+  'common.error': 'Fehler',
+
+  // StatsDashboard
+  'stats.today': 'Heute',
+  'stats.qsos_today': 'QSOs heute',
+  'stats.dxcc_today': 'DXCC heute',
+  'stats.qsos_7d': 'QSOs 7 Tage',
+  'stats.decodes_h': 'Decodes / h',
+  'stats.band_suggest': 'Band-Vorschlag',
+  'stats.best_dx_today': 'Beste DX heute',
+
+  // SystemPanel
+  'system.title': 'Pi-Status',
+  'system.disk': 'Disk',
+  'system.uptime': 'Uptime',
+  'system.throttle': 'Throttle',
+
+  // WhoHeardMe
+  'who.title': '📡 Wer hat mich gehört? (PSK Reporter)',
+  'who.reporter': 'Reporter',
+  'who.grid': 'Grid',
+  'who.best_snr': 'Best SNR',
+  'who.reports': 'Reports',
+  'who.bands': 'Bänder',
+  'who.last': 'Letzter',
+
+  // BlacklistPanel
+  'bl.title': 'Blacklist',
+  'bl.call_ph': 'Call (z.B. W1ABC)',
+  'bl.reason_ph': 'Grund (optional)',
+
+  // WatchlistPanel
+  'wl.title': '👀 Watchlist',
+  'wl.call_ph': 'Call (z.B. ZL9HR)',
+  'wl.note_ph': 'Notiz (optional)',
+  'wl.watch': 'Beobachten',
+  'wl.last_alert': 'Letzter Alarm',
+
+  // ReputationPanel
+  'rep.title': '✋ Soft-Blacklist (Call-Reputation)',
+  'rep.score': 'Score',
+  'rep.attempts': 'Versuche',
+  'rep.successes': 'Erfolge',
+  'rep.last_reason': 'Letzter Grund',
+  'rep.last_attempt': 'Letzter Versuch',
+
+  // DxpeditionPanel
+  'dxp.title': '📡 DXpedition-Schedule',
+  'dxp.call_ph': 'Call (z.B. ZL9HR)',
+  'dxp.start_ph': 'Start',
+  'dxp.end_ph': 'Ende',
+  'dxp.note_ph': 'Notiz (z.B. Bouvet)',
+  'dxp.source': 'Quelle',
+  'dxp.start': 'Start',
+  'dxp.end': 'Ende',
+  'dxp.status': 'Status',
+  'dxp.watchlist': 'Watchlist',
+
+  // Charts
+  'chart.active_hours': 'Aktive Stunden pro Kontinent',
 };

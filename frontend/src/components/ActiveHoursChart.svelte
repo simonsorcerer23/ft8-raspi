@@ -3,6 +3,7 @@
   // QSO-DB typisch aktiv pro Kontinent (Top-50 % der Stunden). Aktuelle
   // Stunde hervorgehoben.
   import { onMount } from 'svelte';
+  import { t } from '../lib/i18n.svelte.js';
   import { api } from '../lib/api.js';
 
   let byContinent = $state({});
@@ -33,7 +34,7 @@
 </script>
 
 <div class="wrap">
-  <h3>Aktive Stunden pro Kontinent</h3>
+  <h3>{t('chart.active_hours')}</h3>
   {#if totalBuckets === 0}
     <p class="empty">Noch keine ausreichende QSO-Historie für die Auswertung.</p>
   {:else}

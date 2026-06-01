@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { fmtUtcDateTime, parseUtc } from '../lib/time.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let entries = $state([]);
   let newCall = $state('');
@@ -61,16 +62,16 @@
 
 <div class="wrap">
   <header>
-    <h2>📡 DXpedition-Schedule</h2>
+    <h2>{t('dxp.title')}</h2>
   </header>
 
   <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
-    <input type="text" placeholder="Call (z.B. ZL9HR)"
+    <input type="text" placeholder={t('dxp.call_ph')}
            bind:value={newCall} required style="text-transform: uppercase"/>
-    <input type="datetime-local" placeholder="Start" bind:value={newStart} required/>
-    <input type="datetime-local" placeholder="Ende" bind:value={newEnd} required/>
-    <input type="text" placeholder="Notiz (z.B. Bouvet)" bind:value={newNote}/>
-    <button class="add-btn" type="submit">Hinzufügen</button>
+    <input type="datetime-local" placeholder={t('dxp.start_ph')} bind:value={newStart} required/>
+    <input type="datetime-local" placeholder={t('dxp.end_ph')} bind:value={newEnd} required/>
+    <input type="text" placeholder={t('dxp.note_ph')} bind:value={newNote}/>
+    <button class="add-btn" type="submit">{t('common.add')}</button>
   </form>
 
   {#if error}<div class="err">⚠ {error}</div>{/if}
@@ -86,8 +87,8 @@
     <table>
       <thead>
         <tr>
-          <th>Call</th><th>Quelle</th><th>Notiz</th><th>Start</th><th>Ende</th>
-          <th>Status</th><th>Watchlist</th><th></th>
+          <th>{t('common.call')}</th><th>{t('dxp.source')}</th><th>{t('common.note')}</th><th>{t('dxp.start')}</th><th>{t('dxp.end')}</th>
+          <th>{t('dxp.status')}</th><th>{t('dxp.watchlist')}</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -107,7 +108,7 @@
             <td class="ts">{fmtDate(e.end_date)}</td>
             <td><span class="pill {st.cls}">{st.label}</span></td>
             <td>{e.auto_added_to_watchlist ? '👀 ja' : '—'}</td>
-            <td><button class="rm" onclick={() => remove(e.call)}>Entfernen</button></td>
+            <td><button class="rm" onclick={() => remove(e.call)}>{t('common.remove')}</button></td>
           </tr>
         {/each}
       </tbody>

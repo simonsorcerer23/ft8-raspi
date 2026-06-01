@@ -94,4 +94,75 @@ export const en = {
 
   // SolarWidget
   'solar.unavailable': 'Solar data unavailable',
+
+  // RigPanel
+  'rig.rx_level': 'RX LEVEL',
+
+  // Shared table/form terms
+  'common.call': 'Call',
+  'common.add': 'Add',
+  'common.remove': 'Remove',
+  'common.added': 'Added',
+  'common.note': 'Note',
+  'common.reason': 'Reason',
+  'common.error': 'Error',
+
+  // StatsDashboard
+  'stats.today': 'Today',
+  'stats.qsos_today': 'QSOs today',
+  'stats.dxcc_today': 'DXCC today',
+  'stats.qsos_7d': 'QSOs 7 days',
+  'stats.decodes_h': 'Decodes / h',
+  'stats.band_suggest': 'Band suggestion',
+  'stats.best_dx_today': 'Best DX today',
+
+  // SystemPanel
+  'system.title': 'Pi status',
+  'system.disk': 'Disk',
+  'system.uptime': 'Uptime',
+  'system.throttle': 'Throttle',
+
+  // WhoHeardMe
+  'who.title': '📡 Who heard me? (PSK Reporter)',
+  'who.reporter': 'Reporter',
+  'who.grid': 'Grid',
+  'who.best_snr': 'Best SNR',
+  'who.reports': 'Reports',
+  'who.bands': 'Bands',
+  'who.last': 'Last',
+
+  // BlacklistPanel
+  'bl.title': 'Blacklist',
+  'bl.call_ph': 'Call (e.g. W1ABC)',
+  'bl.reason_ph': 'Reason (optional)',
+
+  // WatchlistPanel
+  'wl.title': '👀 Watchlist',
+  'wl.call_ph': 'Call (e.g. ZL9HR)',
+  'wl.note_ph': 'Note (optional)',
+  'wl.watch': 'Watch',
+  'wl.last_alert': 'Last alert',
+
+  // ReputationPanel
+  'rep.title': '✋ Soft-blacklist (call reputation)',
+  'rep.score': 'Score',
+  'rep.attempts': 'Attempts',
+  'rep.successes': 'Successes',
+  'rep.last_reason': 'Last reason',
+  'rep.last_attempt': 'Last attempt',
+
+  // DxpeditionPanel
+  'dxp.title': '📡 DXpedition schedule',
+  'dxp.call_ph': 'Call (e.g. ZL9HR)',
+  'dxp.start_ph': 'Start',
+  'dxp.end_ph': 'End',
+  'dxp.note_ph': 'Note (e.g. Bouvet)',
+  'dxp.source': 'Source',
+  'dxp.start': 'Start',
+  'dxp.end': 'End',
+  'dxp.status': 'Status',
+  'dxp.watchlist': 'Watchlist',
+
+  // Charts
+  'chart.active_hours': 'Active hours per continent',
 };

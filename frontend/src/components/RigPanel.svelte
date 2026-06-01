@@ -10,6 +10,7 @@
   // Until the IC-705 is plugged in, this reads the mock rigctld so the
   // layout is verifiable end-to-end.
   import { statusStore } from '../lib/stores.svelte.js';
+  import { t } from '../lib/i18n.svelte.js';
   import { api } from '../lib/api.js';
   import { onMount } from 'svelte';
 
@@ -178,7 +179,7 @@
   {:else}
     {@const dbfs = statusStore.value.rx_audio_dbfs}
     <div class="meter s-meter" title="RX-Audio-Pegel direkt aus dem ALSA-Capture (RMS letzter 250 ms). Hamlib STRENGTH ist beim IC-7300 kaputt — dieser Wert zappelt mit echter Signal-Aktivität.">
-      <small class="lbl">RX-PEGEL</small>
+      <small class="lbl">{t('rig.rx_level')}</small>
       <div class="bar"><div class="fill" style="width: {audioBarPct(dbfs)}%; background: {audioColor(dbfs)}"></div></div>
       <strong>{dbfs != null ? `${dbfs.toFixed(1)} dBFS` : '—'}</strong>
     </div>
