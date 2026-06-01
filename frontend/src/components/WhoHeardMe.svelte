@@ -104,7 +104,7 @@
         {/each}
       </tbody>
     </table>
-    <div class="muted">{grouped.length} einzigartige Reporter · {reports.length} Reports gesamt</div>
+    <div class="muted">{t('who.summary', { uniq: grouped.length, reports: reports.length })}</div>
   {/if}
 </div>
 

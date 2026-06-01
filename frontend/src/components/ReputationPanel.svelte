@@ -74,10 +74,9 @@
   {:else if visibleEntries.length === 0}
     <p class="empty">
       {#if entries.length === 0}
-        Noch keine Call-Reputation-Daten — die DB sammelt sich mit jedem
-        QSO-Versuch.
+        {t('rep.empty_none')}
       {:else}
-        Keine schlechte Reputation. Alle gepickten Calls antworten.
+        {t('rep.empty_all_good')}
       {/if}
     </p>
   {:else}

@@ -61,6 +61,9 @@ echo "✓ Frontend: jede t()-Nutzung importiert i18n"
 # t('key') existiert im Katalog. node ist im Frontend-Toolchain ohnehin da.
 if command -v node >/dev/null 2>&1; then
     node "$SCRIPT_DIR/i18n_audit_frontend.mjs" || exit 1
+    # Hartcodiertes Deutsch ohne t()-Wrapper (Klasse, die der Katalog-Audit
+    # NICHT sieht — fing 9 Migrations-Nachzügler, Audit 2026-06-01).
+    node "$SCRIPT_DIR/i18n_check_hardcoded.mjs" || exit 1
 else
     echo "⚠ node fehlt — Frontend-i18n-Katalog-Audit übersprungen"
 fi

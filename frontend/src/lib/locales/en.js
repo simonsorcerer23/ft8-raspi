@@ -99,6 +99,7 @@ export const en = {
 
   // RigPanel
   'rig.rx_level': 'RX LEVEL',
+  'rig.cq_directed_title': 'Directed CQ: only stations from this region/award call the Pi',
 
   // Shared table/form terms
   'common.call': 'Call',
@@ -136,6 +137,7 @@ export const en = {
   'who.last': 'Last',
   'who.days_3': '3 days',
   'who.empty': 'No reception reports yet.',
+  'who.summary': '{uniq} unique reporters · {reports} reports total',
 
   // BlacklistPanel
   'bl.title': 'Blacklist',
@@ -161,6 +163,8 @@ export const en = {
   'rep.show_neutral': 'also show neutral calls',
   'rep.soft_blacklisted': '{n} soft-blacklisted',
   'rep.total_tracked': '{n} tracked total',
+  'rep.empty_none': 'No call-reputation data yet — the DB builds up with every QSO attempt.',
+  'rep.empty_all_good': 'No bad reputation. All picked calls reply.',
 
   // DxpeditionPanel
   'dxp.title': '📡 DXpedition schedule',
@@ -176,6 +180,7 @@ export const en = {
   'dxp.src_manual': '✋ manual',
   'dxp.src_manual_title': 'Added manually',
   'dxp.src_ng3k_title': 'Auto-imported from NG3K ADXO',
+  'dxp.empty': 'No DXpedition schedule. Add your planned DXpeditions — an ntfy push arrives 24 h before QRV start.',
 
   // Charts
   'chart.active_hours': 'Active hours per continent',

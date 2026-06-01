@@ -145,7 +145,7 @@
       </span>
       {#if statusStore.value.cq_directed}
         <span class="tag directed-tag"
-              title="Directed CQ: nur Stationen aus dieser Region/Award rufen den Pi an">
+              title={t('rig.cq_directed_title')}>
           🎯 CQ {statusStore.value.cq_directed}
         </span>
       {/if}

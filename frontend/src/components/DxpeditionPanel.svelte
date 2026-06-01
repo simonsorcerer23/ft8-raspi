@@ -80,8 +80,7 @@
     <p class="empty">{t('common.loading')}</p>
   {:else if entries.length === 0}
     <p class="empty">
-      Kein DXpedition-Schedule. Trag deine geplanten DXpeditions ein —
-      24 h vor QRV-Start kommt eine ntfy-Push.
+      {t('dxp.empty')}
     </p>
   {:else}
     <table>
