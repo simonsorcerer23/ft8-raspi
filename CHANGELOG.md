@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.55.0 — 2026-06-01
+- feat: i18n Welle 7 — WifiManager, OperatorAdminPanel, Map
+
 ## v0.54.0 — 2026-06-01
 - feat: i18n Welle 6 — DecodeList, Charts, AccessPanel, FirstBootWizard
 
