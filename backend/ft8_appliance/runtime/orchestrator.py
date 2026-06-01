@@ -39,6 +39,12 @@ from sqlalchemy import select
 
 from .. import i18n as _i18n
 from ..config import AppConfig, OperatorConfig
+
+
+def _t(key: str, **params: object) -> str:
+    """Localize a backend-generated push string in the configured default
+    language (ntfy goes to the phone — no browser request to read ?lang=)."""
+    return _i18n.translate(key, _i18n.default_lang(), **params)
 from ..db import repository, session_scope
 from ..db.models import Blacklist as DbBlacklist
 from ..db.models import CallReputation as DbCallReputation
@@ -970,7 +976,7 @@ class Orchestrator:
         try:
             await ntfy.notify(
                 "\n".join(probs),
-                title=f"\u26a0 {call}: Upload-Setup unvollstaendig",
+                title=_t("push.preflight_title", call=call),
                 priority="high",
                 tags=["warning"],
             )
@@ -1586,8 +1592,8 @@ class Orchestrator:
         if self.integrations.ntfy and self.integrations.ntfy.enabled:
             try:
                 await self.integrations.ntfy.notify(
-                    "Pi wird heruntergefahren — sicher zum Stecker-Ziehen in ~30 s",
-                    title="🌙 FT8 Pi: shutdown",
+                    _t("push.shutdown_msg"),
+                    title=_t("push.shutdown_title"),
                     priority="default",
                     tags=["sleeping"],
                 )
@@ -1617,8 +1623,8 @@ class Orchestrator:
         if self.integrations.ntfy and self.integrations.ntfy.enabled:
             try:
                 await self.integrations.ntfy.notify(
-                    "Pi wird neu gestartet — kommt in ca. 30 s zurück",
-                    title="🔁 FT8 Pi: reboot",
+                    _t("push.reboot_msg"),
+                    title=_t("push.reboot_title"),
                     priority="default",
                     tags=["arrows_counterclockwise"],
                 )
@@ -1845,10 +1851,12 @@ class Orchestrator:
             band_tag = decoded.band or self.state_machine.ctx.band
             snr_str = f"{decoded.snr_db:+d} dB" if decoded.snr_db is not None else "?"
             msg_kind = "CQ" if decoded.call_to is None else f"→ {decoded.call_to}"
-            badge = "🎯 DXpedition" if source == "ng3k_auto" else "👀 Watchlist"
+            badge = _t(
+                "push.badge_dxpedition" if source == "ng3k_auto" else "push.badge_watchlist"
+            )
             await ntfy.notify(
                 title=f"{badge}: {norm}",
-                message=f"{msg_kind} auf {band_tag} ({snr_str})",
+                message=_t("push.watchlist_msg", kind=msg_kind, band=band_tag, snr=snr_str),
                 priority="default",
                 tags=["eyes"],
             )
@@ -1989,16 +1997,15 @@ class Orchestrator:
         host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (
-                f"http, ⏮ Auf {expected_w}W zurueck, "
+                f"http, {_t('push.act_back_to_power', watts=expected_w)}, "
                 f"http://{host}:8000/api/control/tx-power, "
                 "method=POST, headers.content-type=application/json, "
                 f'body={{"watts":{expected_w}}}'
             ),
         ]
         await ntfy.notify(
-            f"TX-Leistung am Rig auf {rig_w}W verstellt (App-Stand war "
-            f"{expected_w}W). Jemand pfuscht am Rig.",
-            title="🛠 Rig-Settings extern geaendert",
+            _t("push.power_tamper_msg", rig=rig_w, expected=expected_w),
+            title=_t("push.tamper_settings_title"),
             priority="default",
             tags=["warning"],
             actions=self._tok_actions(actions),
@@ -2012,17 +2019,15 @@ class Orchestrator:
         host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (
-                f"http, ⏮ Auf {expected_mode} zurueck, "
+                f"http, {_t('push.act_back_to_mode', mode=expected_mode)}, "
                 f"http://{host}:8000/api/control/set-mode, "
                 "method=POST, headers.content-type=application/json, "
                 f'body={{"mode":"{expected_mode}"}}'
             ),
         ]
         await ntfy.notify(
-            f"Rig-Modus ist {rig_mode} statt {expected_mode}. Damit funkt "
-            f"FT8 nicht richtig (USB-MOD-Audio wird nicht zum Modulator "
-            f"geroutet).",
-            title="🛠 Rig-Modus extern geaendert",
+            _t("push.mode_tamper_msg", rig=rig_mode, expected=expected_mode),
+            title=_t("push.tamper_mode_title"),
             priority="high",
             tags=["warning"],
             actions=self._tok_actions(actions),
@@ -2037,18 +2042,16 @@ class Orchestrator:
             return
         host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
-            (f"http, ⏹ STOP CQ, http://{host}:8000/api/control/stop, method=POST"),
+            (f"http, {_t('push.act_stop_cq')}, http://{host}:8000/api/control/stop, method=POST"),
             (
-                f"http, 🎯 Auf Hunting, http://{host}:8000/api/control/auto-answer, "
+                f"http, {_t('push.act_to_hunting')}, http://{host}:8000/api/control/auto-answer, "
                 "method=POST, headers.content-type=application/json, "
                 'body={"enabled":true}'
             ),
         ]
         await ntfy.notify(
-            f"CQ ruft seit {elapsed_min:.0f} min ohne Antwort "
-            f"({cq_count} CQs gesendet). Band evtl. tot oder QRG belegt — "
-            f"STOP oder auf Hunting wechseln? Pi laeuft weiter bis du was machst.",
-            title="📡 CQ-Idle ohne Antwort",
+            _t("push.cq_idle_msg", min=f"{elapsed_min:.0f}", count=cq_count),
+            title=_t("push.cq_idle_title"),
             priority="default",
             tags=["warning"],
             actions=self._tok_actions(actions),
@@ -2060,8 +2063,8 @@ class Orchestrator:
         if ntfy is None or not ntfy.enabled:
             return
         await ntfy.notify(
-            f"Filterbreite am Rig auf {rig_bw} Hz verstellt (Soll {expected_bw} Hz).",
-            title="🛠 Rig-Filter extern geaendert",
+            _t("push.bw_tamper_msg", rig=rig_bw, expected=expected_bw),
+            title=_t("push.tamper_filter_title"),
             priority="default",
             tags=["warning"],
         )
@@ -2605,7 +2608,7 @@ class Orchestrator:
                 if bm != "off" and not is_active:
                     await self._send_mode_alert(
                         ntfy,
-                        f"Pi steht still — boot_mode={bm} aber kein Modus aktiv",
+                        _t("push.mode_idle_bootmode", bm=bm),
                         bm,
                     )
                     last_alert_at = now_t
@@ -2618,8 +2621,7 @@ class Orchestrator:
                 if not is_active and idle_min > watchdog_min:
                     await self._send_mode_alert(
                         ntfy,
-                        f"Pi ist seit {idle_min:.0f} min ohne Auto-Modus. "
-                        "Hunting starten?",
+                        _t("push.mode_idle_long", min=f"{idle_min:.0f}"),
                         "off",
                     )
                     last_alert_at = now_t
@@ -2649,10 +2651,11 @@ class Orchestrator:
                     if audio_dead:
                         # Echtes Problem: keine Decodes UND kein RX-Audio.
                         await ntfy.notify(
-                            f"Keine Decodes seit {stale_min:.0f} min UND "
-                            f"kein RX-Audio seit {audio_stale_min:.0f} min — "
-                            "Antenne / Audio-Kabel / Rig prüfen!",
-                            title="📡 FT8 Pi: Funkstille (Audio tot)",
+                            _t(
+                                "push.silence_msg",
+                                stale=f"{stale_min:.0f}", audio=f"{audio_stale_min:.0f}",
+                            ),
+                            title=_t("push.silence_title"),
                             priority="high",
                             tags=["warning"],
                         )
@@ -2765,11 +2768,12 @@ class Orchestrator:
                 if pipeline_metrics is not None and pipeline_metrics.late_slot_count >= 3:
                     if (now_t - self._last_late_slot_alert_at) > 3600:
                         await ntfy.notify(
-                            f"Decoder-Late: {pipeline_metrics.late_slot_count} Slots "
-                            f">80% Laufzeit (max {pipeline_metrics.max_decode_duration_s:.1f}s). "
-                            "CPU vermutlich am Limit — Deep-Mode aus, andere "
-                            "Loads reduzieren?",
-                            title="🐢 FT8 Pi: Decoder-Last hoch",
+                            _t(
+                                "push.decoder_late_msg",
+                                count=pipeline_metrics.late_slot_count,
+                                dur=f"{pipeline_metrics.max_decode_duration_s:.1f}",
+                            ),
+                            title=_t("push.decoder_late_title"),
                             priority="default",
                             tags=["warning"],
                         )
@@ -2789,16 +2793,19 @@ class Orchestrator:
         host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (
-                f"http, 🔄 Auf {band.name} zurück, "
+                f"http, {_t('push.act_back_to_band', band=band.name)}, "
                 f"http://{host}:8000/api/control/set-freq, method=POST, "
                 "headers.content-type=application/json, "
                 f'body={{"freq_hz":{expected_hz}}}'
             ),
         ]
         await ntfy.notify(
-            f"Rig ist auf {actual_hz/1e6:.4f} MHz ({delta:+d} Hz von "
-            f"{band.name}/{band.freq_khz} kHz). Wer hat gedreht?",
-            title="📻 Frequenz wurde verstellt",
+            _t(
+                "push.freq_tamper_msg",
+                mhz=f"{actual_hz/1e6:.4f}", delta=f"{delta:+d}",
+                band=band.name, khz=band.freq_khz,
+            ),
+            title=_t("push.freq_tamper_title"),
             priority="high",
             tags=["warning"],
             actions=self._tok_actions(actions),
@@ -2816,18 +2823,18 @@ class Orchestrator:
         # ntfy-Action-Format: "http, <label>, <url>, method=POST, body=<json>"
         actions = [
             (
-                f"http, Hunting starten, http://{host}:8000/api/control/auto-answer, "
+                f"http, {_t('push.act_start_hunting')}, http://{host}:8000/api/control/auto-answer, "
                 'method=POST, headers.content-type=application/json, '
                 'body={"enabled":true}'
             ),
             (
-                f"http, CQ starten, http://{host}:8000/api/control/cq, "
+                f"http, {_t('push.act_start_cq')}, http://{host}:8000/api/control/cq, "
                 "method=POST"
             ),
         ]
         await ntfy.notify(
             message,
-            title=f"⚠️ FT8 {host}: Auto-Modus inaktiv",
+            title=_t("push.mode_alert_title", host=host),
             priority="high",
             tags=["warning"],
             actions=self._tok_actions(actions),
@@ -2859,7 +2866,7 @@ class Orchestrator:
                         msg = await self._build_daily_summary()
                         await ntfy.notify(
                             msg,
-                            title="🌅 FT8 Pi: 24h-Übersicht",
+                            title=_t("push.daily_title"),
                             priority="default",
                             tags=["sun_with_face"],
                         )
@@ -2893,15 +2900,15 @@ class Orchestrator:
         # DXCC count aus _worked_dxccs (laufender Set, RAM)
         n_dxccs = len(self._worked_dxccs)
         lines = [
-            f"📡 QSOs letzte 24h: {n_qsos} ({n_uniq} unique Calls)",
-            f"🌍 DXCCs gesamt: {n_dxccs}",
+            _t("push.daily_qsos", n=n_qsos, uniq=n_uniq),
+            _t("push.daily_dxccs", n=n_dxccs),
         ]
         if best:
-            lines.append(f"⭐ Best DX: {best[0]} ({best[1]})")
+            lines.append(_t("push.daily_bestdx", call=best[0], grid=best[1]))
         if qrz_pending:
-            lines.append(f"⏳ QRZ-Pending: {qrz_pending} (warten auf Connectivity)")
+            lines.append(_t("push.daily_pending", n=qrz_pending))
         else:
-            lines.append("✅ Alle QSOs bei QRZ")
+            lines.append(_t("push.daily_all_uploaded"))
         return "\n".join(lines)
 
     async def _dx_cluster_hint_loop(self) -> None:
@@ -3180,14 +3187,14 @@ class Orchestrator:
         # Distanz auf int runden — 27.3 km macht im Push keinen Mehrwert.
         km = int(round(nearest_km))
         if since_last < self._STORM_THROTTLE_S and self._last_storm_alert_km is not None:
-            msg = f"Gewitter rueckt naeher — {km} km Entfernung"
+            msg = _t("push.storm_closer", km=km)
         else:
-            msg = f"Gewitter in {km} km Entfernung (Radius {bz.alarm_radius_km} km)"
+            msg = _t("push.storm_msg", km=km, radius=bz.alarm_radius_km)
         log.warning("blitzortung: storm alert — %s", msg)
         # Fire-and-forget — Push darf nicht den Watchdog blockieren.
         asyncio.create_task(ntfy.notify(
             message=msg,
-            title="Gewitterwarnung",
+            title=_t("push.storm_title"),
             priority="high",
             tags=["thunder_cloud", "warning"],
         ))
@@ -3590,24 +3597,25 @@ class Orchestrator:
         info_detected = COUNTRIES.get(detected)
         det_name = info_detected.name if info_detected else detected
         if current is None or current == home:
-            title = "📍 DX-Operating?"
-            msg = (
-                f"GPS sagt du bist seit 30+ min in {det_name} ({detected}). "
-                f"Auf {detected}/{op.callsign} umstellen?"
+            title = _t("push.country_dx_title")
+            msg = _t(
+                "push.country_dx_msg",
+                name=det_name, code=detected, call=op.callsign,
             )
         elif detected == home:
-            title = "🏠 Wieder daheim?"
-            msg = (
-                f"GPS sagt du bist zuhause aber sendest noch als "
-                f"{current}/{op.callsign}. Auf Heimat-Call zurueck?"
+            title = _t("push.country_home_title")
+            msg = _t(
+                "push.country_home_msg",
+                current=current, call=op.callsign,
             )
         else:
-            title = "⚠️ Operating-Country Mismatch"
+            title = _t("push.country_mismatch_title")
             cur_info = COUNTRIES.get(current)
             cur_name = cur_info.name if cur_info else current
-            msg = (
-                f"Du sendest {current}/{op.callsign} ({cur_name}) aber GPS "
-                f"sagt du bist in {det_name} ({detected})."
+            msg = _t(
+                "push.country_mismatch_msg",
+                current=current, call=op.callsign, curname=cur_name,
+                detname=det_name, detected=detected,
             )
         log.info("ntfy country-mismatch push: %s", msg)
         try:
@@ -4168,14 +4176,13 @@ class Orchestrator:
         host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
         actions = [
             (
-                f"http, 🔓 Sperre loesen, "
+                f"http, {_t('push.act_unlock')}, "
                 f"http://{host}:8000/api/control/reset-lock, method=POST"
             ),
         ]
         await ntfy.notify(
-            f"SWR auf {swr:.2f} gestiegen (Limit {hard:.2f}) — TX wurde "
-            f"sofort abgebrochen. Antenne pruefen!",
-            title="🚨 SWR-Notabschaltung",
+            _t("push.swr_runaway_msg", swr=f"{swr:.2f}", hard=f"{hard:.2f}"),
+            title=_t("push.swr_runaway_title"),
             priority="high",
             tags=["rotating_light"],
             actions=self._tok_actions(actions),
@@ -4185,16 +4192,14 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if not (ntfy and ntfy.enabled):
             return
-        msg = (
-            f"SWR steigt auf {swr:.2f} (Warn-Schwelle {warn:.2f}, "
-            f"Lock bei {hard:.2f}). Antenne checken — Stehwelle könnte "
-            f"sich verschlechtert haben. Bei Erreichen von {hard:.2f} "
-            f"sperrt der Pi TX automatisch."
+        msg = _t(
+            "push.swr_warn_msg",
+            swr=f"{swr:.2f}", warn=f"{warn:.2f}", hard=f"{hard:.2f}",
         )
         try:
             await ntfy.notify(
                 msg,
-                title="⚠ SWR-Vorwarnung",
+                title=_t("push.swr_warn_title"),
                 priority="default",
                 tags=["warning"],
             )
@@ -4230,16 +4235,11 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if not (ntfy and ntfy.enabled):
             return
-        msg = (
-            f"ALC bei {alc}% (Warn-Schwelle {warn}%). Audio-Pegel zu "
-            f"hoch — der Closed-Loop sollte das selbst runter trimmen. "
-            f"Falls's nicht zurückgeht, manuell im Konfig audio_gain "
-            f"reduzieren oder TX-Leistung am Rig anpassen."
-        )
+        msg = _t("push.alc_warn_msg", alc=alc, warn=warn)
         try:
             await ntfy.notify(
                 msg,
-                title="⚠ ALC-Vorwarnung",
+                title=_t("push.alc_warn_title"),
                 priority="default",
                 tags=["warning"],
             )
@@ -4251,16 +4251,14 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if not (ntfy and ntfy.enabled):
             return
-        msg = (
-            f"RX-Pegel bei {dbfs:.1f} dBFS seit {int(sustained_s)}s — "
-            f"nahe am Clipping. Im IC-7300 MENU → SET → Connectors → "
-            f"AF/SQL Control → USB AF Output Level reduzieren "
-            f"(Default ~13, probier 8-10)."
-        )
+        msg = _t("push.clipping_msg", dbfs=f"{dbfs:.1f}", secs=int(sustained_s))
         try:
             await ntfy.notify(
                 msg,
-                title=f"🔊 FT8 {self.config.operating.public_hostname or 'Pi'} — RX-Pegel zu hoch",
+                title=_t(
+                    "push.clipping_title",
+                    host=self.config.operating.public_hostname or "Pi",
+                ),
                 priority="default",  # nicht urgent — Decoder funktioniert noch
                 tags=["loud_sound"],
             )
@@ -4864,24 +4862,25 @@ class Orchestrator:
             # Marinefunker-Lookup (Sebastian v0.9.0): wenn Partner aktives
             # MF-Mitglied → Badge ⚓ + MFNr in den Push einbauen
             mf_member = get_mf_lookup().lookup(call) if call else None
-            mf_suffix = f" ⚓ Marinefunker MF #{mf_member.mfnr}" if mf_member else ""
-            title = ("🆕 New DXCC! " if is_new_dxcc else "📡 QSO complete: ") + (call or "?") + mf_suffix
+            mf_suffix = _t("push.mf_suffix", nr=mf_member.mfnr) if mf_member else ""
+            prefix = _t("push.new_dxcc_prefix" if is_new_dxcc else "push.qso_complete_prefix")
+            title = prefix + (call or "?") + mf_suffix
             # Action-Buttons damit Dad nach jedem QSO direkt vom
             # Lockscreen aus den Modus wechseln kann ohne in die
             # Web-UI rein zu müssen. Tap = HTTP POST gegen Pi-Tailnet.
             host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
             actions = [
                 (
-                    f"http, ⏹ Stoppen, http://{host}:8000/api/control/stop, "
+                    f"http, {_t('push.act_stop')}, http://{host}:8000/api/control/stop, "
                     "method=POST"
                 ),
                 (
-                    f"http, 🎯 Hunting, http://{host}:8000/api/control/auto-answer, "
+                    f"http, {_t('push.act_hunting')}, http://{host}:8000/api/control/auto-answer, "
                     "method=POST, headers.content-type=application/json, "
                     'body={"enabled":true}'
                 ),
                 (
-                    f"http, 📢 CQ, http://{host}:8000/api/control/cq, "
+                    f"http, {_t('push.act_cq')}, http://{host}:8000/api/control/cq, "
                     "method=POST"
                 ),
             ]
@@ -4984,10 +4983,11 @@ class Orchestrator:
         if self.integrations.ntfy and self.integrations.ntfy.enabled:
             try:
                 asyncio.create_task(self.integrations.ntfy.notify(
-                    f"{service}-Upload fuer QSO {call} nach "
-                    f"{self._UPLOAD_MAX_ATTEMPTS} Versuchen aufgegeben. QSO bleibt "
-                    "lokal im Log + ADIF — bei Bedarf manuell hochladen.",
-                    title="\u26a0\ufe0f Upload aufgegeben",
+                    _t(
+                        "push.upload_giveup_msg",
+                        service=service, call=call, attempts=self._UPLOAD_MAX_ATTEMPTS,
+                    ),
+                    title=_t("push.upload_giveup_title"),
                     priority="default",
                     tags=["warning"],
                 ))
@@ -5082,10 +5082,8 @@ class Orchestrator:
         if self.integrations.ntfy and self.integrations.ntfy.enabled:
             try:
                 asyncio.create_task(self.integrations.ntfy.notify(
-                    f"QSO {call} konnte nicht in die DB geschrieben werden — "
-                    "auf Spill-Datei gesichert, wird automatisch nachgetragen. "
-                    "Bitte Speicherplatz/DB pruefen.",
-                    title="\u26a0\ufe0f QSO-Log-Fehler",
+                    _t("push.spill_msg", call=call),
+                    title=_t("push.spill_title"),
                     priority="urgent",
                     tags=["warning"],
                 ))
@@ -5452,7 +5450,7 @@ class Orchestrator:
                             if ntfy and ntfy.enabled:
                                 try:
                                     await ntfy.notify(
-                                        title=f"📡 DXpedition morgen QRV: {row.call}",
+                                        title=_t("push.dxped_reminder_title", call=row.call),
                                         message=(
                                             f"{row.note or ''} · "
                                             f"{row.start_date:%Y-%m-%d %H:%M}–"
@@ -5559,7 +5557,7 @@ class Orchestrator:
         if ntfy and ntfy.enabled:
             host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
             actions = [
-                f"http, Sperre lösen, http://{host}:8000/api/control/reset-lock, method=POST, clear=true",
+                f"http, {_t('push.act_release_lock')}, http://{host}:8000/api/control/reset-lock, method=POST, clear=true",
             ]
             # Tags fürs Symbol — warning fürs Allgemeine, antenna-Symbol
             # wenn SWR der Auslöser war (häufigster Lock-Grund).
@@ -5568,8 +5566,11 @@ class Orchestrator:
                 tags.append("antenna_bars")
             try:
                 await ntfy.notify(
-                    f"TX gesperrt: {reason}",
-                    title=f"⚠️ FT8 {self.config.operating.public_hostname or 'Pi'} — TX-Lock",
+                    _t("lock.tx_locked_prefix", reason=reason),
+                    title=_t(
+                        "push.tx_lock_title",
+                        host=self.config.operating.public_hostname or "Pi",
+                    ),
                     priority="urgent",
                     tags=tags,
                     actions=self._tok_actions(actions),
