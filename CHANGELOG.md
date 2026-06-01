@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.54.0 — 2026-06-01
+- feat: i18n Welle 6 — DecodeList, Charts, AccessPanel, FirstBootWizard
+
 ## v0.53.0 — 2026-06-01
 - feat: i18n Welle 5 — ADIFTable-Filter + Kontinent-Namen (cont.*)
 
