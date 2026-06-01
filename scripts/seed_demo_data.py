@@ -52,7 +52,14 @@ BANDS = list(BAND_FREQ)
 async def main(callsign: str, count: int, wipe: bool) -> None:
     # Erst NACH dem Pfad-Setup importieren (Skript laeuft im backend/-venv).
     from ft8_appliance.db import session_scope
-    from ft8_appliance.db.models import Qso
+    from ft8_appliance.db.models import (
+        Blacklist,
+        CallReputation,
+        DxpeditionSchedule,
+        PskReporterIn,
+        Qso,
+        Watchlist,
+    )
     from ft8_appliance.db.session import init_engine
     from sqlalchemy import delete
 
@@ -101,8 +108,68 @@ async def main(callsign: str, count: int, wipe: bool) -> None:
                 # ein paar mit MF-Nummer fuers ⚓-Badge im Screenshot
                 mf_mfnr=rng.choice([None, None, None, 1234, 5678]),
             ))
+        # --- Watchlist / Blacklist / Reputation / DXpedition / Empfaenger ---
+        if wipe:
+            for model in (Watchlist, Blacklist, CallReputation, DxpeditionSchedule):
+                await s.execute(delete(model).where(model.user_callsign == callsign))
+            await s.execute(delete(PskReporterIn))
+
+        # Watchlist: Wunsch-DX/DXpeditionen (fiktiv)
+        for call, note in [
+            ("3Y0XYZ", "Bouvet-DXpedition (fiktiv)"),
+            ("VK0AAA", "Heard Island"),
+            ("FT5XYZ", "Crozet"),
+            ("PY2XYZ", "neues Band gesucht"),
+            ("ZL2AAA", "ATNO"),
+        ]:
+            s.add(Watchlist(call=call, user_callsign=callsign,
+                            added=now - timedelta(days=rng.uniform(1, 10)), note=note))
+
+        # Blacklist: manuell gesperrt
+        for call, reason in [("DL9XYZ", "Dauer-QRM"), ("OM0AAA", "absichtlich daneben")]:
+            s.add(Blacklist(call=call, user_callsign=callsign,
+                            added=now - timedelta(days=rng.uniform(1, 20)), reason=reason))
+
+        # Reputation: Mix aus Soft-Blacklist (score>=5 & attempts>=3) und gut
+        for call, score, att, succ, reason in [
+            ("UA9AAA", 6, 4, 0, "went_silent"),
+            ("EA7AAA", 5, 3, 0, "max_resends"),
+            ("YO3AAA", 3, 3, 1, "report_never_closed"),
+            ("G4AAA", 1, 6, 5, "ok"),
+            ("DK2AAA", 0, 8, 8, "ok"),
+            ("SP5XYZ", 2, 4, 3, "went_silent"),
+        ]:
+            s.add(CallReputation(
+                call=call, user_callsign=callsign, score=score, attempts=att,
+                successes=succ, last_attempt_at=now - timedelta(hours=rng.uniform(1, 72)),
+                last_reason=reason))
+
+        # DXpeditionen: kommende (fiktiv)
+        for call, d0, d1, note in [
+            ("3Y0XYZ", 5, 20, "Bouvet Island"),
+            ("VK0AAA", 30, 45, "Heard Island"),
+            ("FT5XYZ", 10, 25, "Crozet"),
+        ]:
+            start = now + timedelta(days=d0)
+            s.add(DxpeditionSchedule(
+                call=call, user_callsign=callsign, start_date=start,
+                end_date=now + timedelta(days=d1), note=note, added=now,
+                auto_added_to_watchlist=True))
+
+        # Empfaenger (wer hat UNS gehoert) — PSK-Reporter-Inbound (global)
+        heard_us = [("OH2AAA", "KP20", "20m"), ("JA1XYZ", "PM95", "15m"),
+                    ("K3AAA", "FN31", "20m"), ("PY2XYZ", "GG66", "15m"),
+                    ("VK2XYZ", "QF56", "10m"), ("EA7AAA", "IM98", "40m"),
+                    ("SM5XYZ", "JP82", "20m"), ("UA9AAA", "MO04", "17m"),
+                    ("ZS6XYZ", "KG44", "15m"), ("W6XYZ", "DM04", "20m")]
+        for j, (rx, grid, band) in enumerate(heard_us):
+            s.add(PskReporterIn(
+                ts=now - timedelta(minutes=2 * j + 1), rx_call=rx, rx_grid=grid,
+                snr_db=rng.randint(-20, -3), band=band))
+
         await s.commit()
-    print(f"{count} fiktive Demo-QSOs fuer {callsign} eingefuegt"
+    print(f"{count} fiktive Demo-QSOs + Watchlist/Blacklist/Reputation/"
+          f"DXpedition/Empfaenger fuer {callsign} eingefuegt"
           f"{' (nach Wipe)' if wipe else ''}.")
 
 
