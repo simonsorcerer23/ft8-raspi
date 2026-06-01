@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.60.0 — 2026-06-01
+- fix: i18n-Audit-Nachzügler — restliche hartcodierte DE-Strings übersetzt
+- ci: i18n-Audits als permanente Gates (Backend + Frontend)
+
 ## v0.59.1 — 2026-06-01
 - fix: i18n-Audit — 5 hartkodierte deutsche UI-Strings nachgezogen
 
