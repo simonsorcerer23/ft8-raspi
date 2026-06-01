@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.59.1 — 2026-06-01
+- fix: i18n-Audit — 5 hartkodierte deutsche UI-Strings nachgezogen
+
 ## v0.59.0 — 2026-06-01
 - feat: Backend-i18n Welle B — alle ntfy-Push-Texte zweisprachig
 
