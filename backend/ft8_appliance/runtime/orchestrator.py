@@ -3269,6 +3269,9 @@ class Orchestrator:
         (oldest QSOs first), exponential backoff per row via
         qrz_upload_attempts.
         """
+        if self.config.demo_mode:
+            log.info("demo_mode — QRZ-Upload deaktiviert (kein echtes Logbuch anfassen)")
+            return
         from datetime import UTC, datetime
         from sqlalchemy import select
         from ..db import session_scope
@@ -3358,6 +3361,9 @@ class Orchestrator:
         bei 1h. Hard-Reject (auth/duplicate) → uploaded=True damit kein
         endloser Retry. Soft-Failure (Netz, 5xx) → leave for next round.
         """
+        if self.config.demo_mode:
+            log.info("demo_mode — ClubLog-Upload deaktiviert (kein echtes Logbuch anfassen)")
+            return
         from datetime import UTC, datetime
         from sqlalchemy import select
         from ..db import session_scope
