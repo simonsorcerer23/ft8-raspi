@@ -29,6 +29,7 @@
   import WhoHeardMe     from './components/WhoHeardMe.svelte';
   import LoginGate      from './components/LoginGate.svelte';
   import { api, getToken } from './lib/api.js';
+  import { t, toggleLang, getLang } from './lib/i18n.svelte.js';
   import { statusStore, healthStore, decodeStore } from './lib/stores.svelte.js';
   import { attachStatusStream, attachDecodeStream,
            requestNotificationPermission,
@@ -154,19 +155,21 @@
   <h1>{pageTitle}</h1>
   <SolarWidget />
   <nav>
-    <button class:active={tab === 'main'}  onclick={() => tab = 'main'}>🎙️ Funk</button>
-    <button class:active={tab === 'map'}   onclick={() => tab = 'map'}>🌍 Map</button>
-    <button class:active={tab === 'log'}   onclick={() => tab = 'log'}>📒 Log</button>
-    <button class:active={tab === 'who'}   onclick={() => tab = 'who'}>📡 Empfänger</button>
-    <button class:active={tab === 'bl'}    onclick={() => tab = 'bl'}>🚫 Blacklist</button>
-    <button class:active={tab === 'watch'} onclick={() => tab = 'watch'}>👀 Watchlist</button>
-    <button class:active={tab === 'rep'}   onclick={() => tab = 'rep'}>✋ Reputation</button>
-    <button class:active={tab === 'dxped'} onclick={() => tab = 'dxped'}>📡 DXpedition</button>
-    <button class:active={tab === 'wifi'}  onclick={() => tab = 'wifi'}>📶 WLAN</button>
-    <button class:active={tab === 'cfg'}   onclick={() => tab = 'cfg'}>⚙️ Konfig</button>
+    <button class:active={tab === 'main'}  onclick={() => tab = 'main'}>{t('nav.funk')}</button>
+    <button class:active={tab === 'map'}   onclick={() => tab = 'map'}>{t('nav.map')}</button>
+    <button class:active={tab === 'log'}   onclick={() => tab = 'log'}>{t('nav.log')}</button>
+    <button class:active={tab === 'who'}   onclick={() => tab = 'who'}>{t('nav.who')}</button>
+    <button class:active={tab === 'bl'}    onclick={() => tab = 'bl'}>{t('nav.blacklist')}</button>
+    <button class:active={tab === 'watch'} onclick={() => tab = 'watch'}>{t('nav.watchlist')}</button>
+    <button class:active={tab === 'rep'}   onclick={() => tab = 'rep'}>{t('nav.reputation')}</button>
+    <button class:active={tab === 'dxped'} onclick={() => tab = 'dxped'}>{t('nav.dxpedition')}</button>
+    <button class:active={tab === 'wifi'}  onclick={() => tab = 'wifi'}>{t('nav.wifi')}</button>
+    <button class:active={tab === 'cfg'}   onclick={() => tab = 'cfg'}>{t('nav.config')}</button>
+    <button class="lang" onclick={toggleLang} title={t('nav.lang_toggle')}>
+      {getLang() === 'de' ? '🇬🇧 EN' : '🇩🇪 DE'}
+    </button>
     <button class="sound" onclick={toggleSound}
-            title={soundOn ? 'Browser-Sound + Push-Benachrichtigungen AN — klick zum Stummschalten'
-                           : 'Browser-Sound + Push-Benachrichtigungen AUS — klick zum Aktivieren'}>
+            title={soundOn ? t('nav.sound_on') : t('nav.sound_off')}>
       {soundOn ? '🔊' : '🔇'}
     </button>
   </nav>
@@ -177,7 +180,7 @@
   <div style="text-align: center; margin-top: 1rem;">
     <button onclick={skipSetup} style="background: transparent; color: #94a3b8;
             border: none; cursor: pointer; font-size: 0.85rem;">
-      Wizard überspringen
+      {t('setup.skip')}
     </button>
   </div>
 {:else}
@@ -228,7 +231,7 @@
 </main>
 
 <footer>
-  <small>DK9XR · FT8 · {new Date().toISOString().slice(0,10)}</small>
+  <small>{t('footer.tagline')} · {new Date().toISOString().slice(0,10)}</small>
 </footer>
 {/if}
 
