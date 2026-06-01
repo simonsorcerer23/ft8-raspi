@@ -79,6 +79,23 @@ def _build_decode_source(config: AppConfig):
     can hold a reference to it via the closure and let GC tear it down on
     process exit — adequate for the appliance's single-instance lifecycle.
     """
+    # v0.47.0 — Demo-Modus: FT8-Band-Simulator mit rein fiktiver Population
+    # statt ALSA-Capture. Kein Rig/keine Soundkarte noetig (Onboarding +
+    # Doku-Screenshots ohne echte Dritt-Rufzeichen).
+    if getattr(config, "demo_mode", False):
+        from ..util.band_simulator import DEMO_POPULATION, FT8BandSimulator, SimStation
+        op = config.operator
+        band = config.bands[0].name if config.bands else "20m"
+        pop = [
+            SimStation(call=c, grid=g, strength=s,
+                       audio_freq_hz=300 + (hash(c) & 0xFFF) % 2400)
+            for c, g, s in DEMO_POPULATION
+        ]
+        log.warning("DEMO-MODUS aktiv — fiktive Simulator-Decodes (kein echter RX)")
+        return FT8BandSimulator(my_call=op.callsign,
+                                my_grid=op.default_locator or "JO31",
+                                band=band, population=pop)
+
     try:
         from ..audio.alsa_io import AlsaCapture, alsa_available
         from ..audio.slot_sync import SlotBuffer

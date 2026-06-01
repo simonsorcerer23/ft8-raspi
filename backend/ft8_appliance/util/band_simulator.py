@@ -31,6 +31,25 @@ from ..statemachine import DecodedMsg
 # A starter pack of plausible-looking simulated stations.
 # Mix of strong-local (EU), medium (NA), and rare (VK/JA/ZL/Africa).
 # (call, grid 4-char, signal-strength category) — sim picks SNR per slot.
+_STRONG, _MEDIUM, _WEAK = "strong", "medium", "weak"
+
+# Rein FIKTIVE Population fuer den Demo-Modus (oeffentliche Doku-Screenshots).
+# Bewusst Beispiel-Rufzeichen im XYZ/AAA-Stil (Doku-Konvention) ueber alle
+# Kontinente verteilt — damit DXCC-/Kontinent-Filter im Screenshot was zeigen
+# und KEIN echtes Dritt-Rufzeichen im oeffentlichen Repo landet.
+DEMO_POPULATION = [
+    ("DL1XYZ", "JO31", _STRONG), ("DK2AAA", "JO40", _STRONG),
+    ("OE3XYZ", "JN78", _STRONG), ("HB9AAA", "JN47", _STRONG),
+    ("F4XYZ",  "JN13", _STRONG), ("ON4AAA", "JO20", _MEDIUM),
+    ("PA2XYZ", "JO22", _MEDIUM), ("G4AAA",  "IO91", _MEDIUM),
+    ("SP5XYZ", "JO90", _MEDIUM), ("EA7AAA", "IM98", _MEDIUM),
+    ("SM5XYZ", "JP82", _MEDIUM), ("LA9AAA", "JP20", _MEDIUM),
+    ("JA1XYZ", "PM95", _WEAK),   ("UA9AAA", "MO04", _WEAK),
+    ("ZS6XYZ", "KG44", _WEAK),   ("K3AAA",  "FN31", _MEDIUM),
+    ("VE3XYZ", "FN03", _WEAK),   ("PY2AAA", "GG66", _WEAK),
+    ("VK2XYZ", "QF56", _WEAK),
+]
+
 DEFAULT_POPULATION = [
     # Strong locals (Central Europe, JN-/JO-grids) — frequently active
     ("DL3ABC", "JO31", "strong"),

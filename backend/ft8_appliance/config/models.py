@@ -694,6 +694,10 @@ class AppConfig(BaseModel):
     # `operator:`) automatisch in operators=[...] umgewandelt.
     operators: list[OperatorConfig] = Field(default_factory=list)
     active_callsign: str | None = None  # which operator is currently active
+    # v0.47.0 — Demo-Modus: statt ALSA-Capture speist der FT8-Band-Simulator
+    # rein FIKTIVE Decodes ein (kein Rig/keine Soundkarte noetig). Fuer
+    # Onboarding + oeffentliche Doku-Screenshots ohne echte Dritt-Rufzeichen.
+    demo_mode: bool = False
     # Auto-Login-Timeout: nach Service-Start wird nach diesen Sekunden
     # der is_default-Operator (falls keiner aktiv) geladen. Frontend-
     # Selector kann den Operator vorher manuell setzen. 0 = sofort.
