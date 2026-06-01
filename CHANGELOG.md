@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.51.0 — 2026-06-01
+- feat: i18n Welle 3 — LoginGate, QsoConversation, OperatingLocationCard, DemoModeToggle
+
 ## v0.50.0 — 2026-06-01
 - feat: i18n Welle 2 (StatusBar + ControlPanel) + zweisprachige README (DE/EN)
 
