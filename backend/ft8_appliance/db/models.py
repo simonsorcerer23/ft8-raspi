@@ -324,3 +324,21 @@ class PickAttempt(Base):
     # frische? Steigt die went_silent-Rate mit pick_age, sind stale Picks
     # schuld; ist sie flach, liegt's an der Gegenstation (nicht an uns).
     pick_age_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # v0.62.0 — weitere Dimensionen, jetzt gesammelt statt in einer Woche
+    # nachgeruestet (alle nullable, reine Telemetrie):
+    #  * pick_kind  — war der gepickte Decode ein CQ (verfuegbar), ein Anruf
+    #    AN UNS (to_us, Bestfall) oder an JEMAND ANDEREN (to_other → Station
+    #    busy → quasi garantiert went_silent)? Direkt erklaerend fuer went_silent.
+    #  * freq_offset_hz / target_grid — Audio-QRG (Pile-up vs frei) + Grid
+    #    (Distanz spaeter via my_grid berechenbar, lautere Nahe-DX-Korrelation).
+    #  * mode / tx_power_w — FT8 vs FT4, und ob wir laut genug fuer Antwort sind.
+    #  * n_resends / stale_slots — am Ausgang gestempelt: wie oft wir gerufen +
+    #    wie lange wir gewartet haben. Trennt "nie geantwortet" (Geist) von
+    #    "engagiert, dann verloren" innerhalb der went_silent-Faelle.
+    pick_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    freq_offset_hz: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_grid: Mapped[str | None] = mapped_column(String, nullable=True)
+    mode: Mapped[str | None] = mapped_column(String, nullable=True)
+    tx_power_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_resends: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stale_slots: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -675,6 +675,17 @@ class StateMachine:
                         pick_age_s = (_now - _bts).total_seconds()
                     except Exception:
                         pick_age_s = None
+                    # War der gepickte Decode ein CQ / an uns / an wen anders?
+                    _ct = (best.call_to or "").upper()
+                    if not _ct:
+                        pick_kind = "cq"
+                    elif _ct in (
+                        (self.ctx.callsign or "").upper(),
+                        (self.ctx.tx_callsign or "").upper(),
+                    ):
+                        pick_kind = "to_us"
+                    else:
+                        pick_kind = "to_other"
                     self.ctx.hunt_attempt_meta[tgt] = {
                         "psk_heard_us": tgt in self.ctx.psk_heard_us
                         or call_u in self.ctx.psk_heard_us,
@@ -688,6 +699,9 @@ class StateMachine:
                         "band": best.band,
                         "ts": _now,
                         "pick_age_s": pick_age_s,
+                        "pick_kind": pick_kind,
+                        "freq_offset_hz": best.freq_offset_hz,
+                        "target_grid": best.grid,
                     }
                 self.state = State.QSO_RESPOND
                 self._emit_respond_with_grid()
@@ -1117,6 +1131,20 @@ class StateMachine:
         new = max(self.CQ_AUDIO_MIN_HZ + 50, min(self.CQ_AUDIO_MAX_HZ - 50, new))
         return new
 
+    def _stamp_outcome_meta(self) -> None:
+        """v0.62.0 — finale QSO-Zaehler in die pick_attempt-Meta stempeln,
+        BEVOR self.qso geleert wird. So tragen completed/bailed-Zeilen wie oft
+        wir gerufen (n_resends) + wie viele Slots wir gewartet haben
+        (stale_slots) — trennt "nie geantwortet" von "engagiert, dann weg"."""
+        if self.qso is None:
+            return
+        key = base_call(self.qso.their_call)
+        meta = self.ctx.hunt_attempt_meta.get(key) if key else None
+        if meta is None:
+            return
+        meta["n_resends"] = self.qso.cq_resends + self.qso.report_resends
+        meta["stale_slots"] = self.qso.stale_slots
+
     def _bail_qso_with_cooldown(self, their_call: str, reason: str) -> None:
         """Abbrechen eines QSO-Versuchs + Cooldown-Eintrag fuer den Partner.
 
@@ -1132,6 +1160,7 @@ class StateMachine:
         Reasons (fuer Logs/Debug): "picked_another", "max_resends",
         "went_silent", "report_never_closed".
         """
+        self._stamp_outcome_meta()
         if self.qso_failed_cooldown_s > 0 and their_call:
             cooldown_until = datetime.now(UTC).timestamp() + self.qso_failed_cooldown_s
             self.ctx.recent_until[their_call] = cooldown_until
@@ -1218,6 +1247,7 @@ class StateMachine:
 
     def _emit_log_qso(self) -> None:
         assert self.qso is not None
+        self._stamp_outcome_meta()
         rr73 = f"{self.qso.their_call} {self.ctx.tx_callsign} RR73"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(rr73, "rr73")))
         self._pending.append(

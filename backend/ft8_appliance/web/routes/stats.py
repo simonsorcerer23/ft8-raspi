@@ -39,6 +39,8 @@ class PickAttemptStats(BaseModel):
     new_dxcc: PickAbCell      # was_new_dxcc == True
     by_occupancy: list[dict]  # Completion-Rate nach Band-Belegung (n_decodes)
     by_latency: list[dict]    # v0.62.0 — Completion + went_silent nach Pick-Alter
+    by_pick_kind: list[dict]  # v0.62.0 — cq vs to_us vs to_other
+    by_resends: list[dict]    # v0.62.0 — 0 vs 1 vs 2+ eigene Anrufe
     bail_reasons: dict[str, int]  # Fehlermodus-Aufschluesselung
     note: str
 
@@ -88,6 +90,16 @@ def _age_bucket(age: float | None) -> str:
     if age < 60:
         return "d 30-60s (2-4 Slots)"
     return "e >60s (alt)"
+
+
+def _resend_bucket(n: int | None) -> str:
+    if n is None:
+        return "n/a"
+    if n <= 0:
+        return "a 0 (nie wiederholt)"
+    if n == 1:
+        return "b 1"
+    return "c 2+"
 
 
 def _age_cell(items: list[PickAttempt]) -> dict:
@@ -153,6 +165,20 @@ async def pick_attempts(
         {"latency": b, **_age_cell(v)} for b, v in sorted(age_groups.items())
     ]
 
+    # v0.62.0 — Pick-Art (cq/to_us/to_other) + Resend-Tiefe.
+    kind_groups: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        kind_groups.setdefault(r.pick_kind or "n/a", []).append(r)
+    by_pick_kind = [
+        {"kind": b, **_age_cell(v)} for b, v in sorted(kind_groups.items())
+    ]
+    resend_groups: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        resend_groups.setdefault(_resend_bucket(r.n_resends), []).append(r)
+    by_resends = [
+        {"resends": b, **_age_cell(v)} for b, v in sorted(resend_groups.items())
+    ]
+
     bail_reasons: dict[str, int] = {}
     for r in rows:
         if r.outcome == "bailed":
@@ -170,13 +196,17 @@ async def pick_attempts(
         new_dxcc=_pick_cell(new_dxcc),
         by_occupancy=by_occupancy,
         by_latency=by_latency,
+        by_pick_kind=by_pick_kind,
+        by_resends=by_resends,
         bail_reasons=dict(sorted(bail_reasons.items(), key=lambda kv: -kv[1])),
         note=(
             "Hunt-Picks, outcome completed/bailed. psk-Effekt: rate(with_psk) "
             "vs rate(without_psk) JE SNR-Bucket. dupe vs new_call beantwortet "
             "skip_worked. by_occupancy trennt ruhiges vs volles Band. "
             "by_latency: steigt went_silent_rate mit pick_age, sind stale Picks "
-            "schuld; flach = Gegenstation. pick_age_s erst ab v0.62.0 (alte "
+            "schuld; flach = Gegenstation. by_pick_kind: to_other = Station busy "
+            "(erwartbar silent). by_resends: 0 = nie geantwortet (Geist) vs 2+ "
+            "= engagiert dann verloren. Erweiterte Felder erst ab v0.62.0 (alte "
             "Zeilen n/a). Aussagekraeftig ab ~paar hundert Zeilen."
         ),
     )

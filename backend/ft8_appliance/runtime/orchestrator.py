@@ -5216,6 +5216,13 @@ class Orchestrator:
                     dt_s=meta.get("dt_s"),
                     band=meta.get("band"),
                     pick_age_s=meta.get("pick_age_s"),
+                    pick_kind=meta.get("pick_kind"),
+                    freq_offset_hz=meta.get("freq_offset_hz"),
+                    target_grid=meta.get("target_grid"),
+                    n_resends=meta.get("n_resends"),
+                    stale_slots=meta.get("stale_slots"),
+                    mode=self.config.operating.mode,
+                    tx_power_w=self._tx_power_w,
                     outcome=outcome,
                     bail_reason=bail_reason,
                 )
