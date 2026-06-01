@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.61.0 — 2026-06-01
+- feat: 3. Frontend-i18n-Gate — hartcodiertes Deutsch ohne t() erkennen
+
 ## v0.60.0 — 2026-06-01
 - fix: i18n-Audit-Nachzügler — restliche hartcodierte DE-Strings übersetzt
 - ci: i18n-Audits als permanente Gates (Backend + Frontend)
