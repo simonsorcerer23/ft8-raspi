@@ -21,9 +21,11 @@ die DXCC-/Kontinent-Filter im Screenshot etwas zeigen.
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 # Fiktive Gegenstationen: (call, grid). Bewusst Beispiel-Calls, kein echtes
 # Individuum. Spannweite EU/AS/AF/NA/SA/OC fuer den Kontinent-Filter.
@@ -51,7 +53,13 @@ async def main(callsign: str, count: int, wipe: bool) -> None:
     # Erst NACH dem Pfad-Setup importieren (Skript laeuft im backend/-venv).
     from ft8_appliance.db import session_scope
     from ft8_appliance.db.models import Qso
+    from ft8_appliance.db.session import init_engine
     from sqlalchemy import delete
+
+    # Engine initialisieren wie der App-Start (eigener Prozess neben dem
+    # laufenden Service; SQLite-WAL erlaubt parallelen Zugriff).
+    db_path = Path(os.environ.get("FT8_DB", "/var/lib/ft8-appliance/qso.sqlite"))
+    init_engine(db_path)
 
     rng = random.Random(73)
     my_grid = "JO31"
