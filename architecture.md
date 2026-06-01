@@ -255,6 +255,12 @@ Zusätzliche Modi:
 
 ## 6. Feature-Set
 
+> UI-Eindruck (Demo-Modus, fiktive Daten): Decode-Liste, Tagesstatistik,
+> Weltkarte mit Coverage und das gefilterte Logbuch.
+>
+> ![Funk-Ansicht](docs/screenshots/funk.png)
+> ![Weltkarte](docs/screenshots/map.png)
+
 ### 6.1 Core (MVP)
 
 - FT8-Decode über volle 3 kHz Passband

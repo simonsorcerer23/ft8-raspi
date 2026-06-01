@@ -11,6 +11,29 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 
 ---
 
+## 📸 Screenshots
+
+> Aufgenommen im eingebauten **Demo-Modus** — alle Rufzeichen/Daten sind rein
+> fiktiv (Simulator), keine echten Dritt-Stationen.
+
+![Funk-Ansicht: Rig-Status, Decode-Liste, Tagesstatistik](docs/screenshots/funk.png)
+
+<details>
+<summary><b>Weitere Ansichten</b> — Weltkarte · Logbuch · Statistik &amp; Steuerung</summary>
+
+### Weltkarte — Decodes, Coverage-Envelope, Gray-Line, Locator-Raster
+![Karte](docs/screenshots/map.png)
+
+### Logbuch — mit DXCC-, Kontinent- und Marinefunker-Filter
+![Logbuch](docs/screenshots/log.png)
+
+### Statistik &amp; Steuerung — SWR-Trend, beste Zeiten, Pi-Status, TX-Controls
+![Statistik](docs/screenshots/stats.png)
+
+</details>
+
+---
+
 ## Highlights
 
 - **19-tier configurable picker** (drag-and-drop priority): pile-up
