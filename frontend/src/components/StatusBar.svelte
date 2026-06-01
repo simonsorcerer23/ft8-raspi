@@ -5,6 +5,7 @@
   // Both can be different — e.g. Antworten-Mode on but no CQ heard yet,
   // state = idle but op-mode = Antworten.
   import { statusStore } from '../lib/stores.svelte.js';
+  import { t } from '../lib/i18n.svelte.js';
   import OperatorSwitcher from './OperatorSwitcher.svelte';
 
   const v = $derived(statusStore.value);
@@ -21,9 +22,9 @@
     v.auto_answer ? 'hunt' : 'off'
   );
   const opModeLabel = $derived(
-    opMode === 'cq'   ? '🛰️ CQ-MODE'
-  : opMode === 'hunt' ? '🎯 ANTWORTEN'
-  : '— OFF —'
+    opMode === 'cq'   ? t('statusbar.mode_cq')
+  : opMode === 'hunt' ? t('statusbar.mode_hunt')
+  : t('statusbar.mode_off')
   );
   const opModeColor = $derived(
     opMode === 'cq'   ? '#38bdf8'
@@ -37,11 +38,11 @@
   : (state.startsWith('CQ') || state.startsWith('QSO')) ? '#38bdf8'
   : '#94a3b8'
   );
-  const stateLabel = $derived({
-    IDLE: 'BEREIT', CQ_CALLING: 'sendet CQ', QSO_RESPOND: 'antwortet',
-    QSO_REPORT: 'Report', QSO_LOG: 'loggt', TX_LOCKED: 'GESPERRT',
-    UNKNOWN: '…',
-  }[state] ?? state);
+  const _STATES = ['IDLE', 'CQ_CALLING', 'QSO_RESPOND', 'QSO_REPORT',
+                   'QSO_LOG', 'TX_LOCKED', 'UNKNOWN'];
+  const stateLabel = $derived(
+    _STATES.includes(state) ? t(`statusbar.state.${state}`) : state
+  );
 
   function freqMHz(hz) { return hz ? (hz / 1_000_000).toFixed(3) : '—'; }
 </script>
@@ -51,7 +52,7 @@
 
   {#if v.tx_callsign}
     <div class="txcall" class:dx={v.tx_callsign !== v.callsign}
-         title="Aktuell gesendetes Rufzeichen">
+         title={t('statusbar.txcall_title')}>
       📻 {v.tx_callsign}
     </div>
   {/if}
@@ -65,7 +66,7 @@
   <div class="cell"><small>ANT</small><strong>{v.active_antenna ?? '—'}</strong></div>
   <div class="cell"><small>GRID</small><strong>{(v.gps?.lat != null) ? gpsLocator(v.gps.lat, v.gps.lon) : '—'}</strong></div>
   <div class="cell"><small>SATS</small><strong>{v.gps?.sats_used ?? 0}/{v.gps?.sats_seen ?? 0}</strong></div>
-  <div class="cell"><small>WORKED</small><strong>{v.worked_count ?? 0}</strong></div>
+  <div class="cell"><small>{t('statusbar.worked')}</small><strong>{v.worked_count ?? 0}</strong></div>
 
   {#if v.current_qso_call}
     <div class="qso">📡 {#if v.current_qso_flag}<span class="flag" title={v.current_qso_call}>{v.current_qso_flag}</span> {/if}{v.current_qso_call}</div>

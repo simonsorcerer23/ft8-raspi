@@ -1,5 +1,7 @@
 # FT8 Raspi Appliance
 
+**🇬🇧 English** · [🇩🇪 Deutsch](README.de.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Headless FT8/FT4 station controller running on a Raspberry Pi 5. Sits between

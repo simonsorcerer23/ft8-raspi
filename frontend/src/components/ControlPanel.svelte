@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { statusStore } from '../lib/stores.svelte.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   let busy = $state(false);
   let lastError = $state(null);
@@ -121,8 +122,8 @@
 <div class="panel">
   {#if isLocked}
     <div class="lock-banner">
-      <strong>TX gesperrt:</strong> {statusStore.value.last_lock_reason ?? 'unbekannt'}
-      <button onclick={() => call(api.resetLock)} disabled={busy}>Sperre lösen</button>
+      <strong>{t('control.tx_locked')}</strong> {statusStore.value.last_lock_reason ?? t('control.unknown')}
+      <button onclick={() => call(api.resetLock)} disabled={busy}>{t('control.unlock')}</button>
     </div>
   {:else}
     <div class="main-buttons">
@@ -131,30 +132,30 @@
               class:dim={!cqActive}
               disabled={busy || huntActive}
               onclick={toggleCq}>
-        <span class="label">{cqActive ? 'STOP CQ' : 'CQ'}</span>
+        <span class="label">{cqActive ? t('control.cq_stop') : t('control.cq')}</span>
       </button>
       <button class="big hunt"
               class:active={huntActive}
               class:dim={!huntActive}
               disabled={busy || cqActive}
               onclick={toggleHunting}>
-        <span class="label">{huntActive ? 'STOP Antworten' : 'Antworten'}</span>
+        <span class="label">{huntActive ? t('control.answer_stop') : t('control.answer')}</span>
       </button>
     </div>
   {/if}
 
   {#if isInQso}
     <button class="skip" onclick={() => call(api.skipQso)} disabled={busy}>
-      QSO abbrechen (nicht loggen)
+      {t('control.skip_qso')}
     </button>
   {/if}
 
   <!-- v0.20.0 Directed CQ — Send-Side-Filter. Wirkt nur im CQ-Modus. -->
   <div class="cq-directed">
     <label>
-      <span>CQ-Target</span>
+      <span>{t('control.cq_target')}</span>
       <input type="text" maxlength="4"
-             placeholder="leer = klassisch (DX, EU, POTA, TEST …)"
+             placeholder={t('control.cq_target_ph')}
              value={cqDirectedDraft}
              oninput={(e) => { cqDirectedDraft = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); }}
              onblur={saveCqDirected}
@@ -172,23 +173,23 @@
       <input type="checkbox" checked={huntSkipWorked}
              disabled={busy}
              onchange={(e) => toggleHuntFilter('skip_worked', e.target.checked)}/>
-      <span>nur noch nie gearbeitete</span>
+      <span>{t('control.filter_new_only')}</span>
     </label>
     <label class="check">
       <input type="checkbox" checked={huntDxccOnly}
              disabled={busy}
              onchange={(e) => toggleHuntFilter('dxcc_only', e.target.checked)}/>
-      <span>nur neue DXCC (Award-Modus)</span>
+      <span>{t('control.filter_dxcc_only')}</span>
     </label>
   </div>
 
   <div class="row">
     <label class="settings">
       <div class="hdr">
-        TX-Leistung
+        {t('control.tx_power')}
         {#if activeBand && sliderMax < rigMaxW}
-          <span class="cap-hint" title="Lizenzbedingtes Cap auf {activeBand}">
-            🇩🇪 {licenseClass} · max {sliderMax}W
+          <span class="cap-hint" title={t('control.cap_title', { band: activeBand })}>
+            🇩🇪 {t('control.cap_hint', { lic: licenseClass, w: sliderMax })}
           </span>
         {/if}
       </div>
@@ -211,12 +212,12 @@
       <div class="value">
         {pendingPower} W
         {#if pwrDragging && pendingPower !== Math.min(txPower, sliderMax)}
-          <span class="pending">(nicht gespeichert)</span>
+          <span class="pending">{t('control.not_saved')}</span>
         {/if}
       </div>
     </label>
     <label class="settings">
-      <div class="hdr">Antenne</div>
+      <div class="hdr">{t('control.antenna')}</div>
       <select value={activeAntenna} onchange={onAntenna} disabled={busy || antennas.length === 0}>
         {#each antennas as a}
           <option value={a.name}>{a.name} ({a.bands.join(', ')})</option>
@@ -228,11 +229,11 @@
   <button class="panic" onclick={() => call(api.panic)} disabled={busy}>PANIC</button>
   <div class="power-row">
     <button class="reboot"
-            onclick={() => { if (confirm('Pi wirklich neu starten? (~30 s Downtime)')) call(api.reboot); }}
-            disabled={busy}>🔁 Pi neu starten</button>
+            onclick={() => { if (confirm(t('control.reboot_confirm'))) call(api.reboot); }}
+            disabled={busy}>{t('control.reboot')}</button>
     <button class="shutdown"
-            onclick={() => { if (confirm('Pi wirklich herunterfahren?')) call(api.shutdown); }}
-            disabled={busy}>🌙 Pi herunterfahren</button>
+            onclick={() => { if (confirm(t('control.shutdown_confirm'))) call(api.shutdown); }}
+            disabled={busy}>{t('control.shutdown')}</button>
   </div>
   {#if lastError}<div class="err">⚠ {lastError}</div>{/if}
 </div>
