@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.58.0 — 2026-06-01
+- feat: Backend-i18n Welle A — TX-Lock-Gründe + State-Hints zweisprachig
+- docs: architecture.md englisch-primär + deutscher Mirror (architecture.de.md)
+
 ## v0.57.0 — 2026-06-01
 - feat: i18n Welle 10 — restliche Panel-Strings (Residual-Cleanup)
 
