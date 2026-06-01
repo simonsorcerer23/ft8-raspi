@@ -157,7 +157,7 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
     </div>
 
   {:else if step === 2}
-    <h2>2/2 — Antenne (+ optional QRZ)</h2>
+    <h2>{t('wiz.step2')}</h2>
     <div class="form">
       <label>
         <span>{t('wiz.antenna_name')}</span>
@@ -185,7 +185,7 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
       </label>
 
       <hr style="border: 0; border-top: 1px solid #334155; margin: 0.6rem 0 0.2rem;"/>
-      <p class="qrz-hint">QRZ.com (optional):</p>
+      <p class="qrz-hint">{t('wiz.qrz_optional')}</p>
       <label>
         <span>{t('wiz.qrz_user')}</span>
         <input type="text" bind:value={cfg.qrz.user} placeholder="dk9xr"/>

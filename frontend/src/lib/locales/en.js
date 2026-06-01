@@ -134,11 +134,14 @@ export const en = {
   'who.reports': 'Reports',
   'who.bands': 'Bands',
   'who.last': 'Last',
+  'who.days_3': '3 days',
+  'who.empty': 'No reception reports yet.',
 
   // BlacklistPanel
   'bl.title': 'Blacklist',
   'bl.call_ph': 'Call (e.g. W1ABC)',
   'bl.reason_ph': 'Reason (optional)',
+  'bl.empty': 'Blacklist is empty.',
 
   // WatchlistPanel
   'wl.title': '👀 Watchlist',
@@ -146,6 +149,7 @@ export const en = {
   'wl.note_ph': 'Note (optional)',
   'wl.watch': 'Watch',
   'wl.last_alert': 'Last alert',
+  'wl.empty': 'Watchlist is empty.',
 
   // ReputationPanel
   'rep.title': '✋ Soft-blacklist (call reputation)',
@@ -154,6 +158,9 @@ export const en = {
   'rep.successes': 'Successes',
   'rep.last_reason': 'Last reason',
   'rep.last_attempt': 'Last attempt',
+  'rep.show_neutral': 'also show neutral calls',
+  'rep.soft_blacklisted': '{n} soft-blacklisted',
+  'rep.total_tracked': '{n} tracked total',
 
   // DxpeditionPanel
   'dxp.title': '📡 DXpedition schedule',
@@ -166,6 +173,9 @@ export const en = {
   'dxp.end': 'End',
   'dxp.status': 'Status',
   'dxp.watchlist': 'Watchlist',
+  'dxp.src_manual': '✋ manual',
+  'dxp.src_manual_title': 'Added manually',
+  'dxp.src_ng3k_title': 'Auto-imported from NG3K ADXO',
 
   // Charts
   'chart.active_hours': 'Active hours per continent',
@@ -211,6 +221,7 @@ export const en = {
   'access.pw_set': 'Password set ✓',
   'access.failed': 'Failed: ',
   'wiz.step1': '1/2 — Operator + rig',
+  'wiz.step2': '2/2 — Antenna (+ optional QRZ)',
   'wiz.callsign': 'Callsign',
   'wiz.locator': 'Locator (leave empty = GPS auto)',
   'wiz.next': 'Next →',

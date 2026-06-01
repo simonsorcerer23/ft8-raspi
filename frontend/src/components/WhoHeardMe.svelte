@@ -67,7 +67,7 @@
         <option value={1}>1 h</option>
         <option value={6}>6 h</option>
         <option value={24}>24 h</option>
-        <option value={72}>3 Tage</option>
+        <option value={72}>{t('who.days_3')}</option>
       </select>
       <button onclick={refresh} disabled={loading}>↻</button>
     </div>
@@ -76,9 +76,9 @@
   {#if error}
     <div class="err">⚠ {error}</div>
   {:else if loading && reports.length === 0}
-    <div class="muted">Lade…</div>
+    <div class="muted">{t('common.loading')}</div>
   {:else if grouped.length === 0}
-    <div class="muted">Bisher kein Empfangsbericht.</div>
+    <div class="muted">{t('who.empty')}</div>
   {:else}
     <table>
       <thead>

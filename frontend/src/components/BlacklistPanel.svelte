@@ -54,9 +54,9 @@
   {#if error}<div class="err">⚠ {error}</div>{/if}
 
   {#if loading && entries.length === 0}
-    <p class="empty">Lade…</p>
+    <p class="empty">{t('common.loading')}</p>
   {:else if entries.length === 0}
-    <p class="empty">Blacklist ist leer.</p>
+    <p class="empty">{t('bl.empty')}</p>
   {:else}
     <table>
       <thead>

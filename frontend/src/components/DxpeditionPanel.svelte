@@ -77,7 +77,7 @@
   {#if error}<div class="err">⚠ {error}</div>{/if}
 
   {#if loading && entries.length === 0}
-    <p class="empty">Lade…</p>
+    <p class="empty">{t('common.loading')}</p>
   {:else if entries.length === 0}
     <p class="empty">
       Kein DXpedition-Schedule. Trag deine geplanten DXpeditions ein —
@@ -98,9 +98,9 @@
             <td class="call">{e.call}</td>
             <td>
               {#if e.source === 'ng3k'}
-                <span class="src-ng3k" title="Auto-Import von NG3K ADXO">🤖 NG3K</span>
+                <span class="src-ng3k" title={t('dxp.src_ng3k_title')}>🤖 NG3K</span>
               {:else}
-                <span class="src-manual" title="Manuell eingetragen">✋ manuell</span>
+                <span class="src-manual" title={t('dxp.src_manual_title')}>{t('dxp.src_manual')}</span>
               {/if}
             </td>
             <td>{e.note ?? '—'}</td>

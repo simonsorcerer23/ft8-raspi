@@ -58,11 +58,11 @@
   </header>
 
   <div class="stats">
-    <span class="pill bad">{badCount} soft-blacklisted</span>
-    <span class="pill">{entries.length} insgesamt getrackt</span>
+    <span class="pill bad">{t('rep.soft_blacklisted', { n: badCount })}</span>
+    <span class="pill">{t('rep.total_tracked', { n: entries.length })}</span>
     <label class="check">
       <input type="checkbox" bind:checked={showAll}/>
-      <span>auch neutrale Calls zeigen</span>
+      <span>{t('rep.show_neutral')}</span>
     </label>
     <button class="refresh" onclick={refresh}>↻ Refresh</button>
   </div>
@@ -70,7 +70,7 @@
   {#if error}<div class="err">⚠ {error}</div>{/if}
 
   {#if loading && entries.length === 0}
-    <p class="empty">Lade…</p>
+    <p class="empty">{t('common.loading')}</p>
   {:else if visibleEntries.length === 0}
     <p class="empty">
       {#if entries.length === 0}
