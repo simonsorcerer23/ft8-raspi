@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.48.2 — 2026-06-01
+- fix: ntfy-Titel zeigt echten Hostnamen + Demo-Box schickt keine Mode-Alerts
+- fix: seed_demo_data garantiert ~6 QSOs von heute (Dashboard 'QSOs heute')
+
 ## v0.48.1 — 2026-06-01
 - feat: Demo-Modus ueberzeugend — Sim-Rig + Health-Demo-Awareness + frischere Seeds
 
