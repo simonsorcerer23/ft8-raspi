@@ -37,6 +37,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from .. import i18n as _i18n
 from ..config import AppConfig, OperatorConfig
 from ..db import repository, session_scope
 from ..db.models import Blacklist as DbBlacklist
@@ -217,6 +218,11 @@ class OrchestratorStatus:
     decoder_late_slot_count: int = 0  # zaehlt seit Service-Start
     # v0.8.0 Build C: Per-Pass-Decoder-Statistics (extreme mode only)
     decoder_pass_stats: dict | None = None
+    # i18n: the lock reason's message key + params so the web layer can
+    # re-localize it into the browser's chosen language (last_lock_reason
+    # itself stays in the config-default lang for non-UI consumers).
+    last_lock_code: str | None = None
+    last_lock_params: dict[str, object] | None = None
 
 
 @dataclass
@@ -1415,6 +1421,8 @@ class Orchestrator:
             tx_callsign=self.state_machine.ctx.tx_callsign,
             state=self.state_machine.state.name,
             last_lock_reason=self.state_machine.ctx.last_lock_reason,
+            last_lock_code=self.state_machine.ctx.last_lock_code,
+            last_lock_params=self.state_machine.ctx.last_lock_params,
             cq_count=self.state_machine.ctx.cq_count,
             current_qso_call=(
                 self.state_machine.qso.their_call if self.state_machine.qso else None
@@ -3805,7 +3813,11 @@ class Orchestrator:
                         await self.rig.set_ptt(False)
                     except Exception:
                         pass
-                    self.state_machine.ctx.last_lock_reason = "PTT-stuck recovery"
+                    self.state_machine.ctx.last_lock_code = "lock.ptt_stuck"
+                    self.state_machine.ctx.last_lock_params = None
+                    self.state_machine.ctx.last_lock_reason = _i18n.translate(
+                        "lock.ptt_stuck"
+                    )
                     ptt_on_since = None
             else:
                 ptt_on_since = None

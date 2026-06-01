@@ -76,6 +76,11 @@ async def _production_lifespan(app: FastAPI):
             logger.info("loaded config from %s (callsign=%s, rig=%s, mode=%s)",
                         config_path, cfg.operator.callsign, cfg.rig.model,
                         cfg.operating.mode)
+            # Wire the appliance default language for backend-generated
+            # strings (ntfy bodies + lock-reason fallback). Browser requests
+            # can still override per-response via ?lang=.
+            from .. import i18n as _i18n
+            _i18n.set_default_lang(getattr(getattr(cfg, "ui", None), "language", "de"))
             # v0.37.0 — API-Auth-Token beim ersten Start generieren.
             from .auth import generate_token
             _tokens_generated = False

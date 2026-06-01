@@ -14,8 +14,9 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
+from ... import i18n as _i18n
 from ...runtime import Orchestrator
-from ..deps import get_orchestrator
+from ..deps import get_orchestrator, ui_lang
 
 router = APIRouter()
 
@@ -73,6 +74,8 @@ async def stream_status(
     request: Request, orch: Orchestrator = Depends(get_orchestrator)
 ) -> EventSourceResponse:
     queue = orch.subscribe_status()
+    # Language is fixed at connect time (EventSource can't change headers).
+    lang = ui_lang(request)
 
     async def gen() -> AsyncIterator[dict[str, str]]:
         try:
@@ -84,10 +87,15 @@ async def stream_status(
                 except TimeoutError:
                     yield {"event": "heartbeat", "data": ""}
                     continue
+                lock_code = getattr(snap, "last_lock_code", None)
+                lock_reason = (
+                    _i18n.translate(lock_code, lang, **(getattr(snap, "last_lock_params", None) or {}))
+                    if lock_code else snap.last_lock_reason
+                )
                 payload = {
                     "callsign": snap.callsign,
                     "state": snap.state,
-                    "last_lock_reason": snap.last_lock_reason,
+                    "last_lock_reason": lock_reason,
                     "cq_count": snap.cq_count,
                     "current_qso_call": snap.current_qso_call,
                     "last_slot_index": snap.last_slot_index,

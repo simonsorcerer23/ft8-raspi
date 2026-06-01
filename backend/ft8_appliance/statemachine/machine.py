@@ -19,6 +19,7 @@ from typing import Literal
 
 from typing import TYPE_CHECKING
 
+from .. import i18n as _i18n
 from ..util.callsign import base_call
 from .guards import GuardLimits, HardwareState, evaluate, first_failure
 from .states import DecodedMsg, MachineContext, QsoContext, State
@@ -472,6 +473,8 @@ class StateMachine:
         # Band-Switch, aber Banner haengt noch im UI). Sebastian
         # 2026-05-24.
         self.ctx.last_lock_reason = None
+        self.ctx.last_lock_code = None
+        self.ctx.last_lock_params = None
         if self.state is State.TX_LOCKED:
             self.state = State.IDLE
 
@@ -1659,10 +1662,17 @@ class StateMachine:
                     self.ctx.last_lock_reason,
                 )
                 self.ctx.last_lock_reason = None
+                self.ctx.last_lock_code = None
+                self.ctx.last_lock_params = None
             return True
-        log.warning("guard %s failed: %s", bad.name, bad.reason)
+        # Localize the reason in the config-default lang for logs/health/tests;
+        # the web layer re-localizes from code+params for the browser.
+        reason = _i18n.translate(bad.code or "", None, **(bad.params or {}))
+        log.warning("guard %s failed: %s", bad.name, reason)
         self.state = State.TX_LOCKED
-        self.ctx.last_lock_reason = f"{bad.name}: {bad.reason}"
+        self.ctx.last_lock_reason = f"{bad.name}: {reason}"
+        self.ctx.last_lock_code = bad.code
+        self.ctx.last_lock_params = bad.params
         self._pending.append(Action("TX_LOCKED", {"reason": self.ctx.last_lock_reason}))
         self._pending.append(Action("STOP_TX", {}))
         return False

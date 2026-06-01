@@ -7,10 +7,21 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ... import i18n as _i18n
 from ...runtime import Orchestrator
-from ..deps import get_orchestrator
+from ..deps import get_orchestrator, ui_lang
 
 router = APIRouter()
+
+
+def _lock_detail(s: object, lang: str) -> str | None:
+    """Localized TX-lock reason for a control response (or None)."""
+    if getattr(s, "state", None) != "TX_LOCKED":
+        return None
+    code = getattr(s, "last_lock_code", None)
+    if code:
+        return _i18n.translate(code, lang, **(getattr(s, "last_lock_params", None) or {}))
+    return getattr(s, "last_lock_reason", None)
 
 
 class ControlResponse(BaseModel):
@@ -20,12 +31,13 @@ class ControlResponse(BaseModel):
 
 
 @router.post("/cq", response_model=ControlResponse)
-async def start_cq(orch: Orchestrator = Depends(get_orchestrator)) -> ControlResponse:
+async def start_cq(
+    orch: Orchestrator = Depends(get_orchestrator),
+    lang: str = Depends(ui_lang),
+) -> ControlResponse:
     await orch.handle_start_cq()
     s = orch.status()
-    return ControlResponse(
-        ok=True, state=s.state, detail=s.last_lock_reason if s.state == "TX_LOCKED" else None
-    )
+    return ControlResponse(ok=True, state=s.state, detail=_lock_detail(s, lang))
 
 
 @router.post("/stop", response_model=ControlResponse)

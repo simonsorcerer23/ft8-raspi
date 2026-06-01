@@ -44,10 +44,14 @@ export async function requestNotificationPermission() {
 }
 
 function _sseUrl(path) {
-  // EventSource kann keine Header setzen → Token als Query-Param (v0.37.0).
-  let tok = '';
+  // EventSource kann keine Header setzen → Token + Sprache als Query-Param.
+  let tok = '', lang = 'de';
   try { tok = localStorage.getItem('ft8_api_token') || ''; } catch { /* ignore */ }
-  return tok ? `${path}?token=${encodeURIComponent(tok)}` : path;
+  try { const l = localStorage.getItem('ft8_lang'); if (l === 'de' || l === 'en') lang = l; } catch { /* ignore */ }
+  const qs = new URLSearchParams();
+  if (tok) qs.set('token', tok);
+  qs.set('lang', lang);
+  return `${path}?${qs.toString()}`;
 }
 
 export function attachDecodeStream(decodeStore) {

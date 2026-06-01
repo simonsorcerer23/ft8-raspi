@@ -19,7 +19,12 @@ from dataclasses import dataclass
 class GuardResult:
     ok: bool
     name: str
-    reason: str | None = None
+    # i18n message key + substitution params for the lock reason. The actual
+    # localized string is produced at serialize time (browser request lang)
+    # or with the config default lang for logs/ntfy — see ft8_appliance.i18n.
+    # Kept dependency-free here so this module stays pure/unit-testable.
+    code: str | None = None
+    params: dict[str, object] | None = None
 
 
 @dataclass(slots=True)
@@ -65,17 +70,16 @@ def time_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     # GPS fix (authoritative) or a chrony daemon synced to an NTP source.
     # Either is sufficient as long as the |offset| stays within the limit;
     # we only block when both are unavailable.
-    # Reason-Strings sind auf deutsch (Sebastian 2026-05-24) — werden 1:1
-    # ins UI durchgereicht.
+    # Reasons are emitted as i18n code + params (Sebastian 2026-06-01) and
+    # localized at serialize time / with the config lang — see i18n.py.
     has_gps = hw.gps_fix_mode >= 2
     has_chrony = hw.chrony_synced
     if not has_gps and not has_chrony:
-        return GuardResult(False, "time_guard", "Kein GPS-Fix und Chrony nicht synchron")
+        return GuardResult(False, "time_guard", "guard.time_no_sync")
     if abs(hw.time_offset_s) > lim.time_offset_max_s:
         return GuardResult(
-            False,
-            "time_guard",
-            f"Zeit-Offset {hw.time_offset_s:+.3f} s > {lim.time_offset_max_s} s erlaubt",
+            False, "time_guard", "guard.time_offset",
+            {"offset": f"{hw.time_offset_s:+.3f}", "max": lim.time_offset_max_s},
         )
     return GuardResult(True, "time_guard")
 
@@ -83,8 +87,8 @@ def time_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
 def swr_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     if hw.swr > lim.swr_max:
         return GuardResult(
-            False, "swr_guard",
-            f"SWR {hw.swr:.2f} ueber Limit {lim.swr_max:.2f} — Antenne pruefen",
+            False, "swr_guard", "guard.swr",
+            {"swr": f"{hw.swr:.2f}", "max": f"{lim.swr_max:.2f}"},
         )
     return GuardResult(True, "swr_guard")
 
@@ -92,8 +96,8 @@ def swr_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
 def alc_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     if hw.alc_pct > lim.alc_max:
         return GuardResult(
-            False, "alc_guard",
-            f"ALC {hw.alc_pct} % > {lim.alc_max} % — Audio-Pegel zu hoch",
+            False, "alc_guard", "guard.alc",
+            {"alc": hw.alc_pct, "max": lim.alc_max},
         )
     return GuardResult(True, "alc_guard")
 
@@ -103,8 +107,8 @@ def battery_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
         return GuardResult(True, "battery_guard")  # external power, no check
     if hw.battery_v < lim.battery_min_v:
         return GuardResult(
-            False, "battery_guard",
-            f"Akku {hw.battery_v:.1f} V < {lim.battery_min_v} V — Netzteil anschliessen",
+            False, "battery_guard", "guard.battery",
+            {"volts": f"{hw.battery_v:.1f}", "min": lim.battery_min_v},
         )
     return GuardResult(True, "battery_guard")
 
@@ -112,9 +116,8 @@ def battery_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
 def temp_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     if hw.cpu_temp_c > lim.cpu_temp_max_c:
         return GuardResult(
-            False, "temp_guard",
-            f"CPU-Temperatur {hw.cpu_temp_c:.1f} °C > {lim.cpu_temp_max_c} °C "
-            "— Pi kuehlen",
+            False, "temp_guard", "guard.temp",
+            {"temp": f"{hw.cpu_temp_c:.1f}", "max": lim.cpu_temp_max_c},
         )
     return GuardResult(True, "temp_guard")
 
@@ -123,8 +126,7 @@ def audio_drift_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     drift = abs(hw.audio_drift_samples)
     if drift > lim.audio_drift_fail_samples:
         return GuardResult(
-            False, "audio_drift_guard",
-            f"Audio-Drift {drift} Samples — Kalibrierung kaputt",
+            False, "audio_drift_guard", "guard.audio_drift", {"drift": drift},
         )
     return GuardResult(True, "audio_drift_guard")
 
@@ -137,11 +139,7 @@ def antenna_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     user is parked on a band the antenna isn't rated for, TX is blocked.
     """
     if not hw.antenna_covers_band:
-        return GuardResult(
-            False, "antenna_guard",
-            "Aktive Antenne deckt das aktuelle Band nicht ab — "
-            "Antenne wechseln oder Band aendern",
-        )
+        return GuardResult(False, "antenna_guard", "guard.antenna")
     return GuardResult(True, "antenna_guard")
 
 

@@ -114,7 +114,12 @@ class MachineContext:
     my_grid: str
     band: str = "20m"
     cq_count: int = 0
+    # last_lock_reason is the config-default-lang string (logs/health/tests).
+    # last_lock_code/_params carry the i18n key + substitutions so the web
+    # layer can re-localize the reason into the browser's chosen language.
     last_lock_reason: str | None = None
+    last_lock_code: str | None = None
+    last_lock_params: dict[str, object] | None = None
     # Hunting / Search-and-Pounce mode: auto-answer any decoded CQ
     # while idle. We never call CQ ourselves in this mode — just listen
     # and respond. Architecture §6.1 (Hunting).

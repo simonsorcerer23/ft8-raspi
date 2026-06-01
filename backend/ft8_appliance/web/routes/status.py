@@ -8,11 +8,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from ... import i18n as _i18n
 from ...db import session_scope
 from ...db.models import Decode
 from ...runtime import Orchestrator
 from ...util.timefmt import iso_utc
-from ..deps import get_orchestrator
+from ..deps import get_orchestrator, ui_lang
 
 router = APIRouter()
 
@@ -103,17 +104,28 @@ class StatusResponse(BaseModel):
 
 
 @router.get("/status", response_model=StatusResponse)
-async def get_status(orch: Orchestrator = Depends(get_orchestrator)) -> StatusResponse:
+async def get_status(
+    orch: Orchestrator = Depends(get_orchestrator),
+    lang: str = Depends(ui_lang),
+) -> StatusResponse:
     from ...integrations.flags import flag_for_call as _flag_for_call
     s = orch.status()
     # getattr-Guard: FakeOrchestrator in den tests hat kein integrations-Feld
     cty = getattr(getattr(orch, "integrations", None), "cty", None)
     current_qso_flag = _flag_for_call(s.current_qso_call, cty)
+    # Re-localize the lock reason into the browser's language (?lang=). The
+    # snapshot carries a stable code + params; last_lock_reason is the
+    # config-default-lang fallback for clients that don't pass a code.
+    lock_code = getattr(s, "last_lock_code", None)
+    lock_reason = (
+        _i18n.translate(lock_code, lang, **(getattr(s, "last_lock_params", None) or {}))
+        if lock_code else s.last_lock_reason
+    )
     return StatusResponse(
         callsign=s.callsign,
         tx_callsign=getattr(s, "tx_callsign", None) or s.callsign,
         state=s.state,
-        last_lock_reason=s.last_lock_reason,
+        last_lock_reason=lock_reason,
         cq_count=s.cq_count,
         current_qso_call=s.current_qso_call,
         current_qso_flag=current_qso_flag,
@@ -198,6 +210,7 @@ class ConversationResponse(BaseModel):
 @router.get("/qso/conversation", response_model=ConversationResponse)
 async def conversation(
     orch: Orchestrator = Depends(get_orchestrator),
+    lang: str = Depends(ui_lang),
 ) -> ConversationResponse:
     sm = orch.state_machine
     qso = sm.qso
@@ -318,28 +331,30 @@ async def conversation(
     # leer im UI) + IDLE differenziert auto_cq vs. komplett-off.
     hint = None
     if state == "CQ_CALLING":
-        hint = f"sendet weiter CQ {my_call} bis jemand antwortet"
+        hint = _i18n.translate("hint.cq_calling", lang, call=my_call)
     elif state == "QSO_RESPOND" and qso:
-        hint = f"erwartet Signal-Report von {qso.their_call}"
+        hint = _i18n.translate("hint.qso_respond", lang, call=qso.their_call)
     elif state == "QSO_REPORT" and qso:
-        hint = f"erwartet RR73 von {qso.their_call}"
+        hint = _i18n.translate("hint.qso_report", lang, call=qso.their_call)
     elif state == "QSO_GRACE":
         grace_partner = getattr(sm, "_grace_partner_call", None) or "Partner"
-        hint = (
-            f"QSO mit {grace_partner} abgeschlossen — lauscht noch einen Slot "
-            "ob er Wiederholung schickt"
-        )
+        hint = _i18n.translate("hint.qso_grace", lang, call=grace_partner)
     elif state == "IDLE":
         if sm.ctx.auto_answer and sm.ctx.auto_cq:
-            hint = "Hunt + CQ aktiv: hört auf CQs und ruft selber wenn nichts kommt"
+            hint = _i18n.translate("hint.idle_hunt_cq", lang)
         elif sm.ctx.auto_answer:
-            hint = "hört auf hörbare CQs zum Beantworten"
+            hint = _i18n.translate("hint.idle_hunt", lang)
         elif sm.ctx.auto_cq:
-            hint = "wartet auf naechsten Slot um CQ zu rufen"
+            hint = _i18n.translate("hint.idle_cq", lang)
         else:
-            hint = "wartet — drücke CQ oder Antworten"
+            hint = _i18n.translate("hint.idle_wait", lang)
     elif state == "TX_LOCKED":
-        hint = f"TX gesperrt: {sm.ctx.last_lock_reason}"
+        lock_code = sm.ctx.last_lock_code
+        reason = (
+            _i18n.translate(lock_code, lang, **(sm.ctx.last_lock_params or {}))
+            if lock_code else sm.ctx.last_lock_reason
+        )
+        hint = _i18n.translate("lock.tx_locked_prefix", lang, reason=reason)
 
     partner_call_val = qso.their_call if qso else None
     from ...integrations.flags import flag_for_call as _flag_for_call

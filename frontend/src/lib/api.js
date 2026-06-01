@@ -3,6 +3,8 @@
 // v0.37.0 — API-Token-Auth. Token liegt in localStorage (pro Origin), wird
 // als Authorization: Bearer mitgeschickt. Bei 401 feuern wir ein Event,
 // damit die App den Login-Screen zeigt.
+import { getLang } from './i18n.svelte.js';
+
 const TOKEN_KEY = 'ft8_api_token';
 export function getToken() {
   try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
@@ -28,12 +30,13 @@ async function request(path, { method = 'GET', body, query } = {}) {
     init.body = JSON.stringify(body);
   }
   let url = `/api${path}`;
-  if (query) {
-    const qs = new URLSearchParams(
-      Object.entries(query).filter(([_, v]) => v !== null && v !== undefined && v !== '')
-    ).toString();
-    if (qs) url += `?${qs}`;
-  }
+  // Backend localizes its own strings (lock reasons, hints) per the UI
+  // language — pass it on every request. Merged with any explicit query.
+  const params = Object.entries(query || {})
+    .filter(([_, v]) => v !== null && v !== undefined && v !== '');
+  params.push(['lang', getLang()]);
+  const qs = new URLSearchParams(params).toString();
+  if (qs) url += `${path.includes('?') ? '&' : '?'}${qs}`;
   const r = await fetch(url, init);
   if (r.status === 401) {
     _requireLogin();
