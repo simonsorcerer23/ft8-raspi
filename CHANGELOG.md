@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.64.2 — 2026-06-02
+- fix: DX-Cluster-Reader-Leak bei Config-Save (gleiche Bugklasse wie Blitzortung)
+
 ## v0.64.1 — 2026-06-02
 - fix: Gewitter-Radius (und andere Blitzortung-Settings) per Hot-Reload wirksam
 
