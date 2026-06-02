@@ -3077,6 +3077,16 @@ class Orchestrator:
         base_interval = float(self.config.operating.psk_reciprocity_refresh_s)
         while True:
             try:
+                # Sebastian 2026-06-02 — Client pro Zyklus frisch lesen, damit
+                # ein Config-Save (neue PSK-Creds/Call/Upload-Settings → der
+                # Orchestrator baut psk_reporter in _init_integrations neu)
+                # ohne Service-Restart greift. Der Loop hielt sonst die alte
+                # Referenz bis zum Neustart fest (gleiche Bugklasse wie
+                # Blitzortung/DX-Cluster, hier nur Latenz statt Leak).
+                psk_client = self.integrations.psk_reporter
+                if psk_client is None:
+                    await asyncio.sleep(base_interval)
+                    continue
                 if operator_calls:
                     call = operator_calls[rotate_idx % len(operator_calls)]
                     rotate_idx += 1
