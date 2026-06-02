@@ -758,3 +758,38 @@ def test_blitzortung_radius_hot_reload_preserves_live_client() -> None:
     assert bz2 is bz1, "Client muss WEITERVERWENDET werden (Loops halten die Referenz)"
     assert bz2.alarm_radius_km == 10, "Radius-Aenderung muss den Live-Client erreichen"
     assert bz2.total_strikes_seen == 7, "Strike-Buffer/State muss den Reload ueberleben"
+
+
+@pytest.mark.asyncio
+async def test_dx_cluster_hot_reload_reuses_unchanged_rebuilds_on_change() -> None:
+    """Regression (Sebastian 2026-06-02): jeder Config-Save baute den
+    DxClusterClient NEU + spawnte einen weiteren Reader-Task, OHNE den alten
+    zu stoppen → Task-/Socket-Leak + Doppel-Login am Cluster.
+
+    Fix: bei unveraenderten Settings den laufenden Client weiterverwenden
+    (kein zweiter Reader); bei geaenderten Settings alten Reader stoppen,
+    dann neuen bauen.
+    """
+    orch = Orchestrator(
+        config=_cfg(),
+        rig=RigctldClient(host="127.0.0.1", port=4533),
+        gps=GpsdClient(host="127.0.0.1", port=2947),
+        decode_source=ScriptedDecodeSource([]),
+        slot_clock=FakeSlotClock(count=0),
+    )
+    orch._init_integrations()
+    dxc1 = orch.integrations.dx_cluster
+    assert dxc1 is not None
+
+    # Unveraenderter Save → SELBES Objekt (kein neuer Reader, kein Leak).
+    orch._init_integrations()
+    assert orch.integrations.dx_cluster is dxc1, \
+        "unveraenderte dx_cluster-Settings muessen den laufenden Client wiederverwenden"
+
+    # Geaenderte Settings → neuer Client, alter wird gestoppt.
+    orch.config.integrations.dx_cluster.host = "other.cluster.example"
+    orch._init_integrations()
+    await asyncio.sleep(0)  # stop()-Task durchlaufen lassen
+    dxc3 = orch.integrations.dx_cluster
+    assert dxc3 is not dxc1, "geaenderte Settings muessen einen neuen Client bauen"
+    assert dxc3.host == "other.cluster.example"

@@ -855,15 +855,34 @@ class Orchestrator:
         # await it here (returns quickly after spawning the reader task).
         try:
             dxc = self.config.integrations.dx_cluster
-            c.dx_cluster = DxClusterClient(
-                callsign=self.config.operator.callsign,
-                host=dxc.host,
-                port=dxc.port,
-                enabled=dxc.enabled,
+            prev_dxc = getattr(getattr(self, "integrations", None), "dx_cluster", None)
+            # Sebastian 2026-06-02: bei UNVERAENDERTEN Settings den laufenden
+            # Client (+ Reader-Task + Telnet-Login + Spot-Buffer) WEITERVERWENDEN.
+            # Sonst hatte jeder Config-Save einen neuen Reader gespawnt OHNE den
+            # alten zu stoppen → Task-/Socket-Leak + mehrfache Cluster-Logins
+            # mit demselben Call (Cluster kickt dann ggf. wegen Doppel-Login).
+            unchanged = (
+                prev_dxc is not None
+                and prev_dxc.host == dxc.host
+                and prev_dxc.port == dxc.port
+                and prev_dxc.enabled == dxc.enabled
+                and prev_dxc.callsign == self.config.operator.callsign
             )
-            if dxc.enabled:
-                log.warning("starting DX cluster reader: %s:%d", dxc.host, dxc.port)
-                asyncio.create_task(c.dx_cluster.start(), name="dx-cluster-init")
+            if unchanged:
+                c.dx_cluster = prev_dxc
+            else:
+                if prev_dxc is not None:
+                    # Alten Reader sauber abbauen (cancelt _task, schliesst Socket).
+                    asyncio.create_task(prev_dxc.stop(), name="dx-cluster-stop")
+                c.dx_cluster = DxClusterClient(
+                    callsign=self.config.operator.callsign,
+                    host=dxc.host,
+                    port=dxc.port,
+                    enabled=dxc.enabled,
+                )
+                if dxc.enabled:
+                    log.warning("starting DX cluster reader: %s:%d", dxc.host, dxc.port)
+                    asyncio.create_task(c.dx_cluster.start(), name="dx-cluster-init")
         except Exception as exc:
             log.warning("dx_cluster client init: %s", exc)
         # cty.dat — offline DXCC lookup. Looks for data/cty.dat next to
