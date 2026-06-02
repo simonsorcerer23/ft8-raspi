@@ -724,3 +724,37 @@ async def test_alc_closed_loop_stays_put_inside_window() -> None:
         assert orch._audio_gain == baseline
         assert orch._last_alc_pct == 15
         await orch.stop()
+
+
+def test_blitzortung_radius_hot_reload_preserves_live_client() -> None:
+    """Regression (Sebastian 2026-06-02): Radius-Aenderung via Config-Save
+    muss den LAUFENDEN Blitzortung-Client erreichen.
+
+    Bug war: on_config_changed → _init_integrations() baute den Client NEU,
+    waehrend ws-Reader + Watchdog noch die alte Referenz (+ alten Radius)
+    hielten → 30→10 km griff nie, man bekam weiter 25-km-Alarme.
+
+    Fix: bestehenden Client weiterverwenden, nur Felder in-place updaten.
+    """
+    orch = Orchestrator(
+        config=_cfg(),
+        rig=RigctldClient(host="127.0.0.1", port=4533),
+        gps=GpsdClient(host="127.0.0.1", port=2947),
+        decode_source=ScriptedDecodeSource([]),
+        slot_clock=FakeSlotClock(count=0),
+    )
+    orch._init_integrations()
+    bz1 = orch.integrations.blitzortung
+    assert bz1 is not None
+    assert bz1.alarm_radius_km == 30
+    # Live-State markieren um Objekt-Identitaet zu beweisen.
+    bz1.total_strikes_seen = 7
+
+    # Config-Save simulieren: Radius 30 → 10 (genau der gemeldete Fall).
+    orch.config.integrations.blitzortung.alarm_radius_km = 10
+    orch._init_integrations()  # das ruft der Hot-Reload-Pfad auf
+    bz2 = orch.integrations.blitzortung
+
+    assert bz2 is bz1, "Client muss WEITERVERWENDET werden (Loops halten die Referenz)"
+    assert bz2.alarm_radius_km == 10, "Radius-Aenderung muss den Live-Client erreichen"
+    assert bz2.total_strikes_seen == 7, "Strike-Buffer/State muss den Reload ueberleben"

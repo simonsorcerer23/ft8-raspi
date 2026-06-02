@@ -825,10 +825,23 @@ class Orchestrator:
         except Exception as exc:
             log.warning("psk_reporter client init: %s", exc)
         try:
-            c.blitzortung = BlitzortungClient(
-                enabled=i.blitzortung.enabled,
-                alarm_radius_km=i.blitzortung.alarm_radius_km,
-            )
+            # Sebastian 2026-06-02: beim Hot-Reload den BESTEHENDEN Client
+            # weiterverwenden + nur Felder in-place updaten, NICHT neu bauen.
+            # Der ws-Reader und der Watchdog halten eine Referenz auf genau
+            # dieses Objekt (+ seinen Strike-Buffer) und lesen sie nur einmal
+            # beim Loop-Start. Ein frischer Client wuerde verwaisen — die Loops
+            # fuettern/pruefen weiter den alten → eine Radius-Aenderung (z.B.
+            # 30→10 km) griffe nie, man bekaeme weiter 25-km-Alarme.
+            prev_bz = getattr(getattr(self, "integrations", None), "blitzortung", None)
+            if prev_bz is not None:
+                prev_bz.enabled = i.blitzortung.enabled
+                prev_bz.alarm_radius_km = i.blitzortung.alarm_radius_km
+                c.blitzortung = prev_bz
+            else:
+                c.blitzortung = BlitzortungClient(
+                    enabled=i.blitzortung.enabled,
+                    alarm_radius_km=i.blitzortung.alarm_radius_km,
+                )
         except Exception as exc:
             log.warning("blitzortung client init: %s", exc)
         try:
