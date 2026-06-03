@@ -45,6 +45,18 @@ def _t(key: str, **params: object) -> str:
     """Localize a backend-generated push string in the configured default
     language (ntfy goes to the phone — no browser request to read ?lang=)."""
     return _i18n.translate(key, _i18n.default_lang(), **params)
+
+
+def _as_utc(dt: "datetime | None") -> "datetime | None":
+    """SQLite speichert ``DateTime(timezone=True)`` tz-NAIV zurueck. Subtrahiert
+    man so einen Wert von ``datetime.now(UTC)`` (aware), wirft Python
+    "can't subtract offset-naive and offset-aware datetimes". Naive Werte
+    deshalb als UTC interpretieren. (Sebastian 2026-06-02: genau das hat die
+    QRZ- + ClubLog-Drain-Loops jeden Zyklus crashen lassen → Uploads standen
+    seit ~21. Mai still, Backlog lief auf.)"""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
 from ..db import repository, session_scope
 from ..db.models import Blacklist as DbBlacklist
 from ..db.models import CallReputation as DbCallReputation
@@ -3383,10 +3395,8 @@ class Orchestrator:
                     )
                     for qso in rows:
                         backoff_s = min(3600.0, 300.0 * (2 ** qso.qrz_upload_attempts))
-                        if (
-                            qso.qrz_last_attempt_at
-                            and (now - qso.qrz_last_attempt_at).total_seconds() < backoff_s
-                        ):
+                        last_qrz = _as_utc(qso.qrz_last_attempt_at)
+                        if last_qrz is not None and (now - last_qrz).total_seconds() < backoff_s:
                             continue
                         # v0.28.0 — Key + Heimat-Call aus dem OWNER-Profil
                         # ableiten und den Logbook-Key am On-Air-Call
@@ -3491,10 +3501,8 @@ class Orchestrator:
                     eligible = []
                     for qso in rows:
                         backoff_s = min(3600.0, 600.0 * (2 ** qso.clublog_upload_attempts))
-                        if (
-                            qso.clublog_last_attempt_at
-                            and (now - qso.clublog_last_attempt_at).total_seconds() < backoff_s
-                        ):
+                        last_cl = _as_utc(qso.clublog_last_attempt_at)
+                        if last_cl is not None and (now - last_cl).total_seconds() < backoff_s:
                             continue
                         eligible.append(qso)
 

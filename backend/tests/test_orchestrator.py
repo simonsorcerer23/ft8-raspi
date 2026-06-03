@@ -793,3 +793,22 @@ async def test_dx_cluster_hot_reload_reuses_unchanged_rebuilds_on_change() -> No
     dxc3 = orch.integrations.dx_cluster
     assert dxc3 is not dxc1, "geaenderte Settings muessen einen neuen Client bauen"
     assert dxc3.host == "other.cluster.example"
+
+
+def test_as_utc_makes_sqlite_naive_comparable_to_aware_now() -> None:
+    """Regression (Sebastian 2026-06-02): SQLite gibt DateTime(timezone=True)
+    tz-naiv zurueck. `datetime.now(UTC) - naive` warf 'can't subtract
+    offset-naive and offset-aware' → QRZ- + ClubLog-Drain-Loops crashten jeden
+    Zyklus, Uploads standen seit ~21. Mai still."""
+    from datetime import UTC, datetime
+    from ft8_appliance.runtime.orchestrator import _as_utc
+
+    naive_from_sqlite = datetime(2026, 5, 21, 17, 5, 0)  # kein tzinfo
+    now_aware = datetime.now(UTC)
+    # Genau die Subtraktion aus den Drain-Loops — darf NICHT mehr werfen.
+    delta = (now_aware - _as_utc(naive_from_sqlite)).total_seconds()
+    assert delta > 0
+    # None bleibt None; bereits-aware bleibt unveraendert.
+    assert _as_utc(None) is None
+    already_aware = datetime.now(UTC)
+    assert _as_utc(already_aware) is already_aware
