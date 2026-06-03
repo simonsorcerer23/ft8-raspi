@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.64.4 — 2026-06-03
+- fix: QRZ-/ClubLog-Uploads tot — tz-naive/aware-Crash im Drain-Loop
+
 ## v0.64.3 — 2026-06-02
 - fix: PSK-Reciprocity-Loop liest Client pro Zyklus (Config-Save ohne Restart)
 
