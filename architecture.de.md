@@ -310,9 +310,17 @@ Zusätzliche Modi:
   werden abgewertet.
 - **Band-bewusster QSO-Cooldown:** Erfolgs-Cooldown pro (Call, Band) — ein
   langer Cooldown blockt damit keinen neuen Band-Slot (5BWAS/VUCC).
-- **Pick-Telemetrie (`pick_attempt`):** misst pro Hunt-Pick
-  psk_heard_us/was_worked/was_new_dxcc/SNR/Band-Belegung/Bail-Grund +
-  Ausgang → datengetriebene A/B-Bewertung der Tiers (`/api/stats/pick-attempts`).
+- **Pick-Telemetrie (`pick_attempt`):** loggt jeden Hunt-Pick mit Ausgang
+  (completed / went-silent / bailed) plus reichem Kontext — entscheidende Stufe
+  (`winning_tier`), wie laut *wir* bei der DX-Station ankommen (`psk_snr`, aus
+  PSK-Reporter), Pick-Alter, # Kandidaten, Resends, Distanz, Kontinent, Mode,
+  TX-Leistung, Band-Belegung, SNR/DT — für datengetriebenes A/B der Tiers
+  (`/api/stats/pick-attempts`). Trieb das **2026-06-Retune**: `psk_heard_us`
+  hochgestuft (12,6 % Completion als Entscheider vs `snr` 6,7 %),
+  `tail_end_target` unter `snr` (nur ~3 %). ~72 % der Picks sind „sole" (keine
+  Wahl) → Tier-Reihenfolge ist inhärent Low-Leverage; der dominante Fehlschlag
+  ist der unbeantwortete erste Anruf, der mit `psk_snr`/Distanz (gehört werden)
+  korreliert, nicht mit der Auswahl.
 - TX-Frequenz-Wahl mit Kollisions-Vermeidung: Rotation 1200/1500/1800/2100 Hz
   pro CQ-Sendung (`MachineContext.cq_freq_rotation`)
 - Smart-CQ-Throttling (passive Sondierung nach N erfolglosen CQs) — geparkt
@@ -376,7 +384,8 @@ Zusätzliche Modi:
 - Multi-Level Watchdog: in-process Heartbeat + systemd Watchdog + optional GPIO HW-Watchdog
 - PTT-Stuck-Detection (PTT-an aber kein Audio → sofort off)
 - Time-Guard (kein TX ohne GPS-Sync)
-- **Blitzortung.org** Live-Daten, Alarm bei Gewitter < 30 km
+- **Blitzortung.org** Live-Daten, Alarm bei Gewitter innerhalb eines
+  konfigurierbaren Radius (Default 30 km, `alarm_radius_km`; seit 2026-06 hot-reloadbar)
 
 **Daten-Sicherheit (Audit 2026-05-30):** Die unersetzlichen Logdaten sind mehrfach abgesichert:
 - **Atomare Config-Writes** (`util/atomicfile.py`): tmp + `fsync(file)` + `fsync(dir)` + rename, `.bak`-Snapshot, `0600`, prozessweiter Write-Lock gegen konkurrierende Schreiber. `PUT /api/config` plättet keine Operatoren/Secrets mehr (`preserve_secrets`: „leer = behalten").
@@ -420,7 +429,7 @@ Pfad via Frequenz-Drift-Watchdog mit 100-Hz-Toleranz, Rollback-Action
 - **NG3K ADXO:** Auto-Import des DXpeditions-Kalenders → Watchlist + 24h-ntfy-Reminder
 - **DX-Cluster** (Telnet) als zusätzliche Spot-Quelle
 - **Marinefunker (DF7PM-Liste):** ⚓-Badge + MF-Nr bei aktiven Mitgliedern, eigener Picker-Tier
-- **Upload-Resilience (v0.40.0):** QRZ/ClubLog markieren ein QSO nur bei *klar hartem* Reject als erledigt; transiente Fehler werden erneut versucht (Ceiling 15 + Alarm) — kein stiller Upload-Verlust
+- **Upload-Resilience (v0.40.0, gehärtet 2026-06):** QRZ/ClubLog markieren ein QSO nur bei *klar hartem* Reject als erledigt; transiente Fehler werden erneut versucht (Ceiling 15 + Aufgeben-Alarm). Ein 2026-06-Vorfall deckte eine Lücke auf: ein tz-naive-vs-aware-`datetime`-Crash in **beiden** Drain-Loops staute Uploads ~2 Wochen, während er als harmloser Zyklus-„Hiccup" verschluckt wurde. Fix = zwei Sicherungsnetze: (a) `_as_utc()`-Coercion von DB-Datetimes + ein `DTZ`-Lint-Gate gegen naive Datetimes, und (b) **Drain-Loop-Failure-Eskalation** (`_note_drain_outcome`) — N aufeinanderfolgende Fehl-Sweeps lösen jetzt einen ntfy-Alarm (`push.upload_stuck_*`) aus statt still zu bleiben.
 
 **Resilience-Prinzip (gilt für alle Online-Features):**
 Jede Online-Integration muss **graceful degraden**:
@@ -453,6 +462,27 @@ Jede Online-Integration muss **graceful degraden**:
 - Hot-Reload bei Config-Änderungen
 - Config-Versionierung mit Rollback-Möglichkeit
 - First-Boot Setup-Wizard
+
+### 6.10 Internationalisierung (i18n) — komplett zweisprachig DE/EN
+
+Oberfläche **und** Backend-erzeugte Strings sind zweisprachig mit Live-Umschalter
+im Header (Default Deutsch, die Operatoren sind deutsche Funkamateure):
+
+- **Frontend-Katalog:** `frontend/src/lib/i18n.svelte.js` (`lang`-Store + `t()`),
+  Strings in `lib/locales/{de,en}.js`. Reaktiv — Umschalten rendert alles neu.
+- **Backend-Katalog:** `backend/ft8_appliance/i18n.py` (`_DE`/`_EN` + `translate(key, lang, **params)`)
+  für Backend-Texte: Guard/Lock-Gründe (`guard.*`/`lock.*`), Status-Hints
+  (`hint.*`), ntfy-Push-Bodies (`push.*`). Keine Überschneidung mit Frontend-Keys.
+- **Browser-Strings** (Status/SSE/Control): die State-Machine speichert Code +
+  Params; Übersetzung beim Ausliefern via `?lang=` (`web/deps.ui_lang`), das das
+  Frontend an JEDEN Request + beide SSE-URLs hängt.
+- **ntfy-Push-Bodies** (kein Request — gehen aufs Handy): zur Generierungszeit
+  über den Config-Default (`config.ui.language` → `i18n.set_default_lang()` beim
+  Start).
+- **Drei CI-Gates** (laufen in `release.sh`): DE/EN-Key- + Platzhalter-Parität
+  (Front + Back), AST-Call-Site-Param-Deckung und ein Hartcodiert-Deutsch-Scanner
+  über die `.svelte`-Templates. `translate()`/`t()` crashen NIE bei fehlendem
+  Key/Param — sie leaken rohe `{Klammern}` — daher die Gates.
 
 ---
 
@@ -821,13 +851,10 @@ Alle weiteren nachrüstbar wenn später gewünscht.
 4. **Map-Tile-Pre-Download:** wie viel Welt-Coverage realistisch (Speicher vs. Nutzen)?
 5. **WLAN-Country-Code:** muss zur GPS-Position passen (gesetzlich!) — automatische Umstellung?
 6. **NetworkManager vs. wpa_supplicant pur:** beide gehen, NM hat schönere D-Bus-API für Web-Config.
-7. **i18n der Backend-Strings:** Lock-Reason-Texte aus `statemachine/guards.py`
-   (z.B. „active antenna doesn't cover the current band", „SWR 2.50 exceeds 2.00")
-   sind englisch und werden 1:1 ins UI durchgereicht. Frontend-eigene
-   UI-Strings sind deutsch. Sebastian 2026-05-24: „auf deutsch wäre cool,
-   aber nebensächlich" — Backlog-Item für später wenn UI poliert wird.
-   Betrifft `guards.py` (~10 Strings) + ntfy-Push-Bodies in `orchestrator.py`
-   (mit gemischtem DE/EN-Bestand).
+7. ~~**i18n der Backend-Strings**~~ — **ERLEDIGT 2026-06.** Alles (Frontend-UI,
+   Guard/Lock-Gründe, Status-Hints, ntfy-Push-Bodies) ist jetzt komplett
+   zweisprachig DE/EN mit Live-Umschalter. Siehe §6.10. Durch drei CI-Gates
+   gegen DE/EN-Drift und hartcodierte Strings abgesichert.
 
 ---
 

@@ -324,9 +324,16 @@ Additional modes:
   downgraded.
 - **Band-aware QSO cooldown:** success cooldown per (call, band) — a long
   cooldown therefore never blocks a new band slot (5BWAS/VUCC).
-- **Pick telemetry (`pick_attempt`):** measures per hunt pick
-  psk_heard_us/was_worked/was_new_dxcc/SNR/band occupancy/bail reason +
-  outcome → data-driven A/B evaluation of the tiers (`/api/stats/pick-attempts`).
+- **Pick telemetry (`pick_attempt`):** logs every hunt pick with its outcome
+  (completed / went-silent / bailed) plus rich context — the deciding tier
+  (`winning_tier`), how loud *we* land at the DX (`psk_snr`, from PSK Reporter),
+  pick age, # candidates, resends, distance, continent, mode, TX power, band
+  occupancy, SNR/DT — for a data-driven A/B of the tiers
+  (`/api/stats/pick-attempts`). Drove the **2026-06 retune**: `psk_heard_us`
+  upranked (12.6 % completion as decider vs `snr` 6.7 %), `tail_end_target`
+  pushed below `snr` (~3 % only). ~72 % of picks are "sole" (no choice), so
+  tier order is inherently low-leverage; the dominant failure is the first call
+  going unanswered, which tracks `psk_snr`/distance (being heard), not selection.
 - TX frequency choice with collision avoidance: rotation 1200/1500/1800/2100 Hz
   per CQ transmission (`MachineContext.cq_freq_rotation`)
 - Smart-CQ throttling (passive probing after N unsuccessful CQs) — parked
@@ -392,7 +399,8 @@ Additional modes:
 - Multi-level watchdog: in-process heartbeat + systemd watchdog + optional GPIO HW watchdog
 - PTT-stuck detection (PTT on but no audio → immediate off)
 - Time guard (no TX without GPS sync)
-- **Blitzortung.org** live data, alarm for thunderstorms < 30 km
+- **Blitzortung.org** live data, alarm for thunderstorms inside a configurable
+  radius (default 30 km, `alarm_radius_km`; hot-reloadable since 2026-06)
 
 **Data safety (audit 2026-05-30):** the irreplaceable log data is protected several ways over:
 - **Atomic config writes** (`util/atomicfile.py`): tmp + `fsync(file)` + `fsync(dir)` + rename, `.bak` snapshot, `0600`, process-wide write lock against concurrent writers. `PUT /api/config` no longer flattens operators/secrets (`preserve_secrets`: "empty = keep").
@@ -436,7 +444,7 @@ action "Back to XXm").
 - **NG3K ADXO:** auto-import of the DXpedition calendar → watchlist + 24h ntfy reminder
 - **DX cluster** (telnet) as an additional spot source
 - **Maritime operators (DF7PM list):** ⚓ badge + MF number for active members, its own picker tier
-- **Upload resilience (v0.40.0):** QRZ/ClubLog mark a QSO done only on a *clearly hard* reject; transient errors are retried (ceiling 15 + alarm) — no silent upload loss
+- **Upload resilience (v0.40.0, hardened 2026-06):** QRZ/ClubLog mark a QSO done only on a *clearly hard* reject; transient errors are retried (ceiling 15 + give-up alarm). A 2026-06 incident exposed a gap: a tz-naive-vs-aware `datetime` crash in **both** drain loops backed up uploads for ~2 weeks while being swallowed as a benign per-cycle "hiccup". Fix added two safety nets: (a) `_as_utc()` coercion of DB datetimes + a `DTZ` lint gate against naive datetimes, and (b) **drain-loop failure escalation** (`_note_drain_outcome`) — N consecutive sweep failures now raise an ntfy alarm (`push.upload_stuck_*`) instead of staying silent.
 
 **Resilience principle (applies to all online features):**
 Every online integration must **degrade gracefully**:
@@ -469,6 +477,27 @@ Every online integration must **degrade gracefully**:
 - Hot-reload on config changes
 - Config versioning with rollback option
 - First-boot setup wizard
+
+### 6.10 Internationalisation (i18n) — fully bilingual DE/EN
+
+The UI **and** backend-generated strings are bilingual with a live header
+toggle (default German, the operators are German hams):
+
+- **Frontend catalog:** `frontend/src/lib/i18n.svelte.js` (`lang` store + `t()`),
+  strings in `lib/locales/{de,en}.js`. Reactive — toggling re-renders everything.
+- **Backend catalog:** `backend/ft8_appliance/i18n.py` (`_DE`/`_EN` + `translate(key, lang, **params)`)
+  for backend-origin text: guard/lock reasons (`guard.*`/`lock.*`), status hints
+  (`hint.*`), ntfy push bodies (`push.*`). No overlap with the frontend keys.
+- **Browser strings** (status/SSE/control): the state machine stores a code +
+  params; translation happens at serve time via `?lang=` (`web/deps.ui_lang`),
+  which the frontend appends to every request + both SSE URLs.
+- **ntfy push bodies** (no request — they go to the phone): translated at
+  generation time using the configured default (`config.ui.language` →
+  `i18n.set_default_lang()` at startup).
+- **Three CI gates** (run in `release.sh`) keep it honest: DE/EN key + placeholder
+  parity (front + back), AST call-site param coverage, and a hard-coded-German
+  scanner over the `.svelte` templates. `translate()`/`t()` never crash on a
+  missing key/param — they leak raw `{braces}` — hence the gates.
 
 ---
 
@@ -838,13 +867,10 @@ All others retrofittable if wanted later.
 4. **Map-tile pre-download:** how much world coverage is realistic (storage vs. benefit)?
 5. **Wi-Fi country code:** must match the GPS position (legally required!) — automatic switching?
 6. **NetworkManager vs. plain wpa_supplicant:** both work, NM has a nicer D-Bus API for web config.
-7. **i18n of the backend strings:** lock-reason texts from `statemachine/guards.py`
-   (e.g. "active antenna doesn't cover the current band", "SWR 2.50 exceeds 2.00")
-   are English and passed 1:1 into the UI. The frontend's own UI strings are
-   fully bilingual (DE/EN). Sebastian 2026-05-24: "German would be cool, but
-   secondary" — a backlog item for later when the UI is polished. Affects
-   `guards.py` (~10 strings) + ntfy push bodies in `orchestrator.py`
-   (with a mixed DE/EN inventory).
+7. ~~**i18n of the backend strings**~~ — **RESOLVED 2026-06.** Everything
+   (frontend UI, guard/lock reasons, status hints, ntfy push bodies) is now
+   fully bilingual DE/EN with a live toggle. See §6.10. Guarded by three CI
+   gates against DE/EN drift and hard-coded strings.
 
 ---
 

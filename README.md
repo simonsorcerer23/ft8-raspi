@@ -17,7 +17,8 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 
 > Captured in the built-in **demo mode** — all callsigns/data are purely
 > fictional (simulator), no real third-party stations.
-> *(The UI itself is German — the operators are German hams.)*
+> *(The UI is fully bilingual — live 🇩🇪/🇬🇧 toggle in the header; the
+> screenshots show the German default.)*
 
 ![Operating view: rig status, decode list, daily stats](docs/screenshots/funk.png)
 
@@ -80,12 +81,23 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
   avoidance, tail-end pickup, grayline boost, soft-blacklist learning from
   own QSO history, band-conditions awareness, buddy-seen
   (worked-on-other-band), DXCC rarity, 5BWAS, VUCC grid awards, …
-- **Tail-End-Hunter** — automatic detection of `RR73`/`73` closings, picks
-  the freed-up station within milliseconds. WSJT-X cannot do this.
+- **Data-driven picker tuning** — every hunt pick is logged with its outcome
+  (completed / went-silent / bailed) plus context: the deciding tier, how loud
+  *we* land at the DX (per PSK Reporter), SNR, distance, band occupancy, … A
+  stats endpoint A/Bs it, so the tier order is tuned from real completion rates
+  rather than guesswork.
+- **Tail-End-Hunter** — automatic detection of `RR73`/`73` closings to grab a
+  freed-up station (WSJT-X can't). Its picker rank is data-driven: telemetry
+  showed it underperforms, so it now sits below the SNR tie-breaker — kept, but
+  deliberately low-priority.
 - **Pile-Up-Avoidance** — when ≥5 unique callers on ±50 Hz of a station, we
   skip it. Better for the band, better for the QSO rate.
 - **Multi-Operator** — two profiles (e.g. you + family), each with their own
   QRZ / Club Log credentials, separate log-views, license-aware power caps.
+- **Fully bilingual UI** — every screen *and* the backend / ntfy push messages
+  switch live between 🇩🇪 German and 🇬🇧 English (header toggle); the docs are
+  bilingual too. Three CI gates keep the DE/EN catalogs in sync and block
+  hard-coded strings from creeping back in.
 - **Auto-Logbook** — QSOs auto-upload to **QRZ.com** + **Club Log** in the
   background, offline-tolerant, idempotent. Local SQLite remains the source
   of truth.
@@ -196,9 +208,10 @@ Headless FT8/FT4-Steuerung auf Raspberry Pi 5 für IC-705 / IC-7300. Sitzt
 zwischen Rig und Welt, Bedienung komplett übers Handy (passwortgeschützt).
 **Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb mit Features,
 die WSJT-X nicht out of the box hat — 19-Tier-Picker mit Pile-Up-Avoidance,
-Tail-End-Hunter, Watchlist, Auto-Upload zu QRZ + Club Log, Gewitter-Warnung,
-lizenzabhängige Sicherheits-Caps, CEPT-/Ausland-Erkennung (GPS → Land →
-Klasse-A/E-Regeln + Präfix-Vorschlag), bruchsicheres QSO-Log (Spill +
-tägliches Backup) und Selbst-Update.
+datengetriebenem Tuning aus Pick-Telemetrie, Watchlist, Auto-Upload zu QRZ +
+Club Log, Gewitter-Warnung, lizenzabhängige Sicherheits-Caps, CEPT-/Ausland-
+Erkennung (GPS → Land → Klasse-A/E-Regeln + Präfix-Vorschlag), bruchsicheres
+QSO-Log (Spill + tägliches Backup) und Selbst-Update. **Oberfläche komplett
+zweisprachig (DE/EN, live umschaltbar)** — inklusive Backend- und ntfy-Meldungen.
 
 73 de DK9XR & DO3XR

@@ -17,6 +17,8 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 
 > Aufgenommen im eingebauten **Demo-Modus** — alle Rufzeichen/Daten sind rein
 > fiktiv (Simulator), keine echten Dritt-Stationen.
+> *(Die Oberfläche ist komplett zweisprachig — Live-Umschalter 🇩🇪/🇬🇧 im
+> Header; die Screenshots zeigen die deutsche Voreinstellung.)*
 
 ![Funk-Ansicht: Rig-Status, Decode-Liste, Tagesstatistik](docs/screenshots/funk.png)
 
@@ -79,13 +81,24 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
   Pile-Up-Vermeidung, Tail-End-Pickup, Grayline-Boost, Soft-Blacklist die aus
   der eigenen QSO-Historie lernt, Band-Conditions-Bewusstsein, Buddy-Seen
   (auf anderem Band gearbeitet), DXCC-Seltenheit, 5BWAS, VUCC-Grid-Awards, …
+- **Datengetriebenes Picker-Tuning** — jeder Hunt-Pick wird mit Ausgang
+  (completed / went-silent / bailed) und Kontext geloggt: entscheidende Stufe,
+  wie laut *wir* bei der DX-Station ankommen (laut PSK-Reporter), SNR, Distanz,
+  Band-Belegung, … Ein Stats-Endpoint macht das A/B, sodass die Stufen-
+  Reihenfolge aus echten Completion-Raten statt aus dem Bauch getunt wird.
 - **Tail-End-Hunter** — erkennt `RR73`/`73`-Abschlüsse automatisch und greift
-  die freiwerdende Station in Millisekunden ab. Das kann WSJT-X nicht.
+  eine freiwerdende Station ab (kann WSJT-X nicht). Seine Picker-Priorität ist
+  datengetrieben: die Telemetrie zeigte Unter-Performance, daher steht er jetzt
+  unter dem SNR-Tie-Breaker — erhalten, aber bewusst niedrig priorisiert.
 - **Pile-Up-Vermeidung** — bei ≥5 verschiedenen Anrufern auf ±50 Hz wird die
   Station übersprungen. Besser fürs Band, besser für die QSO-Rate.
 - **Multi-Operator** — zwei Profile (z.B. du + Familie), jeweils mit eigenen
   QRZ-/Club-Log-Zugängen, getrennten Log-Ansichten, lizenzabhängigen
   Leistungs-Caps.
+- **Komplett zweisprachige Oberfläche** — jeder Screen *und* die Backend-/
+  ntfy-Push-Meldungen schalten live zwischen 🇩🇪 Deutsch und 🇬🇧 Englisch um
+  (Header-Umschalter); auch die Doku ist zweisprachig. Drei CI-Gates halten
+  die DE/EN-Kataloge synchron und blocken hartcodierte Strings.
 - **Auto-Logbuch** — QSOs werden im Hintergrund automatisch zu **QRZ.com** +
   **Club Log** hochgeladen, offline-tolerant, idempotent. Lokales SQLite
   bleibt die Quelle der Wahrheit.
