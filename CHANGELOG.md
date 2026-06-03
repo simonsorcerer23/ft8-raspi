@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.65.2 — 2026-06-03
+- tune: tail_end_target unter snr (Telemetrie — als Entscheider nur ~3% Completion)
+
 ## v0.65.1 — 2026-06-03
 - tune: hunt_priority — psk_heard_us hoch, tail_end_target runter (datengetrieben)
 
