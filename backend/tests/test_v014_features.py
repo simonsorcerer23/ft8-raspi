@@ -266,12 +266,13 @@ def test_default_hunt_priority_includes_new_tiers():
     cfg = OperatingConfig()
     assert "grayline" in cfg.hunt_priority
     assert "band_open" in cfg.hunt_priority
-    # Position: nach tail_end_target, vor new_dxcc_psk
+    # v0.65.1-Reihenfolge: new_dxcc_psk < grayline < band_open (Propagation jetzt
+    # UNTER den new-DXCC-Prios), und tail_end_target ist runtergestuft (nach band_open).
     idx_tail = cfg.hunt_priority.index("tail_end_target")
     idx_gray = cfg.hunt_priority.index("grayline")
     idx_band = cfg.hunt_priority.index("band_open")
     idx_dxcc_psk = cfg.hunt_priority.index("new_dxcc_psk")
-    assert idx_tail < idx_gray < idx_band < idx_dxcc_psk
+    assert idx_dxcc_psk < idx_gray < idx_band < idx_tail
 
 
 def test_migration_adds_new_tiers_to_old_config():

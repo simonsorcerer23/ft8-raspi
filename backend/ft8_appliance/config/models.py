@@ -420,19 +420,26 @@ class OperatingConfig(BaseModel):
             "not_in_pileup",       # v0.19.0 — Pile-Up-Avoidance (filter)
             "marine_psk",        # Marinefunker + PSK sagt "hört uns"
             "marine",            # Marinefunker (auch ohne PSK)
-            "tail_end_target",   # v0.11.0 — Station hat gerade QSO beendet
+            # v0.65.1 — psk_heard_us HOCHGESTUFT (Telemetrie 2026-06: als
+            # Entscheider 12,6% Completion vs snr 6,7%; "hört uns laut" ist
+            # der stärkste Completion-Prädiktor). Steht jetzt über Propagation/
+            # Award-Tiers (nur marine + new-DXCC bleiben darüber).
+            "psk_heard_us",      # PSK sagt "hört uns" (für routine-EU)
+            "new_dxcc_psk",      # neues DXCC + PSK sagt "hört uns"
+            "new_dxcc",          # neues DXCC (auch ohne PSK)
             "grayline",          # v0.14.0 — CQ-Rufer in eigenem Grayline-Fenster
             "band_open",         # v0.14.0 — hamqsl: Band aktuell "Good"
             "active_hour",       # v0.16.0 — DB-History sagt: Continent jetzt aktiv
             "buddy_seen",        # v0.17.0 — Worked auf anderem Band (RX-Pfad bekannt)
-            "new_dxcc_psk",      # neues DXCC + PSK sagt "hört uns"
-            "new_dxcc",          # neues DXCC (auch ohne PSK)
-            "psk_heard_us",      # PSK sagt "hört uns" (für routine-EU)
             "new_dxcc_band",     # 5BWAS — neues Band für DXCC
             "new_grid",          # neues Maidenhead-Grid (VUCC-Award)
             "new_grid_band",     # neues Grid auf diesem Band (VUCC-Band)
             "not_worked",        # nie gearbeitet überhaupt
             "dxcc_rarity",       # rare DXCC-Bonus
+            # v0.65.1 — tail_end_target RUNTERGESTUFT (Telemetrie: nur 3,0%
+            # Completion, n=66 — klar unter Baseline 8,4%). Bleibt aktiv, aber
+            # gewinnt nur noch als Quasi-Letztmittel direkt vor dem snr-Breaker.
+            "tail_end_target",   # v0.11.0 — Station hat gerade QSO beendet
             "snr",               # Tie-Breaker — bestes Signal
         ]
     )
@@ -456,10 +463,11 @@ class OperatingConfig(BaseModel):
         # test_hunt_tiers_registry_complete erzwingt das.
         known = [
             "not_bad_reputation", "not_his_tx_slot", "not_in_pileup",
-            "marine_psk", "marine", "tail_end_target",
+            "marine_psk", "marine", "psk_heard_us",
+            "new_dxcc_psk", "new_dxcc",
             "grayline", "band_open", "active_hour", "buddy_seen",
-            "new_dxcc_psk", "new_dxcc", "psk_heard_us", "new_dxcc_band",
-            "new_grid", "new_grid_band", "not_worked", "dxcc_rarity", "snr",
+            "new_dxcc_band", "new_grid", "new_grid_band", "not_worked",
+            "dxcc_rarity", "tail_end_target", "snr",
         ]
         if not v:
             return list(known)  # leere Liste → komplette Default rein

@@ -367,16 +367,18 @@ def test_operating_config_tail_end_can_be_enabled():
     assert cfg.tail_end_hunter_enabled is True
 
 
-def test_default_hunt_priority_includes_tail_end_at_position_3():
-    """tail_end_target ist im Default vor new_dxcc_psk. v0.15.0 setzt
-    not_bad_reputation + not_his_tx_slot davor."""
+def test_default_hunt_priority_tail_end_downranked():
+    """v0.65.1: tail_end_target runtergestuft (Telemetrie: nur 3% Completion) —
+    steht jetzt NACH new_dxcc_psk und direkt vor dem snr-Tie-Breaker (vorletzte
+    Position), gewinnt also nur noch als Quasi-Letztmittel."""
     cfg = OperatingConfig()
     assert "tail_end_target" in cfg.hunt_priority
     assert "new_dxcc_psk" in cfg.hunt_priority
-    assert cfg.hunt_priority.index("tail_end_target") < cfg.hunt_priority.index("new_dxcc_psk")
-    # marine_psk + marine bleiben am Anfang (nach den Filter-Tiers)
-    assert "marine_psk" in cfg.hunt_priority
-    assert cfg.hunt_priority.index("marine_psk") < cfg.hunt_priority.index("tail_end_target")
+    # jetzt NACH new_dxcc_psk (vorher davor)
+    assert cfg.hunt_priority.index("tail_end_target") > cfg.hunt_priority.index("new_dxcc_psk")
+    # vorletzte Position, direkt vor 'snr'
+    assert cfg.hunt_priority[-2] == "tail_end_target"
+    assert cfg.hunt_priority[-1] == "snr"
 
 
 def test_hunt_tiers_registry_contains_tail_end():
