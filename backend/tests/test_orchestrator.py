@@ -812,3 +812,57 @@ def test_as_utc_makes_sqlite_naive_comparable_to_aware_now() -> None:
     assert _as_utc(None) is None
     already_aware = datetime.now(UTC)
     assert _as_utc(already_aware) is already_aware
+
+
+def test_as_utc_overloads_and_dxped_style_comparison() -> None:
+    """Regression (Audit 2026-06-02): naive DB-Datetimes (dxpedition
+    start/end_date) gegen aware now vergleichen darf nicht crashen."""
+    from datetime import UTC, datetime, timedelta
+    from ft8_appliance.runtime.orchestrator import _as_utc
+
+    now = datetime.now(UTC)
+    sd = _as_utc(datetime(2026, 6, 1, 12, 0))  # naiv, wie aus SQLite
+    ed = _as_utc(datetime(2026, 6, 10, 12, 0))
+    # genau die dxped-Loop-Vergleiche — duerfen nicht werfen:
+    _ = sd - timedelta(hours=24) <= now < sd
+    _ = sd <= now <= ed
+    _ = now > ed
+    assert sd.tzinfo is not None and ed.tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_drain_failure_escalates_to_ntfy_after_threshold() -> None:
+    """Observability (Audit 2026-06-02): ein DAUER-crashender Upload-Loop
+    muss nach N Zyklen EINMALIG per ntfy eskalieren statt still zu bleiben."""
+    orch = Orchestrator(
+        config=_cfg(),
+        rig=RigctldClient(host="127.0.0.1", port=4533),
+        gps=GpsdClient(host="127.0.0.1", port=2947),
+        decode_source=ScriptedDecodeSource([]),
+        slot_clock=FakeSlotClock(count=0),
+    )
+
+    class _FakeNtfy:
+        enabled = True
+        def __init__(self) -> None:
+            self.calls: list[tuple] = []
+        async def notify(self, *a, **kw):
+            self.calls.append((a, kw))
+
+    fake = _FakeNtfy()
+    orch.integrations.ntfy = fake  # type: ignore[assignment]
+
+    exc = TypeError("can't subtract offset-naive and offset-aware datetimes")
+    thr = Orchestrator._DRAIN_FAIL_ALERT_THRESHOLD
+    for _ in range(thr - 1):
+        await orch._note_drain_outcome("QRZ", exc)
+    assert fake.calls == [], "vor Schwelle kein Alarm"
+    await orch._note_drain_outcome("QRZ", exc)  # erreicht Schwelle
+    assert len(fake.calls) == 1, "genau ein Alarm an der Schwelle"
+    await orch._note_drain_outcome("QRZ", exc)  # darüber: kein Spam
+    assert len(fake.calls) == 1, "kein wiederholter Alarm (one-shot)"
+    # Erfolg setzt zurück → erneuter Dauerfehler darf wieder alarmieren
+    await orch._note_drain_outcome("QRZ", None)
+    for _ in range(thr):
+        await orch._note_drain_outcome("QRZ", exc)
+    assert len(fake.calls) == 2, "nach Recovery darf erneut eskaliert werden"

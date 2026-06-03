@@ -33,7 +33,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 from sqlalchemy import select
 
@@ -47,6 +47,10 @@ def _t(key: str, **params: object) -> str:
     return _i18n.translate(key, _i18n.default_lang(), **params)
 
 
+@overload
+def _as_utc(dt: datetime) -> datetime: ...
+@overload
+def _as_utc(dt: None) -> None: ...
 def _as_utc(dt: "datetime | None") -> "datetime | None":
     """SQLite speichert ``DateTime(timezone=True)`` tz-NAIV zurueck. Subtrahiert
     man so einen Wert von ``datetime.now(UTC)`` (aware), wirft Python
@@ -346,6 +350,10 @@ class Orchestrator:
     # Einfluss auf die Tier-Logik.
     _psk_snr_cache: dict[str, int] = field(default_factory=dict, init=False)
     _psk_last_refresh_at: float = field(default=0.0, init=False)
+    # v0.64.5 — Observability gegen "Upload-Loop crasht still wochenlang":
+    # zählt aufeinanderfolgende Drain-Fehler je Service, eskaliert per ntfy.
+    _drain_fail_counts: dict[str, int] = field(default_factory=dict, init=False)
+    _drain_alerted: set[str] = field(default_factory=set, init=False)
     _psk_last_refresh_ok: bool = field(default=False, init=False)
     # v0.14.0 — Watchlist + Band-Conditions + Solar-Refresh-Throttle.
     # _watchlist_calls: set normalisierter Calls die der User beobachtet
@@ -2939,6 +2947,10 @@ class Orchestrator:
                 "SELECT COUNT(*) FROM qso WHERE qrz_uploaded = 0"
             ))).first()
             qrz_pending = row_pending[0] if row_pending else 0
+            row_cl_pending = (await s.execute(text(
+                "SELECT COUNT(*) FROM qso WHERE clublog_uploaded = 0"
+            ))).first()
+            clublog_pending = row_cl_pending[0] if row_cl_pending else 0
             best = (await s.execute(text(
                 "SELECT call, grid_rcvd FROM qso "
                 "WHERE qso_start > datetime('now', '-24 hours') "
@@ -2957,6 +2969,8 @@ class Orchestrator:
             lines.append(_t("push.daily_pending", n=qrz_pending))
         else:
             lines.append(_t("push.daily_all_uploaded"))
+        if clublog_pending:
+            lines.append(_t("push.daily_pending_clublog", n=clublog_pending))
         return "\n".join(lines)
 
     async def _dx_cluster_hint_loop(self) -> None:
@@ -3437,8 +3451,9 @@ class Orchestrator:
                             qso.qrz_logbook_id = result.logbook_id
                             log.info("QRZ uploaded QSO %s (logid=%s)",
                                      qso.call, result.logbook_id)
+                await self._note_drain_outcome("QRZ", None)
             except Exception as exc:
-                log.warning("QRZ drain loop hiccup: %s", exc)
+                await self._note_drain_outcome("QRZ", exc)
             await asyncio.sleep(interval_s)
 
     async def _clublog_drain_loop(self) -> None:
@@ -3574,8 +3589,9 @@ class Orchestrator:
                             # 2 s Abstand damit wir auch bei 4 QSOs nicht
                             # innerhalb einer Sekunde 4 Requests schiessen.
                             await asyncio.sleep(2.0)
+                await self._note_drain_outcome("ClubLog", None)
             except Exception as exc:
-                log.warning("ClubLog drain loop hiccup: %s", exc)
+                await self._note_drain_outcome("ClubLog", exc)
             await asyncio.sleep(interval_s)
 
     async def _gps_country_detect_loop(self) -> None:
@@ -5028,6 +5044,10 @@ class Orchestrator:
     # Jetzt: nur bei KLAR harten Rejects aufgeben; transiente/mehrdeutige
     # Fehler erneut versuchen, mit Ceiling als Backstop + Alarm.
     _UPLOAD_MAX_ATTEMPTS: typing.ClassVar[int] = 15
+    # Nach so vielen AUFEINANDERFOLGENDEN Drain-Zyklus-Crashes (nicht
+    # einzelne QSO-Rejects, sondern die ganze Schleife wirft) → ntfy-Alarm.
+    # QRZ-Sweep alle 5 min, ClubLog alle 10 min → 4 = QRZ ~20 min / CL ~40 min.
+    _DRAIN_FAIL_ALERT_THRESHOLD: typing.ClassVar[int] = 4
 
     _HARD_REJECT_MARKERS: typing.ClassVar[tuple[str, ...]] = (
         "duplicate", "already", "401", "403", "authentication",
@@ -5049,6 +5069,41 @@ class Orchestrator:
         if any(t in m for t in cls._TRANSIENT_MARKERS):
             return False
         return any(h in m for h in cls._HARD_REJECT_MARKERS)
+
+    async def _note_drain_outcome(self, service: str, exc: Exception | None) -> None:
+        """v0.64.5 — Observability gegen still crashende Upload-Loops.
+
+        Jeder Drain-Sweep meldet hier sein Ergebnis. Erfolg → Zähler reset.
+        Crash → hochzählen; ab _DRAIN_FAIL_ALERT_THRESHOLD aufeinanderfolgenden
+        Crashes EINMALIG ein ntfy-Alarm + ERROR-Log. Vorher war ein Dauer-
+        Crash von einem einmaligen Schluckauf nicht zu unterscheiden — der
+        tz-Bug stand so ~2 Wochen still (Sebastian 2026-06-02)."""
+        if exc is None:
+            if self._drain_fail_counts.get(service):
+                log.info("%s-Upload-Loop wieder ok nach %d Fehlern",
+                         service, self._drain_fail_counts[service])
+            self._drain_fail_counts[service] = 0
+            self._drain_alerted.discard(service)
+            return
+        n = self._drain_fail_counts.get(service, 0) + 1
+        self._drain_fail_counts[service] = n
+        log.warning("%s drain loop hiccup (#%d): %s", service, n, exc)
+        if n >= self._DRAIN_FAIL_ALERT_THRESHOLD and service not in self._drain_alerted:
+            self._drain_alerted.add(service)
+            log.error("%s-Upload-Loop haengt seit %d Zyklen — Uploads stehen: %s",
+                      service, n, exc)
+            ntfy = self.integrations.ntfy
+            if ntfy and ntfy.enabled:
+                try:
+                    await ntfy.notify(
+                        _t("push.upload_stuck_msg", service=service, n=n,
+                           err=str(exc)[:140]),
+                        title=_t("push.upload_stuck_title", service=service),
+                        priority="high",
+                        tags=["warning"],
+                    )
+                except Exception:
+                    pass
 
     def _alert_upload_giveup(self, service: str, call: str | None) -> None:
         if self.integrations.ntfy and self.integrations.ntfy.enabled:
@@ -5554,9 +5609,14 @@ class Orchestrator:
                         (await s.execute(select(DbDxpeditionSchedule))).scalars()
                     )
                     for row in rows:
+                        # tz-Angleich: SQLite gibt start/end_date naiv zurueck,
+                        # now ist aware → Vergleich crasht sonst (gleiche
+                        # Bugklasse wie die Upload-Loops, Sebastian 2026-06-02).
+                        sd = _as_utc(row.start_date)
+                        ed = _as_utc(row.end_date)
                         # 24h-Reminder
                         if (not row.reminder_sent
-                                and row.start_date - timedelta(hours=24) <= now < row.start_date):
+                                and sd - timedelta(hours=24) <= now < sd):
                             ntfy = self.integrations.ntfy
                             if ntfy and ntfy.enabled:
                                 try:
@@ -5573,7 +5633,7 @@ class Orchestrator:
                                     pass
                             row.reminder_sent = True
                         # Auto-add zur Watchlist wenn aktiv
-                        active = row.start_date <= now <= row.end_date
+                        active = sd <= now <= ed
                         if active and not row.auto_added_to_watchlist:
                             norm_call = row.call.upper()
                             self._watchlist_calls.add(norm_call)
@@ -5593,7 +5653,7 @@ class Orchestrator:
                                 row.call, row.start_date, row.end_date,
                             )
                         # Auto-remove wenn vorbei
-                        if not active and row.auto_added_to_watchlist and now > row.end_date:
+                        if not active and row.auto_added_to_watchlist and now > ed:
                             self._watchlist_calls.discard(row.call.upper())
                             wl_row = await s.get(DbWatchlist, row.call)
                             if wl_row is not None:

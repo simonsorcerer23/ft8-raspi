@@ -88,7 +88,7 @@ def _parse_date(s: str) -> datetime | None:
     # → strptime %Y %b%d
     for fmt in ("%Y %b%d", "%Y %b %d"):
         try:
-            d = datetime.strptime(s, fmt)
+            d = datetime.strptime(s, fmt)  # noqa: DTZ007 — direkt in Z.+1 als UTC aware gemacht
             return d.replace(tzinfo=UTC)
         except ValueError:
             continue

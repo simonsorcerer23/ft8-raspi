@@ -75,13 +75,18 @@ echo "✓ keine neuen Crash-Bugklasse-Findings (Baseline: $(wc -l < "$BASELINE")
 
 # Zusaetzlich: ruff F-Codes (pyflakes) MUESSEN sauber sein — fangen undefinierte
 # Namen (F821 = NameError-Crash), tote Imports/Vars (F401/F841), Redefinitionen.
-# Kein Baseline-Ratchet noetig: F ist aktuell auf null und soll's bleiben.
+# DTZ (flake8-datetimez): fängt NAIVE datetime-Quellen (utcnow/now()/fromtimestamp/
+# strptime ohne tz) — genau die Footgun-Klasse, die zum tz-naive/aware-Crash der
+# Upload-Loops führte (Audit 2026-06-02). Bewusst-safe Stellen: # noqa: DTZ0xx.
+# (Den SQLite-naiv-vs-aware-now-Vergleich kann KEIN statisches Tool sehen — dafür
+#  gibt es die Drain-Failure-ntfy-Eskalation + _as_utc-Coercion.)
+# Kein Baseline-Ratchet noetig: F+DTZ sind aktuell auf null und sollen's bleiben.
 if .venv/bin/python -c "import ruff" 2>/dev/null || .venv/bin/ruff --version >/dev/null 2>&1; then
-    if ! .venv/bin/python -m ruff check ft8_appliance --select F --no-cache --quiet; then
-        echo "✗ ruff F-Codes (undefinierte Namen / tote Imports) — bitte fixen" >&2
+    if ! .venv/bin/python -m ruff check ft8_appliance --select F,DTZ --no-cache --quiet; then
+        echo "✗ ruff F/DTZ-Codes (undefinierte Namen / naive datetime) — bitte fixen" >&2
         exit 1
     fi
-    echo "✓ ruff F-Codes sauber"
+    echo "✓ ruff F+DTZ-Codes sauber"
 else
-    echo "⚠ ruff nicht installiert — F-Code-Gate übersprungen"
+    echo "⚠ ruff nicht installiert — F/DTZ-Code-Gate übersprungen"
 fi

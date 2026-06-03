@@ -107,6 +107,12 @@ _DE: dict[str, str] = {
     "push.daily_dxccs": "🌍 DXCCs gesamt: {n}",
     "push.daily_bestdx": "⭐ Best DX: {call} ({grid})",
     "push.daily_pending": "⏳ QRZ-Pending: {n} (warten auf Connectivity)",
+    "push.daily_pending_clublog": "⏳ ClubLog-Pending: {n}",
+    "push.upload_stuck_title": "🚨 {service}-Upload haengt",
+    "push.upload_stuck_msg": (
+        "Der {service}-Upload-Loop crasht seit {n} Zyklen — QSOs bleiben "
+        "ungeuploadet. Letzter Fehler: {err}"
+    ),
     "push.daily_all_uploaded": "✅ Alle QSOs bei QRZ",
     "push.storm_closer": "Gewitter rueckt naeher — {km} km Entfernung",
     "push.storm_msg": "Gewitter in {km} km Entfernung (Radius {radius} km)",
@@ -252,6 +258,12 @@ _EN: dict[str, str] = {
     "push.daily_dxccs": "🌍 DXCCs total: {n}",
     "push.daily_bestdx": "⭐ Best DX: {call} ({grid})",
     "push.daily_pending": "⏳ QRZ pending: {n} (waiting for connectivity)",
+    "push.daily_pending_clublog": "⏳ ClubLog pending: {n}",
+    "push.upload_stuck_title": "🚨 {service} upload stuck",
+    "push.upload_stuck_msg": (
+        "The {service} upload loop has been crashing for {n} cycles — QSOs "
+        "remain un-uploaded. Last error: {err}"
+    ),
     "push.daily_all_uploaded": "✅ All QSOs at QRZ",
     "push.storm_closer": "Thunderstorm getting closer — {km} km away",
     "push.storm_msg": "Thunderstorm {km} km away (radius {radius} km)",

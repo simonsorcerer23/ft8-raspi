@@ -290,7 +290,10 @@ def _parse_query(xml_text: str) -> list[HeardReport]:
     for rec in root.iter("receptionReport"):
         try:
             ts = int(rec.attrib.get("flowStartSeconds", "0"))
-            received_at = datetime.fromtimestamp(ts) if ts else datetime.utcnow()
+            # flowStartSeconds ist Unix-Epoch (UTC). Ohne tz liefert
+            # fromtimestamp LOKALE naive Zeit → falsche Wallclock + naive/
+            # aware-Mix beim Vergleich. Konsequent aware-UTC.
+            received_at = datetime.fromtimestamp(ts, tz=UTC) if ts else datetime.now(UTC)
             snr = rec.attrib.get("sNR")
             band_hz_str = rec.attrib.get("frequency")
             band = _band_from_freq(int(band_hz_str)) if band_hz_str else None
