@@ -50,24 +50,40 @@ ist konventionell `snr` als Tie-Breaker.
 
 Aus `OperatingConfig.hunt_priority`:
 
-1. `marine_psk` — Marinefunker mit PSK-Trust
-2. `marine` — Marinefunker (auch ohne PSK)
-3. `tail_end_target` — Tail-End-Pick nach Closing-Detect (v0.11.0)
-4. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
-5. `new_dxcc` — Neues DXCC (auch ohne PSK)
-6. `psk_heard_us` — PSK-Asymmetrie für routine-EU-Stationen
-7. `new_dxcc_band` — 5BWAS-Award-Tracking
-8. `new_grid` — Neues Maidenhead-Grid (VUCC)
-9. `new_grid_band` — Grid auf diesem Band noch nicht (VUCC-Band)
-10. `not_worked` — Neue Calls (auch routine)
-11. `dxcc_rarity` — Rarity-Bonus
-12. `snr` — Tie-Breaker (bestes Signal gewinnt)
+1. `not_bad_reputation` — Soft-Blacklist meiden (Filter, v0.15.0)
+2. `not_his_tx_slot` — Slot-Parity-Awareness (Filter, v0.15.0)
+3. `not_in_pileup` — Pile-Up-Avoidance (Filter, v0.19.0)
+4. `marine_psk` — Marinefunker mit PSK-Trust
+5. `marine` — Marinefunker (auch ohne PSK)
+6. `psk_heard_us` — PSK sagt „hört uns" (v0.65.1 HOCHGESTUFT, s.u.)
+7. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
+8. `new_dxcc` — Neues DXCC (auch ohne PSK)
+9. `grayline` — CQ-Rufer im eigenen Grayline-Fenster (v0.14.0)
+10. `band_open` — hamqsl: Band aktuell „Good" (v0.14.0)
+11. `active_hour` — DB-History: Continent jetzt aktiv (v0.16.0)
+12. `buddy_seen` — Worked auf anderem Band (RX-Pfad bekannt, v0.17.0)
+13. `new_dxcc_band` — 5BWAS-Award-Tracking
+14. `new_grid` — Neues Maidenhead-Grid (VUCC)
+15. `new_grid_band` — Grid auf diesem Band noch nicht (VUCC-Band)
+16. `not_worked` — Neue Calls (auch routine)
+17. `dxcc_rarity` — Rarity-Bonus
+18. `snr` — Haupt-Tie-Breaker (bestes Signal gewinnt)
+19. `tail_end_target` — Tail-End-Pick (v0.65.2 UNTER `snr`, s.u.)
 
 **Begründung der Default-Reihenfolge** (Sebastian-Wunsch 2026-05-26):
 - Marinefunker top weil persönliche Community (Raymond ist Mitglied)
 - PSK-bestätigte DXCCs darüber, weil Asymmetrie-Trust den Reply-Erfolg sichert
 - Pure-PSK-Tier darüber als Allgemein-Asymmetrie-Boost
 - 5BWAS vor `not_worked` weil Band-Variation für Awards mehr Wert hat als Routine-First-Contact
+
+**Telemetrie-getriebene Anpassungen (pick_attempt-Auswertung 2026-06):**
+- `psk_heard_us` HOCHGESTUFT (über Propagation/Award-Tiers, nur marine + new-DXCC
+  bleiben darüber): als Entscheider 12,6 % Completion vs `snr` 6,7 % — „hört uns
+  laut" ist der stärkste Completion-Prädiktor (≥ −8 dB bei der Gegenstation → 20 %
+  Completion vs 6,5 % bei grenzwertig).
+- `tail_end_target` UNTER `snr` (v0.65.2): als Entscheider nur ~3 % Completion.
+  Steht jetzt als letztes Glied hinter dem `snr`-Breaker → gewinnt faktisch nur
+  bei exakt gleichem SNR, also praktisch neutralisiert ohne Feature-Kill.
 
 ## Editierung via UI
 

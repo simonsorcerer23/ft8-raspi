@@ -368,17 +368,19 @@ def test_operating_config_tail_end_can_be_enabled():
 
 
 def test_default_hunt_priority_tail_end_downranked():
-    """v0.65.1: tail_end_target runtergestuft (Telemetrie: nur 3% Completion) —
-    steht jetzt NACH new_dxcc_psk und direkt vor dem snr-Tie-Breaker (vorletzte
-    Position), gewinnt also nur noch als Quasi-Letztmittel."""
+    """v0.65.2: tail_end_target UNTER den snr-Tie-Breaker gezogen (Telemetrie
+    2026-06: als Entscheider nur ~3% Completion, und gewann selbst nach dem
+    ersten Runterstufen noch ~28×/18h direkt über snr). Steht jetzt als
+    LETZTES Element hinter snr → bricht faktisch nur noch Gleichstände bei
+    exakt gleichem SNR, also praktisch neutralisiert ohne Feature-Kill."""
     cfg = OperatingConfig()
     assert "tail_end_target" in cfg.hunt_priority
     assert "new_dxcc_psk" in cfg.hunt_priority
-    # jetzt NACH new_dxcc_psk (vorher davor)
+    # NACH new_dxcc_psk (runtergestuft)
     assert cfg.hunt_priority.index("tail_end_target") > cfg.hunt_priority.index("new_dxcc_psk")
-    # vorletzte Position, direkt vor 'snr'
-    assert cfg.hunt_priority[-2] == "tail_end_target"
-    assert cfg.hunt_priority[-1] == "snr"
+    # snr entscheidet VOR tail_end_target; tail_end_target ist jetzt letztes Glied
+    assert cfg.hunt_priority.index("snr") < cfg.hunt_priority.index("tail_end_target")
+    assert cfg.hunt_priority[-1] == "tail_end_target"
 
 
 def test_hunt_tiers_registry_contains_tail_end():

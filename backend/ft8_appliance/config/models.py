@@ -436,11 +436,14 @@ class OperatingConfig(BaseModel):
             "new_grid_band",     # neues Grid auf diesem Band (VUCC-Band)
             "not_worked",        # nie gearbeitet überhaupt
             "dxcc_rarity",       # rare DXCC-Bonus
-            # v0.65.1 — tail_end_target RUNTERGESTUFT (Telemetrie: nur 3,0%
-            # Completion, n=66 — klar unter Baseline 8,4%). Bleibt aktiv, aber
-            # gewinnt nur noch als Quasi-Letztmittel direkt vor dem snr-Breaker.
+            "snr",               # Haupt-Tie-Breaker — bestes Signal gewinnt
+            # v0.65.2 — tail_end_target UNTER snr gezogen (Telemetrie 2026-06:
+            # als Entscheider nur ~3% Completion, klar unter Baseline ~8%, und
+            # gewann selbst nach dem ersten Runterstufen noch ~28×/18h). Steht
+            # jetzt HINTER dem snr-Breaker → bricht faktisch nur Gleichstände
+            # bei exakt gleichem SNR, also praktisch neutralisiert ohne das
+            # Feature ganz zu killen.
             "tail_end_target",   # v0.11.0 — Station hat gerade QSO beendet
-            "snr",               # Tie-Breaker — bestes Signal
         ]
     )
 
@@ -467,7 +470,7 @@ class OperatingConfig(BaseModel):
             "new_dxcc_psk", "new_dxcc",
             "grayline", "band_open", "active_hour", "buddy_seen",
             "new_dxcc_band", "new_grid", "new_grid_band", "not_worked",
-            "dxcc_rarity", "tail_end_target", "snr",
+            "dxcc_rarity", "snr", "tail_end_target",
         ]
         if not v:
             return list(known)  # leere Liste → komplette Default rein
