@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.65.1 — 2026-06-03
+- tune: hunt_priority — psk_heard_us hoch, tail_end_target runter (datengetrieben)
+
 ## v0.65.0 — 2026-06-03
 - fix+audit: restliche tz-naive/aware-Bugs + Observability gegen stille Upload-Tode
 
