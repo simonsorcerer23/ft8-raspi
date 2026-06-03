@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.65.0 — 2026-06-03
+- fix+audit: restliche tz-naive/aware-Bugs + Observability gegen stille Upload-Tode
+
 ## v0.64.4 — 2026-06-03
 - fix: QRZ-/ClubLog-Uploads tot — tz-naive/aware-Crash im Drain-Loop
 
