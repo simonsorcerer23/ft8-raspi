@@ -55,18 +55,18 @@ Aus `OperatingConfig.hunt_priority`:
 3. `not_in_pileup` — Pile-Up-Avoidance (Filter, v0.19.0)
 4. `marine_psk` — Marinefunker mit PSK-Trust
 5. `marine` — Marinefunker (auch ohne PSK)
-6. `psk_heard_us` — PSK sagt „hört uns" (v0.65.1 HOCHGESTUFT, s.u.)
-7. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
-8. `new_dxcc` — Neues DXCC (auch ohne PSK)
-9. `grayline` — CQ-Rufer im eigenen Grayline-Fenster (v0.14.0)
-10. `band_open` — hamqsl: Band aktuell „Good" (v0.14.0)
-11. `active_hour` — DB-History: Continent jetzt aktiv (v0.16.0)
-12. `buddy_seen` — Worked auf anderem Band (RX-Pfad bekannt, v0.17.0)
-13. `new_dxcc_band` — 5BWAS-Award-Tracking
-14. `new_grid` — Neues Maidenhead-Grid (VUCC)
-15. `new_grid_band` — Grid auf diesem Band noch nicht (VUCC-Band)
-16. `not_worked` — Neue Calls (auch routine)
-17. `dxcc_rarity` — Rarity-Bonus
+6. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
+7. `new_dxcc` — Neues DXCC (auch ohne PSK)
+8. `grayline` — CQ-Rufer im eigenen Grayline-Fenster (v0.14.0)
+9. `band_open` — hamqsl: Band aktuell „Good" (v0.14.0)
+10. `active_hour` — DB-History: Continent jetzt aktiv (v0.16.0)
+11. `buddy_seen` — Worked auf anderem Band (RX-Pfad bekannt, v0.17.0)
+12. `new_dxcc_band` — 5BWAS-Award-Tracking
+13. `new_grid` — Neues Maidenhead-Grid (VUCC)
+14. `new_grid_band` — Grid auf diesem Band noch nicht (VUCC-Band)
+15. `not_worked` — Neue Calls (auch routine)
+16. `dxcc_rarity` — Rarity-Bonus
+17. `psk_heard_us` — PSK sagt „hört uns" (v0.65.3 ZURÜCKGESTUFT, s.u.)
 18. `snr` — Haupt-Tie-Breaker (bestes Signal gewinnt)
 19. `tail_end_target` — Tail-End-Pick (v0.65.2 UNTER `snr`, s.u.)
 
@@ -77,10 +77,13 @@ Aus `OperatingConfig.hunt_priority`:
 - 5BWAS vor `not_worked` weil Band-Variation für Awards mehr Wert hat als Routine-First-Contact
 
 **Telemetrie-getriebene Anpassungen (pick_attempt-Auswertung 2026-06):**
-- `psk_heard_us` HOCHGESTUFT (über Propagation/Award-Tiers, nur marine + new-DXCC
-  bleiben darüber): als Entscheider 12,6 % Completion vs `snr` 6,7 % — „hört uns
-  laut" ist der stärkste Completion-Prädiktor (≥ −8 dB bei der Gegenstation → 20 %
-  Completion vs 6,5 % bei grenzwertig).
+- `psk_heard_us`: v0.65.1 zunächst HOCHGESTUFT (Kleinstichprobe 12,6 %), in
+  **v0.65.3 wieder ZURÜCKGESTUFT** — bei größerem n widerlegt: als Entscheider
+  nur 2,6 % Completion (n=78) vs `sole`-Baseline 8 % im selben Fenster. Das
+  *binäre* „hat uns gehört"-Flag ist ein schwaches Picker-Signal; der echte
+  Prädiktor ist die *graduelle* Lautstärke `psk_snr` (≥ −8 dB bei der DX → ~14 %
+  Completion vs ~7,6 % grenzwertig), die aber nur als Telemetrie vorliegt. Steht
+  jetzt unter allen Award-/Propagations-Tiers, knapp vor `snr`.
 - `tail_end_target` UNTER `snr` (v0.65.2): als Entscheider nur ~3 % Completion.
   Steht jetzt als letztes Glied hinter dem `snr`-Breaker → gewinnt faktisch nur
   bei exakt gleichem SNR, also praktisch neutralisiert ohne Feature-Kill.

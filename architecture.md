@@ -329,11 +329,14 @@ Additional modes:
   (`winning_tier`), how loud *we* land at the DX (`psk_snr`, from PSK Reporter),
   pick age, # candidates, resends, distance, continent, mode, TX power, band
   occupancy, SNR/DT — for a data-driven A/B of the tiers
-  (`/api/stats/pick-attempts`). Drove the **2026-06 retune**: `psk_heard_us`
-  upranked (12.6 % completion as decider vs `snr` 6.7 %), `tail_end_target`
-  pushed below `snr` (~3 % only). ~72 % of picks are "sole" (no choice), so
-  tier order is inherently low-leverage; the dominant failure is the first call
-  going unanswered, which tracks `psk_snr`/distance (being heard), not selection.
+  (`/api/stats/pick-attempts`). Drove the **2026-06 retune**: `tail_end_target`
+  pushed below `snr` (only ~3 % completion as decider); `psk_heard_us` upranked
+  then reverted once a larger sample showed the *binary* "heard us" flag is a
+  weak picker signal (~2.6 % as decider vs ~8 % baseline) — the real predictor
+  is the *graded* `psk_snr` (loud at the DX ≈ 14 % vs ~7.6 % marginal), which
+  only exists as telemetry. ~72 % of picks are "sole" (no choice), so tier order
+  is inherently low-leverage; the dominant failure is the first call going
+  unanswered, which tracks `psk_snr`/distance (being heard), not selection.
 - TX frequency choice with collision avoidance: rotation 1200/1500/1800/2100 Hz
   per CQ transmission (`MachineContext.cq_freq_rotation`)
 - Smart-CQ throttling (passive probing after N unsuccessful CQs) — parked

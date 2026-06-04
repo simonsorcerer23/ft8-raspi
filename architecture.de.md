@@ -315,11 +315,15 @@ Zusätzliche Modi:
   (`winning_tier`), wie laut *wir* bei der DX-Station ankommen (`psk_snr`, aus
   PSK-Reporter), Pick-Alter, # Kandidaten, Resends, Distanz, Kontinent, Mode,
   TX-Leistung, Band-Belegung, SNR/DT — für datengetriebenes A/B der Tiers
-  (`/api/stats/pick-attempts`). Trieb das **2026-06-Retune**: `psk_heard_us`
-  hochgestuft (12,6 % Completion als Entscheider vs `snr` 6,7 %),
-  `tail_end_target` unter `snr` (nur ~3 %). ~72 % der Picks sind „sole" (keine
-  Wahl) → Tier-Reihenfolge ist inhärent Low-Leverage; der dominante Fehlschlag
-  ist der unbeantwortete erste Anruf, der mit `psk_snr`/Distanz (gehört werden)
+  (`/api/stats/pick-attempts`). Trieb das **2026-06-Retune**: `tail_end_target`
+  unter `snr` (nur ~3 % Completion als Entscheider); `psk_heard_us` erst
+  hochgestuft, dann zurückgestuft, als ein größeres Sample zeigte, dass das
+  *binäre* „hört uns"-Flag ein schwaches Picker-Signal ist (~2,6 % als
+  Entscheider vs ~8 % Baseline) — der echte Prädiktor ist die *graduelle*
+  `psk_snr` (laut bei der DX ≈ 14 % vs ~7,6 % grenzwertig), die nur als
+  Telemetrie existiert. ~72 % der Picks sind „sole" (keine Wahl) → Tier-
+  Reihenfolge ist inhärent Low-Leverage; der dominante Fehlschlag ist der
+  unbeantwortete erste Anruf, der mit `psk_snr`/Distanz (gehört werden)
   korreliert, nicht mit der Auswahl.
 - TX-Frequenz-Wahl mit Kollisions-Vermeidung: Rotation 1200/1500/1800/2100 Hz
   pro CQ-Sendung (`MachineContext.cq_freq_rotation`)

@@ -420,11 +420,6 @@ class OperatingConfig(BaseModel):
             "not_in_pileup",       # v0.19.0 — Pile-Up-Avoidance (filter)
             "marine_psk",        # Marinefunker + PSK sagt "hört uns"
             "marine",            # Marinefunker (auch ohne PSK)
-            # v0.65.1 — psk_heard_us HOCHGESTUFT (Telemetrie 2026-06: als
-            # Entscheider 12,6% Completion vs snr 6,7%; "hört uns laut" ist
-            # der stärkste Completion-Prädiktor). Steht jetzt über Propagation/
-            # Award-Tiers (nur marine + new-DXCC bleiben darüber).
-            "psk_heard_us",      # PSK sagt "hört uns" (für routine-EU)
             "new_dxcc_psk",      # neues DXCC + PSK sagt "hört uns"
             "new_dxcc",          # neues DXCC (auch ohne PSK)
             "grayline",          # v0.14.0 — CQ-Rufer in eigenem Grayline-Fenster
@@ -436,6 +431,13 @@ class OperatingConfig(BaseModel):
             "new_grid_band",     # neues Grid auf diesem Band (VUCC-Band)
             "not_worked",        # nie gearbeitet überhaupt
             "dxcc_rarity",       # rare DXCC-Bonus
+            # v0.65.3 — psk_heard_us ZURÜCKGESTUFT (der v0.65.1-Uprank war
+            # widerlegt: als Entscheider nur 2,6% Completion bei n=78, klar
+            # unter der sole-Baseline 8% im selben Fenster). Das BINÄRE "hat uns
+            # gehört"-Flag taugt als Picker-Signal wenig — der graduelle
+            # psk_snr-Wert ist der echte Prädiktor (reine Telemetrie). Steht
+            # jetzt unter allen Award-/Propagations-Tiers, knapp vor snr.
+            "psk_heard_us",      # PSK sagt "hört uns" (schwaches Signal)
             "snr",               # Haupt-Tie-Breaker — bestes Signal gewinnt
             # v0.65.2 — tail_end_target UNTER snr gezogen (Telemetrie 2026-06:
             # als Entscheider nur ~3% Completion, klar unter Baseline ~8%, und
@@ -466,11 +468,11 @@ class OperatingConfig(BaseModel):
         # test_hunt_tiers_registry_complete erzwingt das.
         known = [
             "not_bad_reputation", "not_his_tx_slot", "not_in_pileup",
-            "marine_psk", "marine", "psk_heard_us",
+            "marine_psk", "marine",
             "new_dxcc_psk", "new_dxcc",
             "grayline", "band_open", "active_hour", "buddy_seen",
             "new_dxcc_band", "new_grid", "new_grid_band", "not_worked",
-            "dxcc_rarity", "snr", "tail_end_target",
+            "dxcc_rarity", "psk_heard_us", "snr", "tail_end_target",
         ]
         if not v:
             return list(known)  # leere Liste → komplette Default rein
