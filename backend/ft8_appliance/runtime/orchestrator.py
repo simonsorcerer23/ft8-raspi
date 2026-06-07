@@ -2947,10 +2947,23 @@ class Orchestrator:
                 "SELECT COUNT(*) FROM qso WHERE qrz_uploaded = 0"
             ))).first()
             qrz_pending = row_pending[0] if row_pending else 0
-            row_cl_pending = (await s.execute(text(
-                "SELECT COUNT(*) FROM qso WHERE clublog_uploaded = 0"
-            ))).first()
-            clublog_pending = row_cl_pending[0] if row_cl_pending else 0
+            # ClubLog-Pending NUR fuer Operatoren mit eigenem clublog_api_key
+            # zaehlen. QSOs von Operatoren OHNE Key (z.B. DK9XR) sind nicht
+            # "pending", sondern gar nicht ClubLog-eligible — sonst klebten sie
+            # ewig in der Uebersicht und der Operator wundert sich. clublog_
+            # uploaded bleibt 0 (ehrlich: nicht hochgeladen); bekommt der Op
+            # spaeter einen Key, zaehlen sie automatisch wieder mit.
+            clublog_calls = {
+                op.callsign for op in (self.config.operators or [])
+                if getattr(op, "clublog_api_key", None)
+            }
+            if getattr(self.config.operator, "clublog_api_key", None):
+                clublog_calls.add(self.config.operator.callsign)
+            cl_rows = (await s.execute(text(
+                "SELECT user_callsign, COUNT(*) FROM qso WHERE clublog_uploaded = 0 "
+                "GROUP BY user_callsign"
+            ))).all()
+            clublog_pending = sum(c for call, c in cl_rows if call in clublog_calls)
             best = (await s.execute(text(
                 "SELECT call, grid_rcvd FROM qso "
                 "WHERE qso_start > datetime('now', '-24 hours') "
