@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.65.5 — 2026-06-07
+- fix: kein "Auto-Modus inaktiv"-Fehlalarm beim Self-Update-Restart
+
 ## v0.65.4 — 2026-06-07
 - fix: ClubLog-Pending in Tageszusammenfassung nur für Operatoren mit Key
 
