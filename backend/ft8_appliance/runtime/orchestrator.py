@@ -354,6 +354,13 @@ class Orchestrator:
     # zählt aufeinanderfolgende Drain-Fehler je Service, eskaliert per ntfy.
     _drain_fail_counts: dict[str, int] = field(default_factory=dict, init=False)
     _drain_alerted: set[str] = field(default_factory=set, init=False)
+    # v0.65.5 — Wall-clock-Deadline, bis zu der der Mode-Watchdog KEINEN
+    # "Auto-Modus inaktiv"-Alarm schickt. Wird von handle_panic gesetzt: das
+    # Self-Update ruft vor `systemctl restart` /control/panic (stoppt die SM,
+    # lässt boot_mode aber auf "hunt"). Im Fenster zwischen Panic und Kill
+    # tickte der Watchdog sonst und feuerte einen Fehlalarm "boot_mode=hunt
+    # aber kein Modus aktiv" — obwohl gleich neu gestartet + Hunt resumed wird.
+    _mode_watchdog_grace_until: float = field(default=0.0, init=False)
     _psk_last_refresh_ok: bool = field(default=False, init=False)
     # v0.14.0 — Watchlist + Band-Conditions + Solar-Refresh-Throttle.
     # _watchlist_calls: set normalisierter Calls die der User beobachtet
@@ -1613,6 +1620,12 @@ class Orchestrator:
 
     async def handle_panic(self) -> None:
         # Panic = same as stop + force PTT off + lock to prevent retries
+        # v0.65.5: Mode-Watchdog kurz stummschalten. Panic lässt boot_mode auf
+        # "hunt" (resume nach Restart), stoppt aber auto_answer → der Watchdog
+        # würde im Fenster bis zum systemctl-restart sonst "Auto-Modus inaktiv"
+        # fehlfeuern. 120 s decken Panic→Kill→Boot locker ab; der neue Prozess
+        # startet mit grace=0 + 60-s-Delay + boot_mode-Restore, also kein Fehlalarm.
+        self._mode_watchdog_grace_until = time.time() + 120.0
         self.state_machine.on_user_stop()
         await self._drain_actions()
         try:
@@ -2650,6 +2663,10 @@ class Orchestrator:
                     continue
                 now_t = _time.time()
                 if now_t - last_alert_at < alert_cooldown_s:
+                    continue
+                # v0.65.5 — Schonfrist nach Panic (Self-Update-Restart) — kein
+                # Fehlalarm im Panic→Restart-Fenster (boot_mode bleibt hunt).
+                if now_t < self._mode_watchdog_grace_until:
                     continue
 
                 bm = self.config.operating.boot_mode
