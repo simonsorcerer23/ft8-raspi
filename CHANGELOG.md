@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.65.4 — 2026-06-07
+- fix: ClubLog-Pending in Tageszusammenfassung nur für Operatoren mit Key
+
 ## v0.65.3 — 2026-06-04
 - tune: psk_heard_us-Uprank zurückgenommen (größeres Sample widerlegt ihn)
 - docs: GitHub-Außendarstellung auf Stand bringen (i18n, Telemetrie-Tuning, tz-Fix)
