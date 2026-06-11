@@ -268,7 +268,10 @@ Zusätzliche Modi:
 - FT8-Decode über volle 3 kHz Passband
 - **FT4-Decode + -Encode** parallel (7.5 s Slot, 4-FSK, 105 Symbole) —
   Mode-Switch in `OperatingConfig.mode`, separate Shim-Funktionen
-  `ft4_shim_decode_slot` / `ft4_shim_synth_message`, `SlotClock(slot_seconds=…)`
+  `ft4_shim_decode_slot` / `ft4_shim_synth_message`, `SlotClock(slot_seconds=…)`.
+  FT8↔FT4 wechselt **live beim Hot-Reload** (kein Neustart): `SlotClock.set_slot_seconds`
+  retunt die laufende Uhr, die `_iter`-Schleife liest die Kadenz pro Zyklus neu
+  (gefixt 2026-06-11 — vorher behielt der laufende Iterator den alten Takt).
 - FT8-Encode + TX via CAT-PTT
 - Auto-CQ
 - Auto-Reply auf Anrufer (komplette QSO-Sequenz)
