@@ -38,6 +38,14 @@ FT4_SLOT_SECONDS = 7.5
 FT4_SAMPLES_PER_SLOT = int(SAMPLE_RATE_HZ * FT4_SLOT_SECONDS)  # 90 000
 BYTES_PER_SAMPLE = 2  # int16
 
+# Tatsaechliche On-Air-TX-Dauer je Mode (liegt am Slot-ANFANG; der Rest des
+# Slots ist stille Lücke). Wird an extract_slot als signal_seconds gegeben:
+# ein Zero-Pad am Slot-ENDE ist nur dann ein echtes Problem, wenn es VOR
+# signal_seconds reicht (= Signal abgeschnitten). FT8: 79 Sym × 0.16 s,
+# FT4: 105 Sym × 0.048 s. (Sebastian 2026-06-11 — FT4-Log-Spam abstellen.)
+FT8_TX_SECONDS = 12.64
+FT4_TX_SECONDS = 4.48
+
 log = logging.getLogger(__name__)
 
 
@@ -100,6 +108,7 @@ class SlotBuffer:
         self,
         slot_start_posix: float,
         slot_seconds: float = SLOT_SECONDS,
+        signal_seconds: float | None = None,
     ) -> SlotExtraction:
         """Cut a ``slot_seconds``-window starting at *slot_start_posix*.
 
@@ -111,6 +120,13 @@ class SlotBuffer:
         damit FT4 (7.5s) und FT8 (15s) den gleichen Buffer nutzen
         koennen. Default = 15s = backward-compatible mit dem alten
         Verhalten.
+
+        ``signal_seconds`` (optional): On-Air-TX-Dauer dieses Modes. Das
+        Zero-Pad sitzt am Slot-ENDE, das Signal am Slot-ANFANG — solange wir
+        mindestens ``signal_seconds`` erwischt haben, faellt das Padding in die
+        stille Inter-Slot-Lücke und ist HARMLOS (dann nur DEBUG statt WARNING).
+        Nur wenn das Padding ins Signal reicht, ist es ein echter Verlust →
+        WARNING. None = altes Verhalten (jedes Pad warnt).
         """
         target_samples = int(round(slot_seconds * SAMPLE_RATE_HZ))
         slot_end_posix = slot_start_posix + slot_seconds
@@ -163,11 +179,22 @@ class SlotBuffer:
         missing = target_samples - out_samples
         if missing > 0:
             out += b"\x00\x00" * missing
-            log.warning(
-                "slot %s: short by %d samples (%.1f ms), zero-padded",
+            # Padding am Slot-Ende ist nur dann ein echter Verlust, wenn es VOR
+            # signal_seconds reicht (= Signal abgeschnitten). Fällt es in die
+            # stille Lücke nach der TX (typisch FT4: 4.48s TX in 7.5s Slot),
+            # nur DEBUG — sonst spammte FT4 jede 7.5s eine Warnung.
+            signal_samples = (
+                int(round(signal_seconds * SAMPLE_RATE_HZ))
+                if signal_seconds is not None
+                else target_samples
+            )
+            into_signal = out_samples < signal_samples
+            (log.warning if into_signal else log.debug)(
+                "slot %s: short by %d samples (%.1f ms), zero-padded%s",
                 slot_start_posix,
                 missing,
                 1000.0 * missing / SAMPLE_RATE_HZ,
+                "" if into_signal else " (stille Lücke — harmlos)",
             )
 
         drift = out_samples - target_samples

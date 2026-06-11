@@ -266,13 +266,19 @@ class DecodePipeline:
     extract_delay_s: float = 0.15
 
     async def __call__(self, tick: SlotTick) -> list[DecodedMsg]:
-        from ..audio.slot_sync import FT4_SLOT_SECONDS, SLOT_SECONDS
+        from ..audio.slot_sync import (
+            FT4_SLOT_SECONDS,
+            FT4_TX_SECONDS,
+            FT8_TX_SECONDS,
+            SLOT_SECONDS,
+        )
 
         # Mode-aware Slot-Window + Decoder-Funktion (Audit F6 v0.4.0).
         # v0.6.0 Phase C: FT8-Pfad waehlt Decoder-Variante via decoder_mode.
         # FT4 hat keine Deep-Variante (FT4-Decoder ist eigene C-Funktion).
         if self.mode == "FT4":
             slot_seconds = FT4_SLOT_SECONDS
+            signal_seconds = FT4_TX_SECONDS
             # v0.8.0 Build I: FT4 mode-aware. Bei deep/multi/extreme
             # nutzt die v2-Variante des FT4-Shim (osr=4, kein Subtract).
             if self.decoder_mode in ("deep", "multi", "extreme"):
@@ -282,6 +288,7 @@ class DecodePipeline:
                 decoder = decode_slot_ft4
         else:
             slot_seconds = SLOT_SECONDS
+            signal_seconds = FT8_TX_SECONDS
             if self.decoder_mode in ("deep", "multi", "extreme"):
                 _mode = self.decoder_mode
                 decoder = lambda pcm: decode_slot_v2(pcm, mode=_mode)  # noqa: E731
@@ -300,7 +307,7 @@ class DecodePipeline:
         if self.dt_calibration_s != 0.0:
             slot_start_posix += self.dt_calibration_s
         extraction = self.slot_buffer.extract_slot(
-            slot_start_posix, slot_seconds=slot_seconds
+            slot_start_posix, slot_seconds=slot_seconds, signal_seconds=signal_seconds
         )
         self.metrics.last_drift_samples = extraction.drift_samples
 
