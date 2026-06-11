@@ -60,12 +60,24 @@ class SlotClock:
         self._index = -1
         self._slot_seconds = float(slot_seconds)
 
+    def set_slot_seconds(self, slot_seconds: float) -> None:
+        """Change the slot cadence live (FT8 15 s ↔ FT4 7.5 s).
+
+        The running iterator re-reads ``self._slot_seconds`` on every cycle
+        (see ``_iter``), so a hot FT8↔FT4 mode-switch takes effect on the
+        next slot boundary — no service restart needed. Sebastian 2026-06-11:
+        switching mode in the UI must not require a restart.
+        """
+        self._slot_seconds = float(slot_seconds)
+
     def __aiter__(self) -> AsyncIterator[SlotTick]:
         return self._iter()
 
     async def _iter(self) -> AsyncIterator[SlotTick]:
-        slot = self._slot_seconds
         while True:
+            # Re-read each cycle (NOT captured once) so set_slot_seconds()
+            # can retune a live, already-running clock on the fly.
+            slot = self._slot_seconds
             now = time.time()
             wait = slot - (now % slot)
             # round-down very small waits — happens if we returned slightly

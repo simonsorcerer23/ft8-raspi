@@ -656,7 +656,9 @@ class Orchestrator:
         # the caller left us the real-time SlotClock default.
         if isinstance(self.slot_clock, SlotClock) and self.config.operating.mode == "FT4":
             from .slot_clock import FT4_SLOT_SECONDS
-            self.slot_clock = SlotClock(slot_seconds=FT4_SLOT_SECONDS)
+            # set_slot_seconds statt Objekt-Austausch: identische Mechanik wie
+            # der Live-Hot-Reload (on_config_changed), eine Quelle der Wahrheit.
+            self.slot_clock.set_slot_seconds(FT4_SLOT_SECONDS)
             log.info(
                 "FT4 mode active (Audit F6 v0.4.0): 7.5s slots, "
                 "decode_slot_ft4 + synth_message_ft4 wired."
@@ -2289,21 +2291,27 @@ class Orchestrator:
         )
         # Directed-CQ aus Config in ctx (Audit F7 v0.3.4).
         self.state_machine.ctx.cq_directed = (new_cfg.operating.cq_directed or "").upper()
-        # FT8 ↔ FT4 Mode-Switch (Audit F6 v0.4.0): decode_source.mode
-        # live umstellen damit der naechste Slot mit dem richtigen
-        # Decoder + Window-Groesse arbeitet. Achtung: SlotClock-Tempo
-        # bleibt unveraendert (running async iter), Service-Restart
-        # ist fuer vollen Effekt noetig — bei Bedarf via ntfy melden.
+        # FT8 ↔ FT4 Mode-Switch (Audit F6 v0.4.0): decode_source.mode live
+        # umstellen damit der naechste Slot mit dem richtigen Decoder +
+        # Window-Groesse arbeitet. Sebastian 2026-06-11: zusaetzlich die
+        # SlotClock-Kadenz LIVE auf 7.5 s (FT4) / 15 s (FT8) ziehen — der
+        # laufende async-Iterator liest _slot_seconds pro Slot neu, also kein
+        # Service-Restart mehr noetig (vorher lief FT4 am 15-s-Takt → der
+        # Decoder erwartete 7.5-s-Fenster → "short by samples, zero-padded").
         new_mode = new_cfg.operating.mode if new_cfg.operating.mode in ("FT8", "FT4") else "FT8"
         old_mode_for_dial = None
         if hasattr(self.decode_source, "mode") and self.decode_source.mode != new_mode:
-            log.warning(
-                "FT8/FT4 mode switch detected: %s -> %s. Decoder live-switched; "
-                "slot_clock tempo requires service restart for full effect.",
-                self.decode_source.mode, new_mode,
-            )
             old_mode_for_dial = self.decode_source.mode
             self.decode_source.mode = new_mode
+            from .slot_clock import FT4_SLOT_SECONDS, SLOT_SECONDS, SlotClock
+            target_slot = FT4_SLOT_SECONDS if new_mode == "FT4" else SLOT_SECONDS
+            if isinstance(self.slot_clock, SlotClock):
+                self.slot_clock.set_slot_seconds(target_slot)
+            log.warning(
+                "FT8/FT4 mode switch %s -> %s: decoder + slot clock live-retuned "
+                "to %.1fs slots (no restart needed).",
+                old_mode_for_dial, new_mode, target_slot,
+            )
         # v0.6.0 Phase C: decoder_mode (standard|deep|multi) live-switch
         # auf der Pipeline ohne Restart. Pi-Last-adaptive Fallback bleibt
         # aktiv — wenn deep zu hoch laufen sollte, faellt Pipeline-Watchdog
