@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.65.7 — 2026-06-11
+- fix: kein FT4-Log-Spam mehr — "short by samples" nur bei echtem Signalverlust
+
 ## v0.65.6 — 2026-06-11
 - docs: FT8↔FT4 wechselt live (Restart-Limitation entfernt)
 - fix: FT8↔FT4-Mode-Wechsel ohne Service-Neustart (Live-Slot-Retune)
