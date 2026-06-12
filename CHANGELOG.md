@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.65.8 — 2026-06-12
+- Improve hunt picker heuristics
+
 ## v0.65.7 — 2026-06-11
 - fix: kein FT4-Log-Spam mehr — "short by samples" nur bei echtem Signalverlust
 
