@@ -300,12 +300,19 @@ Zusätzliche Modi:
 
 ### 6.2 Smart Operating
 
-- **19-Tier Hunting-Picker** (konfigurierbare Prioritäts-Reihenfolge,
+- **20-Tier Hunting-Picker** (konfigurierbare Prioritäts-Reihenfolge,
   `OperatingConfig.hunt_priority`, Drag-and-Drop im UI): lexikografisches
   Scoring über Tiers wie `not_bad_reputation`, `not_in_pileup`,
   `tail_end_target`, `grayline`, `band_open`, `buddy_seen`, `new_dxcc(_band)`,
-  `psk_heard_us`, `new_grid(_band)`, `not_worked`, `dxcc_rarity`, `snr`.
+  `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
+  `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
+- **Konservative Hunt-Gates:** vor dem Tier-Scoring werden schwache einzelne
+  Routine-CQs uebersprungen, wenn sie keinen Award-/Kontextwert und kein gutes
+  Decode-/PSK-SNR haben. Nach einer schlechten Hunt-Serie geht der Picker
+  temporaer in Strict Mode und verlangt dieselbe Evidenz fuer Routine-Ziele.
+  `hunt_profile` kann Routine-Picks Richtung Rate oder DX gewichten; Balanced
+  FT4 nutzt das Rate-Gate, FT8 bleibt breiter.
 - **Hard-Filter** zusätzlich zur Soft-Reihenfolge: `skip_worked` (nur nie
   Gearbeitete), `dxcc_only` (Award-Modus: lieber Funkstille als Nicht-ATNO).
 - **Soft-Blacklist / Reputation** (DB-gestützt, GLOBAL über Operatoren,
@@ -323,10 +330,10 @@ Zusätzliche Modi:
   hochgestuft, dann zurückgestuft, als ein größeres Sample zeigte, dass das
   *binäre* „hört uns"-Flag ein schwaches Picker-Signal ist (~2,6 % als
   Entscheider vs ~8 % Baseline) — der echte Prädiktor ist die *graduelle*
-  `psk_snr` (laut bei der DX ≈ 14 % vs ~7,6 % grenzwertig), die nur als
-  Telemetrie existiert. ~72 % der Picks sind „sole" (keine Wahl) → Tier-
-  Reihenfolge ist inhärent Low-Leverage; der dominante Fehlschlag ist der
-  unbeantwortete erste Anruf, der mit `psk_snr`/Distanz (gehört werden)
+  `psk_snr` (laut bei der DX ≈ 14 % vs ~7,6 % grenzwertig), jetzt echter
+  Picker-Tier und weiterhin Telemetrie. ~72 % der Picks sind „sole" (keine
+  Wahl) → Tier-Reihenfolge ist inhärent Low-Leverage; der dominante Fehlschlag
+  ist der unbeantwortete erste Anruf, der mit `psk_snr`/Distanz (gehört werden)
   korreliert, nicht mit der Auswahl.
 - TX-Frequenz-Wahl mit Kollisions-Vermeidung: Rotation 1200/1500/1800/2100 Hz
   pro CQ-Sendung (`MachineContext.cq_freq_rotation`)
@@ -531,9 +538,10 @@ ntfy_action_token: "..."         # enger Token nur für ntfy-Control-Buttons
 ```
 
 > `operating:` hat über die unten gezeigten hinaus weitere Felder, u.a.
-> `mode` (FT8/FT4), `hunt_priority` (19-Tier-Reihenfolge), `hunt_skip_worked`,
-> `hunt_dxcc_only`, `qso_cooldown_min`, `psk_reciprocity_enabled`,
-> `tail_end_hunter_enabled`, `boot_mode`, `mode_watchdog_min`.
+> `mode` (FT8/FT4), `hunt_priority` (20-Tier-Reihenfolge), `hunt_profile`,
+> `hunt_skip_worked`, `hunt_dxcc_only`, `qso_cooldown_min`,
+> `psk_reciprocity_enabled`, `tail_end_hunter_enabled`, `boot_mode`,
+> `mode_watchdog_min`.
 
 Alte Form (immer noch akzeptiert, transparente Migration):
 ```yaml

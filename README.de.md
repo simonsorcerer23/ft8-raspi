@@ -59,7 +59,7 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 ### Statistik &amp; Steuerung — SWR-Trend, beste Zeiten, Pi-Status, TX-Controls
 ![Statistik](docs/screenshots/stats.png)
 
-### Hunt-Priorität — die 19 frei sortierbaren Picker-Stufen
+### Hunt-Priorität — die 20 frei sortierbaren Picker-Stufen
 ![Hunt-Priorität](docs/screenshots/config_3.png)
 
 ### Operatoren &amp; Logbücher — Multi-Op, QRZ/ClubLog, Demo-Schalter
@@ -77,10 +77,16 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 
 ## Highlights
 
-- **19-stufiger konfigurierbarer Picker** (Priorität per Drag-and-drop):
+- **20-stufiger konfigurierbarer Picker** (Priorität per Drag-and-drop):
   Pile-Up-Vermeidung, Tail-End-Pickup, Grayline-Boost, Soft-Blacklist die aus
   der eigenen QSO-Historie lernt, Band-Conditions-Bewusstsein, Buddy-Seen
-  (auf anderem Band gearbeitet), DXCC-Seltenheit, 5BWAS, VUCC-Grid-Awards, …
+  (auf anderem Band gearbeitet), gradueller `psk_snr`, DXCC-Seltenheit, 5BWAS,
+  VUCC-Grid-Awards, …
+- **Konservative Hunt-Gates** — schwache einzelne CQ-Rufer ("sole") werden
+  nur bei Award-/Kontextwert oder gutem Decode-/PSK-SNR angerufen. Nach einer
+  schlechten Serie verlangt ein temporärer Strict Mode dieselbe Evidenz für
+  Routine-Ziele. FT4 nutzt im Balanced-Modus das Rate-Profil; FT8 bleibt
+  breiter.
 - **Datengetriebenes Picker-Tuning** — jeder Hunt-Pick wird mit Ausgang
   (completed / went-silent / bailed) und Kontext geloggt: entscheidende Stufe,
   wie laut *wir* bei der DX-Station ankommen (laut PSK-Reporter), SNR, Distanz,
@@ -166,7 +172,7 @@ Folge-Releases werden automatisch über `ft8-self-update.timer` ausgerollt.
 Ein neues Release auf der Workstation schneidest du mit:
 
 ```bash
-./scripts/release.sh v0.41.0
+./scripts/release.sh vX.Y.Z
 ```
 
 Das aktualisiert auch [CHANGELOG.md](./CHANGELOG.md) (aus dem Commit-Log

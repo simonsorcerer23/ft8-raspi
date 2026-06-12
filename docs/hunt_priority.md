@@ -1,4 +1,4 @@
-# Hunt-Priority-Tiers (v0.10.0)
+# Hunt-Priority-Tiers (v0.65.8)
 
 Beim Hunting (Auto-Antworten auf CQ-Rufe) priorisiert der Picker
 nicht mehr nur „neues DXCC zuerst, dann SNR" wie vor v0.10.0, sondern
@@ -17,7 +17,7 @@ via Konfig-UI selbst bestimmen kann.
    │  _target   │──┤  new_dxcc_psk → 0/1   │
    └────────────┘  │  new_dxcc   → 0/1     │
         │          │  psk_heard_us → 0/1   │
-        │          │  new_dxcc_band → 0/1  │
+        │          │  psk_snr → dB/-99     │
         ▼          │  not_worked → 0/1     │
   Score-Tuple      │  dxcc_rarity → 0..100 │
   (lex. Vergleich) │  snr → int (Tie-Brk)  │
@@ -111,7 +111,7 @@ ConfigPanel → Hunt-Priorität:
 
 ## PSK-Reciprocity aktivieren
 
-`marine_psk`, `new_dxcc_psk` und `psk_heard_us` greifen nur wenn
+`marine_psk`, `new_dxcc_psk`, `psk_heard_us` und `psk_snr` greifen nur wenn
 `OperatingConfig.psk_reciprocity_enabled = true`. Default ist **false**.
 
 Wenn aktiviert:
@@ -120,7 +120,7 @@ Wenn aktiviert:
   letzten 1h für **alle** konfigurierten Operator-Calls (DK9XR + DO3XR
   bei Multi-Op)
 - Result wird in `_psk_heard_us_cache: set[str]` gehalten
-- Picker liest pro Slot in `ctx.psk_heard_us`
+- Picker liest pro Slot in `ctx.psk_heard_us` und `ctx.psk_snr`
 - Bei API-Fehler: alter Cache bleibt, Picker arbeitet weiter (fail-open)
 
 ## Backward-Compat
@@ -138,19 +138,28 @@ das Tier-Scoring greift):
 - `hunt_dxcc_only: bool` — nur neue-DXCC-Calls überhaupt picken
 - `hunt_snr_floor_db: int` — SNR-Mindestwert
 - `hunt_audio_freq_min_hz` / `_max_hz` — Audio-Bandpass-Filter
+- `hunt_profile: balanced|rate|dx` — Routine-Picks Richtung Rate oder DX
+  gewichten; Balanced-FT4 nutzt automatisch das Rate-Gate
+- `hunt_sole_min_snr_db` / `hunt_sole_min_psk_snr_db` — Mindest-Evidenz fuer
+  einzelne Routine-CQs ohne Award-/Kontextwert
+- `hunt_poor_run_window`, `hunt_poor_run_min_successes`,
+  `hunt_poor_run_strict_min` — Strict-Mode-Ausloeser nach schlechter Serie
+- `hunt_strict_min_snr_db` / `hunt_strict_min_psk_snr_db` — strengere
+  Mindest-Evidenz waehrend Strict Mode
 
 Die Tier-Reihenfolge entscheidet dann nur unter den **bereits gefilterten**
 Kandidaten wer den Slot bekommt.
 
 ## Tests
 
-`backend/tests/test_hunt_priority.py` — 27 Tests:
+`backend/tests/test_hunt_priority.py` — 35 Tests:
 - Pro Tier: positive/negative-cases
 - Aggregation + lexikographische Ordnung
 - Permutation: ändert die hunt_priority den Winner?
 - Edge-cases: leere Liste, unbekannte Tier-Namen, leere call_from
 - DXCC-Rarity prefix-fallback
 - PSK-Cache freshness + lookup
+- `psk_snr`-Scoring und Validator-Migration
 
 ## Tier-Funktion hinzufügen
 

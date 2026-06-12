@@ -59,7 +59,7 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 ### Stats &amp; controls — SWR trend, best times, Pi status, TX controls
 ![Stats](docs/screenshots/stats.png)
 
-### Hunt priority — the 19 freely sortable picker tiers
+### Hunt priority — the 20 freely sortable picker tiers
 ![Hunt priority](docs/screenshots/config_3.png)
 
 ### Operators &amp; logbooks — multi-op, QRZ/ClubLog, demo toggle
@@ -77,10 +77,15 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 
 ## Highlights
 
-- **19-tier configurable picker** (drag-and-drop priority): pile-up
+- **20-tier configurable picker** (drag-and-drop priority): pile-up
   avoidance, tail-end pickup, grayline boost, soft-blacklist learning from
   own QSO history, band-conditions awareness, buddy-seen
-  (worked-on-other-band), DXCC rarity, 5BWAS, VUCC grid awards, …
+  (worked-on-other-band), graded `psk_snr`, DXCC rarity, 5BWAS, VUCC grid
+  awards, …
+- **Conservative Hunt gates** — weak single-CQ ("sole") routine picks are
+  skipped unless they have award/context value or good decode/PSK SNR. After a
+  poor run, a temporary strict mode requires the same evidence for routine
+  targets. FT4 uses the rate profile in balanced mode; FT8 stays broader.
 - **Data-driven picker tuning** — every hunt pick is logged with its outcome
   (completed / went-silent / bailed) plus context: the deciding tier, how loud
   *we* land at the DX (per PSK Reporter), SNR, distance, band occupancy, … A
@@ -165,7 +170,7 @@ Subsequent releases roll out automatically via `ft8-self-update.timer`.
 Cut a new release on the workstation with:
 
 ```bash
-./scripts/release.sh v0.41.0
+./scripts/release.sh vX.Y.Z
 ```
 
 This also updates [CHANGELOG.md](./CHANGELOG.md) (generated from the commit
@@ -207,8 +212,9 @@ and used by a father-son team of amateur radio operators in Germany.
 Headless FT8/FT4-Steuerung auf Raspberry Pi 5 für IC-705 / IC-7300. Sitzt
 zwischen Rig und Welt, Bedienung komplett übers Handy (passwortgeschützt).
 **Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb mit Features,
-die WSJT-X nicht out of the box hat — 19-Tier-Picker mit Pile-Up-Avoidance,
-datengetriebenem Tuning aus Pick-Telemetrie, Watchlist, Auto-Upload zu QRZ +
+die WSJT-X nicht out of the box hat — 20-Tier-Picker mit Pile-Up-Avoidance,
+konservativen Hunt-Gates, datengetriebenem Tuning aus Pick-Telemetrie,
+Watchlist, Auto-Upload zu QRZ +
 Club Log, Gewitter-Warnung, lizenzabhängige Sicherheits-Caps, CEPT-/Ausland-
 Erkennung (GPS → Land → Klasse-A/E-Regeln + Präfix-Vorschlag), bruchsicheres
 QSO-Log (Spill + tägliches Backup) und Selbst-Update. **Oberfläche komplett

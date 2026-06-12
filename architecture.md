@@ -314,12 +314,19 @@ Additional modes:
 
 ### 6.2 Smart operating
 
-- **19-tier hunting picker** (configurable priority order,
+- **20-tier hunting picker** (configurable priority order,
   `OperatingConfig.hunt_priority`, drag-and-drop in the UI): lexicographic
   scoring across tiers such as `not_bad_reputation`, `not_in_pileup`,
   `tail_end_target`, `grayline`, `band_open`, `buddy_seen`, `new_dxcc(_band)`,
-  `psk_heard_us`, `new_grid(_band)`, `not_worked`, `dxcc_rarity`, `snr`.
+  `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
+  `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
+- **Conservative hunt gates:** before tier scoring, weak single-CQ routine
+  picks are skipped unless they carry award/context value or good decode/PSK
+  SNR. After a poor hunt run, the picker enters temporary strict mode and
+  applies the same evidence gate to routine targets. `hunt_profile` can bias
+  routine picks toward rate or DX; balanced FT4 uses the rate gate while FT8
+  remains broader.
 - **Hard filters** on top of the soft order: `skip_worked` (only stations
   never worked), `dxcc_only` (award mode: prefer radio silence over a non-ATNO).
 - **Soft blacklist / reputation** (DB-backed, GLOBAL across operators,
@@ -336,10 +343,11 @@ Additional modes:
   pushed below `snr` (only ~3 % completion as decider); `psk_heard_us` upranked
   then reverted once a larger sample showed the *binary* "heard us" flag is a
   weak picker signal (~2.6 % as decider vs ~8 % baseline) — the real predictor
-  is the *graded* `psk_snr` (loud at the DX ≈ 14 % vs ~7.6 % marginal), which
-  only exists as telemetry. ~72 % of picks are "sole" (no choice), so tier order
-  is inherently low-leverage; the dominant failure is the first call going
-  unanswered, which tracks `psk_snr`/distance (being heard), not selection.
+  is the *graded* `psk_snr` (loud at the DX ≈ 14 % vs ~7.6 % marginal), now a
+  real picker tier as well as telemetry. ~72 % of picks are "sole" (no choice),
+  so tier order is inherently low-leverage; the dominant failure is the first
+  call going unanswered, which tracks `psk_snr`/distance (being heard), not
+  selection.
 - TX frequency choice with collision avoidance: rotation 1200/1500/1800/2100 Hz
   per CQ transmission (`MachineContext.cq_freq_rotation`)
 - Smart-CQ throttling (passive probing after N unsuccessful CQs) — parked
@@ -545,9 +553,10 @@ ntfy_action_token: "..."         # tight token only for ntfy control buttons
 ```
 
 > `operating:` has further fields beyond the ones shown below, among them
-> `mode` (FT8/FT4), `hunt_priority` (19-tier order), `hunt_skip_worked`,
-> `hunt_dxcc_only`, `qso_cooldown_min`, `psk_reciprocity_enabled`,
-> `tail_end_hunter_enabled`, `boot_mode`, `mode_watchdog_min`.
+> `mode` (FT8/FT4), `hunt_priority` (20-tier order), `hunt_profile`,
+> `hunt_skip_worked`, `hunt_dxcc_only`, `qso_cooldown_min`,
+> `psk_reciprocity_enabled`, `tail_end_hunter_enabled`, `boot_mode`,
+> `mode_watchdog_min`.
 
 Old form (still accepted, transparent migration):
 ```yaml
