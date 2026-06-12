@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.65.9 — 2026-06-12
+- deploy: render install paths from environment
+- docs: update hunt picker documentation
+
 ## v0.65.8 — 2026-06-12
 - Improve hunt picker heuristics
 
