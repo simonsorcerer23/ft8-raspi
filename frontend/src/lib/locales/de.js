@@ -359,6 +359,7 @@ export const de = {
   'tier.new_dxcc_psk': 'Neues DXCC + PSK sagt "hört uns"',
   'tier.new_dxcc': 'Neues DXCC (auch ohne PSK)',
   'tier.psk_heard_us': 'PSK sagt "hört uns" (Asymmetrie ausnutzen)',
+  'tier.psk_snr': 'PSK-SNR bei Gegenstation (höher ist besser)',
   'tier.new_dxcc_band': 'Neues Band für DXCC (5BWAS)',
   'tier.new_grid': 'Neues Maidenhead-Grid (VUCC)',
   'tier.new_grid_band': 'Neues Grid auf diesem Band',

@@ -359,6 +359,7 @@ export const en = {
   'tier.new_dxcc_psk': 'New DXCC + PSK says "hears us"',
   'tier.new_dxcc': 'New DXCC (even without PSK)',
   'tier.psk_heard_us': 'PSK says "hears us" (exploit asymmetry)',
+  'tier.psk_snr': 'PSK SNR at target station (higher is better)',
   'tier.new_dxcc_band': 'New band for DXCC (5BWAS)',
   'tier.new_grid': 'New Maidenhead grid (VUCC)',
   'tier.new_grid_band': 'New grid on this band',

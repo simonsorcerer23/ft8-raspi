@@ -44,6 +44,7 @@ ist konventionell `snr` als Tie-Breaker.
 | `new_grid_band` | Grid haben wir, aber NICHT auf diesem Band (VUCC-Band-Variation) | 0/1 | `worked_grid_band`-Set |
 | `not_worked` | Call wurde noch nie gearbeitet | 0/1 | `worked`-Set |
 | `dxcc_rarity` | DXCC-Rarity-Score aus Tabelle (P5=100, 9J=45, DE=0) | 0..100 | `dxcc_rarity.json` |
+| `psk_snr` | PSK Reporter SNR, mit dem uns die Gegenstation gehört hat | dB, fehlend = -99 | PSK-SNR-Cache |
 | `snr` | Signal-to-Noise Ratio in dB | int | aus Decode-Pipeline |
 
 ## Default-Reihenfolge
@@ -67,8 +68,9 @@ Aus `OperatingConfig.hunt_priority`:
 15. `not_worked` — Neue Calls (auch routine)
 16. `dxcc_rarity` — Rarity-Bonus
 17. `psk_heard_us` — PSK sagt „hört uns" (v0.65.3 ZURÜCKGESTUFT, s.u.)
-18. `snr` — Haupt-Tie-Breaker (bestes Signal gewinnt)
-19. `tail_end_target` — Tail-End-Pick (v0.65.2 UNTER `snr`, s.u.)
+18. `psk_snr` — graduelles PSK-Reciprocity-Signal
+19. `snr` — Haupt-Tie-Breaker (bestes Signal gewinnt)
+20. `tail_end_target` — Tail-End-Pick (v0.65.2 UNTER `snr`, s.u.)
 
 **Begründung der Default-Reihenfolge** (Sebastian-Wunsch 2026-05-26):
 - Marinefunker top weil persönliche Community (Raymond ist Mitglied)
@@ -82,11 +84,22 @@ Aus `OperatingConfig.hunt_priority`:
   nur 2,6 % Completion (n=78) vs `sole`-Baseline 8 % im selben Fenster. Das
   *binäre* „hat uns gehört"-Flag ist ein schwaches Picker-Signal; der echte
   Prädiktor ist die *graduelle* Lautstärke `psk_snr` (≥ −8 dB bei der DX → ~14 %
-  Completion vs ~7,6 % grenzwertig), die aber nur als Telemetrie vorliegt. Steht
-  jetzt unter allen Award-/Propagations-Tiers, knapp vor `snr`.
+  Completion vs ~7,6 % grenzwertig). `psk_snr` ist deshalb jetzt ein eigener
+  Tier knapp vor `snr`.
 - `tail_end_target` UNTER `snr` (v0.65.2): als Entscheider nur ~3 % Completion.
   Steht jetzt als letztes Glied hinter dem `snr`-Breaker → gewinnt faktisch nur
   bei exakt gleichem SNR, also praktisch neutralisiert ohne Feature-Kill.
+
+## Conservative Gates
+
+Vor dem Tier-Scoring gibt es zusätzliche Hunt-Gates:
+
+- Sole-CQ-Gate: Wenn nur ein CQ im Slot steht, wird er nur bei Award-/Kontextsignal
+  oder gutem Decode-/PSK-SNR angerufen.
+- Strict Mode: Nach einer schlechten Serie von Hunt-Outcomes verlangt der Picker
+  temporär dieselbe Evidenz für alle Routine-Ziele.
+- `hunt_profile`: `balanced`, `rate` oder `dx`. In FT4 nutzt `balanced` automatisch
+  das Rate-Profil für Routine-Calls; FT8 bleibt breiter.
 
 ## Editierung via UI
 

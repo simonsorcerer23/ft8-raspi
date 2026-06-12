@@ -11,6 +11,7 @@ See ``architecture.md`` §5 for the diagram.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -77,6 +78,23 @@ def _tier_psk_heard_us(d: "DecodedMsg", ctx: "MachineContext") -> int:
     if not d.call_from:
         return 0
     return 1 if d.call_from.upper() in ctx.psk_heard_us else 0
+
+
+def _tier_psk_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
+    """Graduelles PSK-Reciprocity-Signal.
+
+    Hoeher ist besser. Fehlt der PSK-Wert, bekommt der Call einen sehr
+    niedrigen Score, damit ein echter -18 dB Report immer wertvoller ist als
+    ein unbekannter Wert.
+    """
+    if not d.call_from:
+        return 0
+    norm = d.call_from.upper()
+    b = base_call(norm)
+    val = ctx.psk_snr.get(norm)
+    if val is None and b:
+        val = ctx.psk_snr.get(b)
+    return int(val) if val is not None else -99
 
 
 def _tier_new_dxcc_band(d: "DecodedMsg", ctx: "MachineContext") -> int:
@@ -150,6 +168,20 @@ def _maidenhead_to_latlon(grid: str) -> tuple[float, float]:
         lon += 1
         lat += 0.5
     return lat, lon
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Grosskreisdistanz in km, ohne Runtime-Abhaengigkeit auf util.maidenhead."""
+    r = 6371.0
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dp / 2) ** 2
+        + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    )
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
 def _tier_grayline(d: "DecodedMsg", ctx: "MachineContext") -> int:
@@ -347,6 +379,7 @@ HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
     "new_dxcc_psk":    _tier_new_dxcc_psk,
     "new_dxcc":        _tier_new_dxcc,
     "psk_heard_us":    _tier_psk_heard_us,
+    "psk_snr":         _tier_psk_snr,
     "new_dxcc_band":   _tier_new_dxcc_band,
     "new_grid":        _tier_new_grid,
     "new_grid_band":   _tier_new_grid_band,
@@ -424,6 +457,12 @@ class StateMachine:
     # Class-Default 900 s = 15 min; Orchestrator ueberschreibt aus
     # config.operating.qso_failed_cooldown_min beim Boot + Hot-Reload.
     qso_failed_cooldown_s: float = 900.0
+    qso_failed_cooldown_went_silent_multiplier: float = 2.0
+    qso_failed_cooldown_repeat_multiplier: float = 1.7
+    qso_failed_cooldown_max_s: float = 3600.0
+    qso_report_extra_resends: int = 0
+    qso_report_extra_resend_snr_db: int = -12
+    qso_report_extra_resend_psk_snr_db: int = -10
     # v0.64.0 — Picker-Diagnose vom letzten _pick_hunt_target (reine
     # Telemetrie): {winning_tier, n_candidates, was_tailend}. Wird direkt
     # nach dem Pick in die hunt_attempt_meta uebernommen.
@@ -919,7 +958,8 @@ class StateMachine:
                 )
                 if rep_again is not None or them_cq_again:
                     reason = "repeated report" if rep_again is not None else "repeated CQ"
-                    if self.qso.report_resends >= self.qso_max_report_resends:
+                    report_limit = self._effective_report_resend_limit()
+                    if self.qso.report_resends >= report_limit:
                         # Schon resent — sie hoeren uns einfach nicht.
                         # In Timeout laufen lassen.
                         log.info(
@@ -927,7 +967,7 @@ class StateMachine:
                             their_call,
                             reason,
                             self.qso.report_resends,
-                            self.qso_max_report_resends,
+                            report_limit,
                         )
                     else:
                         if not self._check_guards(hw):
@@ -938,7 +978,7 @@ class StateMachine:
                             their_call,
                             reason,
                             self.qso.report_resends,
-                            self.qso_max_report_resends,
+                            report_limit,
                         )
                         self.qso.stale_slots = 0
                         self._emit_send_r_report()
@@ -1165,6 +1205,60 @@ class StateMachine:
         except Exception:
             meta["qso_duration_s"] = None
 
+    def _psk_snr_for_call(self, call: str | None) -> int | None:
+        if not call:
+            return None
+        norm = call.upper()
+        b = base_call(norm)
+        val = self.ctx.psk_snr.get(norm)
+        if val is None and b:
+            val = self.ctx.psk_snr.get(b)
+        return int(val) if val is not None else None
+
+    def _record_hunt_outcome(self, their_call: str, completed: bool) -> None:
+        key = base_call(their_call)
+        if not key or key not in self.ctx.hunt_attempt_meta:
+            return
+        if completed:
+            self.ctx.failed_attempt_counts.pop(key, None)
+        outcomes = self.ctx.hunt_recent_outcomes
+        outcomes.append(completed)
+        window = max(1, int(self.ctx.hunt_poor_run_window))
+        del outcomes[:-window]
+        if len(outcomes) < window:
+            return
+        successes = sum(1 for ok in outcomes if ok)
+        if successes < self.ctx.hunt_poor_run_min_successes:
+            self.ctx.hunt_strict_until = max(
+                self.ctx.hunt_strict_until,
+                datetime.now(UTC).timestamp()
+                + max(0, self.ctx.hunt_poor_run_strict_s),
+            )
+
+    def _effective_report_resend_limit(self) -> int:
+        if self.qso is None:
+            return self.qso_max_report_resends
+        limit = self.qso_max_report_resends
+        psk_snr = self._psk_snr_for_call(self.qso.their_call)
+        strong_rx = (
+            self.qso.their_snr_at_us is not None
+            and self.qso.their_snr_at_us >= self.qso_report_extra_resend_snr_db
+        )
+        strong_psk = (
+            psk_snr is not None
+            and psk_snr >= self.qso_report_extra_resend_psk_snr_db
+        )
+        heard_us_strong = (
+            self.qso.our_snr_received is not None
+            and self.qso.our_snr_received >= self.qso_report_extra_resend_snr_db
+        )
+        if (
+            self.qso_report_extra_resends > 0
+            and (strong_rx or strong_psk or heard_us_strong)
+        ):
+            limit += self.qso_report_extra_resends
+        return max(0, min(3, limit))
+
     def _bail_qso_with_cooldown(self, their_call: str, reason: str) -> None:
         """Abbrechen eines QSO-Versuchs + Cooldown-Eintrag fuer den Partner.
 
@@ -1181,12 +1275,28 @@ class StateMachine:
         "went_silent", "report_never_closed".
         """
         self._stamp_outcome_meta()
+        self._record_hunt_outcome(their_call, completed=False)
         if self.qso_failed_cooldown_s > 0 and their_call:
-            cooldown_until = datetime.now(UTC).timestamp() + self.qso_failed_cooldown_s
+            key = base_call(their_call) or their_call.upper()
+            repeats = self.ctx.failed_attempt_counts.get(key, 0) + 1
+            self.ctx.failed_attempt_counts[key] = repeats
+            cooldown_s = self.qso_failed_cooldown_s
+            if reason == "went_silent":
+                cooldown_s *= max(1.0, self.qso_failed_cooldown_went_silent_multiplier)
+            if repeats > 1:
+                cooldown_s *= (
+                    max(1.0, self.qso_failed_cooldown_repeat_multiplier)
+                    ** (repeats - 1)
+                )
+            cooldown_s = min(
+                max(0.0, cooldown_s),
+                max(0.0, self.qso_failed_cooldown_max_s),
+            )
+            cooldown_until = datetime.now(UTC).timestamp() + cooldown_s
             self.ctx.recent_until[their_call] = cooldown_until
             log.debug(
-                "Cooldown: %s set for %.0f s (reason=%s)",
-                their_call, self.qso_failed_cooldown_s, reason,
+                "Cooldown: %s set for %.0f s (reason=%s, repeats=%d)",
+                their_call, cooldown_s, reason, repeats,
             )
         self.qso = None
         self.state = State.IDLE
@@ -1268,6 +1378,7 @@ class StateMachine:
     def _emit_log_qso(self) -> None:
         assert self.qso is not None
         self._stamp_outcome_meta()
+        self._record_hunt_outcome(self.qso.their_call, completed=True)
         rr73 = f"{self.qso.their_call} {self.ctx.tx_callsign} RR73"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(rr73, "rr73")))
         self._pending.append(
@@ -1410,6 +1521,91 @@ class StateMachine:
         except Exception:
             return "unknown"
 
+    def _is_award_or_context_pick(self, d: "DecodedMsg") -> bool:
+        if not d.call_from:
+            return False
+        norm = d.call_from.upper()
+        if norm in self.ctx.new_dxcc_calls or norm in self.ctx.marine_calls:
+            return True
+        if _tier_new_dxcc_band(d, self.ctx) > 0:
+            return True
+        if _tier_new_grid(d, self.ctx) > 0 or _tier_new_grid_band(d, self.ctx) > 0:
+            return True
+        if _tier_buddy_seen(d, self.ctx) > 0:
+            return True
+        if _tier_active_hour(d, self.ctx) > 0 or _tier_grayline(d, self.ctx) > 0:
+            return True
+        return False
+
+    def _decode_distance_km(self, d: "DecodedMsg") -> float | None:
+        try:
+            my_lat, my_lon = _maidenhead_to_latlon(self.ctx.my_grid)
+            if d.grid:
+                lat, lon = _maidenhead_to_latlon(d.grid)
+                return _distance_km(my_lat, my_lon, lat, lon)
+            if d.call_from:
+                pos = self.ctx.call_to_latlon.get(d.call_from.upper())
+                if pos is not None:
+                    lat, lon = pos
+                    return _distance_km(my_lat, my_lon, lat, lon)
+        except Exception:
+            return None
+        return None
+
+    def _is_high_confidence_pick(self, d: "DecodedMsg", *, strict: bool) -> bool:
+        if not strict and self.ctx.hunt_snr_floor_db is None:
+            return True
+        if self._is_award_or_context_pick(d):
+            return True
+        psk_snr = self._psk_snr_for_call(d.call_from)
+        snr_limit = (
+            self.ctx.hunt_strict_min_snr_db
+            if strict else self.ctx.hunt_sole_min_snr_db
+        )
+        psk_limit = (
+            self.ctx.hunt_strict_min_psk_snr_db
+            if strict else self.ctx.hunt_sole_min_psk_snr_db
+        )
+        if d.snr_db is not None and d.snr_db >= snr_limit:
+            return True
+        if d.snr_db is None and not strict:
+            return True
+        if psk_snr is not None and psk_snr >= psk_limit:
+            return True
+        if d.call_from and d.call_from.upper() in self.ctx.psk_heard_us and not strict:
+            return True
+        return False
+
+    def _apply_hunt_profile(self, cqs: list["DecodedMsg"]) -> list["DecodedMsg"]:
+        profile = self.ctx.hunt_profile
+        if profile == "balanced" and self.ctx.mode == "FT4":
+            profile = "rate"
+        if profile == "balanced" or len(cqs) <= 1:
+            return cqs
+        if profile == "rate":
+            kept: list[DecodedMsg] = []
+            for d in cqs:
+                if self._is_award_or_context_pick(d):
+                    kept.append(d)
+                    continue
+                dist = self._decode_distance_km(d)
+                if d.snr_db is not None and d.snr_db >= -12:
+                    kept.append(d)
+                elif dist is not None and dist < 3000 and d.snr_db is not None and d.snr_db >= -16:
+                    kept.append(d)
+            return kept or cqs
+        if profile == "dx":
+            dx = [
+                d for d in cqs
+                if self._is_award_or_context_pick(d)
+                or (
+                    (self._decode_distance_km(d) or 0) >= 3000
+                    and (d.snr_db is None or d.snr_db >= -18)
+                )
+            ]
+            return dx or cqs
+        return cqs
+
     def _pick_hunt_target(self, decodes: Iterable[DecodedMsg]) -> DecodedMsg | None:
         """Pick the strongest non-blacklisted CQ from this slot's decodes.
 
@@ -1542,6 +1738,27 @@ class StateMachine:
                     (d.call_from or "").upper()
                 ) != cur
             ]
+        # Conservative Hunt Gates:
+        # - Ein einziger CQ im Slot ("sole") ist live auffaellig oft ein
+        #   Fehlversuch. Ohne Award-/Kontextsignal rufen wir ihn nur an,
+        #   wenn Decode- oder PSK-SNR gut genug ist.
+        # - Nach einer schlechten Outcome-Serie geht der Autopilot fuer
+        #   einige Minuten in Strict Mode und verlangt diese Evidenz fuer
+        #   alle Routine-Ziele.
+        # - hunt_profile kann Rate/DX-Praeferenz als zusaetzliches Gate
+        #   anwenden, ohne die bestehende Priority-Liste zu ersetzen.
+        now_ts = datetime.now(UTC).timestamp()
+        strict = self.ctx.hunt_strict_until > now_ts
+        if len(cqs) == 1 and not self._is_high_confidence_pick(cqs[0], strict=False):
+            self._last_pick_diag = {
+                "winning_tier": "sole_rejected",
+                "n_candidates": 1,
+                "was_tailend": False,
+            }
+            return None
+        if strict:
+            cqs = [d for d in cqs if self._is_high_confidence_pick(d, strict=True)]
+        cqs = self._apply_hunt_profile(cqs)
         if not cqs:
             return None
         # v0.10.0 Hunt-Priority-Tiers: kaskadierender Score nach ctx.

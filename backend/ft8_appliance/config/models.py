@@ -356,6 +356,16 @@ class OperatingConfig(BaseModel):
     # naechsten Slot direkt wieder angerufen wird, wenn sie weiter CQ
     # ruft aber uns nicht hoert. 0 = aus.
     qso_failed_cooldown_min: int = Field(default=15, ge=0, le=120)
+    qso_failed_cooldown_went_silent_multiplier: float = Field(
+        default=2.0, ge=1.0, le=6.0,
+    )
+    qso_failed_cooldown_repeat_multiplier: float = Field(
+        default=1.7, ge=1.0, le=4.0,
+    )
+    qso_failed_cooldown_max_min: int = Field(default=60, ge=1, le=240)
+    qso_report_extra_resends: int = Field(default=1, ge=0, le=2)
+    qso_report_extra_resend_snr_db: int = Field(default=-12, ge=-30, le=20)
+    qso_report_extra_resend_psk_snr_db: int = Field(default=-10, ge=-30, le=20)
     # SNR-Floor fuer den Hunting-Picker: Stationen die mit einem Decode-
     # SNR unter diesem Schwellwert (in dB) ankommen werden uebersprungen.
     # Hintergrund (Sebastian 2026-05-22): die historische QSO-DB zeigt
@@ -367,6 +377,14 @@ class OperatingConfig(BaseModel):
     # Decode-Limit). Default -22 = nur die schwaechsten paar Prozent
     # filtern; -100 = Filter praktisch aus.
     hunt_snr_floor_db: int = Field(default=-22, ge=-30, le=0)
+    hunt_profile: Literal["balanced", "rate", "dx"] = "balanced"
+    hunt_sole_min_snr_db: int = Field(default=-16, ge=-30, le=0)
+    hunt_sole_min_psk_snr_db: int = Field(default=-10, ge=-30, le=20)
+    hunt_strict_min_snr_db: int = Field(default=-14, ge=-30, le=0)
+    hunt_strict_min_psk_snr_db: int = Field(default=-10, ge=-30, le=20)
+    hunt_poor_run_window: int = Field(default=20, ge=5, le=100)
+    hunt_poor_run_min_successes: int = Field(default=2, ge=0, le=20)
+    hunt_poor_run_strict_min: int = Field(default=10, ge=0, le=120)
     # Audio-Frequenz-Filter: Stationen die mit Decode-Frequenz ausserhalb
     # des sicheren Rig-Bandpass-Bereichs ankommen werden uebersprungen.
     # Beim IC-7300 (PKTUSB) ist der Audio-Bandpass typisch 300..2700 Hz —
@@ -438,6 +456,7 @@ class OperatingConfig(BaseModel):
             # psk_snr-Wert ist der echte Prädiktor (reine Telemetrie). Steht
             # jetzt unter allen Award-/Propagations-Tiers, knapp vor snr.
             "psk_heard_us",      # PSK sagt "hört uns" (schwaches Signal)
+            "psk_snr",           # gradueller PSK-SNR-Wert (hoeher = besser)
             "snr",               # Haupt-Tie-Breaker — bestes Signal gewinnt
             # v0.65.2 — tail_end_target UNTER snr gezogen (Telemetrie 2026-06:
             # als Entscheider nur ~3% Completion, klar unter Baseline ~8%, und
@@ -472,7 +491,7 @@ class OperatingConfig(BaseModel):
             "new_dxcc_psk", "new_dxcc",
             "grayline", "band_open", "active_hour", "buddy_seen",
             "new_dxcc_band", "new_grid", "new_grid_band", "not_worked",
-            "dxcc_rarity", "psk_heard_us", "snr", "tail_end_target",
+            "dxcc_rarity", "psk_heard_us", "psk_snr", "snr", "tail_end_target",
         ]
         if not v:
             return list(known)  # leere Liste → komplette Default rein

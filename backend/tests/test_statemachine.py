@@ -666,6 +666,22 @@ def test_went_silent_sets_cooldown(sm: StateMachine, good_hw: HardwareState) -> 
     assert "UB6OAK" in sm.ctx.recent_until
 
 
+def test_went_silent_cooldown_uses_reason_multiplier(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    sm.qso_max_stale_slots = 0
+    sm.qso_failed_cooldown_s = 60.0
+    sm.qso_failed_cooldown_went_silent_multiplier = 2.0
+    sm.qso_failed_cooldown_max_s = 3600.0
+    cq = _decode("UB6OAK", None, "CQ UB6OAK LO87")
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    before = datetime.now(UTC).timestamp()
+    sm.on_slot_tick(good_hw)
+    remaining = sm.ctx.recent_until["UB6OAK"] - before
+    assert 110 <= remaining <= 130
+
+
 def test_report_never_closed_sets_cooldown(sm: StateMachine, good_hw: HardwareState) -> None:
     """QSO_REPORT-Timeout (Partner gibt kein RR73) → bail + Cooldown."""
     sm.qso_max_stale_slots = 2
@@ -681,6 +697,23 @@ def test_report_never_closed_sets_cooldown(sm: StateMachine, good_hw: HardwareSt
         sm.on_slot_tick(good_hw)
     assert sm.state is State.IDLE
     assert "UZ5DM" in sm.ctx.recent_until
+
+
+def test_report_resend_limit_extends_for_strong_partner(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    sm.qso_max_report_resends = 1
+    sm.qso_report_extra_resends = 1
+    sm.qso_report_extra_resend_snr_db = -12
+    cq = _decode("UN7JO", None, "CQ UN7JO MO13", snr=-8)
+    sm.on_user_reply_to(good_hw, cq)
+    sm.drain_actions()
+    sm.on_decodes(good_hw, [_decode("UN7JO", "DK9XR", "DK9XR UN7JO -10", snr=-8)])
+    sm.drain_actions()
+    sm.on_decodes(good_hw, [_decode("UN7JO", "DK9XR", "DK9XR UN7JO -10", snr=-8)])
+    sm.drain_actions()
+    sm.on_decodes(good_hw, [_decode("UN7JO", "DK9XR", "DK9XR UN7JO -10", snr=-8)])
+    assert sm.qso is not None and sm.qso.report_resends == 2
 
 
 def test_qso_report_partner_repeats_report_triggers_r_resend(
@@ -1042,6 +1075,47 @@ def test_snr_floor_accepts_decodes_without_snr(sm: StateMachine, good_hw: Hardwa
     no_snr = _decode("UNKNOWN", None, "CQ UNKNOWN AA00", snr=None)
     pick = sm._pick_hunt_target([no_snr])
     assert pick is not None and pick.call_from == "UNKNOWN"
+
+
+def test_sole_gate_rejects_weak_routine_cq(sm: StateMachine, good_hw: HardwareState) -> None:
+    sm.ctx.hunt_snr_floor_db = -22
+    sm.ctx.hunt_sole_min_snr_db = -16
+    weak = _decode("ROUTINE1", None, "CQ ROUTINE1 JO20", snr=-19)
+    assert sm._pick_hunt_target([weak]) is None
+
+
+def test_sole_gate_allows_award_context_even_when_weak(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    sm.ctx.hunt_snr_floor_db = -22
+    sm.ctx.hunt_sole_min_snr_db = -16
+    sm.ctx.new_dxcc_calls.add("DX1NEW")
+    weak_new = _decode("DX1NEW", None, "CQ DX1NEW AA00", snr=-19)
+    pick = sm._pick_hunt_target([weak_new])
+    assert pick is not None and pick.call_from == "DX1NEW"
+
+
+def test_strict_mode_filters_weak_routine_candidates(
+    sm: StateMachine, good_hw: HardwareState,
+) -> None:
+    sm.ctx.hunt_strict_until = datetime.now(UTC).timestamp() + 600
+    sm.ctx.hunt_strict_min_snr_db = -14
+    weak = _decode("WEAK1", None, "CQ WEAK1 JO20", snr=-18)
+    strong = _decode("STRONG1", None, "CQ STRONG1 JO21", snr=-9)
+    pick = sm._pick_hunt_target([weak, strong])
+    assert pick is not None and pick.call_from == "STRONG1"
+
+
+def test_poor_run_enables_strict_mode(sm: StateMachine) -> None:
+    sm.ctx.hunt_poor_run_window = 3
+    sm.ctx.hunt_poor_run_min_successes = 1
+    sm.ctx.hunt_poor_run_strict_s = 300
+    now = datetime.now(UTC).timestamp()
+    for idx in range(3):
+        call = f"BAD{idx}"
+        sm.ctx.hunt_attempt_meta[call] = {"ts": datetime.now(UTC)}
+        sm._record_hunt_outcome(call, completed=False)
+    assert sm.ctx.hunt_strict_until > now
 
 
 def test_dt_filter_drops_high_dt_decodes(sm: StateMachine, good_hw: HardwareState) -> None:

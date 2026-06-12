@@ -580,6 +580,22 @@ class Orchestrator:
             qso_failed_cooldown_s=float(
                 self.config.operating.qso_failed_cooldown_min * 60
             ),
+            qso_failed_cooldown_went_silent_multiplier=(
+                self.config.operating.qso_failed_cooldown_went_silent_multiplier
+            ),
+            qso_failed_cooldown_repeat_multiplier=(
+                self.config.operating.qso_failed_cooldown_repeat_multiplier
+            ),
+            qso_failed_cooldown_max_s=float(
+                self.config.operating.qso_failed_cooldown_max_min * 60
+            ),
+            qso_report_extra_resends=self.config.operating.qso_report_extra_resends,
+            qso_report_extra_resend_snr_db=(
+                self.config.operating.qso_report_extra_resend_snr_db
+            ),
+            qso_report_extra_resend_psk_snr_db=(
+                self.config.operating.qso_report_extra_resend_psk_snr_db
+            ),
         )
         self._action_handlers = {
             "TX_MESSAGE": self._do_tx_message,
@@ -2288,6 +2304,24 @@ class Orchestrator:
         self.state_machine.qso_max_report_resends = new_cfg.operating.qso_max_report_resends
         self.state_machine.qso_failed_cooldown_s = float(
             new_cfg.operating.qso_failed_cooldown_min * 60
+        )
+        self.state_machine.qso_failed_cooldown_went_silent_multiplier = (
+            new_cfg.operating.qso_failed_cooldown_went_silent_multiplier
+        )
+        self.state_machine.qso_failed_cooldown_repeat_multiplier = (
+            new_cfg.operating.qso_failed_cooldown_repeat_multiplier
+        )
+        self.state_machine.qso_failed_cooldown_max_s = float(
+            new_cfg.operating.qso_failed_cooldown_max_min * 60
+        )
+        self.state_machine.qso_report_extra_resends = (
+            new_cfg.operating.qso_report_extra_resends
+        )
+        self.state_machine.qso_report_extra_resend_snr_db = (
+            new_cfg.operating.qso_report_extra_resend_snr_db
+        )
+        self.state_machine.qso_report_extra_resend_psk_snr_db = (
+            new_cfg.operating.qso_report_extra_resend_psk_snr_db
         )
         # Directed-CQ aus Config in ctx (Audit F7 v0.3.4).
         self.state_machine.ctx.cq_directed = (new_cfg.operating.cq_directed or "").upper()
@@ -4594,6 +4628,31 @@ class Orchestrator:
         self.state_machine.ctx.skip_worked = self.config.operating.hunt_skip_worked
         self.state_machine.ctx.dxcc_only_mode = self.config.operating.hunt_dxcc_only
         self.state_machine.ctx.hunt_snr_floor_db = self.config.operating.hunt_snr_floor_db
+        self.state_machine.ctx.hunt_profile = self.config.operating.hunt_profile
+        self.state_machine.ctx.mode = (
+            self.config.operating.mode
+            if self.config.operating.mode in ("FT8", "FT4")
+            else "FT8"
+        )
+        self.state_machine.ctx.hunt_sole_min_snr_db = (
+            self.config.operating.hunt_sole_min_snr_db
+        )
+        self.state_machine.ctx.hunt_sole_min_psk_snr_db = (
+            self.config.operating.hunt_sole_min_psk_snr_db
+        )
+        self.state_machine.ctx.hunt_strict_min_snr_db = (
+            self.config.operating.hunt_strict_min_snr_db
+        )
+        self.state_machine.ctx.hunt_strict_min_psk_snr_db = (
+            self.config.operating.hunt_strict_min_psk_snr_db
+        )
+        self.state_machine.ctx.hunt_poor_run_window = self.config.operating.hunt_poor_run_window
+        self.state_machine.ctx.hunt_poor_run_min_successes = (
+            self.config.operating.hunt_poor_run_min_successes
+        )
+        self.state_machine.ctx.hunt_poor_run_strict_s = (
+            self.config.operating.hunt_poor_run_strict_min * 60
+        )
         self.state_machine.ctx.hunt_audio_freq_min_hz = self.config.operating.hunt_audio_freq_min_hz
         self.state_machine.ctx.hunt_audio_freq_max_hz = self.config.operating.hunt_audio_freq_max_hz
         self.state_machine.ctx.cq_tx_slot_parity = self.config.operating.cq_tx_slot_parity
@@ -5371,12 +5430,24 @@ class Orchestrator:
         try:
             my_grid = self.config.operator.default_locator or self.state_machine.ctx.my_grid
             tgt_grid = meta.get("target_grid")
-            if my_grid and tgt_grid:
+            if my_grid:
                 from ..util.maidenhead import great_circle, locator_to_latlon
                 la1, lo1 = locator_to_latlon(my_grid)
-                la2, lo2 = locator_to_latlon(tgt_grid)
-                _dist_km, _bearing = great_circle(la1, lo1, la2, lo2)
-                distance_km = int(round(_dist_km))
+                if tgt_grid:
+                    la2, lo2 = locator_to_latlon(tgt_grid)
+                    _dist_km, _bearing = great_circle(la1, lo1, la2, lo2)
+                    distance_km = int(round(_dist_km))
+                elif self.integrations.cty is not None:
+                    rec = self.integrations.cty.lookup(key)
+                    if (
+                        rec is not None
+                        and rec.entity.lat is not None
+                        and rec.entity.lon is not None
+                    ):
+                        _dist_km, _bearing = great_circle(
+                            la1, lo1, rec.entity.lat, rec.entity.lon,
+                        )
+                        distance_km = int(round(_dist_km))
         except Exception:
             distance_km = None
         continent: str | None = None

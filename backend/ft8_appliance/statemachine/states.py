@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, auto
+from typing import Literal
 
 
 class State(Enum):
@@ -201,6 +202,21 @@ class MachineContext:
     # fuer die Pick-Auswahl, nur Mess-Anreicherung (erklaert went_silent:
     # "die hoeren uns mit -22 → klar antworten sie nicht").
     psk_snr: dict[str, int] = field(default_factory=dict)
+    # Hunt-Strategie/Gates. "balanced" laesst den bestehenden Picker
+    # weitgehend arbeiten, "rate" meidet schwache Routine-Calls, "dx"
+    # bevorzugt entfernte/Award-Ziele wenn Alternativen vorhanden sind.
+    hunt_profile: Literal["balanced", "rate", "dx"] = "balanced"
+    mode: Literal["FT8", "FT4"] = "FT8"
+    hunt_sole_min_snr_db: int = -16
+    hunt_sole_min_psk_snr_db: int = -10
+    hunt_strict_until: float = 0.0
+    hunt_strict_min_snr_db: int = -14
+    hunt_strict_min_psk_snr_db: int = -10
+    hunt_poor_run_window: int = 20
+    hunt_poor_run_min_successes: int = 2
+    hunt_poor_run_strict_s: int = 600
+    hunt_recent_outcomes: list[bool] = field(default_factory=list)
+    failed_attempt_counts: dict[str, int] = field(default_factory=dict)
     # v0.30.0 — Pick-Attempt-Telemetrie fuer das psk_heard_us-A/B. Beim
     # Hunt-Pick schreibt die Machine hier {base_call: {psk_heard_us, snr_db,
     # dt_s, band, ts}}; der Orchestrator liest+poppt es beim QSO-Ausgang

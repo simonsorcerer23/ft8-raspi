@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
-
 from ft8_appliance.integrations.dxcc_rarity import (
     all_known_prefixes,
     is_rare,
@@ -26,6 +24,7 @@ from ft8_appliance.statemachine.machine import (
     _tier_new_dxcc_psk,
     _tier_not_worked,
     _tier_psk_heard_us,
+    _tier_psk_snr,
     _tier_snr,
 )
 from ft8_appliance.statemachine.states import DecodedMsg, MachineContext
@@ -165,6 +164,19 @@ def test_tier_marine_psk_needs_both():
     ctx2 = _ctx(marine_calls={"DL3QR"}, psk_heard_us={"EA4XYZ"})
     assert _tier_marine_psk(_decode("DL3QR"), ctx2) == 0  # nur marine, kein PSK
     assert _tier_marine_psk(_decode("EA4XYZ"), ctx2) == 0  # nur PSK, kein marine
+
+
+def test_tier_psk_snr_uses_report_strength():
+    ctx = _ctx(psk_snr={"EA4XYZ": -8})
+    assert _tier_psk_snr(_decode("EA4XYZ"), ctx) == -8
+    assert _tier_psk_snr(_decode("DL1ABC"), ctx) == -99
+
+
+def test_psk_snr_priority_can_beat_decode_snr():
+    ctx = _ctx(hunt_priority=["psk_snr", "snr"], psk_snr={"EA4XYZ": -8, "DL1ABC": -22})
+    psk_good = _decode("EA4XYZ", snr=-18)
+    local_strong = _decode("DL1ABC", snr=-5)
+    assert _compute_tier_score(psk_good, ctx) > _compute_tier_score(local_strong, ctx)
 
 
 def test_tier_new_dxcc():
@@ -316,7 +328,7 @@ def test_hunt_tiers_registry_complete():
         "marine_psk", "marine", "tail_end_target",
         "grayline", "band_open", "active_hour", "buddy_seen",
         "new_dxcc_psk", "new_dxcc",
-        "psk_heard_us", "new_dxcc_band", "new_grid", "new_grid_band",
+        "psk_heard_us", "psk_snr", "new_dxcc_band", "new_grid", "new_grid_band",
         "not_worked", "dxcc_rarity", "snr",
     }
     assert set(HUNT_TIERS.keys()) == expected
@@ -375,8 +387,8 @@ def test_hunt_priority_auto_migration_preserves_user_order():
     assert cfg.hunt_priority[0] == "new_dxcc"  # User-Sortierung erhalten
     assert cfg.hunt_priority[1] == "marine"
     assert cfg.hunt_priority[-1] == "snr"
-    # v0.19.0: 19 known Tiers (+ not_in_pileup)
-    assert len(cfg.hunt_priority) == 19
+    # v0.66.0: 20 known Tiers (+ psk_snr)
+    assert len(cfg.hunt_priority) == 20
 
 
 def test_hunt_priority_validator_keeps_unknown_tiers():
@@ -391,7 +403,7 @@ def test_hunt_priority_validator_empty_list_to_default():
     """Leere Liste in der Config → komplette Default-Liste."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 19  # v0.19.0
+    assert len(cfg.hunt_priority) == 20  # v0.66.0
     assert cfg.hunt_priority[0] == "not_bad_reputation"
 
 
