@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # install.sh — provision a fresh Raspberry Pi OS Lite for the FT8 Appliance
 #
-# Idempotent. Re-runnable. Reads /home/sebastian/ft8-appliance/architecture.md
+# Idempotent. Re-runnable. Reads architecture.md from the checked-out repo
 # for context, /etc/ft8-appliance/config.yaml for runtime config.
 #
 # Expected starting point:
 #   * Pi OS Lite 64-bit (bookworm) booted from NVMe
-#   * User `sebastian` with NOPASSWD sudo (single-operator appliance,
-#     name is historisch — auf den Pis gibts den User schon)
-#   * Repo entweder per `git clone` oder per rsync nach
-#     /home/sebastian/ft8-appliance/ kopiert
-#   * SSH key from workstation installed in ~sebastian/.ssh/authorized_keys
+#   * A normal Linux user with sudo for the first install
+#   * Repo either cloned or rsynced to that user's ~/ft8-appliance
+#   * SSH key from workstation installed in the app user's authorized_keys
 #
 # Hinweis: dieses Script ist nur für die *erste* Inbetriebnahme nötig.
 # Spätere Updates kommen via systemd-Timer `ft8-self-update.timer` aus
@@ -18,9 +16,49 @@
 
 set -euo pipefail
 
-APP_USER="sebastian"
-APP_DIR="/home/${APP_USER}/ft8-appliance"
+usage() {
+    cat >&2 <<'EOF'
+usage: sudo ./deploy/install.sh [--user USER] [--dir APP_DIR]
+
+Defaults:
+  --dir   repository root containing this script
+  --user  SUDO_USER when available, otherwise owner of APP_DIR
+EOF
+}
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
+APP_DIR="${FT8_APP_DIR:-${REPO_ROOT}}"
+APP_USER="${FT8_APP_USER:-${SUDO_USER:-}}"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --user)
+            APP_USER="${2:-}"
+            shift 2
+            ;;
+        --dir)
+            APP_DIR="${2:-}"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+APP_DIR="$(realpath -m "${APP_DIR}")"
+if [ -z "${APP_USER}" ] && [ -d "${APP_DIR}" ]; then
+    APP_USER="$(stat -c '%U' "${APP_DIR}")"
+fi
+
 ETC_DIR="/etc/ft8-appliance"
+INSTALL_ENV="${ETC_DIR}/install.env"
 LOG_DIR="/var/log/ft8-appliance"
 LIB_DIR="/var/lib/ft8-appliance"
 TILES_DIR="${LIB_DIR}/tiles"
@@ -35,8 +73,15 @@ if [ ! -d "${APP_DIR}" ]; then
     exit 1
 fi
 
-if ! id -u "${APP_USER}" >/dev/null 2>&1; then
+if [ -z "${APP_USER}" ] || ! id -u "${APP_USER}" >/dev/null 2>&1; then
     echo "expected user '${APP_USER}' to exist on this system" >&2
+    exit 1
+fi
+
+APP_HOME="$(getent passwd "${APP_USER}" | cut -d: -f6)"
+APP_GROUP="$(id -gn "${APP_USER}")"
+if [ ! -d "${APP_HOME}" ]; then
+    echo "could not determine home directory for user '${APP_USER}'" >&2
     exit 1
 fi
 
@@ -59,7 +104,15 @@ apt-get install -y --no-install-recommends \
 
 # ----------------------------------------------------------------------------
 section "2/8  Directories"
-install -d -o "${APP_USER}" -g "${APP_USER}" "${ETC_DIR}" "${LOG_DIR}" "${LIB_DIR}" "${TILES_DIR}"
+install -d -o "${APP_USER}" -g "${APP_GROUP}" "${ETC_DIR}" "${LOG_DIR}" "${LIB_DIR}" "${TILES_DIR}"
+{
+    printf 'APP_USER=%q\n' "${APP_USER}"
+    printf 'APP_GROUP=%q\n' "${APP_GROUP}"
+    printf 'APP_HOME=%q\n' "${APP_HOME}"
+    printf 'APP_DIR=%q\n' "${APP_DIR}"
+} > "${INSTALL_ENV}"
+chown root:root "${INSTALL_ENV}"
+chmod 644 "${INSTALL_ENV}"
 
 # ----------------------------------------------------------------------------
 # Reihenfolge wichtig: ft8_lib MUSS vor dem cffi-build da sein, weil
@@ -68,23 +121,23 @@ install -d -o "${APP_USER}" -g "${APP_USER}" "${ETC_DIR}" "${LOG_DIR}" "${LIB_DI
 # fälschlich "(already up-to-date)" ohne die .so zu produzieren —
 # Service startete dann mit disabled Decode-Pipeline.
 section "3/8  ft8_lib (vendored submodule, compile with -fPIC)"
-sudo -u "${APP_USER}" bash -lc "
+sudo -u "${APP_USER}" env APP_DIR="${APP_DIR}" bash -lc '
     set -e
-    cd ${APP_DIR}/vendor/ft8_lib
+    cd "${APP_DIR}/vendor/ft8_lib"
     make clean
-    make CFLAGS='-O3 -DHAVE_STPCPY -I. -fPIC'
-"
+    make CFLAGS="-O3 -DHAVE_STPCPY -I. -fPIC"
+'
 
 # ----------------------------------------------------------------------------
 section "4/8  Python venv + dependencies + cffi-Extension"
-sudo -u "${APP_USER}" bash -lc "
+sudo -u "${APP_USER}" env APP_DIR="${APP_DIR}" bash -lc '
     set -e
-    cd ${APP_DIR}/backend
+    cd "${APP_DIR}/backend"
     python3 -m venv .venv
     .venv/bin/pip install --upgrade pip setuptools wheel
     .venv/bin/pip install -e .[hardware]
     .venv/bin/python -m ft8_appliance.decode._build_ft8
-"
+'
 
 # ----------------------------------------------------------------------------
 section "5/8  Config files"
@@ -107,22 +160,27 @@ network:
 ui:
   language: de
 YAML
-    chown "${APP_USER}:${APP_USER}" "${ETC_DIR}/config.yaml"
+    chown "${APP_USER}:${APP_GROUP}" "${ETC_DIR}/config.yaml"
     chmod 640 "${ETC_DIR}/config.yaml"
     echo "wrote default ${ETC_DIR}/config.yaml — EDIT IT before first boot"
 fi
 
 # ----------------------------------------------------------------------------
 section "6/8  System service files + sudoers"
-install -m 644 "${APP_DIR}/deploy/systemd/ft8-controller.service"    /etc/systemd/system/
-install -m 644 "${APP_DIR}/deploy/systemd/ft8-rigctld.service"       /etc/systemd/system/
-install -m 644 "${APP_DIR}/deploy/systemd/ft8-ap-fallback.service"   /etc/systemd/system/
-install -m 644 "${APP_DIR}/deploy/systemd/ft8-self-update.service"   /etc/systemd/system/
-install -m 644 "${APP_DIR}/deploy/systemd/ft8-self-update.timer"     /etc/systemd/system/
+RENDER_DIR="${APP_DIR}/.deploy-rendered"
+APP_USER="${APP_USER}" APP_GROUP="${APP_GROUP}" APP_HOME="${APP_HOME}" APP_DIR="${APP_DIR}" \
+    "${APP_DIR}/deploy/render-install-files.sh" "${RENDER_DIR}" "${INSTALL_ENV}"
+chown -R "${APP_USER}:${APP_GROUP}" "${RENDER_DIR}"
+
+install -m 644 "${RENDER_DIR}/systemd/ft8-controller.service"    /etc/systemd/system/
+install -m 644 "${RENDER_DIR}/systemd/ft8-rigctld.service"       /etc/systemd/system/
+install -m 644 "${RENDER_DIR}/systemd/ft8-ap-fallback.service"   /etc/systemd/system/
+install -m 644 "${RENDER_DIR}/systemd/ft8-self-update.service"   /etc/systemd/system/
+install -m 644 "${RENDER_DIR}/systemd/ft8-self-update.timer"     /etc/systemd/system/
 
 # Sudoers-Snippet für Self-Update + Backend-trigger des Self-Update-Service.
 # Scope ist absichtlich minimal: nur 4 spezifische systemctl-Befehle.
-install -m 440 "${APP_DIR}/deploy/sudoers.d/ft8-self-update"         /etc/sudoers.d/ft8-self-update
+install -m 440 "${RENDER_DIR}/sudoers.d/ft8-self-update"             /etc/sudoers.d/ft8-self-update
 visudo -c -f /etc/sudoers.d/ft8-self-update >/dev/null
 
 # Render /etc/default/ft8-rigctld from RigConfig in config.yaml so the

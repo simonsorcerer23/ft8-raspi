@@ -6,6 +6,10 @@
 set -u
 
 APP_DIR="/home/sebastian/ft8-appliance"
+if [ -f /etc/ft8-appliance/install.env ]; then
+    # shellcheck disable=SC1091
+    . /etc/ft8-appliance/install.env
+fi
 # Live DB liegt unter /var/lib (siehe ReadWritePaths in
 # deploy/systemd/ft8-controller.service). Frühere Versionen suchten unter
 # ${APP_DIR}/data/appliance.db — das war ein Doppel-Bug (Pfad + Dateiname),

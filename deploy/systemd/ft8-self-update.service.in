@@ -1,0 +1,24 @@
+[Unit]
+Description=FT8 Appliance — Self-Update from GitHub tagged releases
+Documentation=file://@APP_DIR@/docs/self_update.md
+After=network-online.target ft8-controller.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@APP_USER@
+Group=@APP_GROUP@
+WorkingDirectory=@APP_DIR@
+
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=@APP_HOME@
+
+TimeoutStartSec=600
+
+ExecStart=@APP_DIR@/scripts/self-update.sh
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

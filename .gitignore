@@ -24,6 +24,7 @@ frontend/dist/
 !backend/ft8_appliance/web/static/
 
 # Build artefacts
+.deploy-rendered/
 vendor/ft8_lib/build/
 *.o
 *.a

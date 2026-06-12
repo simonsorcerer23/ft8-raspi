@@ -1,0 +1,15 @@
+[Unit]
+Description=Periodic FT8 Self-Update poll (every 10 min + boot + nightly)
+Documentation=file://@APP_DIR@/docs/self_update.md
+
+[Timer]
+Unit=ft8-self-update.service
+
+OnBootSec=2min
+OnUnitActiveSec=10min
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

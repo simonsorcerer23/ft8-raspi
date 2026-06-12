@@ -1,0 +1,38 @@
+[Unit]
+Description=FT8 Raspi Appliance Controller
+Documentation=file://@APP_DIR@/architecture.md
+After=network-online.target gpsd.service chrony.service
+Wants=network-online.target gpsd.service chrony.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=notify
+User=@APP_USER@
+Group=@APP_GROUP@
+WorkingDirectory=@APP_DIR@/backend
+
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=FT8_CONFIG=/etc/ft8-appliance/config.yaml
+
+ExecStart=@APP_DIR@/backend/.venv/bin/uvicorn \
+    ft8_appliance.web.app:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --no-access-log
+
+Restart=always
+RestartSec=5
+
+ProtectSystem=full
+ProtectHome=false
+ReadWritePaths=/var/lib/ft8-appliance /var/log/ft8-appliance /etc/ft8-appliance
+PrivateTmp=true
+SupplementaryGroups=plugdev dialout netdev
+
+NotifyAccess=main
+WatchdogSec=30
+
+[Install]
+WantedBy=multi-user.target

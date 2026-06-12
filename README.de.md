@@ -163,10 +163,17 @@ npm run dev   # http://localhost:5173
 
 ```bash
 ssh pi@<host>
-git clone https://github.com/simonsorcerer23/ft8-raspi.git /home/sebastian/ft8-appliance
-cd /home/sebastian/ft8-appliance
+git clone https://github.com/simonsorcerer23/ft8-raspi.git ~/ft8-appliance
+cd ~/ft8-appliance
 sudo ./deploy/install.sh
 ```
+
+`install.sh` nutzt standardmaessig den ausgecheckten Repo-Pfad und den
+aufrufenden sudo-User (Fallback: Repo-Owner). Fuer dedizierte Accounts oder
+abweichende Pfade: `sudo ./deploy/install.sh --user USER --dir APP_DIR`. Der
+Installer rendert systemd-Units und Self-Update-sudoers-Regeln fuer genau
+diese Installation und speichert die Werte in
+`/etc/ft8-appliance/install.env`.
 
 Folge-Releases werden automatisch über `ft8-self-update.timer` ausgerollt.
 Ein neues Release auf der Workstation schneidest du mit:

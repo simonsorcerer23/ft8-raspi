@@ -3,6 +3,8 @@ Description=FT8 Raspi Appliance Controller
 Documentation=file:///home/sebastian/ft8-appliance/architecture.md
 After=network-online.target gpsd.service chrony.service
 Wants=network-online.target gpsd.service chrony.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 # Type=notify: systemd wartet auf sd_notify("READY=1") vom orchestrator
@@ -32,8 +34,6 @@ RestartSec=5
 # 120 s auf und setzt den Service auf failed. Mode-Watchdog im
 # orchestrator + ntfy-Push würden Sebastian dann via mode-watchdog-
 # Decode-Funkstille-Detektion warnen.
-StartLimitIntervalSec=120
-StartLimitBurst=5
 
 # Hardening note: NoNewPrivileges is intentionally NOT set so the WLAN-
 # manager API can shell out to ``sudo nmcli`` (the appliance user has a

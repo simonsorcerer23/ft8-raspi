@@ -26,7 +26,14 @@ set -euo pipefail
 
 # -----------------------------------------------------------------------------
 # Konfiguration
+INSTALL_ENV="/etc/ft8-appliance/install.env"
 APP_DIR="/home/sebastian/ft8-appliance"
+INSTALL_ENV_PRESENT=0
+if [ -f "${INSTALL_ENV}" ]; then
+    # shellcheck disable=SC1090
+    . "${INSTALL_ENV}"
+    INSTALL_ENV_PRESENT=1
+fi
 API_BASE="http://127.0.0.1:8000/api"
 NTFY_SERVER="https://ntfy.sh"
 NTFY_TOPIC="ft8-system-$(hostname)"
@@ -222,6 +229,18 @@ fi
 DAEMON_RELOAD_NEEDED=0
 SUDOERS_NEEDS_MANUAL_BOOTSTRAP=0
 
+render_system_files_if_configured() {
+    if [ "${INSTALL_ENV_PRESENT}" != "1" ]; then
+        return 0
+    fi
+    local render_dir="${APP_DIR}/.deploy-rendered"
+    log "render system files from ${INSTALL_ENV}"
+    if ! "${APP_DIR}/deploy/render-install-files.sh" "${render_dir}" "${INSTALL_ENV}"; then
+        log "  ⚠ render-install-files failed"
+        return 1
+    fi
+}
+
 sync_system_file() {
     local src="$1"     # relativer Pfad im Repo
     local dst="$2"     # absoluter Ziel-Pfad
@@ -276,12 +295,25 @@ install_and_restart() {
     # läuft der frisch-restartete Service noch mit altem unit-file und
     # ein zweiter restart wäre nötig.
     log "system-file sync (unit-files + sudoers)"
-    sync_system_file "deploy/sudoers.d/ft8-self-update"       "/etc/sudoers.d/ft8-self-update"                440 || true
-    sync_system_file "deploy/systemd/ft8-controller.service"  "/etc/systemd/system/ft8-controller.service"    644 || true
-    sync_system_file "deploy/systemd/ft8-self-update.service" "/etc/systemd/system/ft8-self-update.service"   644 || true
-    sync_system_file "deploy/systemd/ft8-self-update.timer"   "/etc/systemd/system/ft8-self-update.timer"     644 || true
-    sync_system_file "deploy/systemd/ft8-ap-fallback.service" "/etc/systemd/system/ft8-ap-fallback.service"   644 || true
-    sync_system_file "deploy/systemd/ft8-rigctld.service"     "/etc/systemd/system/ft8-rigctld.service"       644 || true
+    if [ "${INSTALL_ENV_PRESENT}" = "1" ]; then
+        if render_system_files_if_configured; then
+            sync_system_file ".deploy-rendered/sudoers.d/ft8-self-update"       "/etc/sudoers.d/ft8-self-update"                440 || true
+            sync_system_file ".deploy-rendered/systemd/ft8-controller.service"  "/etc/systemd/system/ft8-controller.service"    644 || true
+            sync_system_file ".deploy-rendered/systemd/ft8-self-update.service" "/etc/systemd/system/ft8-self-update.service"   644 || true
+            sync_system_file ".deploy-rendered/systemd/ft8-self-update.timer"   "/etc/systemd/system/ft8-self-update.timer"     644 || true
+            sync_system_file ".deploy-rendered/systemd/ft8-ap-fallback.service" "/etc/systemd/system/ft8-ap-fallback.service"   644 || true
+            sync_system_file ".deploy-rendered/systemd/ft8-rigctld.service"     "/etc/systemd/system/ft8-rigctld.service"       644 || true
+        else
+            log "  ⚠ rendered system-file sync skipped"
+        fi
+    else
+        sync_system_file "deploy/sudoers.d/ft8-self-update"       "/etc/sudoers.d/ft8-self-update"                440 || true
+        sync_system_file "deploy/systemd/ft8-controller.service"  "/etc/systemd/system/ft8-controller.service"    644 || true
+        sync_system_file "deploy/systemd/ft8-self-update.service" "/etc/systemd/system/ft8-self-update.service"   644 || true
+        sync_system_file "deploy/systemd/ft8-self-update.timer"   "/etc/systemd/system/ft8-self-update.timer"     644 || true
+        sync_system_file "deploy/systemd/ft8-ap-fallback.service" "/etc/systemd/system/ft8-ap-fallback.service"   644 || true
+        sync_system_file "deploy/systemd/ft8-rigctld.service"     "/etc/systemd/system/ft8-rigctld.service"       644 || true
+    fi
     if [ "${DAEMON_RELOAD_NEEDED}" = "1" ]; then
         sudo -n /bin/systemctl daemon-reload 2>/dev/null \
             || log "  ⚠ daemon-reload fehlgeschlagen (alte sudoers?) — wirkt erst nach reboot"
@@ -359,7 +391,11 @@ ntfy "🟢" "Update ${CURRENT_DESC} → ${LATEST_TAG} ok (${ELAPSED}s)"
 # /usr/bin/install noch nicht), pushen wir EINMAL einen Hinweis. Bei
 # nächstem Self-Update versuchen wir's wieder.
 if [ "${SUDOERS_NEEDS_MANUAL_BOOTSTRAP}" = "1" ]; then
-    ntfy "⚙" "Self-Update: sudoers-Snippet hat sich geändert. Einmalig manuell installieren:  ssh $(hostname) 'sudo install -m 440 ~/ft8-appliance/deploy/sudoers.d/ft8-self-update /etc/sudoers.d/'"
+    if [ "${INSTALL_ENV_PRESENT}" = "1" ]; then
+        ntfy "⚙" "Self-Update: sudoers-Snippet hat sich geändert. Einmalig manuell: ssh $(hostname) 'cd ${APP_DIR} && deploy/render-install-files.sh .deploy-rendered /etc/ft8-appliance/install.env && sudo install -m 440 .deploy-rendered/sudoers.d/ft8-self-update /etc/sudoers.d/ft8-self-update'"
+    else
+        ntfy "⚙" "Self-Update: sudoers-Snippet hat sich geändert. Einmalig manuell: ssh $(hostname) 'sudo install -m 440 ${APP_DIR}/deploy/sudoers.d/ft8-self-update /etc/sudoers.d/ft8-self-update'"
+    fi
 fi
 
 exit 0

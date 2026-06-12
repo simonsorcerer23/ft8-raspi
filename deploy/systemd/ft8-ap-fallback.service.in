@@ -1,0 +1,9 @@
+[Unit]
+Description=FT8 Appliance AP-Fallback (hostapd + dnsmasq)
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=@APP_DIR@/deploy/scripts/start-ap-fallback.sh
+ExecStop=@APP_DIR@/deploy/scripts/stop-ap-fallback.sh

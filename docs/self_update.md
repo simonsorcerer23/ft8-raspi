@@ -22,7 +22,10 @@ Für historische Begründungen siehe commit-history.
 |---|---|
 | `scripts/release.sh` | Workstation-Side: Sanity-Checks + Frontend-Build + commit static/ + `_version.py` + tag + push |
 | `scripts/self-update.sh` | Pi-Side: poll + idle-check + panic + checkout + unit-sync + restart + health-probe + rollback |
-| `deploy/systemd/ft8-self-update.service` | systemd-Wrapper für self-update.sh, Type=oneshot, User=sebastian |
+| `deploy/systemd/*.service.in` | Templates fuer systemd-Units; `install.sh` rendert User/Pfade konkret |
+| `/etc/ft8-appliance/install.env` | Persistierter App-User/App-Pfad fuer Self-Update-Rendering |
+| `deploy/render-install-files.sh` | Rendert systemd-Units + sudoers nach `.deploy-rendered/` |
+| `deploy/systemd/ft8-self-update.service` | Default-Unit fuer historische `sebastian`-Installationen ohne `install.env` |
 | `deploy/systemd/ft8-self-update.timer` | Boot+10min+04:00 poll-Trigger |
 | `deploy/sudoers.d/ft8-self-update` | NOPASSWD scope: systemctl restart/start/is-active/daemon-reload + install + visudo |
 | `backend/ft8_appliance/_version.py` | Single source of truth für installierte Version (auto-generiert von release.sh) |
@@ -71,13 +74,25 @@ auch die installierten Versionen von:
 - `/etc/systemd/system/ft8-ap-fallback.service`
 - `/etc/systemd/system/ft8-rigctld.service`
 
-Logik in `sync_system_file()`: `cmp -s` zwischen repo-File und
-installiertem File. Wenn unterschiedlich: `sudo install`, danach
-`daemon-reload` einmalig (wenn mindestens ein File neu war).
+Neue Installationen haben `/etc/ft8-appliance/install.env`. Dann rendert
+`self-update.sh` zuerst:
+
+```bash
+deploy/render-install-files.sh .deploy-rendered /etc/ft8-appliance/install.env
+```
+
+Logik in `sync_system_file()`: `cmp -s` zwischen gerendertem File
+(`.deploy-rendered/...`) und installiertem File. Wenn unterschiedlich:
+`sudo install`, danach `daemon-reload` einmalig (wenn mindestens ein File
+neu war).
+
+Historische `sebastian`-Pis ohne `install.env` nutzen weiter die Repo-Files
+unter `deploy/systemd/` und `deploy/sudoers.d/` direkt. Das ist Absicht:
+Deren altes sudoers-Snippet erlaubt nur exakt diese Quellpfade.
 
 **Sudoers ist Sonder-Fall:** Bevor wir das neue sudoers-Snippet
-installieren, validieren wir die REPO-Version per
-`sudo visudo -c -f <repo-path>`. Broken sudoers würde sonst zum
+installieren, validieren wir die gerenderte Version per
+`sudo visudo -c -f <rendered-path>`. Broken sudoers würde sonst zum
 permanenten Lockout führen (kein NOPASSWD mehr → kein future
 self-update mehr).
 
@@ -86,8 +101,8 @@ NEUEN install-Befehl noch nicht NOPASSWD erlaubt, schlägt sudo fehl.
 Self-update.sh loggt das, schickt eine `⚙`-ntfy mit dem manuellen
 Bootstrap-Befehl, und macht trotzdem mit dem systemctl restart weiter
 (Best-Effort). Wenn die neue sudoers-Datei einen weiter eingeschränkten
-oder weiter geöffneten Scope braucht, **manuell ein einmaliges
-`scp + sudo install`** auf den Pi machen bevor man das Tag cuttet.
+oder weiter geöffneten Scope braucht, **manuell einmal rendern + sudo
+installieren** bevor man das Tag cuttet.
 
 ## Restart-Safety: Panic vor Restart
 
@@ -173,7 +188,8 @@ selbst noch nicht geladen ist):
 
 ## Sudoers-Scope
 
-`/etc/sudoers.d/ft8-self-update` erlaubt User `sebastian` **NOPASSWD**:
+`/etc/sudoers.d/ft8-self-update` erlaubt dem in
+`/etc/ft8-appliance/install.env` festgelegten App-User **NOPASSWD**:
 
 **systemctl** (eng begrenzt auf 2 Services):
 - `systemctl restart ft8-controller[.service]`
@@ -222,11 +238,17 @@ ssh <pi> 'cd ~/ft8-appliance/backend && python3 -m venv .venv \
           && .venv/bin/pip install -e .[hardware] \
           && .venv/bin/python -m ft8_appliance.decode._build_ft8'
 
-# System-Files installieren
-ssh <pi> 'sudo install -m 644 ~/ft8-appliance/deploy/systemd/ft8-controller.service    /etc/systemd/system/
-          sudo install -m 644 ~/ft8-appliance/deploy/systemd/ft8-self-update.service   /etc/systemd/system/
-          sudo install -m 644 ~/ft8-appliance/deploy/systemd/ft8-self-update.timer     /etc/systemd/system/
-          sudo install -m 440 ~/ft8-appliance/deploy/sudoers.d/ft8-self-update         /etc/sudoers.d/ft8-self-update
+# System-Files installieren (neue generische Installationen)
+ssh <pi> 'cd ~/ft8-appliance
+          sudo install -d /etc/ft8-appliance
+          printf "APP_USER=%q\nAPP_GROUP=%q\nAPP_HOME=%q\nAPP_DIR=%q\n" \
+              "$(id -un)" "$(id -gn)" "$HOME" "$PWD" \
+              | sudo tee /etc/ft8-appliance/install.env >/dev/null
+          deploy/render-install-files.sh .deploy-rendered /etc/ft8-appliance/install.env
+          sudo install -m 644 .deploy-rendered/systemd/ft8-controller.service    /etc/systemd/system/
+          sudo install -m 644 .deploy-rendered/systemd/ft8-self-update.service   /etc/systemd/system/
+          sudo install -m 644 .deploy-rendered/systemd/ft8-self-update.timer     /etc/systemd/system/
+          sudo install -m 440 .deploy-rendered/sudoers.d/ft8-self-update         /etc/sudoers.d/ft8-self-update
           sudo visudo -c -f /etc/sudoers.d/ft8-self-update
           sudo systemctl daemon-reload
           sudo systemctl start ft8-controller
