@@ -509,7 +509,7 @@
         <h3>{t('cfg.operating')}</h3>
 
         <h5 class="subgroup">{t('cfg.slot_decoder')}</h5>
-        <div class="grid">
+        <div class="grid slot-decoder-grid">
           <label class="field"><span>{t('cfg.mode')}</span>
             <select bind:value={cfg.operating.mode}>
               <option value="FT8">{t('cfg.mode_ft8')}</option>
@@ -815,6 +815,12 @@
     display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
     gap: 0.5rem;
   }
+  .slot-decoder-grid {
+    grid-template-columns:
+      minmax(12rem, 1.1fr)
+      minmax(14rem, 1.3fr)
+      minmax(10rem, 0.8fr);
+  }
   /* Variante fuer Reihen mit ungleich langen Labels — Inputs unten
      bündig statt Top-Aligned. So sitzen die Eingabefelder auf
      gleicher Höhe egal ob das Label 1- oder 2-zeilig umbricht.
@@ -845,6 +851,8 @@
   input[type=text], input[type=number], input[type=password], select {
     background: #0b1220; color: var(--fg); border: 1px solid #334155;
     border-radius: 4px; padding: 0.35rem 0.5rem; font-size: 0.9rem;
+    min-width: 0;
+    box-sizing: border-box;
   }
   .row { display: flex; gap: 0.4rem; margin-bottom: 0.3rem; align-items: center; }
   .row input { flex: 1; min-width: 4rem; }
@@ -909,6 +917,12 @@
   }
   .autopilot-picker {
     display: flex; flex-direction: column; gap: 0.35rem;
+    min-width: 0;
+  }
+  .autopilot-picker .band-chips {
+    min-width: 0;
+    width: 100%;
+    flex: initial;
   }
   .picker-title {
     color: #94a3b8; font-size: 0.75rem; text-transform: uppercase;
@@ -920,6 +934,7 @@
     border-radius: 999px; padding: 0.15rem 0.55rem;
     font-size: 0.8rem; font-family: ui-monospace, monospace;
     cursor: pointer; user-select: none;
+    min-width: 0;
   }
   .chip input { margin: 0; cursor: pointer; }
   .chip:has(input:checked) {
@@ -972,6 +987,7 @@
     grid-template-rows: 2.6em 2.4em;  /* feste Höhen Label + Input */
     gap: 0.3rem;
     align-items: end;
+    min-width: 0;
   }
   .field > span {
     font-size: 0.85em;
@@ -991,6 +1007,9 @@
   .field > input[type="text"],
   .field > input[type="number"],
   .field > select {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     height: 2.4em;
     padding: 0 0.7em;
     background: rgba(15, 23, 42, 0.9);  /* dark statt rgba(white) damit
@@ -1078,6 +1097,12 @@
   }
   .toggle.on .toggle-knob { transform: translateX(20px); }
   .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 720px) {
+    .slot-decoder-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 
   /* v0.10.0 Hunt-Priority-Tier-Liste */
   .hunt-tier-list {
