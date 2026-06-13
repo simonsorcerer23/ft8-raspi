@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.0 — 2026-06-13
+- feat: add band mode autopilot
+
 ## v0.65.9 — 2026-06-12
 - deploy: render install paths from environment
 - docs: update hunt picker documentation
