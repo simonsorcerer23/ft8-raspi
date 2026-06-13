@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.1 — 2026-06-13
+- fix: prevent config control overlap
+
 ## v0.66.0 — 2026-06-13
 - feat: add band mode autopilot
 
