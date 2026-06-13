@@ -31,11 +31,11 @@ import sdnotify
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, overload
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .. import i18n as _i18n
 from ..config import AppConfig, OperatorConfig
@@ -64,8 +64,10 @@ def _as_utc(dt: "datetime | None") -> "datetime | None":
 from ..db import repository, session_scope
 from ..db.models import Blacklist as DbBlacklist
 from ..db.models import CallReputation as DbCallReputation
+from ..db.models import Decode as DbDecode
 from ..db.models import DxpeditionSchedule as DbDxpeditionSchedule
 from ..db.models import FreqReputation as DbFreqReputation
+from ..db.models import PickAttempt as DbPickAttempt
 from ..db.models import Qso
 from ..db.models import Watchlist as DbWatchlist
 from ..gps import GpsdClient, GpsSnapshot
@@ -76,6 +78,7 @@ from ..statemachine import (
     GuardLimits,
     HardwareState,
     MachineContext,
+    State,
     StateMachine,
 )
 from ..integrations import (
@@ -162,6 +165,31 @@ class LoggedAction:
     @property
     def payload(self) -> dict:
         return self.action.payload
+
+
+@dataclass(frozen=True, slots=True)
+class AutopilotStats:
+    """Recent local evidence for one band/mode candidate."""
+
+    band: str
+    mode: str
+    decodes: int = 0
+    attempts: int = 0
+    completed: int = 0
+
+    @property
+    def completion_pct(self) -> float:
+        if self.attempts <= 0:
+            return 0.0
+        return 100.0 * self.completed / self.attempts
+
+
+@dataclass(frozen=True, slots=True)
+class AutopilotDecision:
+    band: str
+    mode: str
+    reason: str
+    score: float
 
 
 # A decode source is "given a slot, produce its decodes". Real impl
@@ -361,6 +389,13 @@ class Orchestrator:
     # tickte der Watchdog sonst und feuerte einen Fehlalarm "boot_mode=hunt
     # aber kein Modus aktiv" — obwohl gleich neu gestartet + Hunt resumed wird.
     _mode_watchdog_grace_until: float = field(default=0.0, init=False)
+    # Band/Mode-Autopilot: bewertet lokale Hunt-Telemetrie plus schwachen
+    # Propagations-Prior, schaltet aber nur innerhalb der Config-Policy.
+    AUTOPILOT_EVAL_INTERVAL_S: typing.ClassVar[float] = 60.0
+    AUTOPILOT_SWITCH_MARGIN: typing.ClassVar[float] = 12.0
+    _autopilot_last_eval_at: float = field(default=0.0, init=False)
+    _autopilot_last_switch_at: float = field(default=0.0, init=False)
+    _autopilot_last_reason: str | None = field(default=None, init=False)
     _psk_last_refresh_ok: bool = field(default=False, init=False)
     # v0.14.0 — Watchlist + Band-Conditions + Solar-Refresh-Throttle.
     # _watchlist_calls: set normalisierter Calls die der User beobachtet
@@ -1981,6 +2016,77 @@ class Orchestrator:
             return abs(rig_value - expected) <= tolerance
         return rig_value == expected
 
+    @staticmethod
+    def _valid_digital_mode(mode: str | None) -> typing.Literal["FT8", "FT4"]:
+        if mode in ("FT8", "FT4"):
+            return typing.cast(typing.Literal["FT8", "FT4"], mode)
+        return "FT8"
+
+    def _band_config_by_name(self, name: str | None) -> Any | None:
+        if not name:
+            return None
+        for band in self.config.bands:
+            if band.name == name:
+                return band
+        return None
+
+    async def _sync_digital_mode_runtime(
+        self, old_mode: str | None, new_mode: str, reason: str
+    ) -> bool:
+        """Apply FT8/FT4 runtime side effects without persisting config."""
+
+        new_mode = self._valid_digital_mode(new_mode)
+        old_mode = self._valid_digital_mode(old_mode)
+        changed = old_mode != new_mode
+
+        if hasattr(self.decode_source, "mode") and self.decode_source.mode != new_mode:
+            self.decode_source.mode = new_mode
+            changed = True
+
+        from .slot_clock import FT4_SLOT_SECONDS, SLOT_SECONDS, SlotClock
+
+        target_slot = FT4_SLOT_SECONDS if new_mode == "FT4" else SLOT_SECONDS
+        if isinstance(self.slot_clock, SlotClock):
+            self.slot_clock.set_slot_seconds(target_slot)
+
+        if changed:
+            log.warning(
+                "FT8/FT4 mode switch %s -> %s (%s): decoder + slot clock "
+                "live-retuned to %.1fs slots.",
+                old_mode, new_mode, reason, target_slot,
+            )
+        return changed
+
+    async def _apply_autopilot_target(
+        self, target_band: str, target_mode: str, reason: str
+    ) -> None:
+        """Switch to a band/mode pair selected by the Hunt autopilot."""
+
+        band_cfg = self._band_config_by_name(target_band)
+        if band_cfg is None:
+            log.info("autopilot: target band %s not configured, skip", target_band)
+            return
+        target_mode = self._valid_digital_mode(target_mode)
+        old_mode = self._valid_digital_mode(self.config.operating.mode)
+        self.config.operating.mode = target_mode
+        await self._sync_digital_mode_runtime(old_mode, target_mode, reason)
+
+        target_hz = band_cfg.freq_for_mode(target_mode) * 1000
+        current_hz = self._last_rig.freq_hz if self._last_rig else None
+        if current_hz != target_hz:
+            log.info(
+                "autopilot: set dial %s/%s -> %d Hz (%s)",
+                target_band, target_mode, target_hz, reason,
+            )
+            await self.handle_set_freq(target_hz)
+            if hasattr(self.decode_source, "band_hint"):
+                try:
+                    self.decode_source.band_hint = target_band
+                except Exception:
+                    pass
+        elif old_mode != target_mode:
+            await self._ensure_dial_matches_mode(reason)
+
     async def _ensure_dial_matches_mode(self, reason: str) -> None:
         """Stell Rig-Dial auf die mode-passende Sub-Band-Freq.
 
@@ -2282,6 +2388,7 @@ class Orchestrator:
         * the state-machine context's callsign / limits change
         * online-integration clients get rebuilt with new credentials
         """
+        previous_mode = self._valid_digital_mode(self.config.operating.mode)
         self.config = new_cfg
         # Antenna validity
         antenna_names = {a.name for a in new_cfg.antennas}
@@ -2332,20 +2439,10 @@ class Orchestrator:
         # laufende async-Iterator liest _slot_seconds pro Slot neu, also kein
         # Service-Restart mehr noetig (vorher lief FT4 am 15-s-Takt → der
         # Decoder erwartete 7.5-s-Fenster → "short by samples, zero-padded").
-        new_mode = new_cfg.operating.mode if new_cfg.operating.mode in ("FT8", "FT4") else "FT8"
-        old_mode_for_dial = None
-        if hasattr(self.decode_source, "mode") and self.decode_source.mode != new_mode:
-            old_mode_for_dial = self.decode_source.mode
-            self.decode_source.mode = new_mode
-            from .slot_clock import FT4_SLOT_SECONDS, SLOT_SECONDS, SlotClock
-            target_slot = FT4_SLOT_SECONDS if new_mode == "FT4" else SLOT_SECONDS
-            if isinstance(self.slot_clock, SlotClock):
-                self.slot_clock.set_slot_seconds(target_slot)
-            log.warning(
-                "FT8/FT4 mode switch %s -> %s: decoder + slot clock live-retuned "
-                "to %.1fs slots (no restart needed).",
-                old_mode_for_dial, new_mode, target_slot,
-            )
+        new_mode = self._valid_digital_mode(new_cfg.operating.mode)
+        mode_runtime_changed = await self._sync_digital_mode_runtime(
+            previous_mode, new_mode, "config_hot_reload"
+        )
         # v0.6.0 Phase C: decoder_mode (standard|deep|multi) live-switch
         # auf der Pipeline ohne Restart. Pi-Last-adaptive Fallback bleibt
         # aktiv — wenn deep zu hoch laufen sollte, faellt Pipeline-Watchdog
@@ -2373,9 +2470,9 @@ class Orchestrator:
         # Sebastian v0.4.2: nach Mode-Switch Rig-Dial auf das richtige
         # Sub-Band setzen (FT4 hat eigene Frequenzen pro Band, sonst
         # hoert der FT4-Decoder weiter auf FT8-Freq).
-        if old_mode_for_dial is not None:
+        if previous_mode != new_mode or mode_runtime_changed:
             await self._ensure_dial_matches_mode(
-                f"mode_switch:{old_mode_for_dial}->{new_mode}"
+                f"mode_switch:{previous_mode}->{new_mode}"
             )
         # Default TX power update too (if user changed it in the form)
         if new_cfg.operator.default_power_w != self._tx_power_w:
@@ -2645,7 +2742,7 @@ class Orchestrator:
                         rx_callsign=self.config.operator.callsign,
                         snr_db=int(d.snr_db),
                         band_hz=band_hz,
-                        mode="FT8",
+                        mode=self.config.operating.mode or "FT8",
                         decoded_at=d.ts,
                     )
                 except Exception:
@@ -2658,7 +2755,330 @@ class Orchestrator:
         # 5. execute emitted actions
         await self._drain_actions()
 
+        try:
+            await self._maybe_run_autopilot()
+        except Exception as exc:
+            _log_loop_exc("autopilot", exc)
+
         # 6. notify status subscribers
+        self._push_status()
+
+    def _autopilot_allowed_modes(self) -> list[str]:
+        modes: list[str] = []
+        for mode in self.config.operating.autopilot_allowed_modes or []:
+            if mode in ("FT8", "FT4") and mode not in modes:
+                modes.append(mode)
+        return modes
+
+    def _autopilot_band_tx_allowed(self, band_name: str) -> bool:
+        try:
+            max_w = self.config.effective_max_power_w(band_name)
+        except Exception:
+            return False
+        if max_w is None or max_w <= 0:
+            return False
+        if not self._active_antenna:
+            return True
+        antenna = next(
+            (a for a in self.config.antennas if a.name == self._active_antenna),
+            None,
+        )
+        if antenna is None:
+            return True
+        return band_name in antenna.bands
+
+    def _autopilot_allowed_bands(self) -> list[str]:
+        configured = {b.name for b in self.config.bands}
+        bands: list[str] = []
+        for raw in self.config.operating.autopilot_allowed_bands or []:
+            name = (raw or "").strip()
+            if not name or name not in configured or name in bands:
+                continue
+            if self._autopilot_band_tx_allowed(name):
+                bands.append(name)
+        return bands
+
+    async def _autopilot_collect_stats(
+        self, bands: list[str], modes: list[str]
+    ) -> dict[tuple[str, str], AutopilotStats]:
+        stats = {
+            (band, mode): AutopilotStats(band=band, mode=mode)
+            for band in bands
+            for mode in modes
+        }
+        if not bands or not modes:
+            return stats
+
+        if not self.db_enabled:
+            active = self._band_for_rig_freq(self._last_rig.freq_hz or 0)
+            if active is not None and active.name in bands:
+                for mode in modes:
+                    stats[(active.name, mode)] = AutopilotStats(
+                        band=active.name,
+                        mode=mode,
+                        decodes=len(self._last_decodes),
+                    )
+            return stats
+
+        window_min = self.config.operating.autopilot_window_min
+        since = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=window_min)
+        try:
+            async with session_scope() as s:
+                decode_rows = await s.execute(
+                    select(DbDecode.band, func.count(DbDecode.id))
+                    .where(DbDecode.ts >= since, DbDecode.band.in_(bands))
+                    .group_by(DbDecode.band)
+                )
+                decodes_by_band = {
+                    str(band): int(count)
+                    for band, count in decode_rows.all()
+                    if band is not None
+                }
+
+                attempt_rows = await s.execute(
+                    select(
+                        DbPickAttempt.band,
+                        DbPickAttempt.mode,
+                        DbPickAttempt.outcome,
+                        func.count(DbPickAttempt.id),
+                    )
+                    .where(
+                        DbPickAttempt.ts >= since,
+                        DbPickAttempt.band.in_(bands),
+                        DbPickAttempt.mode.in_(modes),
+                    )
+                    .group_by(
+                        DbPickAttempt.band,
+                        DbPickAttempt.mode,
+                        DbPickAttempt.outcome,
+                    )
+                )
+                attempts: dict[tuple[str, str], int] = {}
+                completed: dict[tuple[str, str], int] = {}
+                for band, mode, outcome, count in attempt_rows.all():
+                    if band is None or mode is None:
+                        continue
+                    key = (str(band), str(mode))
+                    attempts[key] = attempts.get(key, 0) + int(count)
+                    if outcome == "completed":
+                        completed[key] = completed.get(key, 0) + int(count)
+
+            for band in bands:
+                for mode in modes:
+                    key = (band, mode)
+                    stats[key] = AutopilotStats(
+                        band=band,
+                        mode=mode,
+                        decodes=decodes_by_band.get(band, 0),
+                        attempts=attempts.get(key, 0),
+                        completed=completed.get(key, 0),
+                    )
+        except Exception as exc:
+            log.debug("autopilot stats unavailable: %s", exc)
+        return stats
+
+    def _autopilot_propagation_prior(self, band_name: str) -> float:
+        """Weak HF prior. Local telemetry can easily outvote this."""
+
+        hour = datetime.now(UTC).hour
+        if band_name in {"10m", "12m", "15m"}:
+            prior = 12.0 if 7 <= hour <= 18 else 5.0 if 5 <= hour <= 21 else -8.0
+        elif band_name == "17m":
+            prior = 9.0 if 7 <= hour <= 20 else -4.0
+        elif band_name == "20m":
+            prior = 7.0 if 6 <= hour <= 22 else 0.0
+        elif band_name == "30m":
+            prior = 7.0 if hour >= 18 or hour <= 7 else 1.0
+        elif band_name == "40m":
+            prior = 10.0 if hour >= 17 or hour <= 8 else -2.0
+        elif band_name in {"80m", "160m"}:
+            prior = 8.0 if hour >= 18 or hour <= 7 else -8.0
+        else:
+            prior = 0.0
+
+        conds = (
+            self._band_conditions_day
+            if 6 <= hour <= 18
+            else self._band_conditions_night
+        )
+        cond = (conds.get(band_name) or "").lower()
+        if "good" in cond:
+            prior += 10.0
+        elif "fair" in cond:
+            prior += 4.0
+        elif "poor" in cond:
+            prior -= 8.0
+        return prior
+
+    def _autopilot_combo_score(self, stats: AutopilotStats) -> float:
+        op = self.config.operating
+        score = self._autopilot_propagation_prior(stats.band)
+        score += min(stats.decodes, 400) * 0.20
+        score += stats.attempts * 0.8
+        score += stats.completed * 10.0
+        if stats.attempts >= op.autopilot_min_attempts:
+            score += stats.completion_pct * 0.25
+        if stats.mode == "FT4":
+            if stats.decodes >= op.autopilot_min_decodes:
+                score += 8.0
+            if (
+                stats.attempts >= op.autopilot_min_attempts
+                and stats.completion_pct < op.autopilot_ft4_fallback_completion_pct
+            ):
+                score -= 30.0
+            elif (
+                stats.attempts >= op.autopilot_min_attempts
+                and stats.completion_pct >= op.autopilot_ft4_good_completion_pct
+            ):
+                score += 8.0
+        else:
+            if stats.decodes < op.autopilot_min_decodes:
+                score += 6.0
+        return score
+
+    def _autopilot_mode_for_band(
+        self,
+        band: str,
+        modes: list[str],
+        stats_map: dict[tuple[str, str], AutopilotStats],
+    ) -> tuple[str, str]:
+        op = self.config.operating
+        if len(modes) == 1:
+            return modes[0], "only allowed mode"
+
+        ft4 = stats_map.get((band, "FT4"), AutopilotStats(band=band, mode="FT4"))
+        ft8 = stats_map.get((band, "FT8"), AutopilotStats(band=band, mode="FT8"))
+        band_decodes = max(ft4.decodes, ft8.decodes)
+
+        if "FT4" in modes and band_decodes >= op.autopilot_min_decodes:
+            if (
+                ft4.attempts >= op.autopilot_min_attempts
+                and ft4.completion_pct < op.autopilot_ft4_fallback_completion_pct
+                and "FT8" in modes
+            ):
+                return (
+                    "FT8",
+                    f"FT4 completion {ft4.completion_pct:.1f}% below fallback",
+                )
+            if (
+                ft4.attempts >= op.autopilot_min_attempts
+                and ft4.completion_pct >= op.autopilot_ft4_good_completion_pct
+            ):
+                return "FT4", f"FT4 completion {ft4.completion_pct:.1f}% is good"
+            return "FT4", "decode density high enough for FT4 rate mode"
+
+        if "FT8" in modes:
+            return "FT8", "decode density low, prefer FT8 weak-signal mode"
+        return modes[0], "FT8 not allowed"
+
+    def _autopilot_decision(
+        self,
+        active_band: str | None,
+        current_mode: str,
+        stats_map: dict[tuple[str, str], AutopilotStats],
+    ) -> AutopilotDecision | None:
+        op = self.config.operating
+        bands = self._autopilot_allowed_bands()
+        modes = self._autopilot_allowed_modes()
+        if not bands or not modes:
+            return None
+
+        candidates: list[AutopilotDecision] = []
+        for band in bands:
+            mode, reason = self._autopilot_mode_for_band(band, modes, stats_map)
+            stats = stats_map.get((band, mode), AutopilotStats(band=band, mode=mode))
+            score = self._autopilot_combo_score(stats)
+            candidates.append(
+                AutopilotDecision(
+                    band=band,
+                    mode=mode,
+                    reason=f"{reason}; decodes={stats.decodes}, "
+                    f"attempts={stats.attempts}, completion={stats.completion_pct:.1f}%",
+                    score=score,
+                )
+            )
+        best = max(candidates, key=lambda c: c.score)
+        current_mode = self._valid_digital_mode(current_mode)
+
+        current_allowed = (
+            active_band in bands
+            and current_mode in modes
+        )
+        if not current_allowed:
+            return best
+
+        assert active_band is not None
+        current_stats = stats_map.get(
+            (active_band, current_mode),
+            AutopilotStats(band=active_band, mode=current_mode),
+        )
+        current_score = self._autopilot_combo_score(current_stats)
+        current_decodes = max(
+            stats_map.get((active_band, mode), AutopilotStats(active_band, mode)).decodes
+            for mode in modes
+        )
+
+        if best.band == active_band and best.mode == current_mode:
+            return None
+        if best.band == active_band:
+            return best
+
+        margin = self.AUTOPILOT_SWITCH_MARGIN
+        if (
+            current_decodes >= op.autopilot_min_decodes
+            and best.score < current_score + margin
+        ):
+            return None
+        if best.score >= current_score + margin or current_decodes < op.autopilot_min_decodes:
+            return best
+        return None
+
+    async def _maybe_run_autopilot(self) -> None:
+        op = self.config.operating
+        if not op.autopilot_enabled:
+            return
+        now = time.monotonic()
+        if now - self._autopilot_last_eval_at < self.AUTOPILOT_EVAL_INTERVAL_S:
+            return
+        self._autopilot_last_eval_at = now
+        if (
+            self._autopilot_last_switch_at > 0
+            and now - self._autopilot_last_switch_at < op.autopilot_cooldown_min * 60
+        ):
+            return
+        if self.state_machine.state is not State.IDLE:
+            return
+        if not self.state_machine.ctx.auto_answer or self.state_machine.ctx.auto_cq:
+            return
+        if self._last_rig.ptt:
+            return
+        if self._last_rig.freq_hz is None:
+            return
+
+        active_cfg = self._band_for_rig_freq(self._last_rig.freq_hz)
+        active_band = active_cfg.name if active_cfg is not None else None
+        bands = self._autopilot_allowed_bands()
+        modes = self._autopilot_allowed_modes()
+        stats = await self._autopilot_collect_stats(bands, modes)
+        decision = self._autopilot_decision(
+            active_band,
+            self.config.operating.mode,
+            stats,
+        )
+        if decision is None:
+            return
+        if decision.band == active_band and decision.mode == self.config.operating.mode:
+            return
+
+        reason = (
+            f"autopilot:{active_band or 'unknown'}/"
+            f"{self.config.operating.mode}->{decision.band}/{decision.mode}: "
+            f"{decision.reason}; score={decision.score:.1f}"
+        )
+        log.info(reason)
+        await self._apply_autopilot_target(decision.band, decision.mode, reason)
+        self._autopilot_last_switch_at = now
+        self._autopilot_last_reason = reason
         self._push_status()
 
     async def _mode_watchdog_loop(self) -> None:
@@ -4574,11 +4994,8 @@ class Orchestrator:
         """
         if self._last_rig.freq_hz is None:
             return None
-        freq_khz = self._last_rig.freq_hz / 1000.0
-        for band in self.config.bands:
-            if abs(band.freq_khz - freq_khz) <= 50:
-                return band.name
-        return None
+        band = self._band_for_rig_freq(self._last_rig.freq_hz)
+        return band.name if band is not None else None
 
     async def _refresh_hardware_state(self, tick: SlotTick) -> None:
         """Materialise the current :class:`HardwareState` for the guards."""

@@ -1,4 +1,4 @@
-# Hunt-Priority-Tiers (v0.65.8)
+# Hunt-Priority-Tiers (v0.66.0)
 
 Beim Hunting (Auto-Antworten auf CQ-Rufe) priorisiert der Picker
 nicht mehr nur „neues DXCC zuerst, dann SNR" wie vor v0.10.0, sondern
@@ -100,6 +100,41 @@ Vor dem Tier-Scoring gibt es zusätzliche Hunt-Gates:
   temporär dieselbe Evidenz für alle Routine-Ziele.
 - `hunt_profile`: `balanced`, `rate` oder `dx`. In FT4 nutzt `balanced` automatisch
   das Rate-Profil für Routine-Calls; FT8 bleibt breiter.
+
+## Band/Mode-Autopilot
+
+Der Autopilot ist ein vorgeschalteter Hunt-Controller. Er entscheidet nicht,
+welcher CQ-Rufer gepickt wird, sondern auf welcher freigegebenen
+Band/Mode-Kombination der Hunter gerade laufen soll.
+
+Konfigurierbare Policy in `OperatingConfig` / Config-UI:
+
+- `autopilot_enabled`: Schalter fuer den Autopilot.
+- `autopilot_allowed_bands`: harte Band-Grenze. Default aktuell `["15m"]`.
+- `autopilot_allowed_modes`: erlaubte Modi, typischerweise `["FT8", "FT4"]`.
+- `autopilot_window_min`: lokales Messfenster fuer Decodes und Pick-Outcomes.
+- `autopilot_cooldown_min`: Mindestzeit zwischen zwei Umschaltungen.
+- `autopilot_min_decodes`: Decode-Dichte ab der FT4 als Rate-Mode sinnvoll ist.
+- `autopilot_min_attempts` plus FT4-Completion-Schwellen: Rueckfall auf FT8,
+  wenn FT4 im lokalen Fenster schlecht performed.
+
+Safety-Gates:
+
+- laeuft nur im Hunt-Betrieb (`auto_answer=True`, `auto_cq=False`)
+- nur wenn die State-Machine `IDLE` ist
+- nie waehrend PTT oder aktivem QSO
+- nur auf konfigurierte, lizenz-/power-erlaubte und von der aktiven Antenne
+  abgedeckte Baender
+- schreibt keine Config-Datei; Runtime-Mode/Dial werden live gestellt
+
+Entscheidungsbasis:
+
+- echte lokale Daten: `decode`-Dichte pro Band und `pick_attempt`-Outcomes pro
+  Band/Mode
+- schwacher Physik-Prior: Tageszeit-/Band-Heuristik plus vorhandene
+  hamqsl-Bandbedingungen, aber lokale Daten koennen den Prior ueberstimmen
+- Modusregel: FT4 bei dichter Aktivitaet fuer Rate, FT8 bei schwacher Dichte
+  oder schlechter FT4-Completion
 
 ## Editierung via UI
 

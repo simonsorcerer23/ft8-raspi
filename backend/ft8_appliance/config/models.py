@@ -17,6 +17,10 @@ _CALLSIGN_RE = re.compile(r"^[A-Z0-9]{1,3}[0-9][A-Z0-9]*[A-Z](/[A-Z0-9]+)?$")
 _GRID_RE = re.compile(r"^[A-R]{2}[0-9]{2}([a-x]{2})?$")
 
 
+def _default_autopilot_modes() -> list[Literal["FT8", "FT4"]]:
+    return ["FT8", "FT4"]
+
+
 # ---------------------------------------------------------------------------
 class OperatorConfig(BaseModel):
     """Operator-Profil. Mehrere koennen parallel angelegt sein
@@ -222,12 +226,46 @@ class OperatingConfig(BaseModel):
     # (4-FSK, 105 symbols, ~20.83 Hz spacing). Switching this changes
     # the slot clock, decoder and TX synth in lock-step.
     mode: Literal["FT8", "FT4"] = "FT8"
+    # Band/Mode-Autopilot fuer Hunt-Betrieb. Der Autopilot darf nur in
+    # IDLE, mit auto_answer=True und PTT aus agieren; diese Felder sind
+    # reine Policy-Grenzen. Default-Band bleibt absichtlich 15m, weil
+    # Sebastians aktueller Aufbau hardwareseitig darauf begrenzt ist.
+    autopilot_enabled: bool = False
+    autopilot_allowed_bands: list[str] = Field(default_factory=lambda: ["15m"])
+    autopilot_allowed_modes: list[Literal["FT8", "FT4"]] = Field(
+        default_factory=_default_autopilot_modes
+    )
+    autopilot_window_min: int = Field(default=15, ge=5, le=120)
+    autopilot_cooldown_min: int = Field(default=20, ge=5, le=240)
+    autopilot_min_decodes: int = Field(default=30, ge=0, le=2000)
+    autopilot_min_attempts: int = Field(default=6, ge=1, le=200)
+    autopilot_ft4_good_completion_pct: float = Field(default=12.0, ge=0.0, le=100.0)
+    autopilot_ft4_fallback_completion_pct: float = Field(default=8.0, ge=0.0, le=100.0)
     # Directed CQ (Sebastian Audit F7, v0.3.4): wenn gesetzt, sendet der
     # CQ-Loop "CQ <target> <call> <grid>" statt nur "CQ <call> <grid>".
     # Standard-Targets: DX (nur DX-Stationen), EU/NA/SA/AS/AF/OC (Kontinent),
     # POTA/SOTA (Park-Activator), TEST (Contest). Leer = klassischer CQ.
     # WSJT-X-Spec erlaubt 1-4 alphanumerische Zeichen.
     cq_directed: str = Field(default="", max_length=4, pattern=r"^[A-Z0-9]*$")
+
+    @field_validator("autopilot_allowed_bands", mode="after")
+    @classmethod
+    def _normalize_autopilot_bands(cls, v: list[str]) -> list[str]:
+        out: list[str] = []
+        for raw in v or []:
+            name = (raw or "").strip()
+            if name and name not in out:
+                out.append(name)
+        return out
+
+    @field_validator("autopilot_allowed_modes", mode="after")
+    @classmethod
+    def _dedupe_autopilot_modes(cls, v: list[Literal["FT8", "FT4"]]) -> list[Literal["FT8", "FT4"]]:
+        out: list[Literal["FT8", "FT4"]] = []
+        for mode in v or []:
+            if mode not in out:
+                out.append(mode)
+        return out
     # v0.6.0 Anti-WSJT-X-Audit Phase B: Decoder-Mode-Wahl.
     #   "standard" = osr=2/2, LDPC=25 (Default, schnellste, Pi-4-tauglich)
     #   "deep"     = osr=4/4, LDPC=50 (JTDX-Deep-Aequivalent, mehr Schwach-

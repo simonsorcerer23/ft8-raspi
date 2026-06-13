@@ -24,6 +24,10 @@ from ft8_appliance.statemachine.states import DecodedMsg, MachineContext
 
 def _ctx(**overrides) -> MachineContext:
     c = MachineContext(callsign="DK9XR", my_grid="JN58", band="15m")
+    # Diese Tests isolieren die Hard-Filter; das spaetere Sole-SNR-Gate
+    # wuerde sonst sehr schwache, aber cleane Vergleichs-CQs verwerfen.
+    c.hunt_sole_min_snr_db = -30
+    c.hunt_strict_min_snr_db = -30
     for k, v in overrides.items():
         setattr(c, k, v)
     return c

@@ -122,6 +122,7 @@
       }
       return t;
     };
+    const ylist = (items) => `[${(items ?? []).map(yq).join(', ')}]`;
     let s = '';
     s += `operator:\n`;
     s += `${ind(2)}callsign: ${yq(c.operator.callsign)}\n`;
@@ -161,6 +162,15 @@
     // Pydantic die fehlenden mit Defaults und überschreibt die
     // Werte des Operators bei jedem Speichern.
     s += `${ind(2)}mode: ${c.operating.mode}\n`;
+    s += `${ind(2)}autopilot_enabled: ${c.operating.autopilot_enabled === true}\n`;
+    s += `${ind(2)}autopilot_allowed_bands: ${ylist(c.operating.autopilot_allowed_bands)}\n`;
+    s += `${ind(2)}autopilot_allowed_modes: ${ylist(c.operating.autopilot_allowed_modes)}\n`;
+    s += `${ind(2)}autopilot_window_min: ${c.operating.autopilot_window_min ?? 15}\n`;
+    s += `${ind(2)}autopilot_cooldown_min: ${c.operating.autopilot_cooldown_min ?? 20}\n`;
+    s += `${ind(2)}autopilot_min_decodes: ${c.operating.autopilot_min_decodes ?? 30}\n`;
+    s += `${ind(2)}autopilot_min_attempts: ${c.operating.autopilot_min_attempts ?? 6}\n`;
+    s += `${ind(2)}autopilot_ft4_good_completion_pct: ${c.operating.autopilot_ft4_good_completion_pct ?? 12}\n`;
+    s += `${ind(2)}autopilot_ft4_fallback_completion_pct: ${c.operating.autopilot_ft4_fallback_completion_pct ?? 8}\n`;
     s += `${ind(2)}cq_directed: ${yq(c.operating.cq_directed || '')}\n`;
     s += `${ind(2)}decoder_mode: ${yq(c.operating.decoder_mode || 'standard')}\n`;
     s += `${ind(2)}auto_notch_enabled: ${c.operating.auto_notch_enabled === false ? 'false' : 'true'}\n`;
@@ -276,6 +286,20 @@
     cfg.antennas = [...(cfg.antennas || []), { name: 'new', bands: ['20m'] }];
   }
   function removeAntenna(i) { cfg.antennas = cfg.antennas.filter((_, j) => j !== i); }
+
+  function toggleAutopilotBand(name, enabled) {
+    const list = [...(cfg.operating.autopilot_allowed_bands ?? [])];
+    cfg.operating.autopilot_allowed_bands = enabled
+      ? (list.includes(name) ? list : [...list, name])
+      : list.filter(x => x !== name);
+  }
+
+  function toggleAutopilotMode(mode, enabled) {
+    const list = [...(cfg.operating.autopilot_allowed_modes ?? [])];
+    cfg.operating.autopilot_allowed_modes = enabled
+      ? (list.includes(mode) ? list : [...list, mode])
+      : list.filter(x => x !== mode);
+  }
 
   // v0.10.0 Hunt-Priority-Tiers: Sortier-Logik
   function moveTier(idx, delta) {
@@ -509,6 +533,57 @@
               <span class="toggle-knob"></span>
             </button>
           </label>
+        </div>
+
+        <h5 class="subgroup">{t('cfg.autopilot')}</h5>
+        <div class="grid">
+          <label class="field toggle-field">
+            <span>{t('cfg.autopilot_active')}</span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.autopilot_enabled}
+                    onclick={() => cfg.operating.autopilot_enabled = !cfg.operating.autopilot_enabled}
+                    aria-label={t('cfg.autopilot_active')}
+                    aria-pressed={cfg.operating.autopilot_enabled}>
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+          <label class="field"><span>{t('cfg.autopilot_window')}<small>(min)</small></span>
+            <input type="number" bind:value={cfg.operating.autopilot_window_min} min="5" max="120"/>
+          </label>
+          <label class="field"><span>{t('cfg.autopilot_cooldown')}<small>(min)</small></span>
+            <input type="number" bind:value={cfg.operating.autopilot_cooldown_min} min="5" max="240"/>
+          </label>
+          <label class="field"><span>{t('cfg.autopilot_min_decodes')}</span>
+            <input type="number" bind:value={cfg.operating.autopilot_min_decodes} min="0" max="2000"/>
+          </label>
+        </div>
+        <div class="autopilot-pickers">
+          <div class="autopilot-picker">
+            <span class="picker-title">{t('cfg.autopilot_bands')}</span>
+            <div class="band-chips">
+              {#each (cfg.bands ?? []) as b}
+                <label class="chip">
+                  <input type="checkbox"
+                         checked={(cfg.operating.autopilot_allowed_bands ?? []).includes(b.name)}
+                         onchange={(e) => toggleAutopilotBand(b.name, e.target.checked)}/>
+                  <span>{b.name}</span>
+                </label>
+              {/each}
+            </div>
+          </div>
+          <div class="autopilot-picker">
+            <span class="picker-title">{t('cfg.autopilot_modes')}</span>
+            <div class="band-chips">
+              {#each ['FT8', 'FT4'] as mode}
+                <label class="chip">
+                  <input type="checkbox"
+                         checked={(cfg.operating.autopilot_allowed_modes ?? []).includes(mode)}
+                         onchange={(e) => toggleAutopilotMode(mode, e.target.checked)}/>
+                  <span>{mode}</span>
+                </label>
+              {/each}
+            </div>
+          </div>
         </div>
 
         <h5 class="subgroup">{t('cfg.cq_behavior')}</h5>
@@ -827,6 +902,17 @@
   .band-chips {
     display: flex; flex-wrap: wrap; gap: 0.3rem;
     flex: 1; min-width: 14rem;
+  }
+  .autopilot-pickers {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0.6rem; margin-top: 0.6rem;
+  }
+  .autopilot-picker {
+    display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  .picker-title {
+    color: #94a3b8; font-size: 0.75rem; text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
   .chip {
     display: inline-flex; align-items: center; gap: 0.25rem;
