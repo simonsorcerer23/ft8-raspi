@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.3 — 2026-06-14
+- fix: make autopilot decode stats mode-aware
+
 ## v0.66.2 — 2026-06-14
 - tune: make FT4 autopilot probes stricter
 
