@@ -27,12 +27,17 @@ class _FakeStateMachine:
     class _State:
         name = "IDLE"
     class _Ctx:
+        my_grid = "JN58td"
         last_lock_reason = None
         cq_count = 0
         pile_up_calls: set = set()
         active_continent_hours: set = set()
     state = _State()
     ctx = _Ctx()
+
+
+class _FakeIntegrations:
+    cty = None
 
 
 @dataclass
@@ -48,6 +53,7 @@ class FakeOrchestrator:
         default_factory=lambda: RigSnapshot(freq_hz=14_074_000, mode="USB", ptt=False)
     )
     state_machine: _FakeStateMachine = field(default_factory=_FakeStateMachine)
+    integrations: _FakeIntegrations = field(default_factory=_FakeIntegrations)
 
     def status(self) -> OrchestratorStatus:
         return OrchestratorStatus(
@@ -337,3 +343,61 @@ def test_freq_reputation_endpoint_sorts_by_success_rate(
     assert entries[0]["band"] == "15m"
     assert entries[0]["success_rate"] == 0.8
     assert entries[-1]["success_rate"] == 0.2
+
+
+def test_stats_endpoint_reports_decode_modes(client: TestClient, db_initialized) -> None:
+    import asyncio
+    from datetime import UTC, datetime
+
+    from ft8_appliance.db import repository, session_scope
+
+    async def seed():
+        now = datetime.now(UTC)
+        async with session_scope() as s:
+            await repository.insert_decode(
+                s,
+                ts=now,
+                call_from="W1AW",
+                call_to=None,
+                grid="FN31",
+                message="CQ W1AW FN31",
+                snr_db=-8,
+                dt_s=0.2,
+                freq_offset_hz=1500,
+                band="15m",
+                mode="FT8",
+            )
+            await repository.insert_decode(
+                s,
+                ts=now,
+                call_from="K1ABC",
+                call_to=None,
+                grid="FN42",
+                message="CQ K1ABC FN42",
+                snr_db=-10,
+                dt_s=0.1,
+                freq_offset_hz=1600,
+                band="15m",
+                mode="FT8",
+            )
+            await repository.insert_decode(
+                s,
+                ts=now,
+                call_from="DL3QR",
+                call_to=None,
+                grid="JO62",
+                message="CQ DL3QR JO62",
+                snr_db=-5,
+                dt_s=0.0,
+                freq_offset_hz=1400,
+                band="15m",
+                mode="FT4",
+            )
+
+    asyncio.run(seed())
+
+    r = client.get("/api/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["decodes_last_hour"] == 3
+    assert data["decodes_last_hour_by_mode"] == {"FT4": 1, "FT8": 2}

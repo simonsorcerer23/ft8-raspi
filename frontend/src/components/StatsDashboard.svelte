@@ -4,9 +4,18 @@
   import { t } from '../lib/i18n.svelte.js';
 
   let stats = $state({ qso_today: 0, dxccs_today: 0, qso_7d: 0, qso_total: 0,
-                       decodes_last_hour: 0, best_dx_today: null });
+                       decodes_last_hour: 0, decodes_last_hour_by_mode: {},
+                       best_dx_today: null });
   let suggestions = $state([]);
   let currentBand = $state(null);
+  const modeOrder = { FT8: 0, FT4: 1, legacy: 9 };
+  const decodeModeBreakdown = $derived(
+    Object.entries(stats.decodes_last_hour_by_mode ?? {})
+      .filter(([, n]) => Number(n) > 0)
+      .sort(([a], [b]) => (modeOrder[a] ?? 5) - (modeOrder[b] ?? 5) || a.localeCompare(b))
+      .map(([mode, n]) => `${mode} ${n}`)
+      .join(' · ')
+  );
 
   async function refresh() {
     try { stats = await api.stats(); } catch { /* ignore */ }
@@ -52,6 +61,9 @@
     <div class="card">
       <div class="big">{stats.decodes_last_hour}</div>
       <div class="lbl">{t('stats.decodes_h')}</div>
+      {#if decodeModeBreakdown}
+        <div class="sub">{decodeModeBreakdown}</div>
+      {/if}
     </div>
   </div>
 
@@ -105,6 +117,7 @@
   .big { font-size: 1.4rem; font-weight: 700; color: var(--accent);
          font-family: ui-monospace, monospace; }
   .lbl { font-size: 0.75rem; color: #94a3b8; letter-spacing: 0.05em; }
+  .sub { margin-top: 0.2rem; font-size: 0.68rem; color: #cbd5e1; }
   .best-dx { font-size: 0.85rem; color: #cbd5e1; margin: 0.3rem 0 0.7rem; }
   .hint { font-size: 0.75rem; color: #94a3b8; }
   .bands { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-top: 0.4rem; }

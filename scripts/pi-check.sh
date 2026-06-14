@@ -115,8 +115,20 @@ SELECT
   (SELECT COUNT(*) FROM decode WHERE ts > datetime('now','-1 hour')) AS dec_1h,
   (SELECT COUNT(*) FROM decode WHERE ts > datetime('now','-1 day')) AS dec_24h;
 SQL
+    echo "--- decodes by mode last 1h ---"
+    sqlite3 "$DB" <<'SQL'
+.mode column
+.headers on
+SELECT
+  COALESCE(mode, 'legacy') AS mode,
+  COUNT(*) AS decodes
+FROM decode
+WHERE ts > datetime('now','-1 hour')
+GROUP BY COALESCE(mode, 'legacy')
+ORDER BY decodes DESC;
+SQL
     echo "--- last decode ---"
-    sqlite3 "$DB" "select ts, call_from, message, snr_db, band from decode order by ts desc limit 1"
+    sqlite3 "$DB" "select ts, call_from, message, snr_db, band, coalesce(mode, 'legacy') from decode order by ts desc limit 1"
     echo "--- last qso ---"
     sqlite3 "$DB" "select qso_start, call, band, rst_rcvd, grid_rcvd from qso order by qso_start desc limit 1"
 else

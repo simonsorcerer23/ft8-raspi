@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 
 from ...config import get_config
@@ -268,6 +268,7 @@ class TodayStats(BaseModel):
     qso_7d: int
     qso_total: int
     decodes_last_hour: int
+    decodes_last_hour_by_mode: dict[str, int] = Field(default_factory=dict)
     best_dx_today: BestDx | None
     uptime_s: float
 
@@ -294,6 +295,16 @@ async def stats(orch: Orchestrator = Depends(get_orchestrator)) -> TodayStats:
         d_h_n = (await s.execute(
             select(func.count()).select_from(Decode).where(Decode.ts >= hour_start)
         )).scalar_one()
+        d_h_modes = {
+            (str(mode).upper() if mode else "legacy"): int(count)
+            for mode, count in (
+                await s.execute(
+                    select(Decode.mode, func.count())
+                    .where(Decode.ts >= hour_start)
+                    .group_by(Decode.mode)
+                )
+            ).all()
+        }
         # today's QSO calls — for DXCC distinct count via cty.dat
         today_calls = list(
             (
@@ -330,6 +341,7 @@ async def stats(orch: Orchestrator = Depends(get_orchestrator)) -> TodayStats:
         qso_7d=q_7d_n,
         qso_total=q_total,
         decodes_last_hour=d_h_n,
+        decodes_last_hour_by_mode=d_h_modes,
         best_dx_today=best,
         uptime_s=time.monotonic(),
     )

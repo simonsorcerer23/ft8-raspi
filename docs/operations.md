@@ -146,7 +146,7 @@ ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
 
 # Decode-Rate pro Stunde der letzten 24h
 ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
-  "select strftime('%Y-%m-%d %H', ts) h, count(*) from decode where ts > datetime('now','-1 day') group by 1"
+  "select strftime('%Y-%m-%d %H', ts) h, coalesce(mode,'legacy') mode, count(*) from decode where ts > datetime('now','-1 day') group by 1,2"
 ```
 
 Diese Queries sind im `scripts/pi-check.sh` integriert, so dass jeder Check eh die letzten Trends mitliefert.
