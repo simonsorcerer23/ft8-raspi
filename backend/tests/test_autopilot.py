@@ -213,6 +213,16 @@ def test_frequency_tamper_allows_persistent_drift_after_boot_grace() -> None:
     assert orch._freq_tamper_reconciled is True
 
 
+async def test_rig_ready_reconciles_boot_mode_dial_after_unknown_freq() -> None:
+    orch = _orch(_cfg(operating=OperatingConfig(mode="FT4")))
+    orch._last_rig = RigSnapshot(freq_hz=21_074_000)
+
+    await orch._reconcile_dial_once_after_rig_ready()
+
+    orch.rig.set_freq.assert_awaited_once_with(21_140_000)
+    assert orch._boot_dial_reconcile_done is True
+
+
 async def test_autopilot_collect_stats_counts_decodes_by_mode() -> None:
     init_engine(":memory:")
     await create_all()

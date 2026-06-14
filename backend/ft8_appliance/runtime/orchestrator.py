@@ -412,6 +412,7 @@ class Orchestrator:
         init=False,
     )
     _last_boot_freq_drift_log_hz: float | None = field(default=None, init=False)
+    _boot_dial_reconcile_done: bool = field(default=False, init=False)
     _psk_last_refresh_ok: bool = field(default=False, init=False)
     # v0.14.0 — Watchlist + Band-Conditions + Solar-Refresh-Throttle.
     # _watchlist_calls: set normalisierter Calls die der User beobachtet
@@ -2172,6 +2173,18 @@ class Orchestrator:
                 "(rig disconnected?). Will retry on next mode-event.",
                 target_hz, exc,
             )
+
+    async def _reconcile_dial_once_after_rig_ready(self) -> None:
+        """Retry boot dial/mode reconciliation once the first rig freq is known."""
+        if self._boot_dial_reconcile_done:
+            return
+        if self._last_rig.freq_hz is None:
+            return
+        self._boot_dial_reconcile_done = True
+        try:
+            await self._ensure_dial_matches_mode("rig-ready")
+        except Exception as exc:
+            log.warning("rig-ready ensure_dial_matches_mode failed: %s", exc)
 
     async def handle_set_freq(self, hz: int) -> None:
         """Wrap rig.set_freq + Echo-Registration fuer Tamper-Detection."""
@@ -4366,6 +4379,8 @@ class Orchestrator:
                 _log_loop_exc("rig snapshot", exc)
                 await asyncio.sleep(1.0)
                 continue
+
+            await self._reconcile_dial_once_after_rig_ready()
 
             # TX-Power bidirektional syncen: wenn Dad am Front-Panel
             # an der Power-Pegelung drehte, ist die Rig-Anzeige die
