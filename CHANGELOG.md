@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.6 — 2026-06-14
+- fix: reconcile boot dial after rig becomes ready
+
 ## v0.66.5 — 2026-06-14
 - fix: suppress boot frequency tamper false positives
 
