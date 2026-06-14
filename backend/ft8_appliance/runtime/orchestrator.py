@@ -3686,15 +3686,19 @@ class Orchestrator:
         pro Slot in den ctx (siehe Z. 3170-ish) und nutzt die Tiers
         "marine_psk", "new_dxcc_psk", "psk_heard_us".
 
-        Schedule: erstmal 30s nach Boot (PSK-Server etwas warmlaufen
-        lassen + nicht zur selben Sekunde wie 100 andere Pis anfragen),
+        Schedule: erstmal 30-90s nach Boot (PSK-Server etwas warmlaufen
+        lassen + nicht zur selben Sekunde wie andere Pis anfragen),
         danach im konfigurierten Intervall (Default 600s = 10 min).
         Fehler werden geloggt + alter Cache behalten — Picker arbeitet
         weiter mit den letzten bekannten Spots (fail-open).
         """
-        log.info("psk-reciprocity: refresh-loop started, first fetch in 30s")
+        first_delay = 30.0 + random.uniform(0.0, 60.0)
+        log.info(
+            "psk-reciprocity: refresh-loop started, first fetch in %.1fs",
+            first_delay,
+        )
         try:
-            await asyncio.sleep(30)
+            await asyncio.sleep(first_delay)
             psk_client = self.integrations.psk_reporter
             if psk_client is None:
                 log.info("psk-reciprocity: client not configured, exiting refresh loop")
