@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.2 — 2026-06-14
+- tune: make FT4 autopilot probes stricter
+
 ## v0.66.1 — 2026-06-13
 - fix: prevent config control overlap
 
