@@ -8,6 +8,7 @@ direct ingest of synthetic strikes — no network involved.
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -246,7 +247,7 @@ async def test_hamqsl_returns_stale_on_error() -> None:
 # ============================================================================
 @respx.mock
 async def test_psk_reporter_who_heard_me() -> None:
-    respx.get("https://pskreporter.info/cgi-bin/pskquery5.pl").mock(
+    route = respx.get("https://pskreporter.info/cgi-bin/pskquery5.pl").mock(
         return_value=Response(
             200,
             text=(
@@ -260,10 +261,95 @@ async def test_psk_reporter_who_heard_me() -> None:
         )
     )
     client = PskReporterClient()
-    rs = await client.who_heard_me("DK9XR", hours=6)
+    rs = await client.who_heard_me("DK9XR", hours=6, mode="FT4")
     assert len(rs) == 2
     assert rs[0].rx_call == "JA1ABC"
     assert rs[0].band == "20m"
+    assert route.calls.last.request.url.params["mode"] == "FT4"
+
+
+async def test_psk_reporter_upload_deduplicates_per_call_band_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = PskReporterClient(my_call="DK9XR", my_grid="JN58TD")
+    client._next_flush_at = time.time() + 3600
+    built: list[list[object]] = []
+
+    def fake_build(spots: list[object]) -> bytes:
+        built.append(spots)
+        return b"packet"
+
+    monkeypatch.setattr(client, "_build_ipfix_packet", fake_build)
+    monkeypatch.setattr(client, "_send_udp", lambda packet: None)
+
+    decoded_at = datetime(2026, 6, 14, 12, 0, tzinfo=UTC)
+    await client.upload_decode(
+        sender_call="ja1abc",
+        sender_grid=None,
+        rx_callsign="DK9XR",
+        snr_db=-18,
+        band_hz=21_140_000,
+        mode="FT4",
+        decoded_at=decoded_at,
+    )
+    await client.upload_decode(
+        sender_call="JA1ABC",
+        sender_grid="PM95",
+        rx_callsign="DK9XR",
+        snr_db=-8,
+        band_hz=21_140_850,
+        mode="FT4",
+        decoded_at=decoded_at + timedelta(seconds=15),
+    )
+    await client.upload_decode(
+        sender_call="JA1ABC",
+        sender_grid="PM95",
+        rx_callsign="DK9XR",
+        snr_db=-10,
+        band_hz=21_074_000,
+        mode="FT8",
+        decoded_at=decoded_at + timedelta(seconds=30),
+    )
+
+    await client._flush()
+
+    assert len(built) == 1
+    spots = built[0]
+    assert len(spots) == 2
+    ft4 = [s for s in spots if s.mode == "FT4"][0]
+    assert ft4.sender_call == "JA1ABC"
+    assert ft4.sender_grid == "PM95"
+    assert ft4.snr_db == -8
+
+
+async def test_psk_reporter_upload_splits_large_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = PskReporterClient(my_call="DK9XR", my_grid="JN58TD")
+    client._next_flush_at = time.time() + 3600
+    chunk_sizes: list[int] = []
+
+    def fake_build(spots: list[object]) -> bytes:
+        chunk_sizes.append(len(spots))
+        return b"packet"
+
+    monkeypatch.setattr(client, "_build_ipfix_packet", fake_build)
+    monkeypatch.setattr(client, "_send_udp", lambda packet: None)
+
+    for idx in range(170):
+        await client.upload_decode(
+            sender_call=f"K{idx:03d}AA",
+            sender_grid="FN31",
+            rx_callsign="DK9XR",
+            snr_db=-12,
+            band_hz=14_074_000,
+            mode="FT8",
+            decoded_at=datetime(2026, 6, 14, 12, 0, tzinfo=UTC),
+        )
+
+    await client._flush()
+
+    assert chunk_sizes == [80, 80, 10]
 
 
 async def test_psk_reporter_upload_is_noop_when_disabled() -> None:

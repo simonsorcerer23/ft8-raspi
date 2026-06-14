@@ -150,6 +150,7 @@ async def refresh_from_psk(
     psk_client: PskReporterClient,
     our_calls: list[str],
     hours: int = 1,
+    mode: str | None = "FT8",
 ) -> None:
     """Fetch fresh reports für alle eigenen Calls + merge in den Cache.
 
@@ -163,12 +164,12 @@ async def refresh_from_psk(
         if not call:
             continue
         try:
-            reports = await psk_client.who_heard_me(call, hours=hours)
+            reports = await psk_client.who_heard_me(call, hours=hours, mode=mode)
             all_reports.extend(reports)
-            log.info("psk_reciprocity: %s → %d reports", call, len(reports))
+            log.info("psk_reciprocity: %s/%s → %d reports", call, mode, len(reports))
         except Exception as exc:  # pragma: no cover - defensive
-            log.warning("psk_reciprocity: fetch failed for %s: %s", call, exc)
-            last_error = str(exc)
+            log.warning("psk_reciprocity: fetch failed for %s/%s: %r", call, mode, exc)
+            last_error = repr(exc)
     if all_reports:
         cache.update_from_reports(all_reports)
     elif last_error:

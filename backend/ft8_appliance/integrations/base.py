@@ -183,7 +183,7 @@ class Integration:
             return r
         except Exception as exc:
             self._last_error = repr(exc)
-            log.warning("%s: GET %s failed: %s", self.name, url, exc)
+            log.warning("%s: GET %s failed: %r", self.name, url, exc)
             raise
 
     async def _post(self, url: str, **kwargs: Any) -> httpx.Response:
@@ -198,7 +198,7 @@ class Integration:
             return r
         except Exception as exc:
             self._last_error = repr(exc)
-            log.warning("%s: POST %s failed: %s", self.name, url, exc)
+            log.warning("%s: POST %s failed: %r", self.name, url, exc)
             raise
 
     def health(self) -> IntegrationHealth:

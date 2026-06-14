@@ -154,7 +154,12 @@ async def psk_who_heard_me(
     # 503 und die Box zeigte leer.
     rs = []
     try:
-        rs = await orch.integrations.psk_reporter.who_heard_me(callsign, hours=hours)
+        cfg = getattr(orch, "config", None)
+        operating = getattr(cfg, "operating", None)
+        mode = str(getattr(operating, "mode", "FT8")).upper()
+        rs = await orch.integrations.psk_reporter.who_heard_me(
+            callsign, hours=hours, mode=mode
+        )
     except Exception:
         rs = []
     if rs:

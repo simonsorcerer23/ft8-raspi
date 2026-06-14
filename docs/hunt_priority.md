@@ -161,11 +161,17 @@ ConfigPanel → Hunt-Priorität:
 `OperatingConfig.psk_reciprocity_enabled = true`. Default ist **false**.
 
 Wenn aktiviert:
-- Background-Loop `_psk_reciprocity_refresh_loop` fetcht alle X Sekunden
-  (Default 600 = 10 min) von pskreporter.info die Reception-Reports der
-  letzten 1h für **alle** konfigurierten Operator-Calls (DK9XR + DO3XR
-  bei Multi-Op)
-- Result wird in `_psk_heard_us_cache: set[str]` gehalten
+- Background-Loop `_psk_reciprocity_refresh_loop` fetcht rotierend einen
+  QRV-Operator-Call pro Zyklus (z.B. DK9XR/DO3XR bei Multi-Op), mit
+  mindestens 600 s Intervall plus Jitter. Kleinere UI-Werte werden zur
+  Laufzeit aus PSK-Reporter-Schonung auf 600 s gekappt.
+- Der Fetch ist mode-aware: aktiver FT4-Betrieb fragt `mode=FT4`, aktiver
+  FT8-Betrieb fragt `mode=FT8`; der Cache wird beim Merge ebenfalls nach
+  Mode getrennt, damit FT8-Reziprozität keine FT4-Picks aufwertet.
+- Upload eigener Decodes wird vor dem 5-Minuten-Flush pro Callsign/Band/Mode
+  dedupliziert und in Pakete mit maximal 80 Spots geteilt.
+- Result wird in `_psk_heard_us_cache: set[str]` und `_psk_snr_cache`
+  gehalten
 - Picker liest pro Slot in `ctx.psk_heard_us` und `ctx.psk_snr`
 - Bei API-Fehler: alter Cache bleibt, Picker arbeitet weiter (fail-open)
 

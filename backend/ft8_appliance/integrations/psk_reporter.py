@@ -4,8 +4,9 @@
   mit XML-Response der letzten Reception-Reports.
 * Upload: PSK Reporter's IPFIX-over-UDP-Protokoll an
   report.pskreporter.info:4739. Spec siehe https://pskreporter.info/pskdev.html.
-  Wir batchen Decodes in 1-Minuten-Fenstern damit der Spotter nicht für
-  jeden Decode ein eigenes UDP-Paket bekommt.
+  Wir batchen Decodes in 5-Minuten-Fenstern und deduplizieren pro
+  Callsign/Band/Mode, damit der Spotter nicht mehrfach dieselbe Station
+  gemeldet bekommt.
 
 Cache: 5 min für Download-Queries (PSK Reporter aggregiert in 5-min-Slots).
 """
@@ -29,6 +30,7 @@ log = logging.getLogger(__name__)
 PSK_QUERY_URL = "https://pskreporter.info/cgi-bin/pskquery5.pl"
 PSK_UPLOAD_HOST = "report.pskreporter.info"
 PSK_UPLOAD_PORT = 4739
+PSK_UPLOAD_MAX_RECORDS_PER_PACKET = 80
 
 
 @dataclass(slots=True)
@@ -83,8 +85,10 @@ class PskReporterClient(Integration):
         self._sequence_number = 0
         # Random Source-ID — bleibt für die ganze Session konstant.
         self._source_id = random.randint(1, 0xFFFF_FFFF)
-        # Decode-Buffer (sammelt bis zum nächsten Flush)
-        self._pending: list[_PendingSpot] = []
+        # Decode-Buffer (sammelt bis zum nächsten Flush). PSK Reporter
+        # moechte gleiche Calls moeglichst nur einmal pro 5-min-Fenster.
+        self._pending: dict[tuple[str, str, str], _PendingSpot] = {}
+        self._pending_seen_count = 0
         # Wann ist der nächste Flush fällig? Frequenz auf 1× / 5 min
         # damit wir den Server nicht überlasten.
         self._next_flush_at: float = 0.0
@@ -93,19 +97,26 @@ class PskReporterClient(Integration):
         # Wir senden's bei jedem Flush erneut damit der Server uns auch
         # nach Timeout-Verlust noch versteht — UDP-Cost vernachlässigbar.
 
-    async def who_heard_me(self, callsign: str, hours: int = 24) -> list[HeardReport]:
+    async def who_heard_me(
+        self,
+        callsign: str,
+        hours: int = 24,
+        mode: str | None = "FT8",
+    ) -> list[HeardReport]:
         """Return reception reports for *callsign* in the last *hours*."""
         if not self.enabled:
             return []
-        key = f"{callsign.upper()}:{hours}"
+        mode_norm = mode.upper() if mode else None
+        key = f"{callsign.upper()}:{hours}:{mode_norm or 'ALL'}"
         cached = await self.cache.get(key)
         if cached is not None:
             return cached  # type: ignore[no-any-return]
         params = {
             "senderCallsign": callsign.upper(),
             "flowStartSeconds": -hours * 3600,
-            "mode": "FT8",
         }
+        if mode_norm:
+            params["mode"] = mode_norm
         if self.contact_email:
             params["appcontact"] = self.contact_email
         try:
@@ -138,14 +149,19 @@ class PskReporterClient(Integration):
         if not self.my_call:
             log.debug("psk_reporter upload skipped: my_call not configured")
             return
-        self._pending.append(_PendingSpot(
+        spot = _PendingSpot(
             sender_call=sender_call.upper(),
             sender_grid=sender_grid.upper() if sender_grid else None,
             snr_db=snr_db,
             band_hz=band_hz,
-            mode=mode,
+            mode=mode.upper(),
             decoded_at=decoded_at or datetime.now(UTC),
-        ))
+        )
+        self._pending_seen_count += 1
+        key = self._spot_key(spot)
+        old = self._pending.get(key)
+        if old is None or self._prefer_spot(spot, old):
+            self._pending[key] = spot
         now = time.time()
         if now >= self._next_flush_at:
             self._next_flush_at = now + self._flush_interval_s
@@ -156,18 +172,38 @@ class PskReporterClient(Integration):
     async def _flush(self) -> None:
         if not self._pending:
             return
-        spots = self._pending[:]  # snapshot
+        spots = list(self._pending.values())  # snapshot
+        seen_count = self._pending_seen_count
         self._pending.clear()
+        self._pending_seen_count = 0
         try:
-            pkt = self._build_ipfix_packet(spots)
-            # asyncio.DatagramTransport wäre eleganter, aber synchroner
-            # sendto in einem run_in_executor reicht völlig — wir
-            # schicken ein Paket pro Flush.
+            chunks = list(_chunks(spots, PSK_UPLOAD_MAX_RECORDS_PER_PACKET))
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._send_udp, pkt)
-            log.info("psk_reporter: %d decodes uploaded", len(spots))
+            for chunk in chunks:
+                pkt = self._build_ipfix_packet(chunk)
+                # asyncio.DatagramTransport wäre eleganter, aber synchroner
+                # sendto in einem run_in_executor reicht völlig.
+                await loop.run_in_executor(None, self._send_udp, pkt)
+            log.info(
+                "psk_reporter: %d spots uploaded after dedupe from %d decodes "
+                "in %d packet(s)",
+                len(spots), seen_count, len(chunks),
+            )
         except Exception as exc:
-            log.warning("psk_reporter UDP flush failed: %s", exc)
+            log.warning("psk_reporter UDP flush failed: %r", exc)
+
+    @staticmethod
+    def _spot_key(spot: _PendingSpot) -> tuple[str, str, str]:
+        band = _band_from_freq(spot.band_hz) or str(spot.band_hz)
+        return (spot.sender_call, band, spot.mode)
+
+    @staticmethod
+    def _prefer_spot(new: _PendingSpot, old: _PendingSpot) -> bool:
+        if new.snr_db != old.snr_db:
+            return new.snr_db > old.snr_db
+        if new.sender_grid and not old.sender_grid:
+            return True
+        return new.decoded_at > old.decoded_at
 
     def _send_udp(self, packet: bytes) -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -334,3 +370,7 @@ def _band_from_freq(hz: int) -> str | None:
         if lo <= hz <= hi:
             return name
     return None
+
+
+def _chunks[T](items: list[T], size: int) -> list[list[T]]:
+    return [items[i:i + size] for i in range(0, len(items), size)]

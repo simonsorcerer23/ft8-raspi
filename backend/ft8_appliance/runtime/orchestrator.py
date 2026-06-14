@@ -24,6 +24,7 @@ import contextlib
 import json
 import logging
 import os
+import random
 import socket
 import typing
 
@@ -3746,11 +3747,18 @@ class Orchestrator:
         #   - Backoff bei wiederholten Fehlern (503): Intervall verdoppeln
         #     bis max 30 min — wenn pskreporter ueberlastet ist hauen wir
         #     nicht stur weiter drauf.
-        per_call_heard: dict[str, set[str]] = {}
-        per_call_snr: dict[str, dict[str, int]] = {}  # v0.64.0 telemetry
+        per_call_heard: dict[tuple[str, str], set[str]] = {}
+        per_call_snr: dict[tuple[str, str], dict[str, int]] = {}  # v0.64.0 telemetry
         rotate_idx = 0
         consecutive_fail = 0
-        base_interval = float(self.config.operating.psk_reciprocity_refresh_s)
+        configured_interval = float(self.config.operating.psk_reciprocity_refresh_s)
+        base_interval = max(600.0, configured_interval)
+        if base_interval != configured_interval:
+            log.info(
+                "psk-reciprocity: refresh interval clamped %.0fs -> %.0fs "
+                "for PSK Reporter rate-limit safety",
+                configured_interval, base_interval,
+            )
         while True:
             try:
                 # Sebastian 2026-06-02 — Client pro Zyklus frisch lesen, damit
@@ -3766,9 +3774,11 @@ class Orchestrator:
                 if operator_calls:
                     call = operator_calls[rotate_idx % len(operator_calls)]
                     rotate_idx += 1
+                    mode = str(self.config.operating.mode or "FT8").upper()
+                    cache_key = (call, mode)
                     try:
-                        reports = await psk_client.who_heard_me(call, hours=1)
-                        per_call_heard[call] = {
+                        reports = await psk_client.who_heard_me(call, hours=1, mode=mode)
+                        per_call_heard[cache_key] = {
                             r.rx_call.upper() for r in reports if r.rx_call
                         }
                         # v0.64.0 — bester (hoechster) SNR den ein RX uns gab.
@@ -3778,32 +3788,37 @@ class Orchestrator:
                                 k = r.rx_call.upper()
                                 if k not in snr_map or r.snr_db > snr_map[k]:
                                     snr_map[k] = int(r.snr_db)
-                        per_call_snr[call] = snr_map
+                        per_call_snr[cache_key] = snr_map
                         consecutive_fail = 0
                         self._psk_last_refresh_ok = True
                     except Exception as exc:
                         consecutive_fail += 1
                         self._psk_last_refresh_ok = False
                         log.warning(
-                            "psk-reciprocity: fetch failed for %s: %s (fail #%d)",
-                            call, exc, consecutive_fail,
+                            "psk-reciprocity: fetch failed for %s/%s: %r (fail #%d)",
+                            call, mode, exc, consecutive_fail,
                         )
                     # Merge aller pro-Call gecachten Sets → Picker liest atomar
                     merged: set[str] = set()
-                    for s in per_call_heard.values():
-                        merged |= s
+                    for (_call, cached_mode), s in per_call_heard.items():
+                        if cached_mode == mode:
+                            merged |= s
                     self._psk_heard_us_cache = merged
                     # v0.64.0 — SNR-Merge (bester Wert ueber alle Op-Calls).
                     merged_snr: dict[str, int] = {}
-                    for sm in per_call_snr.values():
+                    for (_call, cached_mode), sm in per_call_snr.items():
+                        if cached_mode != mode:
+                            continue
                         for k, v in sm.items():
                             if k not in merged_snr or v > merged_snr[k]:
                                 merged_snr[k] = v
                     self._psk_snr_cache = merged_snr
                     self._psk_last_refresh_at = time.time()
                     log.info(
-                        "psk-reciprocity: %s → %d unique total (über %d Call-Sets)",
-                        call, len(merged), len(per_call_heard),
+                        "psk-reciprocity: %s/%s → %d unique total "
+                        "(über %d mode-matching Call-Set(s))",
+                        call, mode, len(merged),
+                        sum(1 for _, m in per_call_heard if m == mode),
                     )
             except asyncio.CancelledError:
                 raise
@@ -3814,7 +3829,7 @@ class Orchestrator:
             interval = base_interval
             if consecutive_fail > 0:
                 interval = min(1800.0, base_interval * (2 ** min(consecutive_fail, 4)))
-            await asyncio.sleep(interval)
+            await asyncio.sleep(interval + random.uniform(0.0, min(60.0, interval * 0.1)))
 
     async def _solar_refresh_loop(self) -> None:
         """v0.14.0 — Periodischer hamqsl-Refresh fuer Band-Conditions.
