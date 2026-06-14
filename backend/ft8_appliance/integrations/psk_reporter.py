@@ -64,7 +64,7 @@ class PskReporterClient(Integration):
         *,
         enabled: bool = True,
         upload_decodes: bool = True,
-        timeout: float = 5.0,
+        timeout: float = 12.0,
         cache_ttl_s: float = 300.0,  # 5 minutes
         my_call: str = "",
         my_grid: str = "",

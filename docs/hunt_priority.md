@@ -169,6 +169,8 @@ Wenn aktiviert:
 - Der Fetch ist mode-aware: aktiver FT4-Betrieb fragt `mode=FT4`, aktiver
   FT8-Betrieb fragt `mode=FT8`; der Cache wird beim Merge ebenfalls nach
   Mode getrennt, damit FT8-Reziprozität keine FT4-Picks aufwertet.
+- PSK-Reporter-HTTP nutzt wegen der großen XML-Antworten einen eigenen
+  12-s-Timeout; Fehler bleiben fail-open mit altem Cache.
 - Upload eigener Decodes wird vor dem 5-Minuten-Flush pro Callsign/Band/Mode
   dedupliziert und in Pakete mit maximal 80 Spots geteilt.
 - Result wird in `_psk_heard_us_cache: set[str]` und `_psk_snr_cache`
