@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.4 — 2026-06-14
+- feat: show decode stats by mode
+
 ## v0.66.3 — 2026-06-14
 - fix: make autopilot decode stats mode-aware
 
