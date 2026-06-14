@@ -402,6 +402,16 @@ class Orchestrator:
     _autopilot_ft4_blocked_until: dict[str, float] = field(
         default_factory=dict, init=False
     )
+    # Nach Controller-Restart kann Config noch FT4 sagen, waehrend das Rig
+    # vom vorherigen Autopilot-Run bereits auf FT8-Dial steht. Erst nach der
+    # ersten Mode/Dial-Reconciliation darf Frequenz-Tamper pushen.
+    FREQ_TAMPER_BOOT_GRACE_S: typing.ClassVar[float] = 20.0
+    _freq_tamper_reconciled: bool = field(default=False, init=False)
+    _freq_tamper_reconcile_deadline: float = field(
+        default_factory=lambda: time.monotonic() + 20.0,
+        init=False,
+    )
+    _last_boot_freq_drift_log_hz: float | None = field(default=None, init=False)
     _psk_last_refresh_ok: bool = field(default=False, init=False)
     # v0.14.0 — Watchlist + Band-Conditions + Solar-Refresh-Throttle.
     # _watchlist_calls: set normalisierter Calls die der User beobachtet
@@ -3431,6 +3441,56 @@ class Orchestrator:
             actions=self._tok_actions(actions),
         )
 
+    def _frequency_tamper_ready(
+        self,
+        actual_hz: int,
+        expected_hz: int,
+        band_name: str,
+    ) -> bool:
+        """Gate frequency-tamper pushes until boot mode/dial state settled."""
+        if self._freq_tamper_reconciled:
+            return True
+
+        delta_hz = actual_hz - expected_hz
+        if abs(delta_hz) <= 100:
+            self._freq_tamper_reconciled = True
+            self._last_boot_freq_drift_log_hz = None
+            log.info(
+                "Frequenz-Tamper scharf nach Dial-Reconciliation: "
+                "%d Hz passt zu %s (Δ %+.0f)",
+                actual_hz,
+                band_name,
+                delta_hz,
+            )
+            return True
+
+        now = time.monotonic()
+        if now < self._freq_tamper_reconcile_deadline:
+            last = self._last_boot_freq_drift_log_hz
+            if last is None or abs(delta_hz - last) > 50:
+                remaining = self._freq_tamper_reconcile_deadline - now
+                log.info(
+                    "Frequenz-Drift beim Boot ignoriert bis "
+                    "Mode/Dial-Reconciliation: %d Hz (%+.0f Hz von %s), "
+                    "Grace %.1fs",
+                    actual_hz,
+                    delta_hz,
+                    band_name,
+                    remaining,
+                )
+                self._last_boot_freq_drift_log_hz = delta_hz
+            return False
+
+        self._freq_tamper_reconciled = True
+        log.info(
+            "Frequenz-Tamper scharf nach Boot-Grace; Drift bleibt: "
+            "%d Hz (%+.0f Hz von %s)",
+            actual_hz,
+            delta_hz,
+            band_name,
+        )
+        return True
+
     async def _send_mode_alert(self, ntfy, message: str, target_mode: str) -> None:
         """Schickt einen Mode-Alert mit Action-Buttons (Hunt/CQ-Start).
 
@@ -4420,7 +4480,13 @@ class Orchestrator:
                     # "Frequenz wurde verstellt".
                     expected_hz = band.freq_for_mode(self.config.operating.mode) * 1000
                     delta_hz = actual_hz - expected_hz
-                    if abs(delta_hz) > 100:
+                    if not self._frequency_tamper_ready(
+                        actual_hz,
+                        expected_hz,
+                        band.name,
+                    ):
+                        pass
+                    elif abs(delta_hz) > 100:
                         last = getattr(self, "_last_logged_drift_hz", None)
                         if last is None or abs(delta_hz - last) > 50:
                             log.info(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
@@ -168,6 +169,48 @@ def test_autopilot_pauses_ft4_after_repeated_null_probes() -> None:
     )
     assert mode == "FT8"
     assert "FT4 paused" in reason
+
+
+def test_frequency_tamper_suppressed_during_boot_reconciliation() -> None:
+    orch = _orch(_cfg(operating=OperatingConfig(mode="FT4")))
+    orch._freq_tamper_reconcile_deadline = time.monotonic() + 30
+
+    ready = orch._frequency_tamper_ready(
+        actual_hz=21_074_000,
+        expected_hz=21_140_000,
+        band_name="15m",
+    )
+
+    assert ready is False
+    assert orch._freq_tamper_reconciled is False
+    assert orch._last_boot_freq_drift_log_hz == -66_000
+
+
+def test_frequency_tamper_arms_after_boot_dial_matches_mode() -> None:
+    orch = _orch(_cfg(operating=OperatingConfig(mode="FT8")))
+
+    ready = orch._frequency_tamper_ready(
+        actual_hz=21_074_000,
+        expected_hz=21_074_000,
+        band_name="15m",
+    )
+
+    assert ready is True
+    assert orch._freq_tamper_reconciled is True
+
+
+def test_frequency_tamper_allows_persistent_drift_after_boot_grace() -> None:
+    orch = _orch(_cfg(operating=OperatingConfig(mode="FT4")))
+    orch._freq_tamper_reconcile_deadline = time.monotonic() - 1
+
+    ready = orch._frequency_tamper_ready(
+        actual_hz=21_074_000,
+        expected_hz=21_140_000,
+        band_name="15m",
+    )
+
+    assert ready is True
+    assert orch._freq_tamper_reconciled is True
 
 
 async def test_autopilot_collect_stats_counts_decodes_by_mode() -> None:
