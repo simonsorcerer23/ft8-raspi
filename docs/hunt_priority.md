@@ -117,6 +117,12 @@ Konfigurierbare Policy in `OperatingConfig` / Config-UI:
 - `autopilot_min_decodes`: Decode-Dichte ab der FT4 als Rate-Mode sinnvoll ist.
 - `autopilot_min_attempts` plus FT4-Completion-Schwellen: Rueckfall auf FT8,
   wenn FT4 im lokalen Fenster schlecht performed.
+- `autopilot_ft4_probe_min_decodes`: strengere Decode-Schwelle fuer erste
+  FT4-Probes. Default `150`, damit FT4 nur bei wirklich dichtem Band probiert
+  wird.
+- `autopilot_ft4_null_probe_threshold` plus
+  `autopilot_ft4_null_cooldown_min`: wiederholte FT4-Nullproben pausieren FT4
+  pro Band temporaer. Default: nach 2 Nullproben 120 min FT8-only.
 
 Safety-Gates:
 
@@ -135,6 +141,9 @@ Entscheidungsbasis:
   hamqsl-Bandbedingungen, aber lokale Daten koennen den Prior ueberstimmen
 - Modusregel: FT4 bei dichter Aktivitaet fuer Rate, FT8 bei schwacher Dichte
   oder schlechter FT4-Completion
+- FT4-Nullrunden werden aktiv bestraft: Wenn FT4 nach einer Probe fast keine
+  Decodes liefert, zaehlt das als Nullprobe; nach wiederholten Nullproben bleibt
+  der Autopilot fuer dieses Band zunaechst bei FT8.
 
 ## Editierung via UI
 

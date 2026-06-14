@@ -171,6 +171,10 @@
     s += `${ind(2)}autopilot_min_attempts: ${c.operating.autopilot_min_attempts ?? 6}\n`;
     s += `${ind(2)}autopilot_ft4_good_completion_pct: ${c.operating.autopilot_ft4_good_completion_pct ?? 12}\n`;
     s += `${ind(2)}autopilot_ft4_fallback_completion_pct: ${c.operating.autopilot_ft4_fallback_completion_pct ?? 8}\n`;
+    s += `${ind(2)}autopilot_ft4_probe_min_decodes: ${c.operating.autopilot_ft4_probe_min_decodes ?? 150}\n`;
+    s += `${ind(2)}autopilot_ft4_null_decode_limit: ${c.operating.autopilot_ft4_null_decode_limit ?? 3}\n`;
+    s += `${ind(2)}autopilot_ft4_null_probe_threshold: ${c.operating.autopilot_ft4_null_probe_threshold ?? 2}\n`;
+    s += `${ind(2)}autopilot_ft4_null_cooldown_min: ${c.operating.autopilot_ft4_null_cooldown_min ?? 120}\n`;
     s += `${ind(2)}cq_directed: ${yq(c.operating.cq_directed || '')}\n`;
     s += `${ind(2)}decoder_mode: ${yq(c.operating.decoder_mode || 'standard')}\n`;
     s += `${ind(2)}auto_notch_enabled: ${c.operating.auto_notch_enabled === false ? 'false' : 'true'}\n`;

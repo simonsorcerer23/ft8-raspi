@@ -13,7 +13,7 @@ from ft8_appliance.config import (
 )
 from ft8_appliance.rig.rigctld_client import RigSnapshot
 from ft8_appliance.runtime import FakeSlotClock, Orchestrator
-from ft8_appliance.runtime.orchestrator import AutopilotStats
+from ft8_appliance.runtime.orchestrator import AutopilotDecision, AutopilotStats
 
 
 def _cfg(*, operating: OperatingConfig | None = None) -> AppConfig:
@@ -89,6 +89,9 @@ def test_autopilot_defaults_are_policy_limited_to_15m() -> None:
     assert op.autopilot_enabled is False
     assert op.autopilot_allowed_bands == ["15m"]
     assert op.autopilot_allowed_modes == ["FT8", "FT4"]
+    assert op.autopilot_ft4_probe_min_decodes == 150
+    assert op.autopilot_ft4_null_probe_threshold == 2
+    assert op.autopilot_ft4_null_cooldown_min == 120
 
 
 def test_autopilot_prefers_ft4_on_active_15m() -> None:
@@ -98,10 +101,21 @@ def test_autopilot_prefers_ft4_on_active_15m() -> None:
         autopilot_allowed_modes=["FT8", "FT4"],
     )
     orch = _orch(_cfg(operating=op))
-    decision = orch._autopilot_decision("15m", "FT8", _stats("15m", decodes=80))
+    decision = orch._autopilot_decision("15m", "FT8", _stats("15m", decodes=180))
     assert decision is not None
     assert decision.band == "15m"
     assert decision.mode == "FT4"
+
+
+def test_autopilot_stays_on_ft8_below_strict_ft4_probe_threshold() -> None:
+    op = OperatingConfig(
+        autopilot_enabled=True,
+        autopilot_allowed_bands=["15m"],
+        autopilot_allowed_modes=["FT8", "FT4"],
+    )
+    orch = _orch(_cfg(operating=op))
+    decision = orch._autopilot_decision("15m", "FT8", _stats("15m", decodes=80))
+    assert decision is None
 
 
 def test_autopilot_falls_back_to_ft8_when_ft4_completion_is_bad() -> None:
@@ -119,6 +133,37 @@ def test_autopilot_falls_back_to_ft8_when_ft4_completion_is_bad() -> None:
     assert decision is not None
     assert decision.band == "15m"
     assert decision.mode == "FT8"
+
+
+def test_autopilot_pauses_ft4_after_repeated_null_probes() -> None:
+    op = OperatingConfig(
+        autopilot_enabled=True,
+        autopilot_allowed_bands=["15m"],
+        autopilot_allowed_modes=["FT8", "FT4"],
+        autopilot_ft4_null_probe_threshold=1,
+        autopilot_ft4_null_cooldown_min=60,
+    )
+    orch = _orch(_cfg(operating=op))
+    decision = AutopilotDecision(
+        band="15m",
+        mode="FT8",
+        reason="decode density low",
+        score=0.0,
+    )
+    orch._autopilot_record_ft4_probe_result(
+        "15m",
+        "FT4",
+        decision,
+        _stats("15m", decodes=0),
+    )
+
+    mode, reason = orch._autopilot_mode_for_band(
+        "15m",
+        ["FT8", "FT4"],
+        _stats("15m", decodes=300),
+    )
+    assert mode == "FT8"
+    assert "FT4 paused" in reason
 
 
 def test_autopilot_respects_allowed_modes() -> None:

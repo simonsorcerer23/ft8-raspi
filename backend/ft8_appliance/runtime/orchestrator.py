@@ -396,6 +396,12 @@ class Orchestrator:
     _autopilot_last_eval_at: float = field(default=0.0, init=False)
     _autopilot_last_switch_at: float = field(default=0.0, init=False)
     _autopilot_last_reason: str | None = field(default=None, init=False)
+    _autopilot_ft4_null_probe_counts: dict[str, int] = field(
+        default_factory=dict, init=False
+    )
+    _autopilot_ft4_blocked_until: dict[str, float] = field(
+        default_factory=dict, init=False
+    )
     _psk_last_refresh_ok: bool = field(default=False, init=False)
     # v0.14.0 — Watchlist + Band-Conditions + Solar-Refresh-Throttle.
     # _watchlist_calls: set normalisierter Calls die der User beobachtet
@@ -2912,6 +2918,10 @@ class Orchestrator:
 
     def _autopilot_combo_score(self, stats: AutopilotStats) -> float:
         op = self.config.operating
+        ft4_probe_min_decodes = max(
+            op.autopilot_min_decodes,
+            op.autopilot_ft4_probe_min_decodes,
+        )
         score = self._autopilot_propagation_prior(stats.band)
         score += min(stats.decodes, 400) * 0.20
         score += stats.attempts * 0.8
@@ -2919,7 +2929,7 @@ class Orchestrator:
         if stats.attempts >= op.autopilot_min_attempts:
             score += stats.completion_pct * 0.25
         if stats.mode == "FT4":
-            if stats.decodes >= op.autopilot_min_decodes:
+            if stats.decodes >= ft4_probe_min_decodes:
                 score += 8.0
             if (
                 stats.attempts >= op.autopilot_min_attempts
@@ -2936,6 +2946,10 @@ class Orchestrator:
                 score += 6.0
         return score
 
+    def _autopilot_ft4_block_remaining_s(self, band: str) -> float:
+        until = self._autopilot_ft4_blocked_until.get(band, 0.0)
+        return max(0.0, until - time.monotonic())
+
     def _autopilot_mode_for_band(
         self,
         band: str,
@@ -2949,8 +2963,17 @@ class Orchestrator:
         ft4 = stats_map.get((band, "FT4"), AutopilotStats(band=band, mode="FT4"))
         ft8 = stats_map.get((band, "FT8"), AutopilotStats(band=band, mode="FT8"))
         band_decodes = max(ft4.decodes, ft8.decodes)
+        ft4_probe_min_decodes = max(
+            op.autopilot_min_decodes,
+            op.autopilot_ft4_probe_min_decodes,
+        )
 
-        if "FT4" in modes and band_decodes >= op.autopilot_min_decodes:
+        ft4_block_remaining_s = self._autopilot_ft4_block_remaining_s(band)
+        if "FT4" in modes and ft4_block_remaining_s > 0 and "FT8" in modes:
+            remain_min = max(1, int(ft4_block_remaining_s // 60))
+            return "FT8", f"FT4 paused after null probes ({remain_min} min left)"
+
+        if "FT4" in modes and band_decodes >= ft4_probe_min_decodes:
             if (
                 ft4.attempts >= op.autopilot_min_attempts
                 and ft4.completion_pct < op.autopilot_ft4_fallback_completion_pct
@@ -2970,6 +2993,57 @@ class Orchestrator:
         if "FT8" in modes:
             return "FT8", "decode density low, prefer FT8 weak-signal mode"
         return modes[0], "FT8 not allowed"
+
+    def _autopilot_record_ft4_probe_result(
+        self,
+        active_band: str | None,
+        current_mode: str,
+        decision: AutopilotDecision,
+        stats_map: dict[tuple[str, str], AutopilotStats],
+    ) -> None:
+        if (
+            active_band is None
+            or current_mode != "FT4"
+            or decision.band != active_band
+            or decision.mode != "FT8"
+        ):
+            return
+
+        op = self.config.operating
+        ft4 = stats_map.get(
+            (active_band, "FT4"),
+            AutopilotStats(band=active_band, mode="FT4"),
+        )
+        if ft4.decodes > op.autopilot_ft4_null_decode_limit or ft4.completed > 0:
+            self._autopilot_ft4_null_probe_counts[active_band] = 0
+            return
+
+        count = self._autopilot_ft4_null_probe_counts.get(active_band, 0) + 1
+        self._autopilot_ft4_null_probe_counts[active_band] = count
+        if count < op.autopilot_ft4_null_probe_threshold:
+            log.info(
+                "autopilot: FT4 null probe %s/%s on %s "
+                "(decodes=%s, completed=%s)",
+                count,
+                op.autopilot_ft4_null_probe_threshold,
+                active_band,
+                ft4.decodes,
+                ft4.completed,
+            )
+            return
+
+        block_s = op.autopilot_ft4_null_cooldown_min * 60
+        self._autopilot_ft4_blocked_until[active_band] = time.monotonic() + block_s
+        self._autopilot_ft4_null_probe_counts[active_band] = 0
+        log.info(
+            "autopilot: pausing FT4 on %s for %s min after %s null probes "
+            "(last decodes=%s, completed=%s)",
+            active_band,
+            op.autopilot_ft4_null_cooldown_min,
+            op.autopilot_ft4_null_probe_threshold,
+            ft4.decodes,
+            ft4.completed,
+        )
 
     def _autopilot_decision(
         self,
@@ -3076,6 +3150,12 @@ class Orchestrator:
             f"{decision.reason}; score={decision.score:.1f}"
         )
         log.info(reason)
+        self._autopilot_record_ft4_probe_result(
+            active_band,
+            self.config.operating.mode,
+            decision,
+            stats,
+        )
         await self._apply_autopilot_target(decision.band, decision.mode, reason)
         self._autopilot_last_switch_at = now
         self._autopilot_last_reason = reason
