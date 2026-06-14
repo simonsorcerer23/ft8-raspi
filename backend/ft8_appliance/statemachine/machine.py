@@ -16,7 +16,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, TypeGuard
 
 from typing import TYPE_CHECKING
 
@@ -29,6 +29,16 @@ if TYPE_CHECKING:
     from ..runtime.slot_clock import SlotTick
 
 log = logging.getLogger(__name__)
+
+
+def _is_usable_partner_call(call: str | None) -> TypeGuard[str]:
+    """Reject decoder placeholders such as <...> before they become TX targets."""
+    if not call:
+        return False
+    call = call.strip().upper()
+    if not call or "<" in call or ">" in call or "." in call:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -527,7 +537,7 @@ class StateMachine:
         """User picked a CQ to answer (Hunting / S&P)."""
         if not self._check_guards(hw):
             return
-        if decoded.call_from is None:
+        if not _is_usable_partner_call(decoded.call_from):
             return
         self.qso = QsoContext(
             their_call=decoded.call_from,
@@ -555,7 +565,7 @@ class StateMachine:
         """
         if not self._check_guards(hw):
             return
-        if closing_decode.call_from is None:
+        if not _is_usable_partner_call(closing_decode.call_from):
             return
         # Defensive: Closing-Self-Reply waere sinnlos
         if closing_decode.call_from.upper() == self.ctx.tx_callsign.upper():
@@ -1448,13 +1458,15 @@ class StateMachine:
             return []
         existing_cq_calls = {
             d.call_from.upper() for d in real_decodes
-            if d.call_from and d.call_to is None
+            if _is_usable_partner_call(d.call_from) and d.call_to is None
             and (d.message or "").startswith("CQ")
         }
         now_ts = datetime.now(UTC)
         now_posix = now_ts.timestamp()
         synth: list[DecodedMsg] = []
         for call, meta in self.ctx.tail_end_candidates.items():
+            if not _is_usable_partner_call(call):
+                continue
             if call in existing_cq_calls:
                 continue
             # 24h-Cooldown auch im Injection-Pfad respektieren — sonst
@@ -1624,7 +1636,7 @@ class StateMachine:
             decodes = decodes + self._build_synthetic_tail_end_decodes(decodes)
         cqs = [
             d for d in decodes
-            if d.call_from
+            if _is_usable_partner_call(d.call_from)
             and d.call_from != self.ctx.tx_callsign
             and d.call_from not in self.ctx.blacklist
             and d.call_to is None
@@ -1848,7 +1860,7 @@ class StateMachine:
         # Index aller "echten CQs" dieses Slots — used both fuer recent_cq-
         # Tracking und um zu wissen welcher Candidate gerade CQ ruft.
         for d in decodes:
-            if not d.call_from:
+            if not _is_usable_partner_call(d.call_from):
                 continue
             if getattr(d, "is_freetext", False):
                 continue
@@ -1867,7 +1879,7 @@ class StateMachine:
         # uebersteuert (wir wissen er ist gerade fertig, kein
         # Routine-CQ-Caller).
         for d in decodes:
-            if not d.call_from or getattr(d, "is_freetext", False):
+            if not _is_usable_partner_call(d.call_from) or getattr(d, "is_freetext", False):
                 continue
             msg = (d.message or "")
             if d.call_to is None:
@@ -1896,7 +1908,7 @@ class StateMachine:
         # noch durchschleusen.
         for d in _iter_closings(decodes):
             call = (d.call_from or "").upper()
-            if not call:
+            if not _is_usable_partner_call(call):
                 continue
             # Wenn das Closing an UNS gerichtet ist: das ist unser
             # Partner. Der kommt nach LOG_QSO eh in den Standard-Cooldown

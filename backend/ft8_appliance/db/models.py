@@ -97,6 +97,7 @@ class Decode(Base):
     dt_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     freq_offset_hz: Mapped[int | None] = mapped_column(Integer, nullable=True)
     band: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    mode: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
 
 
 # ---------------------------------------------------------------------------

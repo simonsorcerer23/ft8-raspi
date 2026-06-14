@@ -137,7 +137,27 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_watchlist_source_column(conn)
         await _migrate_clublog_columns(conn)
         await _migrate_station_callsign_column(conn)
+        await _migrate_decode_columns(conn)
         await _migrate_pick_attempt_columns(conn)
+
+
+async def _migrate_decode_columns(conn) -> None:
+    """v0.66.3 — Decode-Mode fuer mode-aware Autopilot-Stats.
+
+    Alte Zeilen behalten NULL. Der Autopilot nutzt nur neu gemessene,
+    mode-getaggte Decodes; damit verfaelschen alte FT8/FT4-Mischfenster
+    keine Nullproben.
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(decode)")
+    existing = {row[1] for row in res.fetchall()}
+    if "mode" not in existing:
+        await conn.exec_driver_sql("ALTER TABLE decode ADD COLUMN mode TEXT")
+    await conn.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_decode_mode ON decode (mode)"
+    )
+    await conn.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_decode_band_mode_ts ON decode (band, mode, ts)"
+    )
 
 
 async def _migrate_pick_attempt_columns(conn) -> None:

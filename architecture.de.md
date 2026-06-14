@@ -644,9 +644,11 @@ CREATE TABLE decode (
   snr_db      INTEGER,
   dt_s        REAL,
   freq_offset_hz INTEGER,
-  band        TEXT
+  band        TEXT,
+  mode        TEXT
 );
 CREATE INDEX idx_decode_ts ON decode(ts);
+CREATE INDEX idx_decode_band_mode_ts ON decode(band, mode, ts);
 
 CREATE TABLE heard (
   call        TEXT PRIMARY KEY,

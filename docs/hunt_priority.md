@@ -135,8 +135,8 @@ Safety-Gates:
 
 Entscheidungsbasis:
 
-- echte lokale Daten: `decode`-Dichte pro Band und `pick_attempt`-Outcomes pro
-  Band/Mode
+- echte lokale Daten: `decode`-Dichte pro Band/Mode und
+  `pick_attempt`-Outcomes pro Band/Mode
 - schwacher Physik-Prior: Tageszeit-/Band-Heuristik plus vorhandene
   hamqsl-Bandbedingungen, aber lokale Daten koennen den Prior ueberstimmen
 - Modusregel: FT4 bei dichter Aktivitaet fuer Rate, FT8 bei schwacher Dichte
@@ -144,6 +144,8 @@ Entscheidungsbasis:
 - FT4-Nullrunden werden aktiv bestraft: Wenn FT4 nach einer Probe fast keine
   Decodes liefert, zaehlt das als Nullprobe; nach wiederholten Nullproben bleibt
   der Autopilot fuer dieses Band zunaechst bei FT8.
+- Decode-Stats sind mode-aware: FT8-Decodes auf demselben Band duerfen eine
+  FT4-Nullprobe nicht mehr verdecken.
 
 ## Editierung via UI
 

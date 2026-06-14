@@ -35,11 +35,13 @@ async def test_insert_and_query_decodes() -> None:
             dt_s=0.4,
             freq_offset_hz=1850,
             band="20m",
+            mode="FT8",
         )
     async with session_scope() as s:
         rows = await repository.latest_decodes(s, limit=10)
     assert len(rows) == 1
     assert rows[0].call_from == "W1AW"
+    assert rows[0].mode == "FT8"
 
 
 async def test_insert_qso_and_roundtrip() -> None:

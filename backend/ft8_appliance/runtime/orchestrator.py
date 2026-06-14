@@ -2712,6 +2712,7 @@ class Orchestrator:
                             dt_s=d.dt_s,
                             freq_offset_hz=d.freq_offset_hz,
                             band=d.band,
+                            mode=mode_str,
                         )
                         # Also tick the Heard table so the live map (and
                         # /api/map?mode=heard) light up. Skip CQ-side
@@ -2831,14 +2832,18 @@ class Orchestrator:
         try:
             async with session_scope() as s:
                 decode_rows = await s.execute(
-                    select(DbDecode.band, func.count(DbDecode.id))
-                    .where(DbDecode.ts >= since, DbDecode.band.in_(bands))
-                    .group_by(DbDecode.band)
+                    select(DbDecode.band, DbDecode.mode, func.count(DbDecode.id))
+                    .where(
+                        DbDecode.ts >= since,
+                        DbDecode.band.in_(bands),
+                        DbDecode.mode.in_(modes),
+                    )
+                    .group_by(DbDecode.band, DbDecode.mode)
                 )
-                decodes_by_band = {
-                    str(band): int(count)
-                    for band, count in decode_rows.all()
-                    if band is not None
+                decodes_by_combo = {
+                    (str(band), str(mode)): int(count)
+                    for band, mode, count in decode_rows.all()
+                    if band is not None and mode is not None
                 }
 
                 attempt_rows = await s.execute(
@@ -2875,7 +2880,7 @@ class Orchestrator:
                     stats[key] = AutopilotStats(
                         band=band,
                         mode=mode,
-                        decodes=decodes_by_band.get(band, 0),
+                        decodes=decodes_by_combo.get(key, 0),
                         attempts=attempts.get(key, 0),
                         completed=completed.get(key, 0),
                     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 from ft8_appliance.config import (
@@ -11,6 +12,7 @@ from ft8_appliance.config import (
     OperatingConfig,
     OperatorConfig,
 )
+from ft8_appliance.db import create_all, init_engine, repository, session_scope
 from ft8_appliance.rig.rigctld_client import RigSnapshot
 from ft8_appliance.runtime import FakeSlotClock, Orchestrator
 from ft8_appliance.runtime.orchestrator import AutopilotDecision, AutopilotStats
@@ -61,6 +63,8 @@ def _stats(
     band: str,
     *,
     decodes: int,
+    ft8_decodes: int | None = None,
+    ft4_decodes: int | None = None,
     ft8_attempts: int = 0,
     ft8_completed: int = 0,
     ft4_attempts: int = 0,
@@ -70,14 +74,14 @@ def _stats(
         (band, "FT8"): AutopilotStats(
             band=band,
             mode="FT8",
-            decodes=decodes,
+            decodes=decodes if ft8_decodes is None else ft8_decodes,
             attempts=ft8_attempts,
             completed=ft8_completed,
         ),
         (band, "FT4"): AutopilotStats(
             band=band,
             mode="FT4",
-            decodes=decodes,
+            decodes=decodes if ft4_decodes is None else ft4_decodes,
             attempts=ft4_attempts,
             completed=ft4_completed,
         ),
@@ -154,7 +158,7 @@ def test_autopilot_pauses_ft4_after_repeated_null_probes() -> None:
         "15m",
         "FT4",
         decision,
-        _stats("15m", decodes=0),
+        _stats("15m", decodes=0, ft8_decodes=300, ft4_decodes=0),
     )
 
     mode, reason = orch._autopilot_mode_for_band(
@@ -164,6 +168,62 @@ def test_autopilot_pauses_ft4_after_repeated_null_probes() -> None:
     )
     assert mode == "FT8"
     assert "FT4 paused" in reason
+
+
+async def test_autopilot_collect_stats_counts_decodes_by_mode() -> None:
+    init_engine(":memory:")
+    await create_all()
+    now = datetime.now(UTC)
+    async with session_scope() as s:
+        await repository.insert_decode(
+            s,
+            ts=now,
+            call_from="W1AW",
+            call_to=None,
+            grid="FN31",
+            message="CQ W1AW FN31",
+            snr_db=-8,
+            dt_s=0.2,
+            freq_offset_hz=1500,
+            band="15m",
+            mode="FT8",
+        )
+        await repository.insert_decode(
+            s,
+            ts=now,
+            call_from="K1ABC",
+            call_to=None,
+            grid="FN42",
+            message="CQ K1ABC FN42",
+            snr_db=-11,
+            dt_s=0.1,
+            freq_offset_hz=1600,
+            band="15m",
+            mode="FT8",
+        )
+        await repository.insert_decode(
+            s,
+            ts=now,
+            call_from="DL3QR",
+            call_to=None,
+            grid="JO62",
+            message="CQ DL3QR JO62",
+            snr_db=-5,
+            dt_s=0.0,
+            freq_offset_hz=1400,
+            band="15m",
+            mode="FT4",
+        )
+    op = OperatingConfig(
+        autopilot_enabled=True,
+        autopilot_allowed_bands=["15m"],
+        autopilot_allowed_modes=["FT8", "FT4"],
+    )
+    orch = _orch(_cfg(operating=op))
+    orch.db_enabled = True
+    stats = await orch._autopilot_collect_stats(["15m"], ["FT8", "FT4"])
+    assert stats[("15m", "FT8")].decodes == 2
+    assert stats[("15m", "FT4")].decodes == 1
 
 
 def test_autopilot_respects_allowed_modes() -> None:

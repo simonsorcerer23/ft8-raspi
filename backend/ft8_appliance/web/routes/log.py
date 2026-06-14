@@ -226,6 +226,7 @@ class DecodeOut(BaseModel):
     dt_s: float | None
     freq_offset_hz: int | None
     band: str | None
+    mode: str | None
     worked_before: bool = False
     blacklisted: bool = False
     # Multi-color highlighting (WSJT-Z style). Each flag drives a

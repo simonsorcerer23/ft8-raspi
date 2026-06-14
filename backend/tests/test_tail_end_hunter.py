@@ -157,6 +157,16 @@ def test_detection_skips_freetext():
     assert "DL3QR" not in sm.ctx.tail_end_candidates
 
 
+def test_detection_skips_placeholder_call():
+    """Decoder-Platzhalter wie <...> duerfen keine TX-Ziele werden."""
+    sm = _machine()
+    sm.on_decodes(
+        _hw_ok(),
+        [_decode("<...>", call_to="R2026DR", message="R2026DR <...> RR73")],
+    )
+    assert "<...>" not in sm.ctx.tail_end_candidates
+
+
 def test_detection_skips_if_recent_cq():
     """Wenn X kuerzlich (<5min) selbst CQ rief, kein Tail-End-Boost."""
     sm = _machine()
@@ -315,6 +325,22 @@ def test_picker_synthetic_returns_after_24h():
     assert synth[0].call_from == "UN7GBX"
 
 
+def test_picker_no_synthetic_for_placeholder_candidate():
+    ctx = _ctx(
+        tail_end_candidates={
+            "<...>": {
+                "expiry": _time.time() + 30,
+                "snr_db": -6,
+                "freq_offset_hz": 1103,
+                "band": "15m",
+                "grid": None,
+            }
+        }
+    )
+    sm = _machine(ctx)
+    assert sm._build_synthetic_tail_end_decodes([]) == []
+
+
 def test_picker_no_synthetic_if_real_cq_present():
     """Wenn die Candidate-Station im selben Slot bereits echte CQ ruft,
     kein Duplikat — der echte Decode wird verarbeitet."""
@@ -462,4 +488,11 @@ def test_user_tail_end_no_call_from_is_noop():
     d = _closing("DL3QR")
     d.call_from = None
     sm.on_user_tail_end(_hw_ok(), d)
+    assert sm.state is State.IDLE
+
+
+def test_user_tail_end_placeholder_call_is_noop():
+    sm = _machine()
+    sm.state = State.IDLE
+    sm.on_user_tail_end(_hw_ok(), _closing("<...>", call_to="R2026DR"))
     assert sm.state is State.IDLE
