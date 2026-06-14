@@ -163,9 +163,9 @@ ConfigPanel → Hunt-Priorität:
 Wenn aktiviert:
 - Background-Loop `_psk_reciprocity_refresh_loop` fetcht rotierend einen
   QRV-Operator-Call pro Zyklus (z.B. DK9XR/DO3XR bei Multi-Op), mit
-  30-90 s Startup-Jitter und danach mindestens 600 s Intervall plus Jitter.
-  Kleinere UI-Werte werden zur Laufzeit aus PSK-Reporter-Schonung auf 600 s
-  gekappt.
+  60-300 s Startup-Jitter und danach mindestens 900 s Intervall plus Jitter.
+  Kleinere UI-Werte werden zur Laufzeit aus PSK-Reporter-Schonung auf 900 s
+  gekappt. Das schuetzt auch mehrere Pis hinter derselben oeffentlichen IP.
 - Der Fetch ist mode-aware: aktiver FT4-Betrieb fragt `mode=FT4`, aktiver
   FT8-Betrieb fragt `mode=FT8`; der Cache wird beim Merge ebenfalls nach
   Mode getrennt, damit FT8-Reziprozität keine FT4-Picks aufwertet.

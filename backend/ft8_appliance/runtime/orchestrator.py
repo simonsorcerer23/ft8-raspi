@@ -3686,13 +3686,13 @@ class Orchestrator:
         pro Slot in den ctx (siehe Z. 3170-ish) und nutzt die Tiers
         "marine_psk", "new_dxcc_psk", "psk_heard_us".
 
-        Schedule: erstmal 30-90s nach Boot (PSK-Server etwas warmlaufen
+        Schedule: erstmal 60-300s nach Boot (PSK-Server etwas warmlaufen
         lassen + nicht zur selben Sekunde wie andere Pis anfragen),
         danach im konfigurierten Intervall (Default 600s = 10 min).
         Fehler werden geloggt + alter Cache behalten — Picker arbeitet
         weiter mit den letzten bekannten Spots (fail-open).
         """
-        first_delay = 30.0 + random.uniform(0.0, 60.0)
+        first_delay = 60.0 + random.uniform(0.0, 240.0)
         log.info(
             "psk-reciprocity: refresh-loop started, first fetch in %.1fs",
             first_delay,
@@ -3756,7 +3756,7 @@ class Orchestrator:
         rotate_idx = 0
         consecutive_fail = 0
         configured_interval = float(self.config.operating.psk_reciprocity_refresh_s)
-        base_interval = max(600.0, configured_interval)
+        base_interval = max(900.0, configured_interval)
         if base_interval != configured_interval:
             log.info(
                 "psk-reciprocity: refresh interval clamped %.0fs -> %.0fs "
