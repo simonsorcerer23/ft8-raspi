@@ -149,16 +149,25 @@ async def healthcheck(
         # |drift| > 50 samples per slot is the FT8-lib soft limit. We use
         # 200 here so brief USB hiccups (zero-padding) don't fire warn.
         drift = getattr(metrics, "last_drift_samples", 0)
-        if abs(drift) > 200:
+        decodes_per_min = metrics.decodes_per_min
+        late_slot_count = getattr(metrics, "late_slot_count", 0)
+        if late_slot_count > 0:
             audio_status = "warn"
+            drift_status = "late-slot pressure"
+        elif abs(drift) > 200 and decodes_per_min <= 0:
+            audio_status = "warn"
+            drift_status = "high drift without recent decodes"
         else:
             audio_status = "ok"
+            drift_status = "ok"
         audio_details = {
             "slots_decoded": metrics.slots_decoded,
             "decodes_total": metrics.decodes_total,
             "last_decode_count": metrics.last_decode_count,
-            "decodes_per_min": metrics.decodes_per_min,
+            "decodes_per_min": decodes_per_min,
             "last_drift_samples": drift,
+            "late_slot_count": late_slot_count,
+            "drift_status": drift_status,
         }
     sections["audio"] = HealthSection(
         status=audio_status,

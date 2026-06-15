@@ -95,8 +95,10 @@ def test_autopilot_defaults_are_policy_limited_to_15m() -> None:
     assert op.autopilot_allowed_bands == ["15m"]
     assert op.autopilot_allowed_modes == ["FT8", "FT4"]
     assert op.autopilot_ft4_probe_min_decodes == 150
+    assert op.autopilot_ft4_probe_dwell_min == 5
     assert op.autopilot_ft4_null_probe_threshold == 2
     assert op.autopilot_ft4_null_cooldown_min == 120
+    assert op.autopilot_ft4_null_cooldown_max_min == 360
 
 
 def test_autopilot_prefers_ft4_on_active_15m() -> None:
@@ -169,6 +171,67 @@ def test_autopilot_pauses_ft4_after_repeated_null_probes() -> None:
     )
     assert mode == "FT8"
     assert "FT4 paused" in reason
+
+
+def test_autopilot_ft4_null_probe_backoff_expands_until_cap() -> None:
+    op = OperatingConfig(
+        autopilot_enabled=True,
+        autopilot_allowed_bands=["15m"],
+        autopilot_allowed_modes=["FT8", "FT4"],
+        autopilot_ft4_null_probe_threshold=1,
+        autopilot_ft4_null_cooldown_min=5,
+        autopilot_ft4_null_cooldown_max_min=20,
+    )
+    orch = _orch(_cfg(operating=op))
+    decision = AutopilotDecision(
+        band="15m",
+        mode="FT8",
+        reason="null probe",
+        score=0.0,
+    )
+
+    orch._autopilot_record_ft4_probe_result(
+        "15m",
+        "FT4",
+        decision,
+        _stats("15m", decodes=0, ft8_decodes=300, ft4_decodes=0),
+    )
+    first = orch._autopilot_ft4_block_remaining_s("15m")
+    orch._autopilot_ft4_blocked_until["15m"] = time.monotonic() - 1
+    orch._autopilot_record_ft4_probe_result(
+        "15m",
+        "FT4",
+        decision,
+        _stats("15m", decodes=0, ft8_decodes=300, ft4_decodes=0),
+    )
+    second = orch._autopilot_ft4_block_remaining_s("15m")
+
+    assert 4 * 60 < first <= 5 * 60
+    assert 9 * 60 < second <= 10 * 60
+
+
+def test_autopilot_ft4_probe_escape_after_short_null_dwell() -> None:
+    op = OperatingConfig(
+        autopilot_enabled=True,
+        autopilot_allowed_bands=["15m"],
+        autopilot_allowed_modes=["FT8", "FT4"],
+        autopilot_ft4_probe_dwell_min=5,
+    )
+    orch = _orch(_cfg(operating=op))
+    now = time.monotonic()
+    orch._autopilot_last_switch_at = now - 5 * 60 - 1
+
+    assert orch._autopilot_ft4_probe_due("15m", "FT4", ["FT8", "FT4"], now)
+    decision = orch._autopilot_ft4_probe_escape(
+        "15m",
+        ["FT8", "FT4"],
+        _stats("15m", decodes=0, ft8_decodes=220, ft4_decodes=0),
+    )
+
+    assert decision is not None
+    assert decision.band == "15m"
+    assert decision.mode == "FT8"
+    assert "null result" in decision.reason
 
 
 def test_frequency_tamper_suppressed_during_boot_reconciliation() -> None:

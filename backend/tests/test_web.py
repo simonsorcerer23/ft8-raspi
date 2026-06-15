@@ -40,6 +40,22 @@ class _FakeIntegrations:
     cty = None
 
 
+class _FakeAudioMetrics:
+    slots_decoded = 10
+    decodes_total = 30
+    last_decode_count = 5
+    late_slot_count = 0
+    last_drift_samples = -8000
+
+    @property
+    def decodes_per_min(self) -> int:
+        return 20
+
+
+class _FakeDecodeSource:
+    metrics = _FakeAudioMetrics()
+
+
 @dataclass
 class FakeOrchestrator:
     """Minimal stand-in implementing only what the routes call."""
@@ -177,6 +193,22 @@ def test_healthcheck_shape(client: TestClient) -> None:
     assert data["overall"] in {"green", "yellow", "red"}
     assert "system" in data["sections"]
     assert data["sections"]["system"]["status"] == "ok"
+
+
+def test_healthcheck_audio_ok_when_decodes_flow_despite_tail_drift(
+    client: TestClient,
+    fake_orch: FakeOrchestrator,
+) -> None:
+    fake_orch.decode_source = _FakeDecodeSource()  # type: ignore[attr-defined]
+
+    r = client.get("/api/healthcheck")
+
+    assert r.status_code == 200
+    audio = r.json()["sections"]["audio"]
+    assert audio["status"] == "ok"
+    assert audio["details"]["last_drift_samples"] == -8000
+    assert audio["details"]["late_slot_count"] == 0
+    assert audio["details"]["drift_status"] == "ok"
 
 
 def test_control_endpoints(client: TestClient, fake_orch) -> None:

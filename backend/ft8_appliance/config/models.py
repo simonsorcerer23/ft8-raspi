@@ -242,9 +242,11 @@ class OperatingConfig(BaseModel):
     autopilot_ft4_good_completion_pct: float = Field(default=12.0, ge=0.0, le=100.0)
     autopilot_ft4_fallback_completion_pct: float = Field(default=8.0, ge=0.0, le=100.0)
     autopilot_ft4_probe_min_decodes: int = Field(default=150, ge=0, le=4000)
+    autopilot_ft4_probe_dwell_min: int = Field(default=5, ge=1, le=60)
     autopilot_ft4_null_decode_limit: int = Field(default=3, ge=0, le=200)
     autopilot_ft4_null_probe_threshold: int = Field(default=2, ge=1, le=20)
     autopilot_ft4_null_cooldown_min: int = Field(default=120, ge=5, le=1440)
+    autopilot_ft4_null_cooldown_max_min: int = Field(default=360, ge=5, le=1440)
     # Directed CQ (Sebastian Audit F7, v0.3.4): wenn gesetzt, sendet der
     # CQ-Loop "CQ <target> <call> <grid>" statt nur "CQ <call> <grid>".
     # Standard-Targets: DX (nur DX-Stationen), EU/NA/SA/AS/AF/OC (Kontinent),

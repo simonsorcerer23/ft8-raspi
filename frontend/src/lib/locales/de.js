@@ -323,6 +323,8 @@ export const de = {
   'cfg.autopilot_window': 'Messfenster ',
   'cfg.autopilot_cooldown': 'Umschalt-Cooldown ',
   'cfg.autopilot_min_decodes': 'Min. Decodes',
+  'cfg.autopilot_ft4_probe_dwell': 'FT4-Probe ',
+  'cfg.autopilot_ft4_max_pause': 'Max. FT4-Pause ',
   'cfg.autopilot_bands': 'Erlaubte Bänder',
   'cfg.autopilot_modes': 'Erlaubte Modi',
   'cfg.cq_behavior': 'CQ-Verhalten',

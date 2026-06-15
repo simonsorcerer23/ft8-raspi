@@ -323,6 +323,8 @@ export const en = {
   'cfg.autopilot_window': 'Sample window ',
   'cfg.autopilot_cooldown': 'Switch cooldown ',
   'cfg.autopilot_min_decodes': 'Min decodes',
+  'cfg.autopilot_ft4_probe_dwell': 'FT4 probe ',
+  'cfg.autopilot_ft4_max_pause': 'Max FT4 pause ',
   'cfg.autopilot_bands': 'Allowed bands',
   'cfg.autopilot_modes': 'Allowed modes',
   'cfg.cq_behavior': 'CQ behaviour',

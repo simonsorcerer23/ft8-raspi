@@ -400,6 +400,9 @@ class Orchestrator:
     _autopilot_ft4_null_probe_counts: dict[str, int] = field(
         default_factory=dict, init=False
     )
+    _autopilot_ft4_null_block_counts: dict[str, int] = field(
+        default_factory=dict, init=False
+    )
     _autopilot_ft4_blocked_until: dict[str, float] = field(
         default_factory=dict, init=False
     )
@@ -2068,7 +2071,7 @@ class Orchestrator:
             self.slot_clock.set_slot_seconds(target_slot)
 
         if changed:
-            log.warning(
+            log.info(
                 "FT8/FT4 mode switch %s -> %s (%s): decoder + slot clock "
                 "live-retuned to %.1fs slots.",
                 old_mode, new_mode, reason, target_slot,
@@ -2979,6 +2982,25 @@ class Orchestrator:
         until = self._autopilot_ft4_blocked_until.get(band, 0.0)
         return max(0.0, until - time.monotonic())
 
+    @staticmethod
+    def _autopilot_stats_label(stats: AutopilotStats) -> str:
+        return (
+            f"{stats.mode}: decodes={stats.decodes}, attempts={stats.attempts}, "
+            f"completion={stats.completion_pct:.1f}%"
+        )
+
+    def _autopilot_band_stats_label(
+        self,
+        band: str,
+        modes: list[str],
+        stats_map: dict[tuple[str, str], AutopilotStats],
+    ) -> str:
+        labels: list[str] = []
+        for mode in modes:
+            stats = stats_map.get((band, mode), AutopilotStats(band=band, mode=mode))
+            labels.append(self._autopilot_stats_label(stats))
+        return "; ".join(labels)
+
     def _autopilot_mode_for_band(
         self,
         band: str,
@@ -3045,6 +3067,7 @@ class Orchestrator:
         )
         if ft4.decodes > op.autopilot_ft4_null_decode_limit or ft4.completed > 0:
             self._autopilot_ft4_null_probe_counts[active_band] = 0
+            self._autopilot_ft4_null_block_counts[active_band] = 0
             return
 
         count = self._autopilot_ft4_null_probe_counts.get(active_band, 0) + 1
@@ -3061,17 +3084,67 @@ class Orchestrator:
             )
             return
 
-        block_s = op.autopilot_ft4_null_cooldown_min * 60
+        previous_blocks = self._autopilot_ft4_null_block_counts.get(active_band, 0)
+        block_min = min(
+            op.autopilot_ft4_null_cooldown_max_min,
+            op.autopilot_ft4_null_cooldown_min * (2 ** previous_blocks),
+        )
+        block_s = block_min * 60
         self._autopilot_ft4_blocked_until[active_band] = time.monotonic() + block_s
         self._autopilot_ft4_null_probe_counts[active_band] = 0
+        self._autopilot_ft4_null_block_counts[active_band] = previous_blocks + 1
         log.info(
             "autopilot: pausing FT4 on %s for %s min after %s null probes "
-            "(last decodes=%s, completed=%s)",
+            "(last decodes=%s, completed=%s, null-block #%s)",
             active_band,
-            op.autopilot_ft4_null_cooldown_min,
+            block_min,
             op.autopilot_ft4_null_probe_threshold,
             ft4.decodes,
             ft4.completed,
+            previous_blocks + 1,
+        )
+
+    def _autopilot_ft4_probe_due(
+        self,
+        active_band: str | None,
+        current_mode: str,
+        modes: list[str],
+        now: float,
+    ) -> bool:
+        if active_band is None or current_mode != "FT4" or "FT8" not in modes:
+            return False
+        if self._autopilot_last_switch_at <= 0:
+            return False
+        dwell_s = self.config.operating.autopilot_ft4_probe_dwell_min * 60
+        return now - self._autopilot_last_switch_at >= dwell_s
+
+    def _autopilot_ft4_probe_escape(
+        self,
+        active_band: str | None,
+        modes: list[str],
+        stats_map: dict[tuple[str, str], AutopilotStats],
+    ) -> AutopilotDecision | None:
+        if active_band is None or "FT8" not in modes:
+            return None
+        op = self.config.operating
+        ft4 = stats_map.get(
+            (active_band, "FT4"),
+            AutopilotStats(band=active_band, mode="FT4"),
+        )
+        if ft4.decodes > op.autopilot_ft4_null_decode_limit or ft4.completed > 0:
+            self._autopilot_ft4_null_probe_counts[active_band] = 0
+            self._autopilot_ft4_null_block_counts[active_band] = 0
+            return None
+
+        return AutopilotDecision(
+            band=active_band,
+            mode="FT8",
+            reason=(
+                f"FT4 probe dwell {op.autopilot_ft4_probe_dwell_min} min expired "
+                "with null result; band stats: "
+                f"{self._autopilot_band_stats_label(active_band, modes, stats_map)}"
+            ),
+            score=0.0,
         )
 
     def _autopilot_decision(
@@ -3091,12 +3164,14 @@ class Orchestrator:
             mode, reason = self._autopilot_mode_for_band(band, modes, stats_map)
             stats = stats_map.get((band, mode), AutopilotStats(band=band, mode=mode))
             score = self._autopilot_combo_score(stats)
+            band_stats = self._autopilot_band_stats_label(band, modes, stats_map)
             candidates.append(
                 AutopilotDecision(
                     band=band,
                     mode=mode,
                     reason=f"{reason}; decodes={stats.decodes}, "
-                    f"attempts={stats.attempts}, completion={stats.completion_pct:.1f}%",
+                    f"attempts={stats.attempts}, completion={stats.completion_pct:.1f}%; "
+                    f"band stats: {band_stats}",
                     score=score,
                 )
             )
@@ -3144,11 +3219,6 @@ class Orchestrator:
         if now - self._autopilot_last_eval_at < self.AUTOPILOT_EVAL_INTERVAL_S:
             return
         self._autopilot_last_eval_at = now
-        if (
-            self._autopilot_last_switch_at > 0
-            and now - self._autopilot_last_switch_at < op.autopilot_cooldown_min * 60
-        ):
-            return
         if self.state_machine.state is not State.IDLE:
             return
         if not self.state_machine.ctx.auto_answer or self.state_machine.ctx.auto_cq:
@@ -3158,30 +3228,40 @@ class Orchestrator:
         if self._last_rig.freq_hz is None:
             return
 
+        current_mode = self._valid_digital_mode(self.config.operating.mode)
         active_cfg = self._band_for_rig_freq(self._last_rig.freq_hz)
         active_band = active_cfg.name if active_cfg is not None else None
         bands = self._autopilot_allowed_bands()
         modes = self._autopilot_allowed_modes()
-        stats = await self._autopilot_collect_stats(bands, modes)
-        decision = self._autopilot_decision(
-            active_band,
-            self.config.operating.mode,
-            stats,
+        if not bands or not modes:
+            return
+
+        in_cooldown = (
+            self._autopilot_last_switch_at > 0
+            and now - self._autopilot_last_switch_at < op.autopilot_cooldown_min * 60
         )
+        if in_cooldown:
+            if not self._autopilot_ft4_probe_due(active_band, current_mode, modes, now):
+                return
+            stats = await self._autopilot_collect_stats(bands, modes)
+            decision = self._autopilot_ft4_probe_escape(active_band, modes, stats)
+        else:
+            stats = await self._autopilot_collect_stats(bands, modes)
+            decision = self._autopilot_decision(active_band, current_mode, stats)
         if decision is None:
             return
-        if decision.band == active_band and decision.mode == self.config.operating.mode:
+        if decision.band == active_band and decision.mode == current_mode:
             return
 
         reason = (
             f"autopilot:{active_band or 'unknown'}/"
-            f"{self.config.operating.mode}->{decision.band}/{decision.mode}: "
+            f"{current_mode}->{decision.band}/{decision.mode}: "
             f"{decision.reason}; score={decision.score:.1f}"
         )
         log.info(reason)
         self._autopilot_record_ft4_probe_result(
             active_band,
-            self.config.operating.mode,
+            current_mode,
             decision,
             stats,
         )
@@ -3678,6 +3758,17 @@ class Orchestrator:
             except Exception as exc:
                 _log_loop_exc("dx-cluster-hint loop", exc)
 
+    def _psk_reciprocity_pause_reason(self) -> str | None:
+        if not self.state_machine.ctx.auto_answer:
+            return "hunt inactive"
+        if self.state_machine.ctx.auto_cq:
+            return "auto-cq active"
+        if self._last_rig.freq_hz is None:
+            return "rig not ready"
+        if getattr(getattr(self, "decode_source", None), "metrics", None) is None:
+            return "rx audio not wired"
+        return None
+
     async def _psk_reciprocity_refresh_loop(self) -> None:
         """v0.10.0: Periodisch pskreporter.info abfragen — wer hat uns gehört?
 
@@ -3755,6 +3846,7 @@ class Orchestrator:
         per_call_snr: dict[tuple[str, str], dict[str, int]] = {}  # v0.64.0 telemetry
         rotate_idx = 0
         consecutive_fail = 0
+        paused_reason: str | None = None
         configured_interval = float(self.config.operating.psk_reciprocity_refresh_s)
         base_interval = max(900.0, configured_interval)
         if base_interval != configured_interval:
@@ -3775,6 +3867,18 @@ class Orchestrator:
                 if psk_client is None:
                     await asyncio.sleep(base_interval)
                     continue
+                pause_reason = self._psk_reciprocity_pause_reason()
+                if pause_reason is not None:
+                    if pause_reason != paused_reason:
+                        log.info("psk-reciprocity: paused (%s)", pause_reason)
+                        paused_reason = pause_reason
+                    await asyncio.sleep(
+                        base_interval + random.uniform(0.0, min(60.0, base_interval * 0.1))
+                    )
+                    continue
+                if paused_reason is not None:
+                    log.info("psk-reciprocity: resumed")
+                    paused_reason = None
                 if operator_calls:
                     call = operator_calls[rotate_idx % len(operator_calls)]
                     rotate_idx += 1

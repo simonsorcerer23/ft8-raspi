@@ -172,9 +172,11 @@
     s += `${ind(2)}autopilot_ft4_good_completion_pct: ${c.operating.autopilot_ft4_good_completion_pct ?? 12}\n`;
     s += `${ind(2)}autopilot_ft4_fallback_completion_pct: ${c.operating.autopilot_ft4_fallback_completion_pct ?? 8}\n`;
     s += `${ind(2)}autopilot_ft4_probe_min_decodes: ${c.operating.autopilot_ft4_probe_min_decodes ?? 150}\n`;
+    s += `${ind(2)}autopilot_ft4_probe_dwell_min: ${c.operating.autopilot_ft4_probe_dwell_min ?? 5}\n`;
     s += `${ind(2)}autopilot_ft4_null_decode_limit: ${c.operating.autopilot_ft4_null_decode_limit ?? 3}\n`;
     s += `${ind(2)}autopilot_ft4_null_probe_threshold: ${c.operating.autopilot_ft4_null_probe_threshold ?? 2}\n`;
     s += `${ind(2)}autopilot_ft4_null_cooldown_min: ${c.operating.autopilot_ft4_null_cooldown_min ?? 120}\n`;
+    s += `${ind(2)}autopilot_ft4_null_cooldown_max_min: ${c.operating.autopilot_ft4_null_cooldown_max_min ?? 360}\n`;
     s += `${ind(2)}cq_directed: ${yq(c.operating.cq_directed || '')}\n`;
     s += `${ind(2)}decoder_mode: ${yq(c.operating.decoder_mode || 'standard')}\n`;
     s += `${ind(2)}auto_notch_enabled: ${c.operating.auto_notch_enabled === false ? 'false' : 'true'}\n`;
@@ -559,6 +561,12 @@
           </label>
           <label class="field"><span>{t('cfg.autopilot_min_decodes')}</span>
             <input type="number" bind:value={cfg.operating.autopilot_min_decodes} min="0" max="2000"/>
+          </label>
+          <label class="field"><span>{t('cfg.autopilot_ft4_probe_dwell')}<small>(min)</small></span>
+            <input type="number" bind:value={cfg.operating.autopilot_ft4_probe_dwell_min} min="1" max="60"/>
+          </label>
+          <label class="field"><span>{t('cfg.autopilot_ft4_max_pause')}<small>(min)</small></span>
+            <input type="number" bind:value={cfg.operating.autopilot_ft4_null_cooldown_max_min} min="5" max="1440"/>
           </label>
         </div>
         <div class="autopilot-pickers">

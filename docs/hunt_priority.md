@@ -120,9 +120,15 @@ Konfigurierbare Policy in `OperatingConfig` / Config-UI:
 - `autopilot_ft4_probe_min_decodes`: strengere Decode-Schwelle fuer erste
   FT4-Probes. Default `150`, damit FT4 nur bei wirklich dichtem Band probiert
   wird.
+- `autopilot_ft4_probe_dwell_min`: kurze Beobachtungszeit fuer FT4-Probes.
+  Default `5`; bleibt FT4 in dieser Zeit praktisch leer, darf der Autopilot
+  trotz globalem Umschalt-Cooldown auf FT8 zurueck.
 - `autopilot_ft4_null_probe_threshold` plus
   `autopilot_ft4_null_cooldown_min`: wiederholte FT4-Nullproben pausieren FT4
   pro Band temporaer. Default: nach 2 Nullproben 120 min FT8-only.
+- `autopilot_ft4_null_cooldown_max_min`: Obergrenze fuer den exponentiellen
+  Nullproben-Backoff. Default `360`; weitere leere FT4-Probes verlaengern die
+  Pause pro Band bis zu dieser Grenze.
 
 Safety-Gates:
 
