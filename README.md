@@ -106,6 +106,9 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 - **Auto-Logbook** — QSOs auto-upload to **QRZ.com** + **Club Log** in the
   background, offline-tolerant, idempotent. Local SQLite remains the source
   of truth.
+- **Manual ClubLog fallback** — operators without ClubLog API key can export
+  pending QSOs as a tracked ADIF batch and confirm the ClubLog upload after
+  the manual web import.
 - **Watchlist + ntfy push** for DXpeditions / wanted DX, auto-imported from
   the **NG3K ADXO** schedule.
 - **Blitzortung lightning warning** — live WS stream, ntfy push when a

@@ -157,6 +157,16 @@ export const api = {
   adifUrl:      (operator) => operator
                                 ? `/api/log/adif?operator=${encodeURIComponent(operator)}`
                                 : '/api/log/adif',
+  clublogManualStatus: (operator) =>
+                    request('/log/clublog-manual/status', { query: { operator } }),
+  clublogManualCreateExport: (operator) =>
+                    request('/log/clublog-manual/export', {
+                      method: 'POST', body: { operator },
+                    }),
+  clublogManualConfirm: (batchId, operator) =>
+                    request(`/log/clublog-manual/${encodeURIComponent(batchId)}/confirm`, {
+                      method: 'POST', body: { operator },
+                    }),
   dxCluster:    (opts)   => request('/dx-cluster',           { query: opts }),
   operatingLocations: () => request('/operating-locations'),
   heatmap:      (opts)   => request('/heard/heatmap',         { query: opts }),

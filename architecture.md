@@ -459,6 +459,7 @@ action "Back to XXm").
 - **DX cluster** (telnet) as an additional spot source
 - **Maritime operators (DF7PM list):** ⚓ badge + MF number for active members, its own picker tier
 - **Upload resilience (v0.40.0, hardened 2026-06):** QRZ/ClubLog mark a QSO done only on a *clearly hard* reject; transient errors are retried (ceiling 15 + give-up alarm). A 2026-06 incident exposed a gap: a tz-naive-vs-aware `datetime` crash in **both** drain loops backed up uploads for ~2 weeks while being swallowed as a benign per-cycle "hiccup". Fix added two safety nets: (a) `_as_utc()` coercion of DB datetimes + a `DTZ` lint gate against naive datetimes, and (b) **drain-loop failure escalation** (`_note_drain_outcome`) — N consecutive sweep failures now raise an ntfy alarm (`push.upload_stuck_*`) instead of staying silent.
+- **Manual ClubLog fallback (v0.66.14):** Operators without ClubLog API key can export `clublog_uploaded=false` QSOs as a tracked ADIF batch. Downloading marks only `clublog_manual_export_*`; a separate confirmation action sets `clublog_uploaded=true` after the operator has imported the ADIF on clublog.org.
 
 **Resilience principle (applies to all online features):**
 Every online integration must **degrade gracefully**:

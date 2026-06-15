@@ -67,6 +67,18 @@ class Qso(Base):
     clublog_last_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Manual ClubLog fallback for operators without API key. Exporting an
+    # ADIF batch is tracked separately from "uploaded"; only explicit
+    # confirmation marks clublog_uploaded=True.
+    clublog_manual_export_batch: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    clublog_manual_exported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    clublog_manual_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # v0.22.0 — TX-Callsign zum QSO-Zeitpunkt (mit DX-Prefix wenn
     # Auslandsbetrieb). user_callsign bleibt der Heimat-Call (Multi-Op-
     # Filter), station_callsign ist was wir tatsaechlich gesendet

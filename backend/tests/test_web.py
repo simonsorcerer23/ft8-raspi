@@ -40,6 +40,14 @@ class _FakeIntegrations:
     cty = None
 
 
+class _FakeOperator:
+    callsign = "DK9XR"
+
+
+class _FakeConfig:
+    operator = _FakeOperator()
+
+
 class _FakeAudioMetrics:
     slots_decoded = 10
     decodes_total = 30
@@ -70,6 +78,7 @@ class FakeOrchestrator:
     )
     state_machine: _FakeStateMachine = field(default_factory=_FakeStateMachine)
     integrations: _FakeIntegrations = field(default_factory=_FakeIntegrations)
+    config: _FakeConfig = field(default_factory=_FakeConfig)
 
     def status(self) -> OrchestratorStatus:
         return OrchestratorStatus(
@@ -375,6 +384,88 @@ def test_freq_reputation_endpoint_sorts_by_success_rate(
     assert entries[0]["band"] == "15m"
     assert entries[0]["success_rate"] == 0.8
     assert entries[-1]["success_rate"] == 0.2
+
+
+def test_clublog_manual_export_batch_flow(
+    client: TestClient,
+    db_initialized,
+) -> None:
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    from ft8_appliance.db import session_scope
+    from ft8_appliance.db.models import Qso
+
+    async def seed():
+        now = datetime.now(UTC)
+        async with session_scope() as s:
+            s.add(Qso(
+                call="EA5KB", band="15m", freq_hz=21_074_000, mode="FT8",
+                rst_sent=-10, rst_rcvd=-12, grid_rcvd="IM99",
+                qso_start=now - timedelta(minutes=20), qso_end=now - timedelta(minutes=19),
+                my_grid="JN58", my_power_w=50, swr_avg=1.1,
+                notes=None, my_lat=None, my_lon=None, user_callsign="DK9XR",
+                clublog_uploaded=False,
+            ))
+            s.add(Qso(
+                call="JA1XYZ", band="15m", freq_hz=21_140_000, mode="FT4",
+                rst_sent=-6, rst_rcvd=-8, grid_rcvd="PM95",
+                qso_start=now - timedelta(minutes=10), qso_end=now - timedelta(minutes=9),
+                my_grid="JN58", my_power_w=50, swr_avg=1.0,
+                notes=None, my_lat=None, my_lon=None, user_callsign="DK9XR",
+                clublog_uploaded=False,
+            ))
+            s.add(Qso(
+                call="W1AW", band="20m", freq_hz=14_074_000, mode="FT8",
+                rst_sent=-4, rst_rcvd=-7, grid_rcvd="FN31",
+                qso_start=now - timedelta(minutes=5), qso_end=now - timedelta(minutes=4),
+                my_grid="JN58", my_power_w=50, swr_avg=1.0,
+                notes=None, my_lat=None, my_lon=None, user_callsign="DO3XR",
+                clublog_uploaded=False,
+            ))
+
+    asyncio.run(seed())
+
+    status = client.get("/api/log/clublog-manual/status?operator=DK9XR").json()
+    assert status["unexported_count"] == 2
+    assert status["exported_unconfirmed_count"] == 0
+
+    created = client.post(
+        "/api/log/clublog-manual/export",
+        json={"operator": "DK9XR"},
+    ).json()
+    assert created["qso_count"] == 2
+    assert created["batch_id"]
+    assert created["filename"].startswith("dk9xr_clublog_manual_")
+
+    repeated = client.post(
+        "/api/log/clublog-manual/export",
+        json={"operator": "DK9XR"},
+    ).json()
+    assert repeated["batch_id"] == created["batch_id"]
+    assert repeated["qso_count"] == 2
+
+    adif = client.get(created["download_url"]).text
+    assert "<CALL:5>EA5KB" in adif
+    assert "<CALL:6>JA1XYZ" in adif
+    assert "W1AW" not in adif
+    assert "<STATION_CALLSIGN:5>DK9XR" in adif
+
+    status = client.get("/api/log/clublog-manual/status?operator=DK9XR").json()
+    assert status["unexported_count"] == 0
+    assert status["exported_unconfirmed_count"] == 2
+    assert status["last_batch_id"] == created["batch_id"]
+
+    confirmed = client.post(
+        f"/api/log/clublog-manual/{created['batch_id']}/confirm",
+        json={"operator": "DK9XR"},
+    ).json()
+    assert confirmed["confirmed_count"] == 2
+    assert confirmed["already_uploaded_count"] == 0
+
+    status = client.get("/api/log/clublog-manual/status?operator=DK9XR").json()
+    assert status["unexported_count"] == 0
+    assert status["exported_unconfirmed_count"] == 0
 
 
 def test_stats_endpoint_reports_decode_modes(client: TestClient, db_initialized) -> None:

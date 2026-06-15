@@ -11,13 +11,22 @@
   // ClubLog-Account beim manuellen Upload.
   const exportUrl = $derived(activeCall ? api.adifUrl(activeCall) : api.adifUrl());
   const exportName = $derived(`${(activeCall ?? 'log').toLowerCase()}_ft8.adif`);
+  let manualStatus = $state(null);
+  let manualExport = $state(null);
+  let manualBusy = $state(false);
+  let manualError = $state(null);
+  let manualMessage = $state('');
 
   const COLOURS = { worked: '#22c55e', heard: '#f59e0b', both: '#38bdf8',
                     new_dxcc: '#a78bfa' };
 
   onMount(() => {
     logStore.refresh();
-    const t = setInterval(() => logStore.refresh(), 30_000);
+    refreshManualStatus();
+    const t = setInterval(() => {
+      logStore.refresh();
+      refreshManualStatus();
+    }, 30_000);
     return () => clearInterval(t);
   });
 
@@ -37,6 +46,59 @@
     const n = call.match(/^([A-Z]{1,2}\d|\d[A-Z])/);
     return n ? n[1] : call.slice(0, 2);
   }
+  async function refreshManualStatus() {
+    if (!activeCall) return;
+    try {
+      manualStatus = await api.clublogManualStatus(activeCall);
+      manualError = null;
+    } catch (e) {
+      manualError = e.message;
+    }
+  }
+  async function createManualExport() {
+    if (!activeCall || manualBusy) return;
+    manualBusy = true;
+    manualMessage = '';
+    try {
+      const res = await api.clublogManualCreateExport(activeCall);
+      manualExport = res;
+      manualError = null;
+      await refreshManualStatus();
+      if (res.download_url) {
+        window.location.assign(res.download_url);
+        manualMessage = t('log.clublog_manual_export_ready', { n: res.qso_count });
+      } else {
+        manualMessage = t('log.clublog_manual_none');
+      }
+    } catch (e) {
+      manualError = e.message;
+    } finally {
+      manualBusy = false;
+    }
+  }
+  async function confirmManualExport() {
+    const batch = manualStatus?.last_batch_id ?? manualExport?.batch_id;
+    if (!activeCall || !batch || manualBusy) return;
+    manualBusy = true;
+    manualMessage = '';
+    try {
+      const res = await api.clublogManualConfirm(batch, activeCall);
+      manualError = null;
+      manualMessage = t('log.clublog_manual_confirmed', { n: res.confirmed_count });
+      await refreshManualStatus();
+      await logStore.refresh();
+    } catch (e) {
+      manualError = e.message;
+    } finally {
+      manualBusy = false;
+    }
+  }
+  const manualDownloadName = $derived(
+    manualExport?.filename
+      ?? (manualStatus?.last_batch_id
+          ? `${activeCall?.toLowerCase()}_clublog_manual_${manualStatus.last_batch_id}.adif`
+          : `${(activeCall ?? 'log').toLowerCase()}_clublog_manual.adif`)
+  );
 
   const totalPages = $derived(Math.max(1, Math.ceil(logStore.total / logStore.pageSize)));
   function sortArrow(col) {
@@ -63,6 +125,34 @@
     <h2>QSO-Log</h2>
     <a class="export" href={exportUrl} download={exportName}>⬇ ADIF Export ({activeCall ?? 'alle'})</a>
   </div>
+  {#if activeCall}
+    <div class="manual-clublog">
+      <span class="manual-title">{t('log.clublog_manual')}</span>
+      <span class="manual-counts">
+        {t('log.clublog_manual_counts', {
+          new: manualStatus?.unexported_count ?? 0,
+          open: manualStatus?.exported_unconfirmed_count ?? 0,
+        })}
+      </span>
+      <button class="manual-btn"
+              disabled={manualBusy || ((manualStatus?.unexported_count ?? 0) === 0 && (manualStatus?.exported_unconfirmed_count ?? 0) === 0)}
+              onclick={createManualExport}>
+        {manualBusy ? t('log.clublog_manual_busy') : t('log.clublog_manual_export')}
+      </button>
+      {#if manualStatus?.last_download_url}
+        <a class="manual-link" href={manualStatus.last_download_url} download={manualDownloadName}>
+          {t('log.clublog_manual_redownload')}
+        </a>
+      {/if}
+      <button class="manual-btn confirm"
+              disabled={manualBusy || (manualStatus?.exported_unconfirmed_count ?? 0) === 0 || !manualStatus?.last_batch_id}
+              onclick={confirmManualExport}>
+        {t('log.clublog_manual_confirm')}
+      </button>
+      {#if manualMessage}<span class="manual-ok">{manualMessage}</span>{/if}
+      {#if manualError}<span class="manual-error">{manualError}</span>{/if}
+    </div>
+  {/if}
 
   <div class="filters">
     <input type="text" placeholder={t('log.f_call_ph')}
@@ -187,6 +277,27 @@
     border: 1px solid #334155; border-radius: 4px; padding: 0.2rem 0.5rem;
   }
   .export:hover { background: #1e293b; }
+  .manual-clublog {
+    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+    margin: 0.45rem 0 0.2rem;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid #334155; border-radius: 4px;
+    background: rgba(15,23,42,0.45);
+    font-size: 0.82rem;
+  }
+  .manual-title { color: var(--accent); font-weight: 600; }
+  .manual-counts { color: #cbd5e1; }
+  .manual-btn, .manual-link {
+    border: 1px solid #334155; border-radius: 4px;
+    padding: 0.24rem 0.5rem; font-size: 0.78rem;
+    background: #0b1220; color: var(--fg); text-decoration: none;
+    cursor: pointer;
+  }
+  .manual-btn:hover:not(:disabled), .manual-link:hover { background: #1e293b; }
+  .manual-btn.confirm { color: #86efac; border-color: rgba(34,197,94,0.45); }
+  .manual-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .manual-ok { color: #86efac; }
+  .manual-error { color: #fca5a5; }
   .filters {
     display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap;
     margin: 0.5rem 0;

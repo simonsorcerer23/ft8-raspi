@@ -231,10 +231,17 @@ async def _migrate_clublog_columns(conn) -> None:
         ("clublog_uploaded",         "BOOLEAN NOT NULL DEFAULT 0"),
         ("clublog_upload_attempts",  "INTEGER NOT NULL DEFAULT 0"),
         ("clublog_last_attempt_at",  "DATETIME"),
+        ("clublog_manual_export_batch", "TEXT"),
+        ("clublog_manual_exported_at", "DATETIME"),
+        ("clublog_manual_confirmed_at", "DATETIME"),
     ]
     for name, ddl in additions:
         if name not in existing:
             await conn.exec_driver_sql(f"ALTER TABLE qso ADD COLUMN {name} {ddl}")
+    await conn.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_qso_clublog_manual_export_batch "
+        "ON qso (clublog_manual_export_batch)"
+    )
 
 
 async def _migrate_qrz_columns(conn) -> None:
