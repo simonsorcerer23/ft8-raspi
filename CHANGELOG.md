@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.11 — 2026-06-15
+- fix: tighten autopilot probes and health polling
+
 ## v0.66.10 — 2026-06-14
 - fix: slow PSK Reporter polling per public IP
 
