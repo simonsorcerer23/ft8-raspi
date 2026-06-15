@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.12 — 2026-06-15
+- fix: prime ft4 probe timer after restart
+
 ## v0.66.11 — 2026-06-15
 - fix: tighten autopilot probes and health polling
 
