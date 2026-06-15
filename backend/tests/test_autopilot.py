@@ -234,6 +234,26 @@ def test_autopilot_ft4_probe_escape_after_short_null_dwell() -> None:
     assert "null result" in decision.reason
 
 
+def test_autopilot_ft4_probe_escape_after_weak_ft4_result() -> None:
+    op = OperatingConfig(
+        autopilot_enabled=True,
+        autopilot_allowed_bands=["15m"],
+        autopilot_allowed_modes=["FT8", "FT4"],
+        autopilot_ft4_probe_min_decodes=150,
+        autopilot_ft4_null_decode_limit=3,
+    )
+    orch = _orch(_cfg(operating=op))
+    decision = orch._autopilot_ft4_probe_escape(
+        "15m",
+        ["FT8", "FT4"],
+        _stats("15m", decodes=0, ft8_decodes=220, ft4_decodes=27),
+    )
+
+    assert decision is not None
+    assert decision.mode == "FT8"
+    assert "weak FT4 result" in decision.reason
+
+
 async def test_autopilot_primes_ft4_probe_timer_after_restart() -> None:
     op = OperatingConfig(
         mode="FT4",

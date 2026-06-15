@@ -3131,17 +3131,26 @@ class Orchestrator:
             (active_band, "FT4"),
             AutopilotStats(band=active_band, mode="FT4"),
         )
-        if ft4.decodes > op.autopilot_ft4_null_decode_limit or ft4.completed > 0:
+        ft4_probe_min_decodes = max(
+            op.autopilot_min_decodes,
+            op.autopilot_ft4_probe_min_decodes,
+        )
+        if ft4.decodes >= ft4_probe_min_decodes or ft4.completed > 0:
             self._autopilot_ft4_null_probe_counts[active_band] = 0
             self._autopilot_ft4_null_block_counts[active_band] = 0
             return None
+        result = (
+            "null result"
+            if ft4.decodes <= op.autopilot_ft4_null_decode_limit
+            else "weak FT4 result"
+        )
 
         return AutopilotDecision(
             band=active_band,
             mode="FT8",
             reason=(
                 f"FT4 probe dwell {op.autopilot_ft4_probe_dwell_min} min expired "
-                "with null result; band stats: "
+                f"with {result}; band stats: "
                 f"{self._autopilot_band_stats_label(active_band, modes, stats_map)}"
             ),
             score=0.0,
