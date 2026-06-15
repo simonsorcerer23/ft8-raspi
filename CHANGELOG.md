@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.66.15 — 2026-06-15
+- fix: choose operator for manual ClubLog export
+
 ## v0.66.14 — 2026-06-15
 - feat: add manual ClubLog ADIF export batches
 
