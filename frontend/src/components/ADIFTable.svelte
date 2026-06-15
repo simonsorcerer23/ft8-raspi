@@ -13,16 +13,19 @@
   const exportName = $derived(`${(activeCall ?? 'log').toLowerCase()}_ft8.adif`);
   let manualStatus = $state(null);
   let manualExport = $state(null);
+  let manualOperators = $state([]);
+  let manualOperator = $state(null);
   let manualBusy = $state(false);
   let manualError = $state(null);
   let manualMessage = $state('');
+  const manualCall = $derived(manualOperator || activeCall);
 
   const COLOURS = { worked: '#22c55e', heard: '#f59e0b', both: '#38bdf8',
                     new_dxcc: '#a78bfa' };
 
   onMount(() => {
     logStore.refresh();
-    refreshManualStatus();
+    loadManualOperators();
     const t = setInterval(() => {
       logStore.refresh();
       refreshManualStatus();
@@ -46,21 +49,36 @@
     const n = call.match(/^([A-Z]{1,2}\d|\d[A-Z])/);
     return n ? n[1] : call.slice(0, 2);
   }
-  async function refreshManualStatus() {
-    if (!activeCall) return;
+  async function loadManualOperators() {
     try {
-      manualStatus = await api.clublogManualStatus(activeCall);
+      const data = await api.operatorsList();
+      manualOperators = data.operators ?? [];
+      if (!manualOperator) {
+        const fallback = manualOperators.find(op => !op.has_clublog_credentials)
+                      ?? manualOperators.find(op => op.callsign === activeCall)
+                      ?? manualOperators[0];
+        manualOperator = fallback?.callsign ?? activeCall;
+      }
+      await refreshManualStatus();
+    } catch (e) {
+      manualError = e.message;
+    }
+  }
+  async function refreshManualStatus() {
+    if (!manualCall) return;
+    try {
+      manualStatus = await api.clublogManualStatus(manualCall);
       manualError = null;
     } catch (e) {
       manualError = e.message;
     }
   }
   async function createManualExport() {
-    if (!activeCall || manualBusy) return;
+    if (!manualCall || manualBusy) return;
     manualBusy = true;
     manualMessage = '';
     try {
-      const res = await api.clublogManualCreateExport(activeCall);
+      const res = await api.clublogManualCreateExport(manualCall);
       manualExport = res;
       manualError = null;
       await refreshManualStatus();
@@ -78,11 +96,11 @@
   }
   async function confirmManualExport() {
     const batch = manualStatus?.last_batch_id ?? manualExport?.batch_id;
-    if (!activeCall || !batch || manualBusy) return;
+    if (!manualCall || !batch || manualBusy) return;
     manualBusy = true;
     manualMessage = '';
     try {
-      const res = await api.clublogManualConfirm(batch, activeCall);
+      const res = await api.clublogManualConfirm(batch, manualCall);
       manualError = null;
       manualMessage = t('log.clublog_manual_confirmed', { n: res.confirmed_count });
       await refreshManualStatus();
@@ -96,8 +114,8 @@
   const manualDownloadName = $derived(
     manualExport?.filename
       ?? (manualStatus?.last_batch_id
-          ? `${activeCall?.toLowerCase()}_clublog_manual_${manualStatus.last_batch_id}.adif`
-          : `${(activeCall ?? 'log').toLowerCase()}_clublog_manual.adif`)
+          ? `${manualCall?.toLowerCase()}_clublog_manual_${manualStatus.last_batch_id}.adif`
+          : `${(manualCall ?? 'log').toLowerCase()}_clublog_manual.adif`)
   );
 
   const totalPages = $derived(Math.max(1, Math.ceil(logStore.total / logStore.pageSize)));
@@ -125,9 +143,24 @@
     <h2>QSO-Log</h2>
     <a class="export" href={exportUrl} download={exportName}>⬇ ADIF Export ({activeCall ?? 'alle'})</a>
   </div>
-  {#if activeCall}
+  {#if manualCall}
     <div class="manual-clublog">
       <span class="manual-title">{t('log.clublog_manual')}</span>
+      {#if manualOperators.length > 1}
+        <select class="manual-select"
+                aria-label={t('log.clublog_manual_operator')}
+                value={manualCall}
+                onchange={(e) => {
+                  manualOperator = e.target.value;
+                  manualExport = null;
+                  manualMessage = '';
+                  refreshManualStatus();
+                }}>
+          {#each manualOperators as op}
+            <option value={op.callsign}>{op.callsign}</option>
+          {/each}
+        </select>
+      {/if}
       <span class="manual-counts">
         {t('log.clublog_manual_counts', {
           new: manualStatus?.unexported_count ?? 0,
@@ -287,6 +320,11 @@
   }
   .manual-title { color: var(--accent); font-weight: 600; }
   .manual-counts { color: #cbd5e1; }
+  .manual-select {
+    border: 1px solid #334155; border-radius: 4px;
+    padding: 0.22rem 0.4rem; font-size: 0.78rem;
+    background: #0b1220; color: var(--fg);
+  }
   .manual-btn, .manual-link {
     border: 1px solid #334155; border-radius: 4px;
     padding: 0.24rem 0.5rem; font-size: 0.78rem;

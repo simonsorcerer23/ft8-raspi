@@ -203,6 +203,7 @@ export const de = {
   'log.empty': 'Keine QSOs mit diesen Filtern.',
   'log.prefix': 'Präfix',
   'log.clublog_manual': 'ClubLog manuell',
+  'log.clublog_manual_operator': 'ClubLog-Export-Operator',
   'log.clublog_manual_counts': '{new} neu, {open} offen',
   'log.clublog_manual_export': 'Export',
   'log.clublog_manual_busy': 'Läuft…',
