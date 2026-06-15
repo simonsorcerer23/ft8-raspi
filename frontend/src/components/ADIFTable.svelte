@@ -18,6 +18,7 @@
   let manualBusy = $state(false);
   let manualError = $state(null);
   let manualMessage = $state('');
+  let exportError = $state(null);
   const manualCall = $derived(manualOperator || activeCall);
 
   const COLOURS = { worked: '#22c55e', heard: '#f59e0b', both: '#38bdf8',
@@ -83,7 +84,7 @@
       manualError = null;
       await refreshManualStatus();
       if (res.download_url) {
-        window.location.assign(res.download_url);
+        await api.download(res.download_url, res.filename ?? manualDownloadName);
         manualMessage = t('log.clublog_manual_export_ready', { n: res.qso_count });
       } else {
         manualMessage = t('log.clublog_manual_none');
@@ -109,6 +110,30 @@
       manualError = e.message;
     } finally {
       manualBusy = false;
+    }
+  }
+  async function downloadManualExport(event) {
+    event?.preventDefault();
+    const url = manualStatus?.last_download_url;
+    if (!url || manualBusy) return;
+    manualBusy = true;
+    manualMessage = '';
+    try {
+      await api.download(url, manualDownloadName);
+      manualError = null;
+    } catch (e) {
+      manualError = e.message;
+    } finally {
+      manualBusy = false;
+    }
+  }
+  async function downloadActiveExport(event) {
+    event?.preventDefault();
+    try {
+      await api.downloadAdif(activeCall, exportName);
+      exportError = null;
+    } catch (e) {
+      exportError = e.message;
     }
   }
   const manualDownloadName = $derived(
@@ -141,8 +166,11 @@
 <div class="wrap">
   <div class="header">
     <h2>QSO-Log</h2>
-    <a class="export" href={exportUrl} download={exportName}>⬇ ADIF Export ({activeCall ?? 'alle'})</a>
+    <a class="export" href={exportUrl} download={exportName} onclick={downloadActiveExport}>
+      ⬇ ADIF Export ({activeCall ?? 'alle'})
+    </a>
   </div>
+  {#if exportError}<p class="manual-error">{exportError}</p>{/if}
   {#if manualCall}
     <div class="manual-clublog">
       <span class="manual-title">{t('log.clublog_manual')}</span>
@@ -173,7 +201,10 @@
         {manualBusy ? t('log.clublog_manual_busy') : t('log.clublog_manual_export')}
       </button>
       {#if manualStatus?.last_download_url}
-        <a class="manual-link" href={manualStatus.last_download_url} download={manualDownloadName}>
+        <a class="manual-link"
+           href={manualStatus.last_download_url}
+           download={manualDownloadName}
+           onclick={downloadManualExport}>
           {t('log.clublog_manual_redownload')}
         </a>
       {/if}

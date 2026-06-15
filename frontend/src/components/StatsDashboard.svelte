@@ -8,6 +8,7 @@
                        best_dx_today: null });
   let suggestions = $state([]);
   let currentBand = $state(null);
+  let exportError = $state(null);
   const modeOrder = { FT8: 0, FT4: 1, legacy: 9 };
   const decodeModeBreakdown = $derived(
     Object.entries(stats.decodes_last_hour_by_mode ?? {})
@@ -32,6 +33,16 @@
     refresh();
   }
 
+  async function downloadAdif(event) {
+    event?.preventDefault();
+    try {
+      await api.downloadAdif(null, 'dk9xr_ft8.adif');
+      exportError = null;
+    } catch (e) {
+      exportError = e.message;
+    }
+  }
+
   onMount(() => {
     refresh();
     const t = setInterval(refresh, 60_000);
@@ -42,8 +53,11 @@
 <div class="wrap">
   <div class="head">
     <h2>{t('stats.today')}</h2>
-    <a class="export" href={api.adifUrl()} download="dk9xr_ft8.adif">⬇ ADIF Export</a>
+    <a class="export" href={api.adifUrl()} download="dk9xr_ft8.adif" onclick={downloadAdif}>
+      ⬇ ADIF Export
+    </a>
   </div>
+  {#if exportError}<p class="err">{exportError}</p>{/if}
 
   <div class="grid">
     <div class="card">

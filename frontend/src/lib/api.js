@@ -51,6 +51,56 @@ async function request(path, { method = 'GET', body, query } = {}) {
   return payload;
 }
 
+function _apiUrl(pathOrUrl) {
+  let url = pathOrUrl.startsWith('/api') ? pathOrUrl : `/api${pathOrUrl}`;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}lang=${encodeURIComponent(getLang())}`;
+}
+
+function _filenameFromDisposition(header) {
+  if (!header) return null;
+  const utf = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf) return decodeURIComponent(utf[1].replace(/"/g, ''));
+  const ascii = header.match(/filename="?([^";]+)"?/i);
+  return ascii ? ascii[1] : null;
+}
+
+async function download(pathOrUrl, filename) {
+  const init = { method: 'GET', headers: { 'Accept': 'text/plain, */*' } };
+  const tok = getToken();
+  if (tok) init.headers['Authorization'] = `Bearer ${tok}`;
+  const r = await fetch(_apiUrl(pathOrUrl), init);
+  if (r.status === 401) {
+    _requireLogin();
+    throw new Error('401 unauthorized — Token erforderlich');
+  }
+  if (!r.ok) {
+    const ct = r.headers.get('content-type') || '';
+    const payload = ct.includes('application/json') ? await r.json() : await r.text();
+    const msg = typeof payload === 'string' ? payload : (payload.detail || JSON.stringify(payload));
+    throw new Error(`${r.status} ${r.statusText}: ${msg}`);
+  }
+  const blob = await r.blob();
+  const name = filename
+            || _filenameFromDisposition(r.headers.get('content-disposition'))
+            || 'download.adif';
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 30_000);
+  return { filename: name, size: blob.size };
+}
+
+function adifPath(operator) {
+  return operator
+    ? `/log/adif?operator=${encodeURIComponent(operator)}`
+    : '/log/adif';
+}
+
 export const api = {
   status:       () => request('/status'),
   healthcheck:  () => request('/healthcheck'),
@@ -154,9 +204,8 @@ export const api = {
   bandSuggestions: ()    => request('/stats/band-suggestions'),
   bestTime:     (band)   => request(`/stats/best-time/${encodeURIComponent(band)}`),
   callsignInfo: (call)   => request(`/callsign/${encodeURIComponent(call)}`),
-  adifUrl:      (operator) => operator
-                                ? `/api/log/adif?operator=${encodeURIComponent(operator)}`
-                                : '/api/log/adif',
+  adifUrl:      (operator) => `/api${adifPath(operator)}`,
+  downloadAdif: (operator, filename) => download(adifPath(operator), filename),
   clublogManualStatus: (operator) =>
                     request('/log/clublog-manual/status', { query: { operator } }),
   clublogManualCreateExport: (operator) =>
@@ -167,6 +216,7 @@ export const api = {
                     request(`/log/clublog-manual/${encodeURIComponent(batchId)}/confirm`, {
                       method: 'POST', body: { operator },
                     }),
+  download:     (pathOrUrl, filename) => download(pathOrUrl, filename),
   dxCluster:    (opts)   => request('/dx-cluster',           { query: opts }),
   operatingLocations: () => request('/operating-locations'),
   heatmap:      (opts)   => request('/heard/heatmap',         { query: opts }),
