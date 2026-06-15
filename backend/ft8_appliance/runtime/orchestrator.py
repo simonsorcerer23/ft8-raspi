@@ -3235,6 +3235,13 @@ class Orchestrator:
         modes = self._autopilot_allowed_modes()
         if not bands or not modes:
             return
+        if (
+            active_band is not None
+            and current_mode == "FT4"
+            and "FT8" in modes
+            and self._autopilot_last_switch_at <= 0
+        ):
+            self._autopilot_last_switch_at = now
 
         in_cooldown = (
             self._autopilot_last_switch_at > 0

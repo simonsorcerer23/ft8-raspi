@@ -234,6 +234,24 @@ def test_autopilot_ft4_probe_escape_after_short_null_dwell() -> None:
     assert "null result" in decision.reason
 
 
+async def test_autopilot_primes_ft4_probe_timer_after_restart() -> None:
+    op = OperatingConfig(
+        mode="FT4",
+        autopilot_enabled=True,
+        autopilot_allowed_bands=["15m"],
+        autopilot_allowed_modes=["FT8", "FT4"],
+    )
+    orch = _orch(_cfg(operating=op))
+    orch.state_machine.ctx.auto_answer = True
+    orch.state_machine.ctx.auto_cq = False
+    orch._last_rig = RigSnapshot(freq_hz=21_140_000, ptt=False)
+
+    await orch._maybe_run_autopilot()
+
+    assert orch._autopilot_last_switch_at > 0
+    assert orch.config.operating.mode == "FT4"
+
+
 def test_frequency_tamper_suppressed_during_boot_reconciliation() -> None:
     orch = _orch(_cfg(operating=OperatingConfig(mode="FT4")))
     orch._freq_tamper_reconcile_deadline = time.monotonic() + 30
