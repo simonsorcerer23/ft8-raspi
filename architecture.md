@@ -3,8 +3,10 @@
 **🇬🇧 English** · [🇩🇪 Deutsch](architecture.de.md)
 
 **Version:** 3.0
-**Status:** In field use — two Pis (`ft8`, `ft8-2`) in production
-**Operators:** DK9XR + DO3XR (multi-operator)
+**Status:** In field use — a single Raspberry Pi 5 (`ft8`) in production (a
+second unit `ft8-2` was trialled during bring-up, then repurposed for another
+project, 2026-06)
+**Operators:** DK9XR + DO3XR (multi-operator, both on the one Pi)
 **Rigs:** Icom IC-705 / IC-7300
 
 > Note: this document started life as a planning paper. It is continuously
@@ -799,8 +801,9 @@ hochgericht-ft8/
 ### 9.2 Bring-up phases
 
 > **Status:** all phases completed — the appliance is in productive field
-> use on two Pis (`ft8`, `ft8-2`). The following list is the original
-> bring-up order (historical).
+> use on a single Pi (`ft8`). (A second Pi `ft8-2` was trialled during
+> bring-up, then repurposed for another project.) The following list is the
+> original bring-up order (historical).
 
 1. **Phase 0:** Pi OS Lite install, SSH, NVMe boot, systemd basics
 2. **Phase 1:** hardware verify: ALSA finds the IC-705, rigctld talks to the rig, gpsd delivers a fix
@@ -871,7 +874,7 @@ Implemented since (were once out of scope):
 - ~~Multi-user profiles~~ — implemented 2026-05-23, see §7.1
 - ~~ClubLog auto-upload~~ — implemented, see §6.6
 - ~~DXCC award tracking~~ — picker tiers `new_dxcc`/`new_dxcc_band` (5BWAS) + `new_grid(_band)` (VUCC), see §6.2
-- ~~Remote support via Tailscale/WireGuard~~ — both Pis run over Tailscale (access token-secured)
+- ~~Remote support via Tailscale/WireGuard~~ — the Pi runs over Tailscale (access token-secured)
 
 All others retrofittable if wanted later.
 

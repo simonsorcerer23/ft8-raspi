@@ -211,8 +211,12 @@ MIT — see [LICENSE](./LICENSE). Third-party components are credited in
 
 ## Status
 
-Active development. Two Pis (`ft8`, `ft8-2`) in field-shake-down. Built
-and used by a father-son team of amateur radio operators in Germany.
+Active development. Runs on a single Raspberry Pi 5 (`ft8`) in field use,
+multi-operator (DK9XR + DO3XR on the one Pi). Built and used by a father-son
+team of amateur radio operators in Germany.
+
+> A second unit (`ft8-2`) was trialled during bring-up but repurposed for
+> another project (2026-06) — the appliance is single-Pi by design.
 
 ---
 

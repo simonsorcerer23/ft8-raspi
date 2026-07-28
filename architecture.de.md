@@ -3,8 +3,10 @@
 [🇬🇧 English](architecture.md) · **🇩🇪 Deutsch**
 
 **Version:** 3.0
-**Status:** Im Feldbetrieb — zwei Pis (`ft8`, `ft8-2`) produktiv
-**Operatoren:** DK9XR + DO3XR (Multi-Operator)
+**Status:** Im Feldbetrieb — ein einzelner Raspberry Pi 5 (`ft8`) produktiv
+(ein zweites Gerät `ft8-2` wurde beim Bring-up erprobt, dann für ein anderes
+Projekt verwendet, 2026-06)
+**Operatoren:** DK9XR + DO3XR (Multi-Operator, beide auf dem einen Pi)
 **Rigs:** Icom IC-705 / IC-7300
 
 > Hinweis: Dieses Dokument war ursprünglich ein Planungspapier. Es wird
@@ -781,8 +783,9 @@ hochgericht-ft8/
 
 ### 9.2 Bring-up Phasen
 
-> **Stand:** alle Phasen durchlaufen — die Appliance ist auf zwei Pis
-> (`ft8`, `ft8-2`) im produktiven Feldbetrieb. Die folgende Liste ist die
+> **Stand:** alle Phasen durchlaufen — die Appliance ist auf einem einzelnen
+> Pi (`ft8`) im produktiven Feldbetrieb. (Ein zweites Gerät `ft8-2` wurde beim
+> Bring-up erprobt, dann für ein anderes Projekt verwendet.) Die folgende Liste ist die
 > ursprüngliche Bring-up-Reihenfolge (historisch).
 
 1. **Phase 0:** Pi-OS Lite Install, SSH, NVMe-Boot, systemd-Grundlagen
@@ -854,7 +857,7 @@ Inzwischen umgesetzt (waren mal out of scope):
 - ~~Multi-User-Profile~~ — implementiert 2026-05-23, siehe §7.1
 - ~~ClubLog Auto-Upload~~ — implementiert, siehe §6.6
 - ~~DXCC-Award-Tracking~~ — Picker-Tiers `new_dxcc`/`new_dxcc_band` (5BWAS) + `new_grid(_band)` (VUCC), siehe §6.2
-- ~~Remote-Support via Tailscale/WireGuard~~ — beide Pis laufen über Tailscale (Zugang token-gesichert)
+- ~~Remote-Support via Tailscale/WireGuard~~ — der Pi läuft über Tailscale (Zugang token-gesichert)
 
 Alle weiteren nachrüstbar wenn später gewünscht.
 

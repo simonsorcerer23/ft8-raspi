@@ -9,7 +9,7 @@ Für historische Begründungen siehe commit-history.
 1. **Du auf Workstation:** `./scripts/release.sh v0.1.5` → frontend
    wird gebaut, static/ committed, `_version.py` aktualisiert,
    Tag erstellt, gepusht.
-2. **Pi (ft8 + ft8-2)** holt sich den neuen Tag binnen ~10 min via
+2. **Pi (`ft8`)** holt sich den neuen Tag binnen ~10 min via
    `ft8-self-update.timer`. Pre-flight checks, panic-stop, checkout,
    sync system-files (units + sudoers), restart, health-probe.
 3. **Wenn was schief geht:** automatischer Rollback auf vorherigen
