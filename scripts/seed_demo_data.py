@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Seedet das Appliance-Log mit REIN FIKTIVEN QSOs fuer Doku-Screenshots.
 
-Zweck: damit Log/Stats/Map/„wer hoert mich" auf einer Demo-Box (z.B. ft8-2
-ohne Rig) gefuellt aussehen — OHNE echte Dritt-Rufzeichen (DSGVO) und OHNE
-je ein echtes Logbuch anzufassen.
+Zweck: damit Log/Stats/Map/„wer hoert mich" auf einer Demo-Box (Pi ohne Rig)
+gefuellt aussehen — OHNE echte Dritt-Rufzeichen (DSGVO) und OHNE je ein
+echtes Logbuch anzufassen.
 
 Sicherheit (doppelt):
   * demo_mode deaktiviert die QRZ/ClubLog-Upload-Loops ohnehin (v0.47.x).

@@ -151,8 +151,9 @@ Rollback (oder „nur vorwärts"-Politik).
 
 Self-update.sh prüft NICHT `/api/healthcheck` für die Pickup-Validierung.
 Grund: `healthcheck.overall` geht auf `red` sobald die rig-section
-fail meldet (rig.freq_hz == None). Auf rig-losen Pis (ft8-2 als
-Standby) ist das der BASELINE-Zustand, NICHT ein Regression-Signal.
+fail meldet (rig.freq_hz == None). Solange kein Rig angeschlossen ist —
+oder rigctld bewusst aus bleibt — ist das der BASELINE-Zustand, NICHT
+ein Regression-Signal.
 
 `/api/system/version` 200 OK = Controller läuft, FastAPI antwortet,
 Routes geladen. Genug Liveness-Signal.
@@ -162,10 +163,11 @@ hinweg etc.) bleibt Sache der Mode-/Decode-Watchdogs im orchestrator.
 
 ## ntfy-Channels
 
-- `ft8-system-ft8` (für ft8, Office-Pi)
-- `ft8-system-ft8-2` (für ft8-2, Standby)
+- `ft8-system-ft8` (System-Pushes des Pi `ft8`)
 
-Beide einmal in der ntfy-App abonnieren. Server `https://ntfy.sh`.
+Einmal in der ntfy-App abonnieren. Server `https://ntfy.sh`.
+Der Topic-Name wird aus dem Hostnamen abgeleitet — käme je ein weiterer
+Pi dazu, bekäme er automatisch seinen eigenen Kanal.
 
 Push-Formate:
 - 🟢 `Update v0.1.3 → v0.1.4 ok (16s)`

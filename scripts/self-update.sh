@@ -348,8 +348,9 @@ fi
 #
 # Wir verwenden /api/system/version (HTTP 200) statt /api/healthcheck —
 # Grund: /healthcheck.overall geht auf "red" sobald die rig-section fail
-# meldet (rig.freq_hz is None). Auf rig-losen Pis (ft8-2 als Standby
-# ohne IC) ist das der BASELINE-Zustand, nicht ein Regression-Signal.
+# meldet (rig.freq_hz is None). Solange kein Rig angeschlossen ist — oder
+# rigctld bewusst aus bleibt — ist das der BASELINE-Zustand, nicht ein
+# Regression-Signal.
 # overall="red" wäre also kein verlässliches Indiz dass das Update was
 # kaputt gemacht hat — wir würden permanent rollbacken.
 #

@@ -10,7 +10,7 @@
 #   4. Falls etwas geändert wurde: commit "release: build for ${TAG}".
 #   5. git tag ${TAG} + push.
 #
-# Die Pis (ft8 + ft8-2) holen sich den neuen Tag automatisch via
+# Der Pi holt sich den neuen Tag automatisch via
 # ft8-self-update.timer innerhalb von ~10 Minuten (oder sofort via
 # Konfig-UI Button).
 #

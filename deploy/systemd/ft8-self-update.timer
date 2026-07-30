@@ -18,9 +18,8 @@ OnUnitActiveSec=10min
 OnCalendar=*-*-* 04:00:00
 Persistent=true
 
-# Randomized delay damit beide Pis (ft8 + ft8-2) nicht im selben
-# Millisekunden-Slot pullen. Spielt für die Last keine Rolle, aber log-
-# diff lesbarer.
+# Randomized delay damit mehrere Pis nicht im selben Millisekunden-Slot
+# pullen. Spielt für die Last keine Rolle, aber log-diff lesbarer.
 RandomizedDelaySec=30s
 
 [Install]
