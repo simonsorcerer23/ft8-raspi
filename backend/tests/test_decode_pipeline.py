@@ -147,3 +147,91 @@ async def test_pipeline_feeds_decoded_msgs_through_orchestrator_tick(tmp_path: P
     assert pipeline.metrics.last_decode_count >= 1
     # drift should be zero or tiny (we fed exactly one slot of samples)
     assert abs(pipeline.metrics.last_drift_samples) <= 5
+
+
+# ---------------------------------------------------------------------------
+# CPU-adaptiver Auto-Fallback bei Late-Slots
+#
+# Regression: die Fallback-Bedingung listete nur ("deep", "multi") und liess
+# ausgerechnet "extreme" aussen vor — also den Default-Modus. Der Kommentar
+# an OperatingConfig.decoder_mode versprach das Gegenteil ("CPU-Adaptive
+# Fallback bleibt aktiv ... damit der Default auch auf Pi 4 nicht hangs
+# ist"). Kein Test deckte den Pfad ab, deshalb fiel es nicht auf.
+# ---------------------------------------------------------------------------
+class _JumpClock:
+    """monotonic()-Ersatz, der pro Aufruf um *step* Sekunden springt.
+
+    Die Pipeline misst die Decode-Dauer mit zwei Aufrufen (t0/t1), also
+    ergibt step=12.5 eine gemessene Dauer von 12.5 s — ueber der
+    Late-Schwelle von 12 s (0.8 x 15 s), ohne dass der Test wartet.
+    """
+
+    def __init__(self, step: float = 12.5) -> None:
+        self.t = 0.0
+        self.step = step
+
+    def __call__(self) -> float:
+        self.t += self.step
+        return self.t
+
+
+def _tick(index: int, slot_start: float) -> SlotTick:
+    import datetime as _dt
+
+    posix = slot_start + 15.0 * (index + 1)
+    return SlotTick(
+        index=index,
+        posix=posix,
+        utc_start=_dt.datetime.fromtimestamp(posix, tz=_dt.timezone.utc),
+    )
+
+
+async def _run_late_slots(monkeypatch, mode: str, n: int) -> DecodePipeline:
+    """*n* kuenstlich verspaetete Slots durch eine Pipeline im Modus *mode*."""
+    import time as _time
+
+    from ft8_appliance.decode import pipeline as _pipe
+
+    slot_start = 1_700_000_000.0
+    buf = SlotBuffer()
+    buf.feed(b"\x00\x00" * SAMPLES_PER_SLOT, posix_start=slot_start)
+
+    pl = DecodePipeline(slot_buffer=buf, band_hint="20m")
+    pl.decoder_mode = mode
+    pl.extract_delay_s = 0.0  # kein echtes Warten im Test
+
+    # Decoder-Aufruf neutralisieren: hier interessiert nur das Timing.
+    monkeypatch.setattr(_pipe, "decode_slot_v2", lambda pcm, mode="standard": [])
+    monkeypatch.setattr(_pipe, "decode_slot", lambda pcm: [])
+    monkeypatch.setattr(_time, "monotonic", _JumpClock())
+
+    for i in range(n):
+        await pl(_tick(i, slot_start))
+    return pl
+
+
+@pytest.mark.asyncio
+async def test_extreme_falls_back_to_standard_after_three_late_slots(monkeypatch) -> None:
+    pl = await _run_late_slots(monkeypatch, "extreme", 3)
+    assert pl.decoder_mode == "standard"
+    assert pl.metrics.late_slot_count == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["deep", "multi", "extreme"])
+async def test_all_expensive_modes_fall_back(monkeypatch, mode: str) -> None:
+    pl = await _run_late_slots(monkeypatch, mode, 3)
+    assert pl.decoder_mode == "standard", f"{mode} ist nicht zurueckgefallen"
+
+
+@pytest.mark.asyncio
+async def test_two_late_slots_do_not_trigger_fallback(monkeypatch) -> None:
+    """Erst ab 3 Slots in Folge — ein einzelner CPU-Spike darf nicht degradieren."""
+    pl = await _run_late_slots(monkeypatch, "extreme", 2)
+    assert pl.decoder_mode == "extreme"
+
+
+@pytest.mark.asyncio
+async def test_standard_mode_has_nothing_to_fall_back_to(monkeypatch) -> None:
+    pl = await _run_late_slots(monkeypatch, "standard", 5)
+    assert pl.decoder_mode == "standard"

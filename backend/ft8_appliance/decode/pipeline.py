@@ -376,7 +376,9 @@ class DecodePipeline:
             # CPU-adaptive (Phase C): wenn 3+ Slots in Folge late UND
             # wir laufen im teureren Modus, automatisch zurueck zu
             # standard. Verhindert Slot-Drops bei wechselnder CPU-Last.
-            if self._consecutive_late_slots >= 3 and self.decoder_mode in ("deep", "multi"):
+            if self._consecutive_late_slots >= 3 and self.decoder_mode in (
+                "deep", "multi", "extreme",
+            ):
                 log.warning(
                     "decoder auto-fallback: %s → standard (3+ late slots)",
                     self.decoder_mode,

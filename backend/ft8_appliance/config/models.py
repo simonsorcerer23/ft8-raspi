@@ -155,11 +155,13 @@ class BandConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    freq_khz: int = Field(ge=1_800, le=148_000)  # FT8-Dial; HF + 6m + 2m falls IC-9700
+    # FT8-Dial. Obergrenze deckt HF + 6m + 2m + 70cm ab (70cm-Bandende
+    # 440 MHz), damit auch ein IC-9700 vollstaendig abbildbar ist.
+    freq_khz: int = Field(ge=1_800, le=440_000)
     # FT4-Sub-Band-Dial. None = nicht konfiguriert → fallback auf freq_khz
     # (= FT8-Dial). Wenn der Pi auf FT4 geschaltet ist und das Band einen
     # ft4-Wert hat, springt das Rig automatisch auf diese Frequenz.
-    freq_khz_ft4: int | None = Field(default=None, ge=1_800, le=148_000)
+    freq_khz_ft4: int | None = Field(default=None, ge=1_800, le=440_000)
     # Alt-Feld (Migrations-Kompat): wurde in alten Configs gepflegt,
     # ist heute deprecated. Wird ignoriert, BandConfig braucht keine
     # Antennen-Zuordnung mehr. Lass null/auto-stripped damit alte
@@ -185,23 +187,48 @@ class BandConfig(BaseModel):
         return self.freq_khz
 
 
+# Vollstaendiger Bandplan als (Band, FT8-Dial kHz, FT4-Dial kHz | None).
+# Baender sind physikalisch fix und aendern sich nicht — eine frische
+# Config bekommt sie deshalb komplett vorbelegt, statt dass sie auf jedem
+# neu aufgesetzten Pi von Hand nachgetragen werden muessen. Was davon
+# tatsaechlich nutzbar ist, entscheiden ohnehin Antennen-Abdeckung
+# (AntennaConfig.bands) und Lizenzklasse (config/license.py) — ein hier
+# gelistetes Band ist keine Sendefreigabe.
+# Quelle: WSJT-X-Defaults / IARU-Bandplan; 2m/70cm decken sich mit den
+# FT8-Segmenten in util/bandplan.py.
+DEFAULT_BAND_DIALS: tuple[tuple[str, int, int | None], ...] = (
+    ("160m",   1_840,   1_840),
+    ("80m",    3_573,   3_575),
+    ("60m",    5_357,   5_357),    # FT4 auf 60m selten benutzt, aber dokumentiert
+    ("40m",    7_074,   7_047),    # FT4 7.0475 MHz (.5 kHz Offset zur Notation)
+    ("30m",   10_136,  10_140),
+    ("20m",   14_074,  14_080),
+    ("17m",   18_100,  18_104),
+    ("15m",   21_074,  21_140),
+    ("12m",   24_915,  24_919),
+    ("10m",   28_074,  28_180),
+    ("6m",    50_313,  50_318),
+    ("2m",   144_174, 144_170),
+    # 70cm hat keinen etablierten FT4-Dial — bewusst None statt einem
+    # geratenen Wert, sonst wuerde FT4 auf 70cm falsch abgestimmt.
+    ("70cm", 432_174,    None),
+)
+
 # Standard-FT4-Sub-Band-Defaults pro Band (in kHz). Werden in der Config
 # nicht zwingend gepflegt — wenn fehlt, faellt freq_for_mode() auf
-# freq_khz (FT8-Dial) zurueck. Quelle: WSJT-X-Defaults / IARU-Bandplan.
+# freq_khz (FT8-Dial) zurueck. Aus DEFAULT_BAND_DIALS abgeleitet, damit
+# beide Tabellen nicht auseinanderlaufen koennen.
 FT4_DEFAULT_DIALS: dict[str, int] = {
-    "160m": 1_840,
-    "80m":  3_575,
-    "60m":  5_357,    # FT4 auf 60m selten benutzt, aber dokumentiert
-    "40m":  7_047,    # 7.0475 MHz (.5 kHz Offset zur Standard-Notation)
-    "30m": 10_140,
-    "20m": 14_080,
-    "17m": 18_104,
-    "15m": 21_140,
-    "12m": 24_919,
-    "10m": 28_180,
-    "6m":  50_318,
-    "2m": 144_170,
+    name: ft4 for name, _ft8, ft4 in DEFAULT_BAND_DIALS if ft4 is not None
 }
+
+
+def _default_bands() -> list["BandConfig"]:
+    """Kompletter Bandplan als Default fuer eine frische Config."""
+    return [
+        BandConfig(name=name, freq_khz=ft8, freq_khz_ft4=ft4)
+        for name, ft8, ft4 in DEFAULT_BAND_DIALS
+    ]
 
 
 class AntennaConfig(BaseModel):
@@ -273,22 +300,24 @@ class OperatingConfig(BaseModel):
                 out.append(mode)
         return out
     # v0.6.0 Anti-WSJT-X-Audit Phase B: Decoder-Mode-Wahl.
-    #   "standard" = osr=2/2, LDPC=25 (Default, schnellste, Pi-4-tauglich)
+    #   "standard" = osr=2/2, LDPC=25 (schnellste)
     #   "deep"     = osr=4/4, LDPC=50 (JTDX-Deep-Aequivalent, mehr Schwach-
-    #                 Signal-Decodes, 1.5-2x langsamer)
-    #   "multi"    = Pass1 standard + Pass2 deep, dedupe (maximum yield,
-    #                 2-2.5x langsamer als Standard, Pi 5 empfohlen)
-    # CPU-adaptive: bei wiederholten Late-Slots faellt der Pipeline-
-    # Watchdog automatisch auf "standard" zurueck (Phase A1 misst Timing).
-    # v0.6.1: Default "multi" (Sebastian-Entscheidung — Pi 5 verkraftet
-    # 2-2.5x CPU locker, maximaler Yield als Standard). Wer auf
-    # schwaecherer Hardware (Pi 4) deployt kann manuell zurueck.
-    # v0.7.0 erweitert: "extreme" = Subtract-and-Rerun + Hint-Pass.
-    # Pi-5-Mode mit ~3x Standard-CPU, JTDX-Niveau. CPU-Adaptive faellt
-    # bei Late-Slots auto auf "standard" zurueck.
-    # v0.7.1: Default "extreme" — Sebastian-Wunsch + Pi 5 verkraftet's.
-    # CPU-Adaptive Fallback bleibt aktiv (Late-Slots → auto-zurueck zu
-    # standard) damit der Default auch auf Pi 4 nicht hangs ist.
+    #                 Signal-Decodes)
+    #   "multi"    = Pass1 standard + Pass2 deep, dedupe
+    #   "extreme"  = Subtract-and-Rerun + Hint-Pass, JTDX-Niveau
+    # CPU-adaptive: bei 3+ Late-Slots in Folge faellt der Pipeline-
+    # Watchdog automatisch auf "standard" zurueck (pipeline.py).
+    #
+    # Gemessen 2026-07-30 auf Raspberry Pi 4B Rev 1.5 (4 Kerne), 38 Slots
+    # aus vendor/ft8_lib/test/wav/20m_busy (volles Band, 18-20 Decodes je
+    # Slot), Controller lief nebenher:
+    #   standard  p50 136 ms | max  174 ms  (1.2 % des 15-s-Slots)
+    #   extreme   p50 1766 ms | max 1868 ms (12.5 % des 15-s-Slots)
+    #   Faktor 13x CPU fuer +10.6 % Decodes; 0 Late-Slots; 42 C, kein Throttling.
+    # Die frueher hier notierten "~3x" und "Pi 5 empfohlen" waren geschaetzt
+    # und sind damit widerlegt: der Faktor ist deutlich groesser, der
+    # Absolutwert aber so klein, dass auch ein Pi 4B ueber 13 s Reserve je
+    # Slot behaelt. Default "extreme" ist daher auch auf Pi 4 tragfaehig.
     decoder_mode: Literal["standard", "deep", "multi", "extreme"] = "extreme"
     # v0.7.0 Build 3: Auto-Notch fuer lokale QRM-Linien. Default True
     # weil's bei sauberer Umgebung 0 Overhead hat (Detector findet keine
@@ -778,7 +807,7 @@ class AppConfig(BaseModel):
     # der is_default-Operator (falls keiner aktiv) geladen. Frontend-
     # Selector kann den Operator vorher manuell setzen. 0 = sofort.
     operator_auto_login_seconds: int = Field(default=30, ge=0, le=300)
-    bands: list[BandConfig] = Field(default_factory=list)
+    bands: list[BandConfig] = Field(default_factory=_default_bands)
     antennas: list[AntennaConfig] = Field(default_factory=list)
     operating: OperatingConfig = Field(default_factory=OperatingConfig)
     rig: RigConfig = Field(default_factory=RigConfig)
