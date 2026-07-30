@@ -9,7 +9,10 @@ and assert that the guards + state machine react correctly:
 * chrony offset jumps to >0.5 s
 * rigctld TCP socket dies (mock closes the connection)
 
-Every chaos scenario MUST end with TX_LOCKED and a forced PTT-off.
+Every chaos scenario that removes a *required* condition MUST end with
+TX_LOCKED and a forced PTT-off. Time is the exception: ``time_guard`` accepts
+GPS **or** a synced chrony, so losing GPS alone is not a lock reason — see
+``test_chaos_gps_lost_but_ntp_good_keeps_tx``.
 """
 
 from __future__ import annotations
@@ -29,7 +32,9 @@ from ft8_appliance.config import (
 from ft8_appliance.gps import GpsdClient
 from ft8_appliance.rig import RigctldClient
 from ft8_appliance.runtime import FakeSlotClock, Orchestrator, SlotTick
+from ft8_appliance.runtime import orchestrator as orchestrator_mod
 from ft8_appliance.statemachine import DecodedMsg, HardwareState
+from ft8_appliance.util.system_health import ChronyStatus
 from tests.mocks.mock_gpsd import MockGpsd
 from tests.mocks.mock_rigctld import MockRigctld
 
@@ -61,6 +66,21 @@ async def __noop_decodes():
     return []
 
 
+def _force_chrony(monkeypatch: pytest.MonkeyPatch, status: ChronyStatus | None) -> None:
+    """Pin what the orchestrator sees as chrony state.
+
+    Without this the result depends on whether the machine running the tests
+    happens to have a synced chrony daemon: ``read_chrony_tracking`` shells out
+    to the real ``chronyc`` and returns ``None`` when it isn't installed. The Pi
+    has chrony, the dev workstation does not.
+    """
+
+    async def _stub() -> ChronyStatus | None:
+        return status
+
+    monkeypatch.setattr(orchestrator_mod, "read_chrony_tracking", _stub)
+
+
 def _tick(i: int) -> SlotTick:
     posix = 1_700_000_000.0 + i * 15
     return SlotTick(
@@ -71,8 +91,11 @@ def _tick(i: int) -> SlotTick:
 
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_chaos_gps_loses_fix_mid_qso_locks_tx() -> None:
-    """GPS fix drops to 0 mid-QSO → time_guard fails → TX_LOCKED."""
+async def test_chaos_gps_loses_fix_mid_qso_locks_tx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GPS fix drops to 0 and no NTP is left → time_guard fails → TX_LOCKED."""
+    _force_chrony(monkeypatch, None)
     async with MockRigctld() as mock_rig, MockGpsd() as mock_gps:
         orch = await _make_orch(mock_rig, mock_gps)
         await orch.handle_start_cq()
@@ -91,6 +114,32 @@ async def test_chaos_gps_loses_fix_mid_qso_locks_tx() -> None:
         assert "GPS" in (snap.last_lock_reason or "")
         # PTT must be off after lock
         assert mock_rig.state.ptt is False
+        await orch.stop()
+
+
+@pytest.mark.asyncio
+async def test_chaos_gps_lost_but_ntp_good_keeps_tx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GPS fix drops but chrony is synced → TX stays up.
+
+    FT8 needs ~100 ms time accuracy and NTP delivers that, so GPS is a
+    convenience, not a TX precondition. Pinned here because it is the
+    counterpart to the lock case above and easy to break by accident.
+    """
+    _force_chrony(monkeypatch, ChronyStatus(offset_s=0.001, stratum=3))
+    async with MockRigctld() as mock_rig, MockGpsd() as mock_gps:
+        orch = await _make_orch(mock_rig, mock_gps)
+        await orch.handle_start_cq()
+        assert orch.status().state == "CQ_CALLING"
+
+        mock_gps.set_fix(mode=0)
+        await mock_gps.emit_tpv()
+        await asyncio.sleep(0.1)
+
+        await orch.process_slot(_tick(0))
+        snap = orch.status()
+        assert snap.state != "TX_LOCKED", f"unexpected lock: {snap.last_lock_reason}"
         await orch.stop()
 
 
