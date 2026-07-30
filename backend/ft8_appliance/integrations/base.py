@@ -25,6 +25,8 @@ from typing import Any, Generic, TypeVar
 
 import httpx
 
+from ..util.redact import redact_secrets
+
 log = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -182,8 +184,11 @@ class Integration:
             self._last_ok = time.time()
             return r
         except Exception as exc:
-            self._last_error = repr(exc)
-            log.warning("%s: GET %s failed: %r", self.name, url, exc)
+            # redact_secrets: QRZ schickt username/password als Query-Param,
+            # httpx haengt die volle URL an die HTTPStatusError-Message.
+            # _last_error wird ueber die Status-API ausgeliefert.
+            self._last_error = redact_secrets(repr(exc))
+            log.warning("%s: GET %s failed: %s", self.name, url, self._last_error)
             raise
 
     async def _post(self, url: str, **kwargs: Any) -> httpx.Response:
@@ -197,8 +202,8 @@ class Integration:
             self._last_ok = time.time()
             return r
         except Exception as exc:
-            self._last_error = repr(exc)
-            log.warning("%s: POST %s failed: %r", self.name, url, exc)
+            self._last_error = redact_secrets(repr(exc))
+            log.warning("%s: POST %s failed: %s", self.name, url, self._last_error)
             raise
 
     def health(self) -> IntegrationHealth:

@@ -109,6 +109,7 @@ from ..util.bandplan import (
 )
 from ..util.callsign import base_call
 from ..util.maidenhead import latlon_to_locator
+from ..util.redact import redact_secrets
 from ..util.system_health import ChronyStatus, read_chrony_tracking
 from .slot_clock import SlotClock, SlotTick
 
@@ -1204,7 +1205,11 @@ class Orchestrator:
                     qrz = {"status": "error",
                            "detail": f"QRZ lehnt den Key ab: {st.reason}"}
             except Exception as exc:
-                qrz = {"status": "error", "detail": f"QRZ nicht erreichbar: {exc}"}
+                # redact_secrets: dieses detail geht per ntfy in ein
+                # oeffentliches Topic — Fremdtext darf keine Credentials
+                # aus einer URL mitschleppen.
+                qrz = {"status": "error",
+                       "detail": redact_secrets(f"QRZ nicht erreichbar: {exc}")}
 
         # --- ClubLog ---
         if not (owner.clublog_email and owner.clublog_app_password and owner.clublog_api_key):
@@ -1227,7 +1232,8 @@ class Orchestrator:
                                          f"(wird gruen nach dem ersten Upload). Falls neu: "
                                          f"unter Settings → Callsigns angelegt? Sonst ok."}
             except Exception as exc:
-                clublog = {"status": "error", "detail": f"ClubLog nicht erreichbar: {exc}"}
+                clublog = {"status": "error",
+                           "detail": redact_secrets(f"ClubLog nicht erreichbar: {exc}")}
 
         return {"callsign": call, "owner": owner.callsign, "qrz": qrz, "clublog": clublog}
 
@@ -4721,7 +4727,18 @@ class Orchestrator:
                 self._check_alc_warn()
 
             now = __import__("time").monotonic()
-            if self._last_rig.ptt:
+            # ptt is None = "get_ptt hat nicht geantwortet", NICHT "PTT aus".
+            # None ist falsy und lief darum frueher in den else-Zweig, der den
+            # Timer zurueckstellt — ausgerechnet bei gestoerter CAT-Verbindung,
+            # dem Fall fuer den dieser Watchdog da ist, schaltete er sich damit
+            # selbst ab. Unbekannt setzt den Timer jetzt weder zurueck noch
+            # startet es ihn: war PTT vor dem CAT-Abriss an, laeuft die Uhr
+            # weiter und loest aus; war das Rig ohnehin idle, bleibt es ruhig
+            # (sonst wuerde ein toter rigctld im Minutentakt Fehlalarme
+            # erzeugen).
+            if self._last_rig.ptt is None:
+                pass
+            elif self._last_rig.ptt:
                 if ptt_on_since is None:
                     ptt_on_since = now
                 elif now - ptt_on_since > max_ptt_s + 2.0:
@@ -5511,6 +5528,7 @@ class Orchestrator:
             cpu_temp_c=cpu_temp if cpu_temp is not None else 50.0,
             audio_drift_samples=0,
             antenna_covers_band=antenna_ok,
+            band_allowed_for_license=self._band_allowed_for_license(),
             chrony_synced=chrony_synced,
         )
 
@@ -5563,6 +5581,34 @@ class Orchestrator:
         if antenna is None:
             return True  # invalid name in state — don't lock TX over a config typo
         return band in antenna.bands
+
+    def _band_allowed_for_license(self) -> bool:
+        """Darf der aktive Operator auf dem aktuellen Band ueberhaupt senden?
+
+        Deckt Lizenzklasse und CEPT-Auslandsbetrieb ab (``can_tx_on()``).
+        Wie beim Antennen-Check gilt: laesst sich das Band nicht bestimmen
+        (noch keine Rig-Frequenz), ist das ein Startzustand und kein
+        Verstoss — dann nicht sperren.
+
+        Achtung: ``can_tx_on()`` prueft zusaetzlich die Antenne. Das ist
+        hier bewusst egal, weil der antenna_guard das separat und mit
+        eigener Begruendung macht; wir fragen nur die Lizenz-Anteile ab.
+        """
+        if self._last_rig.freq_hz is None:
+            return True
+        band = _band_from_freq_hz(self._last_rig.freq_hz)
+        if band is None:
+            return True
+        from ..config.license import is_band_allowed
+        from ..integrations.cept import cept_compliance
+
+        op = self.config.operator
+        if not is_band_allowed(op.license_class, band):
+            return False
+        allowed, _reason = cept_compliance(
+            op.current_operating_country, op.home_country, op.license_class,
+        )
+        return allowed
 
     # ------------------------------------------------------------------ action dispatch
     async def _drain_actions(self) -> None:
@@ -5639,7 +5685,16 @@ class Orchestrator:
             # Mark PTT-On-Zeitpunkt fuer Settling-Period im SWR-Live-Cut.
             self._ptt_on_at = time.monotonic()
         except Exception as exc:
-            log.error("set_ptt(True) failed: %s — aborting TX", exc)
+            # Ein Fehler heisst NICHT "das Rig sendet nicht". Bei einem
+            # Timeout ist nur die Antwort ausgeblieben — das Kommando kann
+            # angekommen und PTT getastet sein. Ohne defensives Ausschalten
+            # bliebe hier ein Dauertraeger stehen, denn der finally-Block
+            # unten wird nie erreicht.
+            log.error("set_ptt(True) failed: %s — aborting TX, forcing PTT off", exc)
+            try:
+                await self.rig.set_ptt(False)
+            except Exception as off_exc:
+                log.error("defensives set_ptt(False) fehlgeschlagen: %s", off_exc)
             return
         try:
             # ALSA write is blocking; push to default executor so the slot

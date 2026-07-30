@@ -36,6 +36,10 @@ _DE: dict[str, str] = {
         "Aktive Antenne deckt das aktuelle Band nicht ab — "
         "Antenne wechseln oder Band aendern"
     ),
+    "guard.license": (
+        "Aktuelles Band ist fuer die Lizenzklasse des Operators nicht "
+        "freigegeben — Band wechseln"
+    ),
     # --- other lock reasons (orchestrator) ---
     "lock.ptt_stuck": "PTT-stuck recovery",
     "lock.tx_locked_prefix": "TX gesperrt: {reason}",
@@ -188,6 +192,10 @@ _EN: dict[str, str] = {
     "guard.antenna": (
         "Active antenna doesn't cover the current band — "
         "switch antenna or change band"
+    ),
+    "guard.license": (
+        "Current band is not permitted for the operator's licence class — "
+        "change band"
     ),
     "lock.ptt_stuck": "PTT-stuck recovery",
     "lock.tx_locked_prefix": "TX locked: {reason}",

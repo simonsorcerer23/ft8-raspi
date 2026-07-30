@@ -154,9 +154,17 @@ async def upload_qso(
         "DUPLICATE",
         "QSO DUPLICATE",
     )
-    if any(upper.startswith(m) or m in upper for m in success_markers):
+    # Nur startswith, KEIN Substring-Match: "OK" steckt auch in "LOGBOOK",
+    # "TOKEN", "BROKEN" und in jeder HTML-Wartungsseite mit "Logbook" im
+    # Titel. Solche Seiten liefert ClubLog mit HTTP 200 aus. Mit
+    # Substring-Match galt das als Erfolg, der Drain-Loop setzte
+    # clublog_uploaded=True und das QSO war lautlos verloren.
+    if any(upper.startswith(m) for m in success_markers):
         return
-    # Leerer Body defensiv als OK (sehr selten, manche Endpoints).
+    # Leerer Body bleibt Erfolg: ClubLog antwortet bei angenommenem Upload
+    # typischerweise mit HTTP 200 ohne Body (siehe test_upload_ok_empty_body).
+    # Das als Fehler zu werten wuerde jeden erfolgreichen Upload in den
+    # Retry-Pfad schicken — gegen einen Dienst, der IPs firewallt.
     if not body_text:
         return
     raise ClubLogError(f"ClubLog rejected: {body_text[:200]}")
@@ -246,7 +254,12 @@ async def check_callsign_registered(
     params = {"call": callsign.upper().strip(), "api": api_key}
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.get(CLUBLOG_WATCH_URL, params=params)
-    r.raise_for_status()
+    # KEIN raise_for_status(): httpx schreibt die volle URL inklusive
+    # "api=<key>" in die Exception-Message, und die wandert als Preflight-
+    # detail in eine oeffentliche ntfy-Push. ClubLog antwortet bei falschem
+    # Key mit 403 — der Key waere also genau im Fehlerfall geleakt.
+    if r.status_code != 200:
+        raise ClubLogError(f"ClubLog watch.php HTTP {r.status_code}")
     try:
         data = r.json()
     except ValueError:

@@ -38,10 +38,15 @@ class HardwareState:
     battery_v: float | None = None  # None = on external power
     cpu_temp_c: float = 50.0
     audio_drift_samples: int = 0
-    # Antenna lockout: True if the active antenna covers the current band
-    # (orchestrator computes via AppConfig.can_tx_on()). Default True so
-    # legacy tests don't trip; production wiring sets this every slot.
+    # Antenna lockout: True if the active antenna covers the current band.
+    # Default True so legacy tests don't trip; production wiring sets this
+    # every slot.
     antenna_covers_band: bool = True
+    # Licence lockout: True if the operator's licence class (and, abroad,
+    # CEPT) permits TX on the current band. Computed per slot by the
+    # orchestrator via AppConfig.can_tx_on(). Default True for the same
+    # reason as above.
+    band_allowed_for_license: bool = True
     # Chrony has reached an upstream NTP source — used as a fallback when
     # GPS has no fix (indoor installs, basement shacks). chrony stratum
     # 2-3 with sub-100 ms offset is more than tight enough for FT8.
@@ -143,11 +148,30 @@ def antenna_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     return GuardResult(True, "antenna_guard")
 
 
+def license_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
+    """Prevent TX on a band the operator's licence doesn't cover.
+
+    ``AppConfig.can_tx_on()`` existed and was tested from early on, but had
+    no caller in the runtime path — only the autopilot's band picker was
+    licence-aware. Setting a band or frequency by hand went straight past
+    it, so a class-E operator could be parked on a class-A-only band and
+    the guard pipeline would happily allow TX.
+
+    Deliberately a separate guard from ``antenna_guard``: an unlicensed
+    band and a mismatched antenna need different fixes, so they must not
+    share a lock reason.
+    """
+    if not hw.band_allowed_for_license:
+        return GuardResult(False, "license_guard", "guard.license")
+    return GuardResult(True, "license_guard")
+
+
 # Default ordered pipeline. Order matters: cheap pure-cpu checks first,
 # then external-state checks. Stops at first failure.
 DEFAULT_GUARDS: tuple[Guard, ...] = (
     time_guard,
     audio_drift_guard,
+    license_guard,
     antenna_guard,
     swr_guard,
     alc_guard,
