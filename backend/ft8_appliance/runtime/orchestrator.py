@@ -2330,8 +2330,34 @@ class Orchestrator:
             tags=["warning"],
         )
 
+    def _legal_max_power_w(self) -> int:
+        """Obergrenze fuer die TX-Leistung auf dem aktuell aktiven Band.
+
+        ``AppConfig.effective_max_power_w()`` ist das MIN aus Lizenz-Cap
+        (Klasse A auf 60m z.B. 15 W), Rig-Hardware-Cap und CEPT-Power-Cap
+        im Gastland. Der Slider clampte lange nur gegen den Rig-Cap und
+        durfte damit ueber das legal Erlaubte hinaus.
+
+        Faellt auf den reinen Rig-Cap zurueck, wenn das Band unbekannt ist
+        (Boot vor dem ersten Rig-Poll) oder die Config es nicht kennt —
+        mehr Information liegt dann nicht vor. Ist das Band fuer die Klasse
+        gar nicht freigegeben (Cap 0), sperrt der license_guard das Senden
+        ohnehin; wir lassen den Slider dann am Rig-Cap statt ihn auf 1 W zu
+        kicken (dieselbe Ueberlegung wie in
+        :meth:`_compute_safe_default_power_w`).
+        """
+        rig_max = self.config.rig.effective_max_power_w
+        band = self._last_active_band
+        if not band:
+            return rig_max
+        try:
+            eff = self.config.effective_max_power_w(band)
+        except Exception:
+            return rig_max
+        return eff if eff > 0 else rig_max
+
     async def handle_tx_power(self, watts: int) -> None:
-        """Set the rig's TX power, clamped to 1..rig.effective_max_power_w.
+        """Set the rig's TX power, clamped to 1..legal max for the band.
 
         Sebastian 2026-05-24: persistiert NUR ins runtime_state.json
         (zusammen mit audio_gain) — frueher haben wir den Wert in
@@ -2341,9 +2367,13 @@ class Orchestrator:
         sauber: ``default_power_w`` = Boot-Default, runtime_state =
         aktueller Slider-Stand.
         """
-        max_w = self.config.rig.effective_max_power_w
-        watts = max(1, min(max_w, int(watts)))
-        norm = watts / max_w  # Hamlib RFPOWER is 0.0..1.0 of rig's full scale
+        rig_max_w = self.config.rig.effective_max_power_w
+        watts = max(1, min(self._legal_max_power_w(), int(watts)))
+        # Normiert wird gegen den RIG-Vollausschlag, nicht gegen das legale
+        # Limit: Hamlib RFPOWER ist 0.0..1.0 der Rig-Skala. Gegen den
+        # legalen Cap zu teilen wuerde bei z.B. 15 W Limit volle 100 W
+        # kommandieren — also genau das Gegenteil des Gewollten.
+        norm = watts / rig_max_w
         try:
             await self.rig.set_rfpower(norm)
             # Echo-Registration: der naechste rig-Poll wird diesen Wert

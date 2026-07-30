@@ -295,7 +295,8 @@ def test_log_qso_carries_station_and_operator_calls():
         band="15m", freq_offset_hz=1500,
         their_snr=-10, our_snr_received=-15,
     )
-    sm._emit_log_qso()
+    from ft8_appliance.statemachine.guards import HardwareState
+    sm._emit_log_qso(HardwareState())  # Defaults = alle Guards gruen
     log_action = next(a for a in sm.drain_actions() if a.kind == "LOG_QSO")
     assert log_action.payload["station_callsign"] == "F/DK9XR"
     assert log_action.payload["operator"] == "DK9XR"

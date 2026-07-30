@@ -907,7 +907,7 @@ class StateMachine:
                 self._pending.append(
                     Action("TX_MESSAGE", self._tx_payload(msg, "ack73"))
                 )
-                self._exit_grace()
+                self._exit_grace(hw)
 
         elif self.state is State.QSO_REPORT and self.qso is not None:
             # Tracking (siehe Audit Action 5): aktualisiere their_snr_at_us
@@ -918,7 +918,7 @@ class StateMachine:
             if _find_closing(decodes, self.qso.their_call, self.ctx.tx_callsign):
                 self.qso.stale_slots = 0
                 self.state = State.QSO_LOG
-                self._emit_log_qso()
+                self._emit_log_qso(hw)
             else:
                 # Kein RR73 — zwei Symptome dass sie unseren R-Report nicht
                 # decoded haben, und in beiden Fällen wollen wir nochmal
@@ -1071,7 +1071,7 @@ class StateMachine:
             # (auto_cq → CQ_CALLING; sonst IDLE).
             self._grace_ticks_remaining -= 1
             if self._grace_ticks_remaining <= 0:
-                self._exit_grace()
+                self._exit_grace(hw)
 
     # ------------------------------------------------------------------ TX-emit helpers
     # Default audio-frequency for own-initiated CQs. The orchestrator may
@@ -1385,12 +1385,35 @@ class StateMachine:
             if d.call_from == their and d.snr_db is not None:
                 self.qso.their_snr_at_us = d.snr_db
 
-    def _emit_log_qso(self) -> None:
+    def _emit_log_qso(self, hw: HardwareState) -> None:
+        """QSO abschliessen: RR73 senden (wenn erlaubt) und loggen.
+
+        ``hw`` ist Pflicht, weil das RR73 eine echte Aussendung ist und
+        jeder andere TX-Pfad hier durch die Guards laeuft. Dieser hier tat
+        es nicht: kam das RR73 des Partners rein, ging unser RR73 raus,
+        ohne dass SWR, Zeitsync, Antenne oder Lizenz nochmal gefragt
+        wurden — also genau in dem Moment, in dem ein Guard schon gegriffen
+        haben koennte.
+
+        Wichtig ist die Reihenfolge der Konsequenzen: bei Guard-Fehler
+        entfaellt nur das RR73, das LOG_QSO wird trotzdem emittiert. Fuer
+        die Gegenstation ist das QSO komplett — wuerden wir es nicht
+        loggen, verloeren wir ein echtes QSO wegen eines lokalen
+        Hardware-Problems. Der Grace-State entfaellt dagegen, weil sein
+        einziger Zweck ein weiteres TX (das 73) ist.
+        """
         assert self.qso is not None
         self._stamp_outcome_meta()
         self._record_hunt_outcome(self.qso.their_call, completed=True)
-        rr73 = f"{self.qso.their_call} {self.ctx.tx_callsign} RR73"
-        self._pending.append(Action("TX_MESSAGE", self._tx_payload(rr73, "rr73")))
+        tx_ok = self._check_guards(hw)
+        if tx_ok:
+            rr73 = f"{self.qso.their_call} {self.ctx.tx_callsign} RR73"
+            self._pending.append(Action("TX_MESSAGE", self._tx_payload(rr73, "rr73")))
+        else:
+            log.warning(
+                "QSO mit %s wird geloggt, aber RR73 bleibt aus — Guard gesperrt",
+                self.qso.their_call,
+            )
         self._pending.append(
             Action(
                 "LOG_QSO",
@@ -1418,15 +1441,33 @@ class StateMachine:
         # er sein RR73 nochmal sendet (= unser RR73 nicht decodiert),
         # antworten wir noch mit 73 (Tx6) als WSJT-X-konforme Closure.
         # Sebastian 2026-05-24, Audit-Finding 2.
-        self._grace_partner_call = self.qso.their_call
-        self._grace_ticks_remaining = 1
+        partner = self.qso.their_call
         self.qso = None
+        if not tx_ok:
+            # State bleibt TX_LOCKED (von _check_guards gesetzt) — kein
+            # Grace-Fenster, dessen einziger Zweck ein weiteres TX waere.
+            return
+        self._grace_partner_call = partner
+        self._grace_ticks_remaining = 1
         self.state = State.QSO_GRACE
 
-    def _exit_grace(self) -> None:
-        """Beende QSO_GRACE — normaler Continuation-Pfad."""
+    def _exit_grace(self, hw: HardwareState) -> None:
+        """Beende QSO_GRACE — normaler Continuation-Pfad.
+
+        ``hw`` ist Pflicht, weil der auto_cq-Zweig unten ein TX_MESSAGE
+        emittiert. Vorher lief dieser Weg an den Guards vorbei: nach jedem
+        abgeschlossenen QSO ging im auto_cq-Betrieb ungeprueft ein CQ
+        raus — und das ist der Normalfall im Dauerbetrieb, nicht die
+        Ausnahme.
+        """
         self._grace_partner_call = None
         self._grace_ticks_remaining = 0
+        if self.ctx.auto_cq and not self._check_guards(hw):
+            # _check_guards hat bereits TX_LOCKED gesetzt + STOP_TX
+            # emittiert. Sticky wie ueberall sonst: der Operator muss den
+            # Lock quittieren, sonst laeuft die Box nach einem SWR-Spike
+            # einfach weiter CQ rufend.
+            return
         if self.ctx.auto_cq:
             # WSJT-Z-style: keep calling after each completed QSO until
             # the user hits Stop. Reset cq_count so periodic retransmit
