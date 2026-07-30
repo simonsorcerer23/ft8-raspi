@@ -171,6 +171,11 @@ _DE: dict[str, str] = {
         "QSO bleibt lokal im Log + ADIF — bei Bedarf manuell hochladen."
     ),
     "push.upload_giveup_title": "⚠️ Upload aufgegeben",
+    "push.bg_task_died_msg": (
+        "Der Hintergrund-Task {name} ist abgestuerzt: {err}. Diese Funktion "
+        "faellt bis zum Neustart des Dienstes aus, der Rest laeuft weiter."
+    ),
+    "push.bg_task_died_title": "⚠️ Subsystem gestorben: {name}",
     "push.spill_msg": (
         "QSO {call} konnte nicht in die DB geschrieben werden — auf Spill-Datei "
         "gesichert, wird automatisch nachgetragen. Bitte Speicherplatz/DB pruefen."
@@ -326,6 +331,11 @@ _EN: dict[str, str] = {
         "QSO stays local in the log + ADIF — upload manually if needed."
     ),
     "push.upload_giveup_title": "⚠️ Upload given up",
+    "push.bg_task_died_msg": (
+        "Background task {name} crashed: {err}. This function stays down "
+        "until the service is restarted; everything else keeps running."
+    ),
+    "push.bg_task_died_title": "⚠️ Subsystem died: {name}",
     "push.spill_msg": (
         "QSO {call} couldn't be written to the DB — saved to the spill file, "
         "will be added automatically. Please check disk space / DB."

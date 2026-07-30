@@ -761,33 +761,23 @@ class Orchestrator:
         # liefert live den aktiven Band-Namen aus rig.freq_hz.
         if hasattr(self.decode_source, "band_resolver"):
             self.decode_source.band_resolver = self._resolve_current_band_name
-        self._bg_tasks.append(asyncio.create_task(self.gps.run_forever(), name="gpsd"))
-        self._bg_tasks.append(asyncio.create_task(self._slot_loop(), name="slot-loop"))
-        self._bg_tasks.append(asyncio.create_task(self._rig_poll_loop(), name="rig-poll"))
+        self._spawn(self.gps.run_forever(), name="gpsd")
+        self._spawn(self._slot_loop(), name="slot-loop")
+        self._spawn(self._rig_poll_loop(), name="rig-poll")
         if self.config.operating.mode_watchdog_min > 0:
-            self._bg_tasks.append(asyncio.create_task(
-                self._mode_watchdog_loop(), name="mode-watchdog"
-            ))
-        self._bg_tasks.append(asyncio.create_task(
-            self._daily_summary_loop(), name="daily-summary"
-        ))
-        self._bg_tasks.append(asyncio.create_task(
-            self._dx_cluster_hint_loop(), name="dx-cluster-hint"
-        ))
+            self._spawn(self._mode_watchdog_loop(), name="mode-watchdog")
+        self._spawn(self._daily_summary_loop(), name="daily-summary")
+        self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
         if (
             self.db_enabled
             and self.config.integrations.qrz.logbook_auto_upload
             and self.config.integrations.qrz.logbook_api_key
         ):
-            self._bg_tasks.append(asyncio.create_task(
-                self._qrz_logbook_drain_loop(), name="qrz-logbook-drain"
-            ))
+            self._spawn(self._qrz_logbook_drain_loop(), name="qrz-logbook-drain")
         if (
             self.config.integrations.qrz.logbook_api_key
         ):
-            self._bg_tasks.append(asyncio.create_task(
-                self._qrz_logbook_sync_loop(), name="qrz-logbook-sync"
-            ))
+            self._spawn(self._qrz_logbook_sync_loop(), name="qrz-logbook-sync")
         # v0.21.0 — ClubLog Real-Time-Upload. Pro Operator eigene Creds
         # (analog QRZ pro-Operator). Loop laeuft wenn der ACTIVE Operator
         # ClubLog-Credentials hat.
@@ -797,13 +787,9 @@ class Orchestrator:
             and self.config.operator.clublog_app_password
             and self.config.operator.clublog_api_key
         ):
-            self._bg_tasks.append(asyncio.create_task(
-                self._clublog_drain_loop(), name="clublog-drain"
-            ))
+            self._spawn(self._clublog_drain_loop(), name="clublog-drain")
         # v0.22.0 — GPS-based DX-country detection loop
-        self._bg_tasks.append(asyncio.create_task(
-            self._gps_country_detect_loop(), name="gps-country-detect"
-        ))
+        self._spawn(self._gps_country_detect_loop(), name="gps-country-detect")
         # v0.10.0: PSK-Reciprocity-Refresh — alle paar Minuten fetchen
         # wer uns recently gehört hat. Nur wenn explizit aktiviert (Default
         # aus) UND PSK-Client überhaupt enabled ist (kein Punkt zu fetchen
@@ -813,9 +799,7 @@ class Orchestrator:
             and self.integrations.psk_reporter is not None
             and self.integrations.psk_reporter.enabled
         ):
-            self._bg_tasks.append(asyncio.create_task(
-                self._psk_reciprocity_refresh_loop(), name="psk-reciprocity-refresh"
-            ))
+            self._spawn(self._psk_reciprocity_refresh_loop(), name="psk-reciprocity-refresh")
 
         # v0.13.0 — Blitzortung: WS-Reader + Storm-Watchdog. Beide nur
         # wenn der User die Integration aktiviert hat. WS-Reader feedet
@@ -826,40 +810,28 @@ class Orchestrator:
             self.config.integrations.blitzortung.enabled
             and self.integrations.blitzortung is not None
         ):
-            self._bg_tasks.append(asyncio.create_task(
-                self._blitzortung_ws_loop(), name="blitzortung-ws"
-            ))
-            self._bg_tasks.append(asyncio.create_task(
-                self._blitzortung_watchdog_loop(), name="blitzortung-watchdog"
-            ))
+            self._spawn(self._blitzortung_ws_loop(), name="blitzortung-ws")
+            self._spawn(self._blitzortung_watchdog_loop(), name="blitzortung-watchdog")
 
         # v0.14.0 — Solar-Refresh-Loop. hamqsl-Cache hat 30 min TTL, wir
         # holen alle 30 min frisch und spiegeln in _band_conditions_*.
         # Wenn hamqsl-Integration aus → leere Conditions → Tier `band_open`
         # liefert 0 (no boost), kein Crash.
         if self.integrations.hamqsl is not None and self.integrations.hamqsl.enabled:
-            self._bg_tasks.append(asyncio.create_task(
-                self._solar_refresh_loop(), name="solar-refresh"
-            ))
+            self._spawn(self._solar_refresh_loop(), name="solar-refresh")
 
         # v0.38.0 — taegliche Wartung: Telemetrie-Retention (DATA-M1) +
         # QSO-DB-Backup (DATA-C3). Schuetzt die unersetzlichen Logdaten
         # und verhindert das SD-voll→Korruption-Szenario.
         if self.db_enabled:
-            self._bg_tasks.append(asyncio.create_task(
-                self._maintenance_loop(), name="db-maintenance"
-            ))
+            self._spawn(self._maintenance_loop(), name="db-maintenance")
 
         # v0.19.0 — DXpedition-Schedule-Sync (Watchlist-Auto-Add + ntfy
         # 24h-Reminder). Laeuft immer, harmlos wenn Schedule leer.
-        self._bg_tasks.append(asyncio.create_task(
-            self._dxpedition_schedule_loop(), name="dxpedition-schedule"
-        ))
+        self._spawn(self._dxpedition_schedule_loop(), name="dxpedition-schedule")
         # v0.19.1 — NG3K Auto-Import (alle 6h). Manuelle Eintraege
         # werden NICHT ueberschrieben (source-Feld unterscheidet).
-        self._bg_tasks.append(asyncio.create_task(
-            self._dxped_ng3k_import_loop(), name="dxped-ng3k-import"
-        ))
+        self._spawn(self._dxped_ng3k_import_loop(), name="dxped-ng3k-import")
 
         # systemd liveness-watchdog: nur schedulen wenn unter systemd
         # mit NotifyAccess+WatchdogSec gestartet (NOTIFY_SOCKET env).
@@ -868,9 +840,7 @@ class Orchestrator:
         # aber wir wollen auch keinen idlen Task.
         if os.environ.get("NOTIFY_SOCKET"):
             self._sd = sdnotify.SystemdNotifier()
-            self._bg_tasks.append(asyncio.create_task(
-                self._sd_heartbeat_loop(), name="sd-heartbeat"
-            ))
+            self._spawn(self._sd_heartbeat_loop(), name="sd-heartbeat")
             # READY=1 signalisiert systemd: orchestrator ist fully
             # wired, bg tasks laufen, FastAPI gleich am yield. Type=
             # notify-unit wartet darauf bevor "active" gemeldet wird.
@@ -1502,6 +1472,77 @@ class Orchestrator:
             self.state_machine.ctx.worked_grid_band = self._worked_grid_band
         except Exception as exc:
             log.warning("hydrate_from_db failed: %s — starting with empty sets", exc)
+
+    # ------------------------------------------------------------------ Background-Tasks
+    def _spawn(self, coro: typing.Coroutine, *, name: str) -> asyncio.Task:
+        """Langlebigen Hintergrund-Task starten UND seinen Tod bemerken.
+
+        Ein asyncio.Task, der mit einer Exception endet, ist still: die
+        Exception liegt im Task-Objekt und taucht bestenfalls beim
+        Garbage-Collect als "Task exception was never retrieved" auf. Die
+        Loops hier sind aber ganze Subsysteme — stirbt einer, faellt eine
+        Funktion komplett aus, ohne dass irgendwo etwas fehlschlaegt.
+
+        Der Praezedenzfall steht im Code (siehe _as_utc): ein tz-Bug hat
+        beide Upload-Drains rund zwei Wochen lang totgelegt, bemerkt wurde
+        es erst beim Nachzaehlen der QSOs. Genau dafuer ist der Callback
+        hier da.
+        """
+        task = asyncio.create_task(coro, name=name)
+        task.add_done_callback(self._on_bg_task_done)
+        self._bg_tasks.append(task)
+        return task
+
+    def _on_bg_task_done(self, task: asyncio.Task) -> None:
+        """done-Callback fuer alle via :meth:`_spawn` gestarteten Loops.
+
+        Laeuft synchron im Event-Loop und darf darum nichts werfen — eine
+        Exception hier landete im Loop-Exception-Handler und waere wieder
+        genau das stille Verschlucken, das wir abstellen wollen.
+        """
+        if task.cancelled():
+            return  # regulaerer Shutdown ueber stop()
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            # Muss explizit stehen: CancelledError ist seit 3.8 keine
+            # Exception mehr, sondern BaseException — ein blankes
+            # `except Exception` faengt sie NICHT. Sie liefe dann aus dem
+            # Callback in den Loop-Exception-Handler und jeder Shutdown
+            # produzierte einen Schwung Fehler-Tracebacks.
+            return
+        except asyncio.InvalidStateError:  # pragma: no cover - Task nicht fertig
+            return
+        name = task.get_name()
+        if exc is None:
+            # Manche Loops kehren bewusst frueh zurueck (z.B. demo_mode).
+            # Das ist kein Fehler, aber sichtbar sein soll es trotzdem.
+            log.info("Hintergrund-Task %s regulaer beendet", name)
+            return
+        log.error(
+            "Hintergrund-Task %s ist gestorben: %r", name, exc, exc_info=exc,
+        )
+        self._alert_bg_task_death(name, exc)
+
+    def _alert_bg_task_death(self, name: str, exc: BaseException) -> None:
+        """ntfy-Push, wenn ein Subsystem weggestorben ist.
+
+        Bewusst priority=high: ein toter Loop repariert sich nicht selbst
+        und faellt im Normalbetrieb nicht auf — die Box laeuft weiter,
+        nur ohne diese Funktion.
+        """
+        ntfy = self.integrations.ntfy if self.integrations else None
+        if not (ntfy and ntfy.enabled):
+            return
+        try:
+            asyncio.create_task(ntfy.notify(
+                _t("push.bg_task_died_msg", name=name, err=repr(exc)[:140]),
+                title=_t("push.bg_task_died_title", name=name),
+                priority="high",
+                tags=["warning"],
+            ))
+        except Exception:
+            pass
 
     async def stop(self) -> None:
         for t in self._bg_tasks:
@@ -2612,9 +2653,7 @@ class Orchestrator:
             and not drain_running
         ):
             log.info("config hot-reload: starting QRZ-logbook-drain loop")
-            self._bg_tasks.append(asyncio.create_task(
-                self._qrz_logbook_drain_loop(), name="qrz-logbook-drain"
-            ))
+            self._spawn(self._qrz_logbook_drain_loop(), name="qrz-logbook-drain")
         # v0.21.0 — ClubLog-Drain analog hot-startbar
         clublog_running = any(
             t.get_name() == "clublog-drain" and not t.done()
@@ -2628,9 +2667,7 @@ class Orchestrator:
             and not clublog_running
         ):
             log.info("config hot-reload: starting ClubLog-drain loop")
-            self._bg_tasks.append(asyncio.create_task(
-                self._clublog_drain_loop(), name="clublog-drain"
-            ))
+            self._spawn(self._clublog_drain_loop(), name="clublog-drain")
         log.info(
             "config hot-reloaded: callsign=%s antenna=%s",
             self.state_machine.ctx.callsign, self._active_antenna,
