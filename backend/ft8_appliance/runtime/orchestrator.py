@@ -4223,15 +4223,27 @@ class Orchestrator:
                     # or last try is longer ago than the back-off (the
                     # back-off grows with attempts: 5min, 15min, 1h, ...).
                     now = datetime.now(UTC)
+                    # Gedeckelt wird die Zahl der tatsaechlichen Upload-
+                    # Versuche pro Sweep (siehe attempted), NICHT die Query.
+                    # Vorher schnitt .limit(20) ab, bevor gefiltert wurde:
+                    # QSOs ohne passenden Logbook-Key werden nur
+                    # uebersprungen, ohne ihren Attempt-Zaehler zu erhoehen,
+                    # und blieben damit dauerhaft in den ersten 20 Zeilen.
+                    # 20 solcher Rows haben den QRZ-Upload aller
+                    # nachfolgenden QSOs permanent blockiert — ohne Fehler,
+                    # ohne Alarm. Der ClubLog-Drain laedt die Pending-Menge
+                    # ebenfalls ungedeckelt.
                     rows = list(
                         (await s.execute(
                             select(Qso)
                             .where(Qso.qrz_uploaded == False)  # noqa: E712
                             .order_by(Qso.qso_start.asc())
-                            .limit(20)
                         )).scalars()
                     )
+                    attempted = 0
                     for qso in rows:
+                        if attempted >= 20:
+                            break
                         backoff_s = min(3600.0, 300.0 * (2 ** qso.qrz_upload_attempts))
                         last_qrz = _as_utc(qso.qrz_last_attempt_at)
                         if last_qrz is not None and (now - last_qrz).total_seconds() < backoff_s:
@@ -4246,6 +4258,7 @@ class Orchestrator:
                         qso_key = owner.qrz_key_for(qso.station_callsign)
                         if not qso_key:
                             continue
+                        attempted += 1
                         qso.qrz_upload_attempts += 1
                         qso.qrz_last_attempt_at = now
                         try:
@@ -4283,11 +4296,11 @@ class Orchestrator:
     async def _clublog_drain_loop(self) -> None:
         """v0.21.0 — ClubLog Real-Time-Upload-Drain (analog QRZ).
 
-        Filtert pro aktiven Operator nach user_callsign — DK9XR-QSOs gehen
-        in Dad's ClubLog, DO3XR-QSOs in Sebastians. Operator-Switch zur
-        Laufzeit ist ok: der Loop greift jeweils auf
-        ``self.config.operator.clublog_*`` zu, das wird beim Switch
-        synchron im selben Objekt aktualisiert.
+        Sweept jeden Sweep ueber ALLE Operatoren, jeweils mit dessen
+        Credentials und nur dessen QSOs (Filter auf user_callsign) —
+        DK9XR-QSOs gehen in Dad's ClubLog, DO3XR-QSOs in Sebastians.
+        Wer gerade aktiv ist, spielt keine Rolle; sonst bleiben die
+        offenen QSOs des inaktiven Operators fuer immer liegen.
 
         Backoff identisch zu QRZ: 5min, 10min, 20min, 40min, ..., gecappt
         bei 1h. Hard-Reject (auth/duplicate) → uploaded=True damit kein
@@ -4296,11 +4309,8 @@ class Orchestrator:
         if self.config.demo_mode:
             log.info("demo_mode — ClubLog-Upload deaktiviert (kein echtes Logbuch anfassen)")
             return
-        from datetime import UTC, datetime
-        from sqlalchemy import select
-        from ..db import session_scope
-        from ..db.models import Qso
-        from ..integrations.clublog import ClubLogError, bulk_upload, upload_qso
+        # (DB- und ClubLog-Imports leben in _clublog_sweep_for_operator —
+        # der Loop selbst macht nur noch Scheduling.)
 
         # v0.21.4 — Gentler Schedule + bulk-Endpoint statt realtime spam.
         # ClubLog-Excessive-API-Usage-Article (Michael G7VJR):
@@ -4315,108 +4325,142 @@ class Orchestrator:
 
         while True:
             try:
-                email = self.config.operator.clublog_email
-                app_pw = self.config.operator.clublog_app_password
-                api_key = self.config.operator.clublog_api_key
-                my_call = self.config.operator.callsign
-                if not (email and app_pw and api_key):
-                    await asyncio.sleep(interval_s)
-                    continue
-
-                async with session_scope() as s:
-                    now = datetime.now(UTC)
-                    # Backoff-Filter: schon-versuchte Rows die noch im
-                    # Backoff-Fenster sitzen ueberspringen. Aus ETI-
-                    # quette wenden wir das auch fuer bulk an damit ein
-                    # einzelner Bad-ADIF nicht in Endlos-Retry läuft.
-                    rows = list(
-                        (await s.execute(
-                            select(Qso)
-                            .where(Qso.clublog_uploaded == False)  # noqa: E712
-                            .where(Qso.user_callsign == my_call)
-                            .order_by(Qso.qso_start.asc())
-                        )).scalars()
+                # Ueber ALLE Operatoren sweepen, nicht nur den aktiven.
+                # Vorher zog die Schleife die Credentials aus
+                # self.config.operator und filterte zusaetzlich auf dessen
+                # user_callsign — die offenen QSOs des jeweils inaktiven
+                # Operators waren damit aus der Ergebnismenge heraus und
+                # wurden nie hochgeladen. Ohne Alarm, weil gar kein Versuch
+                # stattfand. Bei dauerhaftem Operatorwechsel blieben sie
+                # fuer immer liegen. Der QRZ-Drain macht es ueber
+                # _operator_for_qso() schon richtig.
+                for op in self.config.operators:
+                    email = op.clublog_email
+                    app_pw = op.clublog_app_password
+                    api_key = op.clublog_api_key
+                    my_call = op.callsign
+                    if not (email and app_pw and api_key):
+                        continue
+                    await self._clublog_sweep_for_operator(
+                        email, app_pw, api_key, my_call, bulk_threshold,
                     )
-                    eligible = []
-                    for qso in rows:
-                        backoff_s = min(3600.0, 600.0 * (2 ** qso.clublog_upload_attempts))
-                        last_cl = _as_utc(qso.clublog_last_attempt_at)
-                        if last_cl is not None and (now - last_cl).total_seconds() < backoff_s:
-                            continue
-                        eligible.append(qso)
-
-                    if not eligible:
-                        pass  # nichts zu tun
-                    elif len(eligible) >= bulk_threshold:
-                        # Bulk-Pfad: 1 Request fuer alle. ClubLog-
-                        # empfohlener Pfad fuer >5 QSOs.
-                        for qso in eligible:
-                            qso.clublog_upload_attempts += 1
-                            qso.clublog_last_attempt_at = now
-                        try:
-                            await bulk_upload(email, app_pw, api_key, my_call, eligible)
-                        except ClubLogError as exc:
-                            # v0.39.0 — nur bei KLAR hartem Reject die ganze
-                            # Charge aufgeben; sonst erneut versuchen (Ceiling
-                            # je QSO). Fixt "could not reach login server" →
-                            # frueher faelschlich hart → ganze Charge verloren.
-                            if self._upload_reject_is_hard(str(exc)):
-                                log.warning("ClubLog bulk hard-reject (%s) — alle %d won't-retry",
-                                            exc, len(eligible))
-                                for qso in eligible:
-                                    qso.clublog_uploaded = True
-                            else:
-                                for qso in eligible:
-                                    if qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
-                                        qso.clublog_uploaded = True
-                                        self._alert_upload_giveup("ClubLog", qso.call)
-                                log.info("ClubLog bulk deferred (%d QSOs): %s",
-                                         len(eligible), exc)
-                        except Exception as exc:
-                            log.info("ClubLog bulk upload deferred (%d QSOs): %s",
-                                     len(eligible), exc)
-                        else:
-                            for qso in eligible:
-                                qso.clublog_uploaded = True
-                            log.info("ClubLog bulk: %d QSOs uploaded via putlogs.php",
-                                     len(eligible))
-                    else:
-                        # Realtime-Pfad: <5 pending → einzelne QSOs durch
-                        # realtime.php (Michael's Use-Case: "real-time,
-                        # single QSO submissions"). Max 4 pro Sweep =
-                        # max 4 req/10 min = sehr human.
-                        for qso in eligible:
-                            qso.clublog_upload_attempts += 1
-                            qso.clublog_last_attempt_at = now
-                            try:
-                                await upload_qso(email, app_pw, api_key, my_call, qso)
-                            except ClubLogError as exc:
-                                if self._upload_reject_is_hard(str(exc)):
-                                    log.warning("ClubLog hard-reject %s (%s) — won't retry",
-                                                qso.call, exc)
-                                    qso.clublog_uploaded = True
-                                elif qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
-                                    log.error("ClubLog: %s nach %d Versuchen aufgegeben (%s)",
-                                              qso.call, qso.clublog_upload_attempts, exc)
-                                    qso.clublog_uploaded = True
-                                    self._alert_upload_giveup("ClubLog", qso.call)
-                                else:
-                                    log.info("ClubLog deferred for %s: %s (Versuch %d)",
-                                             qso.call, exc, qso.clublog_upload_attempts)
-                            except Exception as exc:
-                                log.info("ClubLog upload deferred for %s: %s",
-                                         qso.call, exc)
-                            else:
-                                qso.clublog_uploaded = True
-                                log.info("ClubLog uploaded QSO %s", qso.call)
-                            # Throttle zwischen realtime-Requests im Sweep:
-                            # 2 s Abstand damit wir auch bei 4 QSOs nicht
-                            # innerhalb einer Sekunde 4 Requests schiessen.
-                            await asyncio.sleep(2.0)
                 await self._note_drain_outcome("ClubLog", None)
             except Exception as exc:
                 await self._note_drain_outcome("ClubLog", exc)
             await asyncio.sleep(interval_s)
+
+    async def _clublog_sweep_for_operator(
+        self,
+        email: str,
+        app_pw: str,
+        api_key: str,
+        my_call: str,
+        bulk_threshold: int,
+    ) -> None:
+        """Ein ClubLog-Sweep fuer genau einen Operator.
+
+        Herausgezogen aus ``_clublog_drain_loop``, damit der Loop ueber alle
+        Operatoren iterieren kann — jeder mit seinen eigenen Credentials und
+        nur mit seinen eigenen QSOs.
+        """
+        from datetime import UTC, datetime
+
+        from sqlalchemy import select
+
+        from ..db import session_scope
+        from ..db.models import Qso
+        from ..integrations.clublog import ClubLogError, bulk_upload, upload_qso
+
+        async with session_scope() as s:
+            now = datetime.now(UTC)
+            # Backoff-Filter: schon-versuchte Rows die noch im
+            # Backoff-Fenster sitzen ueberspringen. Aus ETI-
+            # quette wenden wir das auch fuer bulk an damit ein
+            # einzelner Bad-ADIF nicht in Endlos-Retry läuft.
+            rows = list(
+                (await s.execute(
+                    select(Qso)
+                    .where(Qso.clublog_uploaded == False)  # noqa: E712
+                    .where(Qso.user_callsign == my_call)
+                    .order_by(Qso.qso_start.asc())
+                )).scalars()
+            )
+            eligible = []
+            for qso in rows:
+                backoff_s = min(3600.0, 600.0 * (2 ** qso.clublog_upload_attempts))
+                last_cl = _as_utc(qso.clublog_last_attempt_at)
+                if last_cl is not None and (now - last_cl).total_seconds() < backoff_s:
+                    continue
+                eligible.append(qso)
+
+            if not eligible:
+                pass  # nichts zu tun
+            elif len(eligible) >= bulk_threshold:
+                # Bulk-Pfad: 1 Request fuer alle. ClubLog-
+                # empfohlener Pfad fuer >5 QSOs.
+                for qso in eligible:
+                    qso.clublog_upload_attempts += 1
+                    qso.clublog_last_attempt_at = now
+                try:
+                    await bulk_upload(email, app_pw, api_key, my_call, eligible)
+                except ClubLogError as exc:
+                    # v0.39.0 — nur bei KLAR hartem Reject die ganze
+                    # Charge aufgeben; sonst erneut versuchen (Ceiling
+                    # je QSO). Fixt "could not reach login server" →
+                    # frueher faelschlich hart → ganze Charge verloren.
+                    if self._upload_reject_is_hard(str(exc)):
+                        log.warning("ClubLog bulk hard-reject (%s) — alle %d won't-retry",
+                                    exc, len(eligible))
+                        for qso in eligible:
+                            qso.clublog_uploaded = True
+                    else:
+                        for qso in eligible:
+                            if qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                                qso.clublog_uploaded = True
+                                self._alert_upload_giveup("ClubLog", qso.call)
+                        log.info("ClubLog bulk deferred (%d QSOs): %s",
+                                 len(eligible), exc)
+                except Exception as exc:
+                    log.info("ClubLog bulk upload deferred (%d QSOs): %s",
+                             len(eligible), exc)
+                else:
+                    for qso in eligible:
+                        qso.clublog_uploaded = True
+                    log.info("ClubLog bulk: %d QSOs uploaded via putlogs.php",
+                             len(eligible))
+            else:
+                # Realtime-Pfad: <5 pending → einzelne QSOs durch
+                # realtime.php (Michael's Use-Case: "real-time,
+                # single QSO submissions"). Max 4 pro Sweep =
+                # max 4 req/10 min = sehr human.
+                for qso in eligible:
+                    qso.clublog_upload_attempts += 1
+                    qso.clublog_last_attempt_at = now
+                    try:
+                        await upload_qso(email, app_pw, api_key, my_call, qso)
+                    except ClubLogError as exc:
+                        if self._upload_reject_is_hard(str(exc)):
+                            log.warning("ClubLog hard-reject %s (%s) — won't retry",
+                                        qso.call, exc)
+                            qso.clublog_uploaded = True
+                        elif qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                            log.error("ClubLog: %s nach %d Versuchen aufgegeben (%s)",
+                                      qso.call, qso.clublog_upload_attempts, exc)
+                            qso.clublog_uploaded = True
+                            self._alert_upload_giveup("ClubLog", qso.call)
+                        else:
+                            log.info("ClubLog deferred for %s: %s (Versuch %d)",
+                                     qso.call, exc, qso.clublog_upload_attempts)
+                    except Exception as exc:
+                        log.info("ClubLog upload deferred for %s: %s",
+                                 qso.call, exc)
+                    else:
+                        qso.clublog_uploaded = True
+                        log.info("ClubLog uploaded QSO %s", qso.call)
+                    # Throttle zwischen realtime-Requests im Sweep:
+                    # 2 s Abstand damit wir auch bei 4 QSOs nicht
+                    # innerhalb einer Sekunde 4 Requests schiessen.
+                    await asyncio.sleep(2.0)
 
     async def _gps_country_detect_loop(self) -> None:
         """v0.22.0 — GPS-based DX-Operating-Country Suggestion + Mismatch-Warnung.
