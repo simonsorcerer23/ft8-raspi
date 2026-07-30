@@ -66,6 +66,15 @@ def _render_adif(qsos: list[Qso], active_op: str, cty) -> str:
         date_on, time_on = _adif_date_time(q.qso_start)
         date_off, time_off = _adif_date_time(q.qso_end)
         op_call = (q.user_callsign or active_op).upper()
+        # ADIF trennt die beiden Felder: OPERATOR ist die Person (Heimat-
+        # Call), STATION_CALLSIGN das Rufzeichen, das ueber die Luft ging —
+        # bei Auslandsbetrieb also "9A/DK9XR". Die Spalte wird beim Loggen
+        # genau dafuer gefuellt (StateMachine._emit_log_qso), der Export las
+        # sie nur nie und schrieb in beide Felder den Heimat-Call. Damit
+        # bekamen LotW/eQSL/ClubLog aus diesem File DX-QSOs unter dem
+        # falschen Rufzeichen. ClubLog- und QRZ-Direktupload machen es
+        # schon richtig — nur der manuelle Export nicht.
+        station_call = (q.station_callsign or op_call).upper()
         dxcc_name = _dxcc_for_call(q.call, cty)
         fields = "".join([
             _adif_field("CALL", q.call),
@@ -84,7 +93,7 @@ def _render_adif(qsos: list[Qso], active_op: str, cty) -> str:
             # Sebastian-Audit v0.3.3: zusaetzliche Standard-Felder fuer
             # LotW / eQSL / ClubLog-Upload-Kompatibilitaet.
             _adif_field("OPERATOR", op_call),
-            _adif_field("STATION_CALLSIGN", op_call),
+            _adif_field("STATION_CALLSIGN", station_call),
             _adif_field("COUNTRY", dxcc_name),
             "<EOR>",
         ])
