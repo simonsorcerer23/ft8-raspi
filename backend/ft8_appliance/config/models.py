@@ -327,6 +327,12 @@ class OperatingConfig(BaseModel):
     max_ptt_s: int = Field(default=18, ge=15, le=60)
     cq_idle_timeout_min: int = Field(default=10, ge=1)
     swr_max: float = Field(default=2.0, ge=1.0, le=5.0)
+    # Ab wann gilt die CAT-Verbindung als weg und TX wird gesperrt
+    # (rig_link_guard). Der Poll laeuft jede Sekunde, 60 s sind also rund
+    # 60 verpasste Runden — kurze Aussetzer beim rigctld-Neustart oder
+    # USB-Re-Enumeration fallen bewusst nicht darunter, weil der Lock
+    # sticky ist und quittiert werden muss.
+    rig_link_max_age_s: float = Field(default=60.0, ge=15.0, le=600.0)
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift

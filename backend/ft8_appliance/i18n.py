@@ -40,6 +40,10 @@ _DE: dict[str, str] = {
         "Aktuelles Band ist fuer die Lizenzklasse des Operators nicht "
         "freigegeben — Band wechseln"
     ),
+    "guard.rig_link": (
+        "Seit {age} s keine Messwerte vom Rig (max {max} s) — rigctld, "
+        "USB-Kabel und Transceiver pruefen"
+    ),
     # --- other lock reasons (orchestrator) ---
     "lock.ptt_stuck": "PTT-stuck recovery",
     "lock.tx_locked_prefix": "TX gesperrt: {reason}",
@@ -201,6 +205,10 @@ _EN: dict[str, str] = {
     "guard.license": (
         "Current band is not permitted for the operator's licence class — "
         "change band"
+    ),
+    "guard.rig_link": (
+        "No readings from the rig for {age} s (max {max} s) — check rigctld, "
+        "the USB cable and the transceiver"
     ),
     "lock.ptt_stuck": "PTT-stuck recovery",
     "lock.tx_locked_prefix": "TX locked: {reason}",

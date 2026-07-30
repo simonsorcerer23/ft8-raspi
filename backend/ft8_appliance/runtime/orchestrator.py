@@ -630,6 +630,7 @@ class Orchestrator:
             limits=GuardLimits(
                 swr_max=self.config.operating.swr_max,
                 alc_max=self.config.operating.alc_max,
+                rig_link_max_age_s=self.config.operating.rig_link_max_age_s,
             ),
             qso_max_stale_slots=self.config.operating.qso_max_stale_slots,
             qso_max_cq_resends=self.config.operating.qso_max_cq_resends,
@@ -2694,6 +2695,9 @@ class Orchestrator:
 
     # ------------------------------------------------------------------ slot loop
     _last_rig: RigSnapshot = field(default_factory=RigSnapshot, init=False)
+    # Monotonic-Zeitstempel des letzten BRAUCHBAREN Snapshots (siehe
+    # rig_link_guard). None = seit dem Start noch keiner angekommen.
+    _last_rig_at: float | None = field(default=None, init=False)
 
     async def _slot_loop(self) -> None:
         try:
@@ -4665,6 +4669,15 @@ class Orchestrator:
                 await asyncio.sleep(1.0)
                 continue
 
+            # Frische-Stempel fuer den rig_link_guard. Die Bedingung ist
+            # bewusst "Frequenz gelesen" und nicht "kein Fehler geflogen":
+            # snapshot() faengt jedes Feld einzeln ab und wirft praktisch
+            # nie — bei totem rigctld kommt ein Objekt mit lauter None
+            # zurueck. Ohne diese Pruefung waere so ein Leer-Snapshot ein
+            # Lebenszeichen, und die Sperre feuerte nie.
+            if self._last_rig.freq_hz is not None:
+                self._last_rig_at = time.monotonic()
+
             await self._reconcile_dial_once_after_rig_ready()
 
             # TX-Power bidirektional syncen: wenn Dad am Front-Panel
@@ -5654,6 +5667,13 @@ class Orchestrator:
             antenna_covers_band=antenna_ok,
             band_allowed_for_license=self._band_allowed_for_license(),
             chrony_synced=chrony_synced,
+            # Alter des letzten brauchbaren Rig-Snapshots. Ohne das
+            # urteilen swr/battery/antenna/license-Guard bei totem rigctld
+            # ueber lauter None und gehen dabei alle auf gruen.
+            rig_link_age_s=(
+                None if self._last_rig_at is None
+                else time.monotonic() - self._last_rig_at
+            ),
         )
 
     def _resolve_current_band_name(self) -> str | None:

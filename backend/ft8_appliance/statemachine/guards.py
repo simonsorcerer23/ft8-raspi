@@ -51,6 +51,10 @@ class HardwareState:
     # GPS has no fix (indoor installs, basement shacks). chrony stratum
     # 2-3 with sub-100 ms offset is more than tight enough for FT8.
     chrony_synced: bool = False
+    # Sekunden seit dem letzten BRAUCHBAREN Rig-Snapshot (einer mit
+    # Frequenz). None = seit dem Start noch keiner angekommen, also kein
+    # Verlust den wir feststellen koennten — siehe rig_link_guard.
+    rig_link_age_s: float | None = None
 
 
 @dataclass(slots=True)
@@ -64,6 +68,7 @@ class GuardLimits:
     audio_drift_warn_samples: int = 5
     audio_drift_fail_samples: int = 50
     time_offset_max_s: float = 0.5
+    rig_link_max_age_s: float = 60.0
 
 
 Guard = Callable[[HardwareState, GuardLimits], GuardResult]
@@ -87,6 +92,39 @@ def time_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
             {"offset": f"{hw.time_offset_s:+.3f}", "max": lim.time_offset_max_s},
         )
     return GuardResult(True, "time_guard")
+
+
+def rig_link_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
+    """Blocke TX, wenn wir das Rig nicht mehr auslesen koennen.
+
+    ``RigctldClient.snapshot()`` wirft nie: jedes Feld ist einzeln in ein
+    ``try/except`` gewickelt, damit ein fehlendes Hamlib-Level nicht den
+    ganzen Snapshot kippt. Ist rigctld tot oder das USB-Kabel raus, kommt
+    darum kein Fehler zurueck, sondern ein Snapshot mit lauter ``None``.
+
+    Das ist der gefaehrliche Teil: ``None`` bedeutet fuer die
+    nachgelagerten Guards ueberall "unauffaellig". swr=None wird zu 1.0,
+    battery_v=None heisst Netzbetrieb, freq_hz=None laesst Antennen- und
+    Lizenz-Guard passieren, weil sie das als Startzustand lesen. Beim
+    Wegfallen des Rigs ging also die komplette rig-seitige Guard-Kette auf
+    gruen — genau umgekehrt zur Absicht.
+
+    Darum die Alterspruefung an einer Stelle statt None-Checks in fuenf
+    Guards: nur wer frische Messwerte hat, darf ueber sie urteilen.
+
+    ``None`` sperrt bewusst nicht. Das heisst "seit dem Start nie ein
+    Snapshot angekommen" — Bootphase, Demo-Betrieb, Testpfade ohne Rig.
+    Ein Verlust laesst sich daraus nicht ableiten, und ein Lock waere
+    sticky.
+    """
+    if hw.rig_link_age_s is None:
+        return GuardResult(True, "rig_link_guard")
+    if hw.rig_link_age_s > lim.rig_link_max_age_s:
+        return GuardResult(
+            False, "rig_link_guard", "guard.rig_link",
+            {"age": f"{hw.rig_link_age_s:.0f}", "max": f"{lim.rig_link_max_age_s:.0f}"},
+        )
+    return GuardResult(True, "rig_link_guard")
 
 
 def swr_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
@@ -183,6 +221,10 @@ def license_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
 DEFAULT_GUARDS: tuple[Guard, ...] = (
     time_guard,
     audio_drift_guard,
+    # Vor allen rig-abgeleiteten Guards: sind die Messwerte veraltet,
+    # ist deren Urteil wertlos. Der Grund fuer die Sperre soll dann
+    # "Rig nicht erreichbar" heissen und nicht "SWR ok".
+    rig_link_guard,
     license_guard,
     antenna_guard,
     swr_guard,
