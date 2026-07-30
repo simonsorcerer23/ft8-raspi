@@ -327,7 +327,12 @@ class OperatingConfig(BaseModel):
     max_ptt_s: int = Field(default=18, ge=15, le=60)
     cq_idle_timeout_min: int = Field(default=10, ge=1)
     swr_max: float = Field(default=2.0, ge=1.0, le=5.0)
-    alc_max: int = Field(default=0, ge=0, le=100)
+    # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
+    # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
+    # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift
+    # der harte Lock. 0 heisst "Guard aus" (siehe alc_guard); das war bis
+    # 2026-07-30 der Default und steht so in Bestandsconfigs.
+    alc_max: int = Field(default=50, ge=0, le=100)
     # Vorwarn-Stufen: ntfy-Push wenn überschritten, aber TX läuft weiter.
     # Erst beim Erreichen von swr_max/alc_max (Hard-Cap) lockt der Guard.
     # Zweck: dem Operator Zeit geben gegenzulenken bevor TX gesperrt wird.

@@ -13,8 +13,13 @@ SWR-Spike, verlorenem Zeitsync oder gesperrtem Band.
 
 from __future__ import annotations
 
-from ft8_appliance.statemachine.guards import HardwareState
-from ft8_appliance.statemachine.machine import StateMachine, State
+from ft8_appliance.statemachine.guards import (
+    GuardLimits,
+    HardwareState,
+    alc_guard,
+    battery_guard,
+)
+from ft8_appliance.statemachine.machine import State, StateMachine
 from ft8_appliance.statemachine.states import MachineContext, QsoContext
 
 
@@ -123,3 +128,51 @@ def test_slot_tick_exiting_grace_respects_guards() -> None:
     sm.on_slot_tick(_blocked())
     assert "TX_MESSAGE" not in _kinds(sm)
     assert sm.state is State.TX_LOCKED
+
+
+# ------------------------------------------------ ALC / Akku (Audit M1)
+#
+# Drei Guards konnten nie feuern, weil der Orchestrator ihre Eingangswerte
+# hartkodiert auf "alles gut" setzte. Beim ALC ist das Scharfschalten nicht
+# trivial: der ALC-Closed-Loop regelt bewusst auf alc_target_pct (15), eine
+# Null-Toleranz-Schwelle wuerde also den bestimmungsgemaessen Betrieb
+# sperren — und der Lock ist sticky.
+
+def test_alc_guard_is_off_when_alc_max_is_zero() -> None:
+    """Bestandsconfigs (inkl. der auf dem Pi) stehen auf alc_max=0. Wuerde
+    das "Null-Toleranz" heissen, sperrte der erste Burst mit ALC 15 % den
+    Sender — bei bestimmungsgemaesser Regelung."""
+    res = alc_guard(HardwareState(alc_pct=35), GuardLimits(alc_max=0))
+    assert res.ok is True
+
+
+def test_alc_guard_fires_above_a_configured_cap() -> None:
+    res = alc_guard(HardwareState(alc_pct=60), GuardLimits(alc_max=50))
+    assert res.ok is False
+    assert res.code == "guard.alc"
+
+
+def test_alc_guard_passes_the_regulated_target_window() -> None:
+    """alc_target_pct=15, Fenster 5..25 — das darf nie sperren."""
+    for pct in (5, 15, 25, 40):
+        assert alc_guard(HardwareState(alc_pct=pct), GuardLimits(alc_max=50)).ok
+
+
+def test_default_alc_cap_sits_above_the_gain_watchdog() -> None:
+    """Der harte Lock darf erst greifen, wenn der automatische
+    Gain-Watchdog (alc_safety_threshold) es nicht mehr einfaengt."""
+    from ft8_appliance.config.models import OperatingConfig
+    op = OperatingConfig()
+    assert op.alc_max > op.alc_safety_threshold
+    assert op.alc_max > op.alc_warn
+
+
+def test_battery_guard_stays_quiet_without_a_sensor() -> None:
+    """IC-7300 liefert kein VOLTSEN → None → Netzbetrieb, kein Check."""
+    assert battery_guard(HardwareState(battery_v=None), GuardLimits()).ok is True
+
+
+def test_battery_guard_fires_on_a_flat_pack() -> None:
+    res = battery_guard(HardwareState(battery_v=10.8), GuardLimits())
+    assert res.ok is False
+    assert res.code == "guard.battery"

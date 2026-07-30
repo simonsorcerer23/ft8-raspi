@@ -5597,9 +5597,22 @@ class Orchestrator:
             gps_fix_mode=gps.mode,
             time_offset_s=self._chrony.offset_s if self._chrony else 0.0,
             swr=rig.swr if rig.swr is not None else 1.0,
-            alc_pct=0,
-            battery_v=None,
+            # ALC aus dem letzten TX-Burst (Peak, gesetzt an der
+            # PTT-Abfallflanke). Stand hier bis 2026-07-30 hartkodiert auf
+            # 0 — der alc_guard konnte darum nie feuern. None = seit dem
+            # Start noch nicht gesendet, also nichts zu beanstanden.
+            alc_pct=self._last_alc_pct or 0,
+            # None = kein Akku-Sensor (IC-7300 liefert kein VOLTSEN) und
+            # bedeutet fuer den battery_guard "Netzbetrieb, kein Check".
+            # Beim IC-705 im Akkubetrieb kommt hier ein echter Wert an;
+            # vorher war er hartkodiert None und der Guard damit tot.
+            battery_v=self._last_rig.battery_v,
             cpu_temp_c=cpu_temp if cpu_temp is not None else 50.0,
+            # Ehrliche Luecke: eine Sample-Drift-Messung existiert nirgends
+            # im Projekt, es gibt also keine Quelle fuer diesen Wert. Die 0
+            # ist kein Messwert, sondern "unbekannt" — der audio_drift_guard
+            # ist damit inert. Wer ihn scharf haben will, muss zuerst die
+            # Messung in der Capture-Kette bauen.
             audio_drift_samples=0,
             antenna_covers_band=antenna_ok,
             band_allowed_for_license=self._band_allowed_for_license(),

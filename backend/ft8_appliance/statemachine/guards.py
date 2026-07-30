@@ -99,6 +99,18 @@ def swr_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
 
 
 def alc_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
+    # alc_max <= 0 heisst "Guard aus", NICHT "Null-Toleranz". Der
+    # ALC-Closed-Loop regelt bewusst auf alc_target_pct (Default 15) —
+    # eine Null-Toleranz-Lesart wuerde bei bestimmungsgemaessem Betrieb
+    # jeden TX sperren, und der Lock ist sticky.
+    #
+    # Es gibt hier kein Verhalten zu erhalten: bis 2026-07-30 setzte der
+    # Orchestrator hw.alc_pct hartkodiert auf 0, dieser Guard hat also
+    # noch nie gefeuert. Bestandsconfigs stehen auf alc_max=0 (dem
+    # frueheren Default) und bleiben damit bewusst aus, bis der Operator
+    # den Wert bewusst setzt.
+    if lim.alc_max <= 0:
+        return GuardResult(True, "alc_guard")
     if hw.alc_pct > lim.alc_max:
         return GuardResult(
             False, "alc_guard", "guard.alc",
