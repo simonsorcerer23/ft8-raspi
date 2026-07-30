@@ -232,6 +232,11 @@ export const api = {
                                 method: 'POST', body: { callsign },
                               }),
   operatorCreate:  (body)   => request('/operators', { method: 'POST', body }),
+  // v0.67.0 — Zugangsdaten eines bestehenden Profils aendern. Nur die
+  // mitgesendeten Felder werden angefasst, leerer String loescht eins.
+  operatorUpdate:  (callsign, body) =>
+                    request(`/operators/${encodeURIComponent(callsign)}`,
+                            { method: 'PATCH', body }),
   operatorDelete:  (callsign, force=false) =>
                     request(`/operators/${encodeURIComponent(callsign)}${force ? '?force=true' : ''}`,
                             { method: 'DELETE' }),

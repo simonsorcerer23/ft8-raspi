@@ -276,10 +276,13 @@
     '12m':   24919, '10m':  28180, '6m':    50318, '2m':   144170,
   };
   // FT8-Standard-Dial-Frequenzen analog — fuer addBand-Default.
+  // 70cm fehlt in FT4_DEFAULT_DIALS bewusst: dafuer gibt es keinen
+  // etablierten FT4-Dial, ein geratener Wert waere eine Fehlabstimmung.
   const FT8_DEFAULT_DIALS = {
     '160m':   1840, '80m':   3573, '60m':    5357, '40m':    7074,
     '30m':   10136, '20m':  14074, '17m':   18100, '15m':   21074,
     '12m':   24915, '10m':  28074, '6m':    50313, '2m':   144174,
+    '70cm': 432174,
   };
 
   function addBand() {

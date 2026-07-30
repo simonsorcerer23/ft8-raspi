@@ -1010,20 +1010,49 @@ class Orchestrator:
         ntfy-Topic wird per Convention auf ``ft8-{callsign.lower()}``
         gesetzt — pro Operator eigener ntfy-Stream, sonst mischen
         sich die Push-Notifications mehrerer User.
+
+        Bei mehreren Operator-Profilen ist das Profil autoritativ und
+        die drei QRZ-Felder werden HART gespiegelt — auch auf None.
+        Sonst blieben beim Wechsel auf ein Profil ohne eigene QRZ-
+        Credentials die des Vorgaengers stehen und dessen Logbuch bekaeme
+        fremde QSOs (Sebastian 2026-07-30: DO3XR haette unter DK9XRs
+        Abo hochgeladen). Bei genau einem Profil bleibt der weiche
+        Merge: dort ist die globale "Online-Dienste"-Sektion der
+        Konfig die einzige Pflegestelle und darf nicht geleert werden.
         """
         qrz = self.config.integrations.qrz
-        if op.qrz_user is not None:
+        if len(self.config.operators) > 1:
             qrz.user = op.qrz_user
-        if op.qrz_password is not None:
             qrz.password = op.qrz_password
-        if op.qrz_logbook_api_key is not None:
             qrz.logbook_api_key = op.qrz_logbook_api_key
+        else:
+            if op.qrz_user is not None:
+                qrz.user = op.qrz_user
+            if op.qrz_password is not None:
+                qrz.password = op.qrz_password
+            if op.qrz_logbook_api_key is not None:
+                qrz.logbook_api_key = op.qrz_logbook_api_key
         # ntfy-Topic pro PERSON, nicht pro On-Air-Call (v0.28.1): base_call
         # strippt /AM, /MM, DX-Prefixe → DO3XR und DO3XR/AM teilen das Topic
         # "ft8-do3xr". Sonst haette /AM ein "ft8-do3xr/am"-Topic — Slash ist
         # in ntfy ungueltig UND niemand waere drauf subscribed.
         ntfy = self.config.integrations.ntfy
         ntfy.topic = f"ft8-{base_call(op.callsign).lower()}"
+
+    def reload_active_operator_integrations(self) -> None:
+        """Globale Integrations aus dem aktiven Profil neu aufbauen.
+
+        Fuer Aenderungen an den Zugangsdaten des *laufenden* Operators
+        (PATCH /operators/{callsign}). Ohne das wuerde der QRZ-Client bis
+        zum naechsten Operatorwechsel oder Neustart mit den alten
+        Credentials weiterarbeiten — der User traegt neue Daten ein und
+        der Upload geht trotzdem noch aufs alte Konto.
+        """
+        try:
+            self._sync_global_integrations_from_operator(self.config.operator)
+        except ValueError:
+            return  # operators leer (Wizard-Mode)
+        self._init_integrations()
 
     async def switch_operator(self, callsign: str) -> None:
         """Aktiven Operator wechseln (Hot-Swap, Sebastian 2026-05-23).
@@ -3321,8 +3350,8 @@ class Orchestrator:
                 # NIE „Pi steht still"-Alarme schicken. Explizit raus.
                 if self.config.demo_mode:
                     continue
-                # Kein Rig angeschlossen (z.B. ft8-2 als Standby-Pi ohne
-                # IC-Anschluss) → Mode-Watchdog macht keinen Sinn, der
+                # Kein Rig angeschlossen (Standby-Pi ohne IC-Anschluss)
+                # → Mode-Watchdog macht keinen Sinn, der
                 # Pi soll ja gar nicht senden. Sebastian-Feedback
                 # 2026-05-24: "boot_mode=off"-Pi pingt sonst alle 15min
                 # umsonst, reine Nuisance.
@@ -3742,7 +3771,7 @@ class Orchestrator:
                     continue
                 # Empty-Log-Guard: bei zu duennem Log saehe JEDES Land "neu"
                 # aus (die worked-DXCC-Pruefung greift ins Leere) → Spam.
-                # ft8-2/DK9XR ohne Rig (0 QSOs) feuerte sogar fuer Belgien.
+                # Ein frischer Pi ohne QSOs feuerte sogar fuer Belgien.
                 # Erst ab genug gearbeiteten DXCC ist "neu" aussagekraeftig;
                 # die Schwelle hebt sich selbst, sobald der Op loslegt.
                 if len(self._worked_dxccs) < self._MIN_WORKED_DXCC_FOR_SPOTS:

@@ -167,19 +167,12 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
         <span>{t('wiz.bands')}</span>
         <input type="text" value={cfg.antennas[0].bands.join(', ')}
                onchange={(e) => {
+                 // Setzt nur die Antennen-Abdeckung. cfg.bands bleibt
+                 // unangetastet: der komplette Bandplan kommt als Default
+                 // aus dem Backend (DEFAULT_BAND_DIALS) und ist physikalisch
+                 // fix. Was sendbar ist, ergibt sich aus dieser Abdeckung
+                 // plus Lizenzklasse — nicht daraus, welche Baender existieren.
                  cfg.antennas[0].bands = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                 const FT8_DEFAULTS = { '160m': 1840, '80m': 3573, '60m': 5357, '40m': 7074,
-                   '30m': 10136, '20m': 14074, '17m': 18100,
-                   '15m': 21074, '12m': 24915, '10m': 28074 };
-                 const FT4_DEFAULTS = { '160m': 1840, '80m': 3575, '60m': 5357, '40m': 7047,
-                   '30m': 10140, '20m': 14080, '17m': 18104,
-                   '15m': 21140, '12m': 24919, '10m': 28180 };
-                 cfg.bands = cfg.antennas[0].bands.map(name => ({
-                   name,
-                   freq_khz: FT8_DEFAULTS[name] ?? 14074,
-                   freq_khz_ft4: FT4_DEFAULTS[name] ?? null,
-                   antenna: cfg.antennas[0].name,
-                 }));
                }}
                placeholder="20m, 40m"/>
       </label>

@@ -14,6 +14,11 @@
   let error = $state(null);
   let preflight = $state({});   // call → { busy, qrz, clublog, error }
   let lbForm = $state({});      // person → { call, key }
+  // person → Zugangsdaten-Formular. Passwoerter/Keys werden von der API
+  // nie ausgeliefert, also starten die Felder leer: leer = "nicht
+  // aendern". Geloescht wird ueber die expliziten Entfernen-Buttons.
+  let credOpen = $state({});
+  let credForm = $state({});
 
   function pfClass(status) {
     if (status === 'ok') return 'ok';
@@ -57,6 +62,60 @@
     } catch (e) { error = e.message; } finally { busy = false; }
   }
 
+  function toggleCreds(op) {
+    if (credOpen[op.callsign]) { credOpen[op.callsign] = false; return; }
+    credForm[op.callsign] = {
+      qrz_user: op.qrz_user ?? '',
+      qrz_password: '',
+      qrz_logbook_api_key: '',
+      clublog_email: op.clublog_email ?? '',
+      clublog_app_password: '',
+      clublog_api_key: '',
+    };
+    credOpen[op.callsign] = true;
+  }
+
+  async function saveCreds(op) {
+    const f = credForm[op.callsign];
+    if (!f || busy) return;
+    // Nur geaenderte/gefuellte Felder senden. Ein leeres Passwortfeld
+    // heisst "unveraendert lassen" — sonst wuerde jedes Speichern die
+    // nicht angezeigten Secrets loeschen.
+    const body = {};
+    if (f.qrz_user.trim() !== (op.qrz_user ?? '')) body.qrz_user = f.qrz_user.trim();
+    if (f.clublog_email.trim() !== (op.clublog_email ?? '')) {
+      body.clublog_email = f.clublog_email.trim();
+    }
+    for (const k of ['qrz_password', 'qrz_logbook_api_key',
+                     'clublog_app_password', 'clublog_api_key']) {
+      if (f[k].trim()) body[k] = f[k].trim();
+    }
+    if (Object.keys(body).length === 0) { credOpen[op.callsign] = false; return; }
+    busy = true; error = null;
+    try {
+      await api.operatorUpdate(op.callsign, body);
+      credOpen[op.callsign] = false;
+      delete preflight[op.callsign];
+      await refresh();
+    } catch (e) { error = e.message; } finally { busy = false; }
+  }
+
+  async function clearCreds(op, service) {
+    if (busy || !confirm(t('opadmin.confirm_clear_creds',
+                           { service, call: op.callsign }))) return;
+    // Leerstring = Feld loeschen (PATCH-Semantik im Backend).
+    const body = service === 'QRZ'
+      ? { qrz_user: '', qrz_password: '', qrz_logbook_api_key: '' }
+      : { clublog_email: '', clublog_app_password: '', clublog_api_key: '' };
+    busy = true; error = null;
+    try {
+      await api.operatorUpdate(op.callsign, body);
+      credOpen[op.callsign] = false;
+      delete preflight[op.callsign];
+      await refresh();
+    } catch (e) { error = e.message; } finally { busy = false; }
+  }
+
   async function removeLogbook(cs, call) {
     if (busy || !confirm(t('opadmin.confirm_remove', { call }))) return;
     busy = true; error = null;
@@ -81,11 +140,62 @@
           <span class="chip {op.has_qrz_credentials ? 'on' : 'off'}">QRZ</span>
           <span class="chip {op.has_clublog_credentials ? 'on' : 'off'}">ClubLog</span>
         </span>
+        <button class="btn" onclick={() => toggleCreds(op)} disabled={busy}>
+          {t('opadmin.credentials')}
+        </button>
         <button class="btn" onclick={() => check(op.callsign)}
                 disabled={preflight[op.callsign]?.busy}>
           {preflight[op.callsign]?.busy ? '…' : t('opadmin.check')}
         </button>
       </div>
+
+      {#if credOpen[op.callsign]}
+        <div class="creds-form">
+          <div class="cf-title">
+            <span>QRZ.com</span>
+            {#if op.has_qrz_credentials}
+              <button class="btn sm del" onclick={() => clearCreds(op, 'QRZ')}
+                      disabled={busy}>{t('opadmin.clear_creds')}</button>
+            {/if}
+          </div>
+          <label><span>{t('opsw.qrz_user')}</span>
+            <input type="text" autocapitalize="characters"
+                   bind:value={credForm[op.callsign].qrz_user} /></label>
+          <label><span>{t('opsw.qrz_password')}</span>
+            <input type="password" autocomplete="new-password"
+                   placeholder={t('opadmin.unchanged')}
+                   bind:value={credForm[op.callsign].qrz_password} /></label>
+          <label><span>{t('opsw.qrz_api_key')}</span>
+            <input type="text" placeholder={op.has_qrz_credentials
+                     ? t('opadmin.unchanged') : t('opadmin.api_key_ph')}
+                   bind:value={credForm[op.callsign].qrz_logbook_api_key} /></label>
+
+          <div class="cf-title">
+            <span>ClubLog</span>
+            {#if op.has_clublog_credentials}
+              <button class="btn sm del" onclick={() => clearCreds(op, 'ClubLog')}
+                      disabled={busy}>{t('opadmin.clear_creds')}</button>
+            {/if}
+          </div>
+          <label><span>{t('opsw.clublog_email')}</span>
+            <input type="email" bind:value={credForm[op.callsign].clublog_email} /></label>
+          <label><span>{t('opsw.clublog_app_pw')}</span>
+            <input type="password" autocomplete="new-password"
+                   placeholder={t('opadmin.unchanged')}
+                   bind:value={credForm[op.callsign].clublog_app_password} /></label>
+          <label><span>{t('opsw.clublog_api_key')}</span>
+            <input type="text" placeholder={op.has_clublog_credentials
+                     ? t('opadmin.unchanged') : ''}
+                   bind:value={credForm[op.callsign].clublog_api_key} /></label>
+
+          <div class="cf-actions">
+            <button class="btn" onclick={() => credOpen[op.callsign] = false}
+                    disabled={busy}>{t('opadmin.cancel')}</button>
+            <button class="btn primary" onclick={() => saveCreds(op)}
+                    disabled={busy}>{t('opadmin.save')}</button>
+          </div>
+        </div>
+      {/if}
       {#if preflight[op.callsign] && !preflight[op.callsign].busy}
         {@const pf = preflight[op.callsign]}
         <div class="pf">
@@ -177,5 +287,23 @@
     border-radius: 4px; padding: 0.3rem 0.45rem; color: var(--text); font-size: 0.78rem;
   }
   .lb-add input:focus { outline: none; border-color: var(--accent); }
+  .creds-form {
+    margin: 0.5rem 0; padding: 0.5rem; border: 1px solid #1e293b;
+    border-radius: 6px; display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  .cf-title {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.66rem; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-top: 0.2rem;
+  }
+  .creds-form label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; }
+  .creds-form label span { flex: 0 0 9rem; color: #94a3b8; }
+  .creds-form input {
+    flex: 1; min-width: 6rem; background: rgba(15,23,42,0.6); border: 1px solid #334155;
+    border-radius: 4px; padding: 0.3rem 0.45rem; color: var(--text); font-size: 0.78rem;
+  }
+  .creds-form input:focus { outline: none; border-color: var(--accent); }
+  .cf-actions { display: flex; gap: 0.4rem; justify-content: flex-end; margin-top: 0.3rem; }
+  .btn.primary { background: rgba(56,189,248,0.25); border-color: var(--accent); }
   .error { color: var(--danger); font-size: 0.8rem; margin-bottom: 0.5rem; }
 </style>

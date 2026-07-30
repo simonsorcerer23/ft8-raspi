@@ -5,6 +5,8 @@ Endpoints:
 * GET  /api/operators/active         — aktueller Operator
 * POST /api/operators/select         — aktiven Operator wechseln (Hot-Switch)
 * POST /api/operators                — neues Operator-Profil anlegen
+* PATCH /api/operators/{callsign}    — Profil aendern (QRZ-/ClubLog-Zugang
+                                       nachtragen oder entfernen)
 * DELETE /api/operators/{callsign}   — Profil loeschen (nur wenn nicht aktiv
                                        und kein QSO-Verlauf in der DB)
 
@@ -18,7 +20,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
 from ...config import OperatorConfig
@@ -295,6 +297,81 @@ async def delete_operator(
     cfg.operators = [op for op in cfg.operators if op.callsign != target]
     await orch.persist_config()
     return DeleteOperatorResponse(ok=True, deleted=target)
+
+
+class UpdateOperatorRequest(BaseModel):
+    """Aenderungen an einem bestehenden Operator-Profil.
+
+    PATCH-Semantik: nur mitgesendete Felder werden angefasst, alles
+    andere bleibt unberuehrt. Ein leerer String loescht das Feld — so
+    laesst sich ein Zugang gezielt entfernen, ohne das ganze Profil
+    loeschen und neu anlegen zu muessen.
+
+    ``callsign`` fehlt hier bewusst: daran haengt die QSO-Zuordnung in
+    der DB (``Qso.user_callsign``), ein Rename wuerde die Historie vom
+    Profil abkoppeln.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    default_locator: str | None = None
+    default_power_w: int | None = Field(default=None, ge=1, le=750)
+    license_class: Literal["A", "E", "N"] | None = None
+    qrz_user: str | None = None
+    qrz_password: str | None = None
+    qrz_logbook_api_key: str | None = None
+    clublog_email: str | None = None
+    clublog_app_password: str | None = None
+    clublog_api_key: str | None = None
+
+
+# Felder, die auf None zurueckgesetzt werden duerfen. default_power_w und
+# license_class haben in OperatorConfig keinen None-Zustand — ein
+# explizites null darf sie deshalb nur nicht anfassen, nicht loeschen.
+_NULLABLE_OPERATOR_FIELDS = frozenset({
+    "default_locator", "qrz_user", "qrz_password", "qrz_logbook_api_key",
+    "clublog_email", "clublog_app_password", "clublog_api_key",
+})
+
+
+@router.patch("/operators/{callsign}", response_model=OperatorOut)
+async def update_operator(
+    callsign: str,
+    payload: UpdateOperatorRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    """Bestehendes Operator-Profil aendern (v0.67.0).
+
+    Vorher konnten QRZ-/ClubLog-Zugangsdaten nur beim *Anlegen* gesetzt
+    werden — wer sie nachtragen oder entfernen wollte, musste das Profil
+    loeschen, was an der QSO-Historie scheitert. Betrifft den aktiven
+    Operator, werden die globalen Integrations sofort neu aufgebaut,
+    damit der Upload nicht bis zum Neustart aufs alte Konto laeuft.
+    """
+    op = _resolve_person(orch, callsign)
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="keine Felder zum Aendern")
+
+    patched = op.model_copy(deep=True)
+    for name, value in changes.items():
+        if isinstance(value, str):
+            value = value.strip() or None
+        if value is None and name not in _NULLABLE_OPERATOR_FIELDS:
+            continue  # explizites null auf einem Pflichtfeld = "nicht anfassen"
+        setattr(patched, name, value)
+    try:
+        # Ueber das Modell revalidieren, damit z.B. das Locator-Regex
+        # greift — setattr allein validiert bei Pydantic v2 nicht.
+        validated = OperatorConfig.model_validate(patched.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"invalid operator: {exc}")
+
+    idx = orch.config.operators.index(op)
+    orch.config.operators[idx] = validated
+    await orch.persist_config()
+    if validated.callsign == (orch.config.active_callsign or ""):
+        orch.reload_active_operator_integrations()
+    return _to_out(validated, orch.config.active_callsign or "")
 
 
 # ---------------------------------------------------------------------------
