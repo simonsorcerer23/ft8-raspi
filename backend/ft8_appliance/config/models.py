@@ -257,6 +257,10 @@ class OperatingConfig(BaseModel):
     # IDLE, mit auto_answer=True und PTT aus agieren; diese Felder sind
     # reine Policy-Grenzen. Default-Band bleibt absichtlich 15m, weil
     # Sebastians aktueller Aufbau hardwareseitig darauf begrenzt ist.
+    # 2026-09-06: Betriebsart/Filter automatisch zuruecksetzen, wenn die
+    # Tamper-Erkennung fremde Werte sieht (Dad am Rig: USB statt PKTUSB,
+    # 350-Hz-Filter). Nur Mode + Filter + Dial, nie die Leistung.
+    rig_auto_restore: bool = False
     autopilot_enabled: bool = False
     autopilot_allowed_bands: list[str] = Field(default_factory=lambda: ["15m"])
     autopilot_allowed_modes: list[Literal["FT8", "FT4"]] = Field(

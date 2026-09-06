@@ -111,6 +111,7 @@ export const api = {
   reboot:       () => request('/control/reboot',     { method: 'POST' }),
   setHuntFilter:(opts) => request('/control/hunt-filter', { method: 'POST', body: opts }),
   resetLock:    () => request('/control/reset-lock', { method: 'POST' }),
+  restoreRig:   () => request('/control/restore-rig', { method: 'POST' }),
   setAutoAnswer:(enabled) => request('/control/auto-answer', {
                               method: 'POST', body: { enabled }
                             }),

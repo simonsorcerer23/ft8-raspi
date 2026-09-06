@@ -195,6 +195,13 @@ async def reboot(orch: Orchestrator = Depends(get_orchestrator)) -> ControlRespo
     return ControlResponse(ok=True, state=orch.status().state, detail="reboot")
 
 
+@router.post("/restore-rig", response_model=ControlResponse)
+async def restore_rig(orch: Orchestrator = Depends(get_orchestrator)) -> ControlResponse:
+    """2026-09-06: Rig auf FT8-Betrieb zuruecksetzen (PKTUSB, 2700 Hz, Dial)."""
+    r = await orch.handle_restore_rig_settings("button")
+    return ControlResponse(ok=bool(r.get("ok")), state=orch.status().state, detail=r.get("detail"))
+
+
 @router.post("/reset-lock", response_model=ControlResponse)
 async def reset_lock(orch: Orchestrator = Depends(get_orchestrator)) -> ControlResponse:
     await orch.handle_reset_lock()

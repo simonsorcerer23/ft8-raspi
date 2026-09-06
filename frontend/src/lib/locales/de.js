@@ -39,6 +39,7 @@ export const de = {
   'control.tx_locked': 'TX gesperrt:',
   'control.unknown': 'unbekannt',
   'control.unlock': 'Sperre lösen',
+  'control.restore_rig': 'Rig zurücksetzen: PKTUSB, 2700 Hz, Dial',
   'control.cq': 'CQ',
   'control.cq_stop': 'STOP CQ',
   'control.answer': 'Antworten',

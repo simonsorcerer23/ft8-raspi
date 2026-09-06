@@ -586,6 +586,7 @@ class Orchestrator:
     # busy", danach PTT aus — mitten im Burst an OD5ZZ).
     _in_late_ingest: bool = field(default=False, init=False)
     _tx_burst_active: bool = field(default=False, init=False)
+    _rig_restore_last_at: float = field(default=0.0, init=False)
     _consecutive_late_tx: int = field(default=0, init=False)
     _last_tx_late_alert_at: float = field(default=0.0, init=False)
     # Burst-Peak-basiertes ALC-Adjustment: Samples werden waehrend
@@ -2429,6 +2430,30 @@ class Orchestrator:
             self._last_rig.swr = None
         self._swr_runaway_active = False
         self._swr_warn_since = None
+
+    async def handle_restore_rig_settings(self, reason: str = "manual") -> dict:
+        """2026-09-06: Rig auf FT8-Betrieb zuruecksetzen — PKTUSB, 2700 Hz,
+        konfigurierter Dial des aktuellen Bands. Leistung bleibt, wie sie
+        ist (da will vielleicht wirklich jemand am Rig arbeiten). Waehrend
+        eines eigenen Bursts passiert nichts."""
+        if self._tx_burst_active:
+            return {"ok": False, "detail": "burst"}
+        self._rig_restore_last_at = time.monotonic()
+        await self.handle_set_mode("PKTUSB", 2700)
+        await self._ensure_dial_matches_mode(f"restore:{reason}")
+        self._last_mode_alert = None
+        self._last_bandwidth_alert_hz = None
+        log.info("Rig-Restore (%s): PKTUSB, 2700 Hz, Dial", reason)
+        return {"ok": True, "detail": "PKTUSB 2700 Hz"}
+
+    def _schedule_rig_restore(self, reason: str) -> None:
+        """Auto-Restore aus der Tamper-Erkennung, hoechstens alle 15 s."""
+        if not getattr(self.config.operating, "rig_auto_restore", False):
+            return
+        if time.monotonic() - self._rig_restore_last_at < 15.0:
+            return
+        self._rig_restore_last_at = time.monotonic()
+        self._spawn(self.handle_restore_rig_settings(reason), name="rig-restore")
 
     async def handle_set_mode(self, mode: str, bandwidth_hz: int = 2700) -> None:
         """Wrap rig.set_mode + Echo-Registration fuer Tamper-Detection."""
@@ -5040,6 +5065,7 @@ class Orchestrator:
                                 self._notify_mode_tamper(rig_mode, expected_mode),
                                 name="mode-tamper-push",
                             )
+                            self._schedule_rig_restore("mode-tamper")
                 else:
                     self._last_mode_alert = None
 
@@ -5060,6 +5086,7 @@ class Orchestrator:
                     if self._last_bandwidth_alert_hz != rig_bw:
                         log.info("Filter-Tamper: bandwidth=%d Hz (Schmal-Filter?) — EXTERN",
                                  rig_bw)
+                        self._schedule_rig_restore("filter-tamper")
                         self._last_bandwidth_alert_hz = rig_bw
                         asyncio.create_task(
                             self._notify_bandwidth_tamper(rig_bw, 2700),
