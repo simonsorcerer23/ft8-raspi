@@ -23,6 +23,7 @@
 #include "common/monitor.h"
 #include "ft8/ldpc.h"
 #include "ft8/crc.h"
+#include "ft8/text.h"
 #include "ft8/constants.h"
 
 /* ===================================================================
@@ -127,9 +128,28 @@ static ftx_callsign_hash_interface_t s_hash_if_readonly = {
 
 /* Optional API: aus Python pre-populate (z.B. aus DB worked-Calls).
  * Liefert die aktuelle Anzahl belegter Slots zurueck. */
+/* 2026-09-06: n22 wie ft8_lib save_callsign (message.c) — die 22-Bit-
+ * Rufzeichen-Hash aus WSJT-X. Vorher kamen alle Python-Eintraege mit
+ * n22=0 an, und shim_save_hash "aktualisierte" damit immer denselben
+ * einen Slot: Worked-Calls, Heard-12h und PSK-Empfaenger kollabierten
+ * auf EINEN Eintrag. Mit echtem Hash loest der Decoder ausserdem
+ * <...>-Hash-Calls dieser Stationen auf. */
+static uint32_t _call_n22(const char* callsign) {
+    uint64_t n58 = 0; int i = 0;
+    while (callsign[i] != '\0' && i < 11) {
+        int j = nchar(callsign[i], FT8_CHAR_TABLE_ALPHANUM_SPACE_SLASH);
+        if (j < 0) return 0;
+        n58 = (38 * n58) + (uint64_t)j; ++i;
+    }
+    while (i < 11) { n58 = 38 * n58; ++i; }
+    return (uint32_t)(((47055833459ull * n58) >> (64 - 22)) & 0x3FFFFFul);
+}
+
 int ft8_shim_hash_table_save(const char* callsign, uint32_t n22)
 {
     if (callsign == NULL || callsign[0] == '\0') return -1;
+    if (n22 == 0) n22 = _call_n22(callsign);
+    if (n22 == 0) return -1;   /* ungueltige Zeichen */
     shim_save_hash(callsign, n22);
     int count = 0;
     for (int i = 0; i < HASH_TABLE_SIZE; ++i) {

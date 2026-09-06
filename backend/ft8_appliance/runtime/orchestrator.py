@@ -203,8 +203,12 @@ def _safe_get_pass_stats() -> dict | None:
     """v0.8.0 Build C: best-effort pass-stats fetch. None bei Dev-
     Maschine ohne ft8_lib oder bei build-mismatch."""
     try:
-        from ..decode.ft8_native import get_pass_stats
-        return get_pass_stats()
+        from ..decode.ft8_native import get_pass_stats, lib
+        stats = get_pass_stats()
+        # 2026-09-06: Belegung der Known-Call-Tabelle (Gate fuer Hint/OSD).
+        # Vorher kollabierten alle Python-Eintraege auf einen Slot (n22=0).
+        stats["hint_table_calls"] = int(lib.ft8_shim_hash_table_count())
+        return stats
     except Exception:
         return None
 
