@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Tear down AP-fallback and hand wlan0 back to NetworkManager.
+# Leave access-point mode: hostapd + dnsmasq down, captive NAT rule gone,
+# wlan0 back to NetworkManager (which then reconnects to a known WLAN).
+set -uo pipefail
 
-set -euo pipefail
+IFACE=wlan0
 
-systemctl stop hostapd@ft8-ap.service || true
+systemctl stop ft8-hostapd.service || true
 systemctl stop dnsmasq || true
-
 nft delete table inet ft8_captive 2>/dev/null || true
-
-ip addr flush dev wlan0
-ip link set wlan0 down
-nmcli device set wlan0 managed yes || true
-
-echo "AP-fallback stopped; wlan0 returned to NetworkManager"
+ip addr flush dev "${IFACE}" || true
+nmcli device set "${IFACE}" managed yes || true
+echo "AP-fallback stopped, ${IFACE} back to NetworkManager"

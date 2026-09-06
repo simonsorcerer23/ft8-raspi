@@ -150,6 +150,8 @@ async def activate_wifi(name: str) -> dict:
 class APFallbackOut(BaseModel):
     ssid: str
     psk: str
+    # Audit 2026-09-06 A4: laeuft der Hotspot gerade? (ft8-ap-fallback.service)
+    active: bool = False
 
 
 class APFallbackRequest(BaseModel):
@@ -158,16 +160,50 @@ class APFallbackRequest(BaseModel):
 
 
 @router.get("/network/ap-fallback", response_model=APFallbackOut)
-async def get_ap_fallback() -> APFallbackOut:
+async def get_ap_fallback(orch: Orchestrator = Depends(get_orchestrator)) -> APFallbackOut:
     cfg = get_config()
+    try:
+        active = await orch.ap_fallback_is_active()
+    except Exception:
+        active = False  # Dev-Rechner ohne systemctl
     if cfg.network is None or cfg.network.ap_fallback is None:
         # Fallback-Defaults wenn Config-Block fehlt — User kann das
         # dann im UI auf gewünschte Werte überschreiben.
-        return APFallbackOut(ssid="ft8-hochgericht", psk="ft8setup1")
+        return APFallbackOut(ssid="ft8-hochgericht", psk="ft8setup1", active=active)
     return APFallbackOut(
         ssid=cfg.network.ap_fallback.ssid,
         psk=cfg.network.ap_fallback.psk,
+        active=active,
     )
+
+
+class APFallbackToggleOut(BaseModel):
+    ok: bool
+    active: bool
+
+
+@router.post("/network/ap-fallback/start", response_model=APFallbackToggleOut)
+async def start_ap_fallback(orch: Orchestrator = Depends(get_orchestrator)) -> APFallbackToggleOut:
+    """Hotspot von Hand starten (Audit 2026-09-06 A4).
+
+    Achtung fuer den Aufrufer: wlan0 wechselt in den AP-Modus, eine
+    bestehende WLAN-Client-Verbindung faellt damit weg. Kabel und
+    Tailscale-ueber-Kabel bleiben.
+    """
+    try:
+        await orch.set_ap_fallback(True)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AP-Fallback start failed: {exc}")
+    return APFallbackToggleOut(ok=True, active=await orch.ap_fallback_is_active())
+
+
+@router.post("/network/ap-fallback/stop", response_model=APFallbackToggleOut)
+async def stop_ap_fallback(orch: Orchestrator = Depends(get_orchestrator)) -> APFallbackToggleOut:
+    try:
+        await orch.set_ap_fallback(False)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"AP-Fallback stop failed: {exc}")
+    return APFallbackToggleOut(ok=True, active=await orch.ap_fallback_is_active())
 
 
 @router.put("/network/ap-fallback", response_model=APFallbackOut)

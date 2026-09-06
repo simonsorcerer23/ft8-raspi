@@ -76,7 +76,7 @@ fi
 
 # ---------------------------------------------------------------------------
 section SERVICES
-for s in ft8-controller ft8-rigctld gpsd chrony NetworkManager hostapd; do
+for s in ft8-controller ft8-rigctld gpsd chrony NetworkManager ft8-hostapd; do
     state="$(systemctl is-active "$s" 2>/dev/null || echo unknown)"
     enabled="$(systemctl is-enabled "$s" 2>/dev/null || echo unknown)"
     printf "%-20s state=%-10s enabled=%s\n" "$s" "$state" "$enabled"

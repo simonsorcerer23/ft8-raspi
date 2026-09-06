@@ -224,6 +224,7 @@ chown -R "${APP_USER}:${APP_GROUP}" "${RENDER_DIR}"
 install -m 644 "${RENDER_DIR}/systemd/ft8-controller.service"    /etc/systemd/system/
 install -m 644 "${RENDER_DIR}/systemd/ft8-rigctld.service"       /etc/systemd/system/
 install -m 644 "${RENDER_DIR}/systemd/ft8-ap-fallback.service"   /etc/systemd/system/
+install -m 644 "${APP_DIR}/deploy/systemd/ft8-hostapd.service"    /etc/systemd/system/
 install -m 644 "${RENDER_DIR}/systemd/ft8-self-update.service"   /etc/systemd/system/
 install -m 644 "${RENDER_DIR}/systemd/ft8-self-update.timer"     /etc/systemd/system/
 

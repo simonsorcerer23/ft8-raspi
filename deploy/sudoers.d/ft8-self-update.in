@@ -13,7 +13,13 @@
     /bin/systemctl start ft8-self-update, \
     /bin/systemctl start ft8-self-update.service, \
     /bin/systemctl start --no-block ft8-self-update.service, \
-    /bin/systemctl daemon-reload
+    /bin/systemctl daemon-reload, \
+    /bin/systemctl start ft8-ap-fallback, \
+    /bin/systemctl start ft8-ap-fallback.service, \
+    /bin/systemctl stop ft8-ap-fallback, \
+    /bin/systemctl stop ft8-ap-fallback.service, \
+    /bin/systemctl restart ft8-ap-fallback, \
+    /bin/systemctl restart ft8-ap-fallback.service
 
 @APP_USER@ ALL=(root) NOPASSWD: \
     /sbin/shutdown -h +0 *, \
@@ -25,6 +31,7 @@
     /usr/bin/install -m 644 @APP_DIR@/.deploy-rendered/systemd/ft8-self-update.timer /etc/systemd/system/ft8-self-update.timer, \
     /usr/bin/install -m 644 @APP_DIR@/.deploy-rendered/systemd/ft8-ap-fallback.service /etc/systemd/system/ft8-ap-fallback.service, \
     /usr/bin/install -m 644 @APP_DIR@/.deploy-rendered/systemd/ft8-rigctld.service /etc/systemd/system/ft8-rigctld.service, \
+    /usr/bin/install -m 644 @APP_DIR@/deploy/systemd/ft8-hostapd.service /etc/systemd/system/ft8-hostapd.service, \
     /usr/bin/install -m 440 @APP_DIR@/.deploy-rendered/sudoers.d/ft8-self-update /etc/sudoers.d/ft8-self-update
 
 @APP_USER@ ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f @APP_DIR@/.deploy-rendered/sudoers.d/ft8-self-update, /usr/sbin/visudo -c -f /etc/sudoers.d/ft8-self-update

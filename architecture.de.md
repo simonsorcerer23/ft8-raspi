@@ -173,7 +173,7 @@ systemd-Units:
 | `rigctld.service` | Hamlib Daemon |
 | `gpsd.service` | GPS Daemon |
 | `chrony.service` | Zeit |
-| `hostapd@ap0.service` | AP-Fallback (auf Trigger) |
+| `ft8-ap-fallback.service` + `ft8-hostapd.service` | AP-Fallback — vom Watchdog des Controllers nach `network.fallback_delay_s` ohne Upstream gestartet, oder von Hand auf der WLAN-Seite |
 | `NetworkManager.service` | WLAN-Roaming |
 | `avahi-daemon.service` | mDNS |
 | `ft8-self-update.timer/.service` | zieht alle 10 min getaggte Releases von GitHub, Health-Check + Auto-Rollback |

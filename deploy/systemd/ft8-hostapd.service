@@ -1,0 +1,17 @@
+[Unit]
+Description=FT8 Appliance hostapd (AP-Fallback WLAN)
+Documentation=file:///home/sebastian/ft8-appliance/deploy/hostapd/ap.conf
+# Eigene Unit statt Debians hostapd@.service (Audit 2026-09-06 A4): das
+# Template bindet die Instanz per BindsTo=sys-subsystem-net-devices-%i.device
+# an ein Netzgeraet MIT DEM INSTANZNAMEN. Unsere Instanz hiess "ft8-ap", ein
+# Interface dieses Namens gibt es nicht — systemd startete hostapd und stoppte
+# ihn 5 ms spaeter wieder ("Unnecessary job was removed for
+# sys-subsystem-net-devices-ft8-ap.device"). Der AP kam nie hoch.
+After=NetworkManager.service
+# Nur ad hoc ueber ft8-ap-fallback.service, nie beim Boot.
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/hostapd /etc/hostapd/ft8-ap.conf
+Restart=on-failure
+RestartSec=3

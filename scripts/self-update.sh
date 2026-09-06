@@ -303,6 +303,7 @@ install_and_restart() {
             sync_system_file ".deploy-rendered/systemd/ft8-self-update.timer"   "/etc/systemd/system/ft8-self-update.timer"     644 || true
             sync_system_file ".deploy-rendered/systemd/ft8-ap-fallback.service" "/etc/systemd/system/ft8-ap-fallback.service"   644 || true
             sync_system_file ".deploy-rendered/systemd/ft8-rigctld.service"     "/etc/systemd/system/ft8-rigctld.service"       644 || true
+            sync_system_file "deploy/systemd/ft8-hostapd.service"               "/etc/systemd/system/ft8-hostapd.service"       644 || true
         else
             log "  ⚠ rendered system-file sync skipped"
         fi
@@ -313,6 +314,7 @@ install_and_restart() {
         sync_system_file "deploy/systemd/ft8-self-update.timer"   "/etc/systemd/system/ft8-self-update.timer"     644 || true
         sync_system_file "deploy/systemd/ft8-ap-fallback.service" "/etc/systemd/system/ft8-ap-fallback.service"   644 || true
         sync_system_file "deploy/systemd/ft8-rigctld.service"     "/etc/systemd/system/ft8-rigctld.service"       644 || true
+        sync_system_file "deploy/systemd/ft8-hostapd.service"     "/etc/systemd/system/ft8-hostapd.service"       644 || true
     fi
     if [ "${DAEMON_RELOAD_NEEDED}" = "1" ]; then
         sudo -n /bin/systemctl daemon-reload 2>/dev/null \

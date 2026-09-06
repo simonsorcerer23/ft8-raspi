@@ -830,6 +830,10 @@ class Orchestrator:
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
         # v0.22.0 — GPS-based DX-country detection loop
         self._spawn(self._gps_country_detect_loop(), name="gps-country-detect")
+        # Audit 2026-09-06 A4: der AP-Fallback wurde von NICHTS ausgeloest —
+        # die Unit sagte "started by ft8-controller", der Controller kannte
+        # sie nicht. Sebastian stand am 06.09. vor dem Pi ohne WLAN und ohne AP.
+        self._spawn(self._ap_fallback_loop(), name="ap-fallback")
         # v0.10.0: PSK-Reciprocity-Refresh — alle paar Minuten fetchen
         # wer uns recently gehört hat. Nur wenn explizit aktiviert (Default
         # aus) UND PSK-Client überhaupt enabled ist (kein Punkt zu fetchen
@@ -6498,6 +6502,96 @@ class Orchestrator:
                 ))
             except Exception:
                 pass
+
+    # ------------------------------------------------------------------ AP-Fallback-Watchdog
+    _AP_FALLBACK_POLL_S: typing.ClassVar[float] = 15.0
+
+    async def _has_upstream_connection(self) -> bool:
+        """Irgendein Ethernet- oder WLAN-Device in NetworkManager verbunden?
+
+        tun (Tailscale) und lo zaehlen nicht — die haengen an einem Upstream,
+        sind aber keiner. Ein wlan0 im AP-Modus ist "unmanaged" und damit
+        ebenfalls nicht verbunden; den Fall deckt ap_fallback_is_active().
+        """
+        from ..util import network as net
+        rc, out, err = await net._run(
+            ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"],
+        )
+        if rc != 0:
+            raise RuntimeError(f"nmcli device status rc={rc}: {err.strip()}")
+        for line in out.splitlines():
+            parts = line.split(":")
+            if len(parts) < 3:
+                continue
+            _dev, typ, state = parts[0], parts[1], parts[2]
+            if typ in ("ethernet", "wifi") and state.startswith("connected"):
+                return True
+        return False
+
+    async def ap_fallback_is_active(self) -> bool:
+        from ..util import network as net
+        _rc, out, _err = await net._run(
+            ["systemctl", "is-active", "ft8-ap-fallback.service"],
+        )
+        return out.strip() == "active"
+
+    async def set_ap_fallback(self, active: bool) -> None:
+        """AP-Fallback starten/stoppen (sudoers erlaubt genau diese Units)."""
+        from ..util import network as net
+        action = "start" if active else "stop"
+        rc, out, err = await net._run(
+            ["systemctl", action, "ft8-ap-fallback.service"], sudo=True, timeout=45.0,
+        )
+        if rc != 0:
+            raise RuntimeError((err or out).strip() or f"systemctl {action} rc={rc}")
+        log.warning("AP-Fallback %s", "gestartet" if active else "gestoppt")
+
+    async def _ap_fallback_loop(self) -> None:
+        """Ohne Upstream fuer network.fallback_delay_s den eigenen AP oeffnen.
+
+        Die Unit ft8-ap-fallback.service behauptete seit jeher "Started by
+        ft8-controller when no upstream WiFi has been reachable" — im Code
+        gab es diesen Aufruf nie (Audit 2026-09-06 A4). Der AP kommt nur
+        hoch, wenn jemand ihn startet; das ist jetzt dieser Loop.
+
+        Verlassen wird der AP-Modus NICHT automatisch: im AP-Modus kann
+        NetworkManager nicht nach bekannten WLANs suchen (wlan0 ist
+        unmanaged), und ein Kabel, das kommt und geht, soll den Hotspot
+        nicht flattern lassen. Stop per UI/API oder Neustart.
+        """
+        if self.config.demo_mode:
+            return
+        import shutil
+        if shutil.which("nmcli") is None or shutil.which("systemctl") is None:
+            log.info("ap-fallback watchdog: nmcli/systemctl fehlen (Dev-Rechner) — aus")
+            return
+        while True:
+            try:
+                await self._ap_fallback_tick()
+            except Exception as exc:
+                log.warning("ap-fallback watchdog hiccup: %s", exc)
+            await asyncio.sleep(self._AP_FALLBACK_POLL_S)
+
+    _ap_fallback_offline_since: float | None = field(default=None, init=False)
+
+    async def _ap_fallback_tick(self) -> None:
+        now = time.monotonic()
+        if await self.ap_fallback_is_active() or await self._has_upstream_connection():
+            self._ap_fallback_offline_since = None
+            return
+        delay = float(self.config.network.fallback_delay_s)
+        if self._ap_fallback_offline_since is None:
+            self._ap_fallback_offline_since = now
+            log.info("ap-fallback watchdog: kein Upstream — AP in %.0f s, falls das so bleibt", delay)
+            return
+        if now - self._ap_fallback_offline_since < delay:
+            return
+        log.warning(
+            "ap-fallback watchdog: seit %.0f s weder WLAN noch Kabel — starte AP-Fallback",
+            now - self._ap_fallback_offline_since,
+        )
+        await self.set_ap_fallback(True)
+        self._ap_fallback_offline_since = None
 
     # ------------------------------------------------------------------ v0.38.0 Wartung
     _TELEMETRY_RETENTION_DAYS: typing.ClassVar[int] = 90

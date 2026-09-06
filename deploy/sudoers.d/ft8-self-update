@@ -29,7 +29,13 @@ sebastian ALL=(root) NOPASSWD: \
     /bin/systemctl start ft8-self-update, \
     /bin/systemctl start ft8-self-update.service, \
     /bin/systemctl start --no-block ft8-self-update.service, \
-    /bin/systemctl daemon-reload
+    /bin/systemctl daemon-reload, \
+    /bin/systemctl start ft8-ap-fallback, \
+    /bin/systemctl start ft8-ap-fallback.service, \
+    /bin/systemctl stop ft8-ap-fallback, \
+    /bin/systemctl stop ft8-ap-fallback.service, \
+    /bin/systemctl restart ft8-ap-fallback, \
+    /bin/systemctl restart ft8-ap-fallback.service
 
 # --- Power: shutdown + reboot via UI-Buttons (Sebastian 2026-05-26 v0.8.2) ---
 # handle_shutdown ruft `sudo /sbin/shutdown -h +0 ...`
@@ -49,6 +55,7 @@ sebastian ALL=(root) NOPASSWD: \
     /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-self-update.timer /etc/systemd/system/ft8-self-update.timer, \
     /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-ap-fallback.service /etc/systemd/system/ft8-ap-fallback.service, \
     /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-rigctld.service /etc/systemd/system/ft8-rigctld.service, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-hostapd.service /etc/systemd/system/ft8-hostapd.service, \
     /usr/bin/install -m 440 /home/sebastian/ft8-appliance/deploy/sudoers.d/ft8-self-update /etc/sudoers.d/ft8-self-update
 
 # --- visudo: pre-install-Validierung des neuen sudoers-Files ---

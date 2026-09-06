@@ -21,9 +21,22 @@
   // Namen. User verbindet sich per Handy, kommt aufs Captive-Portal,
   // konfiguriert dort neu. Lebt hier statt im Config-Panel weil's
   // semantisch zum Netzwerk-Setup gehört.
-  let apFb = $state({ ssid: '', psk: '' });
+  let apFb = $state({ ssid: '', psk: '', active: false });
   let apSaving = $state(false);
   let apSavedFlash = $state(false);
+  let apToggling = $state(false);
+
+  // Hotspot von Hand starten/stoppen (Audit 2026-09-06 A4). Der Watchdog im
+  // Backend startet ihn nach fallback_delay_s ohne Upstream automatisch;
+  // hier ist der manuelle Weg, z.B. um vor Ort ohne bekanntes WLAN reinzukommen.
+  async function toggleAp() {
+    apToggling = true; error = null;
+    try {
+      const r = apFb.active ? await api.apFallbackStop() : await api.apFallbackStart();
+      apFb.active = r.active;
+    } catch (e) { error = e.message; }
+    finally { apToggling = false; }
+  }
 
   async function refresh() {
     loading = true; error = null;
@@ -224,6 +237,12 @@
     <button class="primary" onclick={saveApFallback} disabled={apSaving}>
       {apSaving ? t('common.saving') : (apSavedFlash ? t('wifi.saved') : t('wifi.save_ap'))}
     </button>
+    <div class="ap-state">
+      <span class="badge {apFb.active ? 'ok' : 'muted'}">{apFb.active ? t('wifi.ap_on') : t('wifi.ap_off')}</span>
+      <button onclick={toggleAp} disabled={apToggling}>
+        {apToggling ? '…' : (apFb.active ? t('wifi.ap_stop') : t('wifi.ap_start'))}
+      </button>
+    </div>
   </section>
 
   <!-- Scan results -->
@@ -258,6 +277,8 @@
 </div>
 
 <style>
+  .ap-state { display: flex; align-items: center; gap: .6rem; margin-top: .6rem; }
+
   .wrap { background: var(--panel); border-radius: 8px; padding: 0.8rem; }
   header { display: flex; justify-content: space-between; align-items: center;
            margin-bottom: 0.8rem; }

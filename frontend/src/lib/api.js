@@ -190,6 +190,8 @@ export const api = {
                                        { method: 'POST' }),
   apFallbackGet:   ()       => request('/network/ap-fallback'),
   apFallbackSet:   (body)   => request('/network/ap-fallback', { method: 'PUT', body }),
+  apFallbackStart: ()       => request('/network/ap-fallback/start', { method: 'POST' }),
+  apFallbackStop:  ()       => request('/network/ap-fallback/stop', { method: 'POST' }),
   switchBand:   (band)   => request('/control/band', { method: 'POST', body: { band } }),
   pileUp:       ()       => request('/pile-up'),
   activeHours:  ()       => request('/active-hours'),
