@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.67.2 — 2026-09-06
+- fix: AP-Aktiv-Check fragt hostapd statt der oneshot-Unit, Stop-Skript idempotent
+- fix: Captive-Portal geht auf dem Handy auf, SSID heisst ft8-hotspot, AP-Stop verbindet WLAN wieder
+- docs: GPS→chrony-Pfad am 06.09. gemessen — funktioniert mit Fix (±200 ms), NTP bevorzugt
+
 ## v0.67.1 — 2026-09-06
 - fix: manueller CQ-/Reply-Klick sendet nicht mehr mitten im Slot (B4)
 - fix: Self-Update setzt das generierte _ft8_native.c vor dem Checkout zurueck
