@@ -59,6 +59,9 @@ class DecodedMsg:
     # v0.3.4. Hunting-Picker und Worked-Set ignorieren is_freetext-
     # Decodes damit Junk-Tokens nicht als Calls behandelt werden.
     is_freetext: bool = False
+    # True, wenn der Decode aus der zweiten (langsamen) Decoder-Stufe kam
+    # und erst nach der TX-Entscheidung des Slots eintraf (2026-09-06).
+    late: bool = False
 
 
 @dataclass(slots=True)

@@ -105,6 +105,8 @@ class StatusResponse(BaseModel):
     # letzte Burst begann, + Mittel der letzten 10.
     tx_start_offset_s: float | None = None
     tx_start_offset_avg_s: float | None = None
+    # Zweistufiger Decoder: {last, total, duration_s, skipped} von Stufe 2.
+    decoder_late_pass: dict | None = None
 
 
 @router.get("/status", response_model=StatusResponse)
@@ -181,6 +183,7 @@ async def get_status(
         actual_decoder_mode=getattr(s, "actual_decoder_mode", "standard"),
         decoder_late_slot_count=getattr(s, "decoder_late_slot_count", 0),
         decoder_pass_stats=getattr(s, "decoder_pass_stats", None),
+        decoder_late_pass=getattr(s, "decoder_late_pass", None),
         tx_start_offset_s=getattr(s, "tx_start_offset_s", None),
         tx_start_offset_avg_s=getattr(s, "tx_start_offset_avg_s", None),
     )

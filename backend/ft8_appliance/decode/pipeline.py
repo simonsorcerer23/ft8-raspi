@@ -18,7 +18,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -187,6 +188,25 @@ class DecodePipelineMetrics:
     max_decode_duration_s: float = 0.0
     recent_durations_s: list[float] = field(default_factory=list)
     late_slot_count: int = 0  # mehr als 80% der Slot-Laenge
+    # Zweistufiger Decoder (2026-09-06): Stufe 2 laeuft nach der
+    # TX-Entscheidung. Was sie zusaetzlich fand, wie lange sie brauchte,
+    # und wie oft sie uebersprungen wurde, weil die vorige noch lief.
+    late_pass_last_count: int = 0
+    late_decodes_total: int = 0
+    late_pass_last_duration_s: float = 0.0
+    late_pass_skipped: int = 0
+
+    def note_late_pass(self, count: int, duration_s: float) -> None:
+        self.late_pass_last_count = count
+        self.late_decodes_total += count
+        self.late_pass_last_duration_s = duration_s
+        # Die adaptive LDPC-Steuerung schaut auf recent_durations_s. Der
+        # teure Pass gehoert da hinein, sonst hielte sie den Slot fuer
+        # fast leer und drehte die Iterationen hoch.
+        if self.recent_durations_s and duration_s > self.recent_durations_s[-1]:
+            self.recent_durations_s[-1] = duration_s
+        if duration_s > self.max_decode_duration_s:
+            self.max_decode_duration_s = duration_s
 
     def record_slot(self, count: int, duration_s: float = 0.0) -> None:
         """Updater used by the pipeline after each decode pass."""
@@ -241,7 +261,7 @@ class DecodePipeline:
     # analysiert. apply_notches strippt erkannte QRM-Linien bevor
     # decode_slot drueber laeuft. None = Auto-Notch deaktiviert
     # (Default ON in production.py).
-    notch_detector: "NotchDetector | None" = None  # noqa: F821 — fwd ref
+    notch_detector: NotchDetector | None = None  # noqa: F821 — fwd ref
     # v0.8.0 Build B: DT-Auto-Kalibrierung. Wenn der Orchestrator-Watchdog
     # einen systemic Audio-Offset misst (Median-DT >0.3s ueber 100+ Decodes),
     # wird der Wert hier gesetzt. Pipeline shiftet slot_start_posix beim
@@ -258,6 +278,22 @@ class DecodePipeline:
     # nutzt immer Standard-Decoder (FT4-Decoder hat keine Deep-Variante).
     decoder_mode: str = "standard"  # "standard" | "deep" | "multi"
     _consecutive_late_slots: int = 0  # CPU-adaptive Fallback-Trigger
+    # Zweistufiger Decoder (2026-09-06). Gemessen am Pi 4B: der Sendestart
+    # lag im extreme-Modus 2,8 s nach der Slot-Grenze, weil der ganze
+    # Decoder VOR der TX-Entscheidung laeuft — ausserhalb des ±2,5-s-
+    # Fensters der Partner-Decoder. Der Standard-Pass allein braucht 0,25 s
+    # und liefert ~94 % der Decodes (Messung Mai). Also: Stufe 1 (standard)
+    # entscheidet ueber TX, Stufe 2 (der Rest des gewaehlten Modus) laeuft
+    # in einem eigenen Thread nebenher und reicht nach, was sie zusaetzlich
+    # findet — an late_pass_sink (Orchestrator: UI, DB, PSK, State-Machine).
+    two_stage: bool = True
+    late_pass_sink: Callable[[list[DecodedMsg], SlotTick], Awaitable[None]] | None = None
+    _late_task: asyncio.Task | None = field(default=None, init=False, repr=False)
+    _late_overruns: int = field(default=0, init=False, repr=False)
+    _late_executor: ThreadPoolExecutor = field(
+        default_factory=lambda: ThreadPoolExecutor(max_workers=1, thread_name_prefix="ft8-late"),
+        init=False, repr=False,
+    )
     # USB-Audio kommt in 1024-sample-periods (~85 ms). Wenn der Slot
     # genau zum Wallclock-Boundary endet, ist die letzte Period oft noch
     # nicht in den SlotBuffer geflossen → "short by X samples"-Logs +
@@ -347,6 +383,17 @@ class DecodePipeline:
             except Exception:
                 pass
 
+        # Zweistufig: Stufe 1 ist immer der schnelle Standard-Pass, der
+        # gewaehlte Modus laeuft als Stufe 2 nebenher (siehe two_stage).
+        late_decoder = None
+        if (
+            self.two_stage
+            and self.late_pass_sink is not None
+            and self.decoder_mode in ("deep", "multi", "extreme")
+        ):
+            late_decoder = decoder
+            decoder = decode_slot_ft4 if self.mode == "FT4" else decode_slot
+
         loop = asyncio.get_running_loop()
         # v0.6.0 Phase A1: Timing-Messung — kann der Decoder den Slot halten?
         import time as _time
@@ -401,10 +448,77 @@ class DecodePipeline:
                 log.debug("band_resolver failed: %s, fallback band_hint=%s", exc, self.band_hint)
 
         out = [_to_decoded_msg(r, tick, band_for_decodes) for r in raw]
+        if late_decoder is not None:
+            self._schedule_late_pass(
+                late_decoder, pcm_for_decode, tick, band_for_decodes, raw, slot_seconds,
+            )
         return out
 
+    # ------------------------------------------------------------ Stufe 2
+    def _schedule_late_pass(
+        self, late_decoder, pcm: bytes, tick: SlotTick, band: str,
+        fast_raw: list[ShimDecode], slot_seconds: float,
+    ) -> None:
+        if self._late_task is not None and not self._late_task.done():
+            # Die vorige Stufe 2 laeuft noch — dann ist der Modus fuer diese
+            # CPU zu teuer. Diesen Slot ueberspringen (Stufe 1 ist ja durch)
+            # und mitzaehlen; nach drei Ueberlaeufen eine Stufe runter.
+            self.metrics.late_pass_skipped += 1
+            self._late_overruns += 1
+            if self._late_overruns >= 3:
+                self._downgrade_mode("Stufe 2 laeuft laenger als ein Slot")
+                self._late_overruns = 0
+            return
+        self._late_task = asyncio.get_running_loop().create_task(
+            self._run_late_pass(late_decoder, pcm, tick, band, fast_raw, slot_seconds),
+            name=f"decode-late-{tick.index}",
+        )
 
-def _to_decoded_msg(shim: ShimDecode, tick: SlotTick, band: str) -> DecodedMsg:
+    def _downgrade_mode(self, why: str) -> None:
+        order = ["extreme", "multi", "deep", "standard"]
+        try:
+            nxt = order[order.index(self.decoder_mode) + 1]
+        except (ValueError, IndexError):
+            return
+        log.warning("decoder auto-downgrade: %s → %s (%s)", self.decoder_mode, nxt, why)
+        self.decoder_mode = nxt
+
+    async def _run_late_pass(
+        self, late_decoder, pcm: bytes, tick: SlotTick, band: str,
+        fast_raw: list[ShimDecode], slot_seconds: float,
+    ) -> None:
+        import time as _time
+        loop = asyncio.get_running_loop()
+        t0 = _time.monotonic()
+        try:
+            raw = await loop.run_in_executor(self._late_executor, late_decoder, pcm)
+        except Exception as exc:
+            log.warning("%s late pass failed for tick %s: %s", self.mode, tick.index, exc)
+            return
+        duration_s = _time.monotonic() - t0
+        # Stufe 2 findet alles von Stufe 1 nochmal — nur das Neue zaehlt.
+        seen = {r.message for r in fast_raw}
+        new = [r for r in raw if r.message not in seen]
+        self.metrics.note_late_pass(len(new), duration_s)
+        if duration_s > slot_seconds:
+            self._late_overruns += 1
+            if self._late_overruns >= 3:
+                self._downgrade_mode(f"Stufe 2 brauchte {duration_s:.1f} s")
+                self._late_overruns = 0
+        else:
+            self._late_overruns = 0
+        if not new or self.late_pass_sink is None:
+            return
+        msgs = [_to_decoded_msg(r, tick, band, late=True) for r in new]
+        try:
+            await self.late_pass_sink(msgs, tick)
+        except Exception as exc:
+            log.warning("late_pass_sink failed for tick %s: %s", tick.index, exc)
+
+
+def _to_decoded_msg(
+    shim: ShimDecode, tick: SlotTick, band: str, *, late: bool = False,
+) -> DecodedMsg:
     parsed = parse_message(shim.message)
     # The shim's freq_hz is the audio-band offset, not the on-air freq;
     # the orchestrator can add the rig dial later if needed.
@@ -419,6 +533,7 @@ def _to_decoded_msg(shim: ShimDecode, tick: SlotTick, band: str) -> DecodedMsg:
         freq_offset_hz=int(round(shim.freq_hz)),
         band=band,
         is_freetext=parsed.is_freetext,
+        late=late,
     )
 
 

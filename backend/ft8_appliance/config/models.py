@@ -352,6 +352,12 @@ class OperatingConfig(BaseModel):
     # bestehende Late-Slot-Fallback greift erst bei 80 % Slot-Laenge (12 s)
     # und schuetzt vor Slot-Ueberlauf, nicht vor spaetem TX.
     tx_latency_max_s: float = Field(default=1.5, ge=0.5, le=5.0)
+    # Zweistufiger Decoder (2026-09-06): Stufe 1 = schneller Standard-Pass,
+    # entscheidet ueber TX (0,3-0,5 s auf dem Pi 4B); Stufe 2 = der teure
+    # Rest des gewaehlten decoder_mode (deep/subtract/hint) laeuft nebenher
+    # und liefert zusaetzliche Decodes nach. So passt "extreme" auch auf
+    # den Pi 4B, ohne dass der Sendestart 2,8 s nach der Slot-Grenze liegt.
+    decoder_late_pass: bool = True
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift
