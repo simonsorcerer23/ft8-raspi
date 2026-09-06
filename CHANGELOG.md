@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.68.0 — 2026-09-06
+- fix: two_stage/late_pass_sink per setattr — decode_source ist als Callable typisiert (mypy-Gate)
+- feat: zweistufiger Decoder — Standard-Pass entscheidet ueber TX, der teure Rest laeuft nebenher
+
 ## v0.67.2 — 2026-09-06
 - fix: AP-Aktiv-Check fragt hostapd statt der oneshot-Unit, Stop-Skript idempotent
 - fix: Captive-Portal geht auf dem Handy auf, SSID heisst ft8-hotspot, AP-Stop verbindet WLAN wieder
