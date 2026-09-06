@@ -160,6 +160,7 @@ ffi.cdef(
         uint64_t slots_decoded;
         uint64_t pass_subtract_round2;
         uint64_t pass_osd;
+        uint64_t pass_refine;
     } ft8_shim_pass_stats_t;
 
     void ft8_shim_pass_stats_reset(void);
@@ -278,6 +279,7 @@ ffi.set_source(
         uint64_t slots_decoded;
         uint64_t pass_subtract_round2;
         uint64_t pass_osd;
+        uint64_t pass_refine;
     } ft8_shim_pass_stats_t;
 
     void ft8_shim_pass_stats_reset(void);

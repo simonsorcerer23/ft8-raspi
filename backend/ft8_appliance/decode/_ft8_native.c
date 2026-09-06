@@ -655,6 +655,7 @@ static void (*_cffi_call_python_org)(struct _cffi_externpy_s *, char *);
         uint64_t slots_decoded;
         uint64_t pass_subtract_round2;
         uint64_t pass_osd;
+        uint64_t pass_refine;
     } ft8_shim_pass_stats_t;
 
     void ft8_shim_pass_stats_reset(void);
@@ -783,6 +784,7 @@ static void _cffi_checkfld_typedef_ft8_shim_pass_stats_t(ft8_shim_pass_stats_t *
   (void)((p->slots_decoded) | 0);  /* check that 'ft8_shim_pass_stats_t.slots_decoded' is an integer */
   (void)((p->pass_subtract_round2) | 0);  /* check that 'ft8_shim_pass_stats_t.pass_subtract_round2' is an integer */
   (void)((p->pass_osd) | 0);  /* check that 'ft8_shim_pass_stats_t.pass_osd' is an integer */
+  (void)((p->pass_refine) | 0);  /* check that 'ft8_shim_pass_stats_t.pass_refine' is an integer */
 }
 struct _cffi_align_typedef_ft8_shim_pass_stats_t { char x; ft8_shim_pass_stats_t y; };
 
@@ -2159,6 +2161,9 @@ static const struct _cffi_field_s _cffi_fields[] = {
   { "pass_osd", offsetof(ft8_shim_pass_stats_t, pass_osd),
                 sizeof(((ft8_shim_pass_stats_t *)0)->pass_osd),
                 _CFFI_OP(_CFFI_OP_NOOP, 89) },
+  { "pass_refine", offsetof(ft8_shim_pass_stats_t, pass_refine),
+                   sizeof(((ft8_shim_pass_stats_t *)0)->pass_refine),
+                   _CFFI_OP(_CFFI_OP_NOOP, 89) },
   { "message", offsetof(ft8_shim_result_t, message),
                sizeof(((ft8_shim_result_t *)0)->message),
                _CFFI_OP(_CFFI_OP_NOOP, 76) },
@@ -2190,13 +2195,13 @@ static const struct _cffi_field_s _cffi_fields[] = {
 
 static const struct _cffi_struct_union_s _cffi_struct_unions[] = {
   { "$ft8_shim_pass_stats_t", 78, _CFFI_F_CHECK_FIELDS,
-    sizeof(ft8_shim_pass_stats_t), offsetof(struct _cffi_align_typedef_ft8_shim_pass_stats_t, y), 0, 7 },
+    sizeof(ft8_shim_pass_stats_t), offsetof(struct _cffi_align_typedef_ft8_shim_pass_stats_t, y), 0, 8 },
   { "$ft8_shim_result_t", 79, _CFFI_F_CHECK_FIELDS,
-    sizeof(ft8_shim_result_t), offsetof(struct _cffi_align_typedef_ft8_shim_result_t, y), 7, 5 },
+    sizeof(ft8_shim_result_t), offsetof(struct _cffi_align_typedef_ft8_shim_result_t, y), 8, 5 },
   { "$ftx_message_offsets_t", 80, _CFFI_F_CHECK_FIELDS,
-    sizeof(ftx_message_offsets_t), offsetof(struct _cffi_align_typedef_ftx_message_offsets_t, y), 12, 2 },
+    sizeof(ftx_message_offsets_t), offsetof(struct _cffi_align_typedef_ftx_message_offsets_t, y), 13, 2 },
   { "$ftx_message_t", 82, _CFFI_F_CHECK_FIELDS,
-    sizeof(ftx_message_t), offsetof(struct _cffi_align_typedef_ftx_message_t, y), 14, 2 },
+    sizeof(ftx_message_t), offsetof(struct _cffi_align_typedef_ftx_message_t, y), 15, 2 },
 };
 
 static const struct _cffi_enum_s _cffi_enums[] = {
