@@ -174,6 +174,9 @@ static int s_knob_max_cand    = 300;  /* Kandidaten pro Pass (Puffer 1200) */
 static int s_knob_window_std  = 0;    /* monitor window_mode (s. monitor.h) fuer osr-2-Paesse */
 static int s_knob_window_deep = 4;    /* ... fuer osr-4-Paesse: Hann 2 Symbole statt 4 (Korpus: deep 0 -> 14 Decodes) */
 static int s_knob_window_hint = 4;    /* ... fuer den Hint-Pass */
+static int s_knob_refine      = 1;    /* Feinsync-Demodulation im Hint-Pass nach BP/OSD-Fehlschlag */
+static int s_knob_refine_max  = 40;   /* max. verfeinerte Kandidaten pro Slot */
+static int s_knob_refine_nogate = 1;  /* 1: Feinsync-Decodes per BP+CRC (ohne OSD) brauchen keinen bekannten Call — so vertrauenswuerdig wie der std-Pass */
 static int s_knob_llr_scales  = 1;    /* 1 = nur BP mit Original-LLR; 2..4 = zusaetzliche Skalierungen (WSJT-X: llra..llrd) */
 int ft8_shim_set_knob(const char* name, int value) {
     if (strcmp(name, "sub_score") == 0) s_knob_sub_score = value;
@@ -188,6 +191,9 @@ int ft8_shim_set_knob(const char* name, int value) {
     else if (strcmp(name, "window_deep") == 0) s_knob_window_deep = value;
     else if (strcmp(name, "window_hint") == 0) s_knob_window_hint = value;
     else if (strcmp(name, "llr_scales") == 0) s_knob_llr_scales = value < 1 ? 1 : (value > 4 ? 4 : value);
+    else if (strcmp(name, "refine") == 0) s_knob_refine = value;
+    else if (strcmp(name, "refine_max") == 0) s_knob_refine_max = value;
+    else if (strcmp(name, "refine_nogate") == 0) s_knob_refine_nogate = value;
     else if (strcmp(name, "max_cand") == 0) s_knob_max_cand = value < 1 ? 1 : (value > FT8_SHIM_MAX_CANDIDATES ? FT8_SHIM_MAX_CANDIDATES : value);
     else return -1;
     return 0;
@@ -640,6 +646,7 @@ typedef struct {
     /* 2026-09-06: zweite Subtract-Runde (JTDX macht 2-3) */
     uint64_t pass_subtract_round2;
     uint64_t pass_osd;   /* 2026-09-06: Hint-Pass-Decodes, die erst OSD geliefert hat */
+    uint64_t pass_refine; /* 2026-09-06: Decodes erst nach Feinsync-Demodulation */
 } ft8_shim_pass_stats_t;
 
 static ft8_shim_pass_stats_t s_pass_stats = {0, 0, 0, 0, 0};
@@ -672,6 +679,7 @@ void ft8_shim_pass_stats_reset(void) {
     s_pass_stats.slots_decoded = 0;
     s_pass_stats.pass_subtract_round2 = 0;
     s_pass_stats.pass_osd = 0;
+    s_pass_stats.pass_refine = 0;
 }
 
 void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out) {
@@ -911,8 +919,109 @@ static bool _ft8_decode_candidate_osd(const ftx_waterfall_t* wf, const ftx_candi
     return true;
 }
 
+
+/* ======================================================================
+ * 2026-09-06: Feinsynchronisation + symbolsynchrone Demodulation
+ * (nach dem Muster von WSJT-X ft8b: sync8 verfeinert dt/f, dann DFT pro
+ * Symbol). ft8_lib holt die Soft-Bits aus dem Wasserfall-Raster: bei
+ * osr 4 liegt der wahre Symbolstart bis zu 0,02 s und die Frequenz bis
+ * zu 0,78 Hz daneben — fuer schwache Signale kostet das Energie. Hier:
+ * Raster 9x9 um den Kandidaten (60 Samples / 0,2 Hz), Costas-Energie als
+ * Mass, dann 79 Symbole x 8 Toene mit Rechteckfenster ueber genau ein
+ * Symbol (orthogonale Toene), LLR wie ft8_extract_symbol, BP + OSD.
+ * ====================================================================== */
+
+
+/* Leistung der 8 Toene eines Symbols ab Sample s0 bei Basisfrequenz f0 (Hz). */
+static void _refine_tone_powers(const float* signal, int s0, float f0, float pw[8]) {
+    for (int t = 0; t < 8; ++t) {
+        double f = f0 + 6.25 * t;
+        double c = cos(2.0 * M_PI * f / 12000.0), s = sin(2.0 * M_PI * f / 12000.0);
+        double pi_ = 1.0, pq_ = 0.0, ai = 0.0, aq = 0.0;
+        for (int n = 0; n < FT8_SAMPLES_PER_SYM; ++n) {
+            int m = s0 + n;
+            if (m >= 0 && m < FT8_SLOT_SAMPLES) { ai += signal[m] * pi_; aq -= signal[m] * pq_; }
+            double tmp = pi_ * c - pq_ * s; pq_ = pi_ * s + pq_ * c; pi_ = tmp;
+        }
+        pw[t] = (float)(ai * ai + aq * aq);
+    }
+}
+
+/* Costas-Energie: Summe der Leistung des erwarteten Tons ueber die 21 Sync-Symbole. */
+static double _refine_sync_energy(const float* signal, int s0, float f0) {
+    static const int sync_start[3] = { 0, 36, 72 };
+    double e = 0.0;
+    for (int b = 0; b < 3; ++b) {
+        for (int k = 0; k < 7; ++k) {
+            int sym = sync_start[b] + k;
+            double f = f0 + 6.25 * kFT8_Costas_pattern[k];
+            double c = cos(2.0 * M_PI * f / 12000.0), s = sin(2.0 * M_PI * f / 12000.0);
+            double pi_ = 1.0, pq_ = 0.0, ai = 0.0, aq = 0.0;
+            int base = s0 + sym * FT8_SAMPLES_PER_SYM;
+            for (int n = 0; n < FT8_SAMPLES_PER_SYM; ++n) {
+                int m = base + n;
+                if (m >= 0 && m < FT8_SLOT_SAMPLES) { ai += signal[m] * pi_; aq -= signal[m] * pq_; }
+                double tmp = pi_ * c - pq_ * s; pq_ = pi_ * s + pq_ * c; pi_ = tmp;
+            }
+            e += ai * ai + aq * aq;
+        }
+    }
+    return e;
+}
+
+static void _refine_normalize(float* log174) {
+    float sum = 0, sum2 = 0;
+    for (int i = 0; i < FTX_LDPC_N; ++i) { sum += log174[i]; sum2 += log174[i] * log174[i]; }
+    float inv_n = 1.0f / FTX_LDPC_N;
+    float variance = (sum2 - (sum * sum * inv_n)) * inv_n;
+    if (variance <= 1e-12f) return;
+    float norm = sqrtf(24.0f / variance);
+    for (int i = 0; i < FTX_LDPC_N; ++i) log174[i] *= norm;
+}
+
+/* Liefert true + message, wenn nach Feinsync ein Codewort gefunden wurde. */
+static bool _ft8_refine_decode(const float* signal, float dt_s, float freq_hz, int max_iterations,
+                               ftx_message_t* message, int* via_osd) {
+    int t0 = (int)lrintf((dt_s + FT8_DT_ORIGIN_S) * (float)FT8_SAMPLE_RATE_HZ);
+    int best_dt = 0; float best_df = 0.0f; double best_e = -1.0;
+    for (int a = -4; a <= 4; ++a) {
+        for (int b = -4; b <= 4; ++b) {
+            double e = _refine_sync_energy(signal, t0 + a * 60, freq_hz + (float)b * 0.2f);
+            if (e > best_e) { best_e = e; best_dt = a * 60; best_df = (float)b * 0.2f; }
+        }
+    }
+    int s0 = t0 + best_dt; float f0 = freq_hz + best_df;
+    float log174[FTX_LDPC_N];
+    for (int k = 0; k < FT8_ND; ++k) {
+        int sym_idx = k + ((k < 29) ? 7 : 14);
+        float pw[8], s2[8];
+        _refine_tone_powers(signal, s0 + sym_idx * FT8_SAMPLES_PER_SYM, f0, pw);
+        for (int j = 0; j < 8; ++j) s2[j] = 10.0f * log10f(1e-12f + pw[kFT8_Gray_map[j]]);
+        float* l = log174 + 3 * k;
+        l[0] = fmaxf(fmaxf(s2[4], s2[5]), fmaxf(s2[6], s2[7])) - fmaxf(fmaxf(s2[0], s2[1]), fmaxf(s2[2], s2[3]));
+        l[1] = fmaxf(fmaxf(s2[2], s2[3]), fmaxf(s2[6], s2[7])) - fmaxf(fmaxf(s2[0], s2[1]), fmaxf(s2[4], s2[5]));
+        l[2] = fmaxf(fmaxf(s2[1], s2[3]), fmaxf(s2[5], s2[7])) - fmaxf(fmaxf(s2[0], s2[2]), fmaxf(s2[4], s2[6]));
+    }
+    _refine_normalize(log174);
+    uint8_t plain174[FTX_LDPC_N]; int ldpc_errors = 0;
+    *via_osd = 0;
+    bp_decode(log174, max_iterations, plain174, &ldpc_errors);
+    if (ldpc_errors > 0) {
+        if (s_osd_depth <= 0 || !_osd_decode(log174, s_osd_depth, plain174)) return false;
+        *via_osd = 1;
+    }
+    if (!_osd_crc_ok(plain174)) return false;
+    uint8_t a91[FTX_LDPC_K_BYTES]; memset(a91, 0, sizeof(a91));
+    for (int i = 0; i < FTX_LDPC_K; ++i) if (plain174[i]) a91[i >> 3] |= (uint8_t)(0x80u >> (i & 7));
+    message->hash = ftx_extract_crc(a91);
+    a91[9] &= 0xF8;
+    for (int i = 0; i < 10; ++i) message->payload[i] = a91[i];
+    return true;
+}
+
 static int _ft8_hint_pass(
     monitor_t*         mon,
+    const float*       signal,   /* fuer die Feinsync-Demodulation (NULL = aus) */
     ft8_shim_result_t* out,
     int                max_out,
     uint8_t          (*seen)[10],
@@ -925,14 +1034,23 @@ static int _ft8_hint_pass(
         &mon->wf, s_knob_max_cand, candidates, 5
     );
     int num_out = num_out_initial;
+    int n_refined = 0;
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
         const ftx_candidate_t* cand = &candidates[idx];
         ftx_message_t       message;
         ftx_decode_status_t status;
         /* LDPC=120 (vs 25 Standard): mehr Iterationen für marginale Signale */
-        int via_osd = 0;
+        int via_osd = 0, via_refine = 0;
         (void)status;
-        if (!_ft8_decode_candidate_osd(&mon->wf, cand, 120, &message, &via_osd)) continue;
+        if (!_ft8_decode_candidate_osd(&mon->wf, cand, 120, &message, &via_osd)) {
+            if (signal == NULL || s_knob_refine <= 0 || n_refined >= s_knob_refine_max) continue;
+            ++n_refined;
+            float c_dt = (cand->time_offset + (float)cand->time_sub / mon->wf.time_osr) * mon->symbol_period
+                         - _dt_window_corr_s(mon) - FT8_DT_ORIGIN_S;
+            float c_f = (mon->min_bin + cand->freq_offset + (float)cand->freq_sub / mon->wf.freq_osr) / mon->symbol_period;
+            if (!_ft8_refine_decode(signal, c_dt, c_f, 120, &message, &via_osd)) continue;
+            via_refine = 1;
+        }
 
         int dup = 0;
         for (int j = 0; j < *num_seen; ++j) {
@@ -945,12 +1063,13 @@ static int _ft8_hint_pass(
         if (ftx_message_decode(&message, &s_hash_if_readonly, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
 
         /* Hint-Gate: nur akzeptieren wenn ein VORHER bekannter Call drin ist */
-        if (!_ft8_text_has_known_call(text)) continue;
+        if (!_ft8_text_has_known_call(text) && !(s_knob_refine_nogate && via_refine && !via_osd)) continue;
         /* OSD-Ergebnisse sind immer gueltige Codewoerter; zusaetzlich zur CRC
          * verlangen wir Naehe zur harten Entscheidung (Phantom: nhard 37 / 80). */
         if (via_osd && (s_osd_last_nhard > 32 || s_osd_last_metric > 60.0f)) continue;
         /* jetzt regulaer entpacken, damit die Calls in die Tabelle kommen */
         ftx_message_decode(&message, &s_hash_if, text, &offsets);
+        if (via_refine) s_pass_stats.pass_refine++;
         if (via_osd) {
             s_pass_stats.pass_osd++;
             if (getenv("FT8_SHIM_OSD_DEBUG") != NULL)
@@ -1004,7 +1123,7 @@ static int _ft8_hint_pass_signal(
     for (int pos = 0; pos + mon.block_size <= signal_len; pos += mon.block_size) {
         monitor_process(&mon, signal + pos);
     }
-    int n = _ft8_hint_pass(&mon, out, max_out, seen, num_seen, num_out_initial);
+    int n = _ft8_hint_pass(&mon, signal, out, max_out, seen, num_seen, num_out_initial);
     monitor_free(&mon);
     return n;
 }

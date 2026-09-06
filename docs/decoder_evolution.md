@@ -287,3 +287,17 @@ als `ft8_shim_set_knob()` für weitere Messungen im Shim.
   bei 400 %, 250 %, 150 % und 100 %; 150 % spart ~15 % Stufe-2-Zeit am Pi 4B.
 - Live am Pi 4B nach v0.72.0 (8 Slots): deep-Pass 4 Decodes — vorher in 380
   Slots null. OSD lieferte in v0.71.0 live 22 Decodes in 76 Slots (~7 %).
+
+### v0.73.0 — Feinsynchronisation + symbolsynchrone Demodulation
+Nach dem Muster von WSJT-X `ft8b` (sync8 → Feinsync → DFT pro Symbol):
+ft8_lib holt die Soft-Bits aus dem Wasserfall-Raster; bei osr 4 liegt der
+wahre Symbolstart bis 0,02 s und die Frequenz bis 0,78 Hz daneben, was
+schwache Signale Energie kostet. Jetzt im Hint-Pass, wenn BP und OSD auf
+dem Raster scheitern: 9×9-Raster (60 Samples / 0,2 Hz) um den Kandidaten
+mit Costas-Energie als Maß, dann 79 Symbole × 8 Töne mit Rechteckfenster
+über genau ein Symbol (orthogonale Töne), LLR wie `ft8_extract_symbol`,
+BP + OSD. Feinsync-Decodes per BP+CRC brauchen keinen bekannten Call
+(so vertrauenswürdig wie der std-Pass), OSD-Ergebnisse weiterhin schon.
+Max. 40 Kandidaten pro Slot (120 brachten nichts mehr, 2,7× Zeit).
+Korpus: 300 → **309 / 353 = 87,5 %**, x86 +0,3 s/Slot in Stufe 2
+(Pi 4B geschätzt +1,5 s; Budget 12 s). Neue Statistik `pass_refine`.
