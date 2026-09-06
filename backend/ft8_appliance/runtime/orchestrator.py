@@ -275,6 +275,8 @@ class OrchestratorStatus:
     # letzten 10. Ueber ~1,5 s sehen uns Partner-Decoder schlechter.
     tx_start_offset_s: float | None = None
     tx_start_offset_avg_s: float | None = None
+    # Zweistufiger Decoder: was Stufe 2 zuletzt/insgesamt nachgereicht hat.
+    decoder_late_pass: dict | None = None
     # i18n: the lock reason's message key + params so the web layer can
     # re-localize it into the browser's chosen language (last_lock_reason
     # itself stays in the config-default lang for non-UI consumers).
@@ -801,6 +803,13 @@ class Orchestrator:
         # liefert live den aktiven Band-Namen aus rig.freq_hz.
         if hasattr(self.decode_source, "band_resolver"):
             self.decode_source.band_resolver = self._resolve_current_band_name
+        # Zweistufiger Decoder (2026-09-06): Stufe 2 reicht ihre Funde hier
+        # nach — UI, DB, PSK und State-Machine, siehe _ingest_late_decodes.
+        if hasattr(self.decode_source, "late_pass_sink"):
+            self.decode_source.late_pass_sink = self._ingest_late_decodes
+            self.decode_source.two_stage = bool(
+                getattr(self.config.operating, "decoder_late_pass", True)
+            )
         self._spawn(self.gps.run_forever(), name="gpsd")
         self._spawn(self._slot_loop(), name="slot-loop")
         self._spawn(self._rig_poll_loop(), name="rig-poll")
@@ -1729,6 +1738,7 @@ class Orchestrator:
                 "late_slot_count", 0,
             ) if hasattr(self.decode_source, "metrics") else 0,
             decoder_pass_stats=_safe_get_pass_stats(),
+            decoder_late_pass=self._late_pass_stats(),
             tx_start_offset_s=(
                 self._tx_start_offsets_s[-1] if self._tx_start_offsets_s else None
             ),
@@ -1737,6 +1747,17 @@ class Orchestrator:
                 if self._tx_start_offsets_s else None
             ),
         )
+
+    def _late_pass_stats(self) -> dict | None:
+        m = getattr(self.decode_source, "metrics", None)
+        if m is None or not hasattr(m, "late_pass_last_count"):
+            return None
+        return {
+            "last": m.late_pass_last_count,
+            "total": m.late_decodes_total,
+            "duration_s": round(m.late_pass_last_duration_s, 2),
+            "skipped": m.late_pass_skipped,
+        }
 
     def is_worked_before(self, call: str | None) -> bool:
         """Quick check used to annotate decodes with the worked-B4 badge."""
@@ -2667,6 +2688,10 @@ class Orchestrator:
             )
             self.decode_source.decoder_mode = new_decoder_mode
             self.decode_source._consecutive_late_slots = 0
+        if hasattr(self.decode_source, "two_stage"):
+            self.decode_source.two_stage = bool(
+                getattr(new_cfg.operating, "decoder_late_pass", True)
+            )
         # v0.7.0 Build 3: auto_notch_enabled live-toggle
         new_notch_enabled = getattr(new_cfg.operating, "auto_notch_enabled", True)
         has_notch_now = getattr(self.decode_source, "notch_detector", None) is not None
@@ -2897,24 +2922,46 @@ class Orchestrator:
             if len(self._recent_dts) > 200:
                 del self._recent_dts[: len(self._recent_dts) - 200]
 
-        # 3. push to SSE subscribers + persist to DB (rolling 7 days)
+        # 3. SSE + DB + PSK-Reporter (gemeinsamer Pfad mit der zweiten
+        #    Decoder-Stufe, siehe _publish_decodes)
+        await self._publish_decodes(decodes)
+
+        # 4. drive the state machine
+        self.state_machine.on_decodes(self._hardware_state, decodes)
+        self.state_machine.on_slot_tick(self._hardware_state, tick)
+
+        # 5. execute emitted actions
+        await self._drain_actions()
+
+        try:
+            await self._maybe_run_autopilot()
+        except Exception as exc:
+            _log_loop_exc("autopilot", exc)
+
+        # 6. notify status subscribers
+        self._push_status()
+
+    async def _publish_decodes(self, decodes: list[DecodedMsg]) -> None:
+        """SSE-Fanout, DB (decode + heard) und PSK-Reporter fuer eine
+        Decode-Charge — der Slot-Pfad und die zweite Decoder-Stufe teilen
+        sich das. Vorher lief der PSK-Upload hier ZWEIMAL pro Decode
+        (Block "Build H" und Block "3b", beide riefen upload_decode); der
+        Client dedupliziert vor dem Flush, darum fiel es nie auf.
+        """
         for d in decodes:
             self._push_decode(d)
-
-        # v0.8.0 Build H: PSK-Reporter Upload (Community-Mehrwert).
-        # Existierender Client (integrations/psk_reporter.py) hat upload_decode
-        # bereits implementiert mit 5min-Flush — wir mussten ihn nur AUFRUFEN.
-        # config.integrations.psk_reporter.upload_decodes (Default True) gating.
+        if not decodes:
+            return
+        mode_str = self.config.operating.mode or "FT8"
+        # PSK-Reporter: nur Calls, die wir GEHOERT haben, mit On-Air-Frequenz
+        # aus Rig-Dial + Audio-Offset. Ohne Dial keine Meldung.
         psk = getattr(self.integrations, "psk_reporter", None)
-        if psk is not None and decodes:
+        if psk is not None:
             try:
                 rig_freq = self._last_rig.freq_hz if self._last_rig else None
-                mode_str = self.config.operating.mode or "FT8"
                 for d in decodes:
                     if not d.call_from or d.call_from.startswith("<"):
                         continue
-                    # Reine Reception-Reports: nur Calls die wir GEHOERT
-                    # haben, nicht Konversations-Partner (call_to).
                     band_hz = rig_freq if rig_freq else 0
                     if d.freq_offset_hz is not None and band_hz:
                         band_hz += int(d.freq_offset_hz)
@@ -2931,7 +2978,7 @@ class Orchestrator:
                     )
             except Exception as exc:
                 log.debug("psk_reporter upload skipped: %s", exc)
-        if self.db_enabled and decodes:
+        if self.db_enabled:
             try:
                 async with session_scope() as s:
                     for d in decodes:
@@ -2948,11 +2995,8 @@ class Orchestrator:
                             band=d.band,
                             mode=mode_str,
                         )
-                        # Also tick the Heard table so the live map (and
-                        # /api/map?mode=heard) light up. Skip CQ-side
-                        # decodes that don't tell us the sender's grid:
-                        # for those we wait until a later slot reveals
-                        # a grid before pinning them to the map.
+                        # Heard-Tabelle fuer die Live-Karte — nur Decodes,
+                        # die den Grid des Senders verraten.
                         if d.call_from and d.grid:
                             await repository.upsert_heard(
                                 s,
@@ -2965,43 +3009,46 @@ class Orchestrator:
             except Exception as exc:
                 log.warning("decode db-write failed: %s", exc)
 
-        # 3b. PSK-Reporter-Upload: jeden Decode mit Call+SNR puffern.
-        # Der Client batcht intern alle 5 min in einem UDP-Flush.
-        psk = self.integrations.psk_reporter
-        if psk is not None and decodes:
-            dial_hz = self._last_rig.freq_hz or 14_074_000
-            for d in decodes:
-                call = d.call_from
-                if not call or d.snr_db is None:
-                    continue
-                # On-air-Frequenz = Rig-Dial + Audio-Offset
-                band_hz = dial_hz + (d.freq_offset_hz or 0)
-                try:
-                    await psk.upload_decode(
-                        sender_call=call,
-                        sender_grid=d.grid,
-                        rx_callsign=self.config.operator.callsign,
-                        snr_db=int(d.snr_db),
-                        band_hz=band_hz,
-                        mode=self.config.operating.mode or "FT8",
-                        decoded_at=d.ts,
-                    )
-                except Exception:
-                    pass  # never block the slot loop on PSK-Reporter
+    async def _ingest_late_decodes(self, decodes: list[DecodedMsg], tick: SlotTick) -> None:
+        """Funde der zweiten Decoder-Stufe, nach der TX-Entscheidung des Slots.
 
-        # 4. drive the state machine
-        self.state_machine.on_decodes(self._hardware_state, decodes)
-        self.state_machine.on_slot_tick(self._hardware_state, tick)
-
-        # 5. execute emitted actions
-        await self._drain_actions()
-
+        Sie bekommen denselben Weg wie die schnellen Decodes — UI, DB, PSK,
+        Hint-Hashtabelle, Watchlist — und gehen an die State-Machine. Loest
+        das dort einen TX aus (spaeter Pick, spaet erkannter Report), greift
+        die B4-Regel in _do_tx_message: mitten im Slot wird nicht gesendet,
+        die State-Machine schickt an der naechsten passenden Grenze. Was
+        Stufe 2 findet, wirkt also einen Slot spaeter — statt gar nicht.
+        """
+        if not decodes:
+            return
+        self._last_decodes = list(self._last_decodes) + list(decodes)
+        self._last_decode_recv_at = time.time()
         try:
-            await self._maybe_run_autopilot()
-        except Exception as exc:
-            _log_loop_exc("autopilot", exc)
-
-        # 6. notify status subscribers
+            from ..decode.ft8_native import lib as _ft8_lib
+            for d in decodes:
+                for c in (d.call_from, d.call_to):
+                    if c and 3 <= len(c) <= 13 and not c.startswith("<"):
+                        _ft8_lib.ft8_shim_hash_table_save(c.upper().encode("ascii"), 0)
+        except Exception:
+            pass
+        if self._watchlist_calls:
+            seen_in_slot: set[str] = set()
+            for d in decodes:
+                for c in (d.call_from, d.call_to):
+                    if not c:
+                        continue
+                    norm = c.upper()
+                    if norm in seen_in_slot or norm not in self._watchlist_calls:
+                        continue
+                    seen_in_slot.add(norm)
+                    asyncio.create_task(self._fire_watchlist_alert(norm, d))
+        await self._publish_decodes(decodes)
+        log.info("decoder Stufe 2: +%d Decodes fuer Slot %d", len(decodes), tick.index)
+        self.state_machine.on_decodes(self._hardware_state, decodes)
+        # on_decodes ersetzt last_decodes durch die Charge — fuer den
+        # CQ-Frequenz-Picker soll der ganze Slot sichtbar bleiben.
+        self.state_machine.last_decodes = list(self._last_decodes)
+        await self._drain_actions()
         self._push_status()
 
     def _autopilot_allowed_modes(self) -> list[str]:
