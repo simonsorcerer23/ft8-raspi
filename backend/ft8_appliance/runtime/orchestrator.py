@@ -806,10 +806,11 @@ class Orchestrator:
         # Zweistufiger Decoder (2026-09-06): Stufe 2 reicht ihre Funde hier
         # nach — UI, DB, PSK und State-Machine, siehe _ingest_late_decodes.
         if hasattr(self.decode_source, "late_pass_sink"):
-            self.decode_source.late_pass_sink = self._ingest_late_decodes
-            self.decode_source.two_stage = bool(
-                getattr(self.config.operating, "decoder_late_pass", True)
-            )
+            # setattr: decode_source ist als Callable typisiert, die echte
+            # Pipeline hat die Attribute (gleiches Muster wie decoder_mode).
+            setattr(self.decode_source, "late_pass_sink", self._ingest_late_decodes)
+            setattr(self.decode_source, "two_stage",
+                    bool(getattr(self.config.operating, "decoder_late_pass", True)))
         self._spawn(self.gps.run_forever(), name="gpsd")
         self._spawn(self._slot_loop(), name="slot-loop")
         self._spawn(self._rig_poll_loop(), name="rig-poll")
@@ -2689,9 +2690,8 @@ class Orchestrator:
             self.decode_source.decoder_mode = new_decoder_mode
             self.decode_source._consecutive_late_slots = 0
         if hasattr(self.decode_source, "two_stage"):
-            self.decode_source.two_stage = bool(
-                getattr(new_cfg.operating, "decoder_late_pass", True)
-            )
+            setattr(self.decode_source, "two_stage",
+                    bool(getattr(new_cfg.operating, "decoder_late_pass", True)))
         # v0.7.0 Build 3: auto_notch_enabled live-toggle
         new_notch_enabled = getattr(new_cfg.operating, "auto_notch_enabled", True)
         has_notch_now = getattr(self.decode_source, "notch_detector", None) is not None
