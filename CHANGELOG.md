@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.75.0 — 2026-09-06
+- feat: FT4 — 2-Symbol-Analysefenster fuer den osr-4-Pass, kohaerente Subtraktion, Pass-Dedupe; Doku Pi 4B/Decoder-Stand
+- test: Tier-Zaehler 21 (lonely_cq); Feinsync-Raster als Knoepfe (9x9 bleibt Optimum: 309 vs 307/308)
+
 ## v0.74.0 — 2026-09-06
 - feat: Hunt-Tier lonely_cq — einsame CQ-Rufer bevorzugen (Pick-Telemetrie: 56 % went silent)
 
