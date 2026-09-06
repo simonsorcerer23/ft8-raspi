@@ -3729,9 +3729,11 @@ class Orchestrator:
                 # produzieren ("alle Stationen sind off bei mir" = du
                 # bist's). Push einmal pro Stunde — Re-Sync via chrony
                 # passiert hoffentlich automatisch.
-                # v0.6.1: Schwelle 0.5→1.5s erhoeht. USB-Audio + ALSA-Period-
-                # Boundary erzeugt systemisch ~0.5-0.8s DT-Offset auch bei
-                # perfekt sync'ter Clock (chrony <1ms). Push nur bei wirklich
+                # v0.6.1: Schwelle 0.5→1.5s erhoeht wegen "systemisch ~0.5-0.8s
+                # DT-Offset". 2026-09-06: das war KEINE ALSA-Latenz, sondern der
+                # Decoder selbst (dt um +0,66 s / +0,86 s je Pass verschoben,
+                # siehe ft8_shim.c _dt_window_corr_s). Seit der Kalibrierung
+                # liegt der Median real nahe 0. Push nur bei wirklich
                 # auffaelligen Werten (>1.5s) — FT8-Toleranz ist eh 2.5s.
                 # Text neutralisiert: "DT-Offset auffaellig" statt "Clock-Drift".
                 # v0.8.0 Build B: DT-Auto-Kalibrierung (vor Drift-Alert!).

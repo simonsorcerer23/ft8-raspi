@@ -155,6 +155,7 @@ def get_pass_stats() -> dict[str, int]:
         "pass_subtract_residual": int(stats.pass_subtract_residual),
         "pass_hint": int(stats.pass_hint),
         "slots_decoded": int(stats.slots_decoded),
+        "pass_subtract_round2": int(stats.pass_subtract_round2),
     }
 
 
@@ -417,3 +418,14 @@ def synth_message_ft4(
     if n < 0:
         raise FT8EncodeError(f"ft4_shim_synth_message failed for {text!r}")
     return bytes(ffi.buffer(out_buf, n * 2))
+
+
+def subtract_message(pcm: bytes, text: str, freq_hz: float, dt_s: float) -> bytes:
+    """Testzugang (2026-09-06): decodierte Nachricht kohaerent aus dem Slot
+    subtrahieren; liefert das Residuum als int16-PCM."""
+    buf = ffi.new("int16_t[]", len(pcm) // 2)
+    ffi.memmove(buf, pcm, len(pcm))
+    rc = lib.ft8_shim_subtract_message(buf, len(pcm) // 2, text.encode("ascii"), float(freq_hz), float(dt_s))
+    if rc != 0:
+        raise RuntimeError(f"subtract_message rc={rc}")
+    return bytes(ffi.buffer(buf, len(pcm)))

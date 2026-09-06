@@ -191,3 +191,41 @@ Default seit v0.7.1: `extreme`. CPU-Adaptive-Fallback bei Überlast.
 - **DT-Drift-Self-Diagnose** mit neutraler Sprache (v0.6.1)
 - **Berechtigungs-Audit** mit Pi-Side cleanup (v0.6.2)
 - **chrony NTP-only** (GPS-SHM nicht trivial fixbar, NTP <1ms reicht)
+
+## Nachtrag 2026-09-06 — Kampagne "alles aus dem Pi 4B holen" (v0.68–v0.70)
+
+Messbasis: synthetische Slots (bekannte Wahrheit) und die 22 WSJT-X-
+Referenzaufnahmen in `vendor/ft8_lib/test/wav` (353 WSJT-X-Decodes).
+
+### v0.68.0 — zweistufiger Decoder
+Stufe 1 (standard, ~0,35 s) entscheidet über TX, Stufe 2 (Rest des Modus)
+läuft im Thread nebenher und reicht nach. Vorher lag der Sendestart im
+extreme-Modus 2,8 s nach der Slotgrenze (gemessen am Pi 4B).
+
+### v0.70.0 — dt-Kalibrierung, kohärente Subtraktion, Crash-Fix
+- **dt war pass-abhängig falsch.** ft8_lib misst die Kandidatenzeit am Ende
+  des Hann-Analysefensters; der wahre Symbolstart liegt
+  `(block/2 + nfft/2 − subblock)` Samples früher (+0,16 s bei osr 2/2,
+  +0,36 s bei osr 4/4). Dazu fehlte die WSJT-X-Konvention (DT relativ zum
+  nominalen Sendestart 0,5 s nach der Slotgrenze; Primärquelle
+  `ft8_decode.f90`: `xdt=xdt-0.5`, `ft4_decode.f90`: `xdt=ibest/666.67-0.5`).
+  Jetzt: Abweichung zu WSJT-X auf den Referenzaufnahmen −0,005 s (σ 0,038 s).
+  Vorher +0,66 s (std) bzw. +0,86 s (deep). Folgen der alten Werte: die
+  „ALSA-Latenz 0,5–0,8 s" aus v0.6.1 war der Decoder, nicht ALSA; die
+  DT-Auto-Kalibrierung schob das Slotfenster um +0,8 s; der |dt|≤2,5-s-
+  Filter im Hunting war schief.
+- **Subtraktion war keine.** `_ft8_subtract_decoded` zog eine GFSK-Welle mit
+  fester Amplitude 0,4 und zufälliger Phase ab — ein zweiter Störer. Jetzt
+  kohärent nach dem Muster von `subtractft8.f90`: komplexe Referenz,
+  Feinsuche ±1,5 Hz / ±0,04 s, gleitende komplexe Amplitude über 0,33 s,
+  `Re(A(t)·ref)` abziehen. Restenergie eines starken Signals: −26 dB
+  (auf Rauschniveau). Benchmark „5 starke Signale maskieren 5 schwache in
+  20–30 Hz Abstand": vorher 5/10, jetzt 10/10.
+- **Zweite Subtract-Runde** (JTDX fährt 2–3), Hint-Ringtabelle 256 → 1024.
+- **Stack-Überlauf**: `shim_lookup_hash` schrieb 14 Bytes in ft8_libs
+  `char[12]` — jeder decodierte Hash-Call mit Tabellentreffer hätte den
+  Controller mit „stack smashing detected" beendet. Gefunden per ASan im
+  Benchmark, nie live aufgetreten (Journal geprüft).
+- Stand gegen WSJT-X auf den Referenzaufnahmen: standard trifft 73 %,
+  extreme 79 % (11 Decodes nur bei uns, alle plausibel). Lücke liegt unter
+  −13 dB (≈50 %): dort arbeitet WSJT-X mit OSD — nächster Schritt.
