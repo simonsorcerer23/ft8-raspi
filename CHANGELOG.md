@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.76.0 — 2026-09-06
+- feat: Rig zuruecksetzen — Button (PKTUSB, 2700 Hz, Dial) und optionaler Auto-Restore aus der Tamper-Erkennung
+
 ## v0.75.5 — 2026-09-06
 - fix: ALC-Regelung und SWR-Runaway messen nur waehrend eigener Bursts
 
