@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.67.1 — 2026-09-06
+- fix: manueller CQ-/Reply-Klick sendet nicht mehr mitten im Slot (B4)
+- fix: Self-Update setzt das generierte _ft8_native.c vor dem Checkout zurueck
+
 ## v0.67.0 — 2026-09-06
 - fix: AP-Fallback startet jetzt wirklich — Watchdog im Controller, eigene hostapd-Unit
 - fix: Upload-Pfad — kein Fremdkonto fuer verwaiste QSOs, QRZ-Sync liest den Key pro Zyklus
