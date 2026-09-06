@@ -198,7 +198,9 @@ Default seit v0.7.1: `extreme`. CPU-Adaptive-Fallback bei Überlast.
 ## Nachtrag 2026-09-06 — Kampagne "alles aus dem Pi 4B holen" (v0.68–v0.70)
 
 Messbasis: synthetische Slots (bekannte Wahrheit) und die 22 WSJT-X-
-Referenzaufnahmen in `vendor/ft8_lib/test/wav` (353 WSJT-X-Decodes).
+Referenzaufnahmen in `vendor/ft8_lib/test/wav` (353 WSJT-X-Decodes) —
+reproduzierbar mit `scripts/bench_decoder_corpus.py` (`--by-snr`, `--knob name=wert`).
+Endstand 2026-09-06: standard 268 (76 %), extreme **311 (88 %)**.
 
 ### v0.68.0 — zweistufiger Decoder
 Stufe 1 (standard, ~0,35 s) entscheidet über TX, Stufe 2 (Rest des Modus)
