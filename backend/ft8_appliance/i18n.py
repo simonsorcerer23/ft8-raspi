@@ -25,7 +25,16 @@ from __future__ import annotations
 
 _DE: dict[str, str] = {
     # --- TX-lock reasons (from statemachine/guards.py) ---
-    "guard.time_no_sync": "Kein GPS-Fix und Chrony nicht synchron",
+    "guard.time_no_sync": (
+        "Systemuhr nicht synchron (chrony ohne Quelle) — kein GPS-Fix, kein NTP"
+    ),
+    "guard.time_no_sync_gps_idle": (
+        "Systemuhr nicht synchron (chrony ohne Quelle) — GPS hat Fix, stellt "
+        "die Uhr aber nicht (chrony laeuft NTP-only)"
+    ),
+    "guard.time_unknown": (
+        "Zeit-Offset unbekannt (chronyc antwortet nicht) — kein TX ohne Messwert"
+    ),
     "guard.time_offset": "Zeit-Offset {offset} s > {max} s erlaubt",
     "guard.swr": "SWR {swr} ueber Limit {max} — Antenne pruefen",
     "guard.alc": "ALC {alc} % > {max} % — Audio-Pegel zu hoch",
@@ -43,6 +52,10 @@ _DE: dict[str, str] = {
     "guard.rig_link": (
         "Seit {age} s keine Messwerte vom Rig (max {max} s) — rigctld, "
         "USB-Kabel und Transceiver pruefen"
+    ),
+    "guard.dial": (
+        "Rig steht auf {mhz} MHz — kein konfigurierter FT8/FT4-Dial "
+        "(Toleranz {tol} Hz). Band waehlen oder Rollback"
     ),
     # --- other lock reasons (orchestrator) ---
     "lock.ptt_stuck": "PTT-stuck recovery",
@@ -191,7 +204,16 @@ _DE: dict[str, str] = {
 }
 
 _EN: dict[str, str] = {
-    "guard.time_no_sync": "No GPS fix and chrony not synced",
+    "guard.time_no_sync": (
+        "System clock not synced (chrony has no source) — no GPS fix, no NTP"
+    ),
+    "guard.time_no_sync_gps_idle": (
+        "System clock not synced (chrony has no source) — GPS has a fix but "
+        "does not discipline the clock (chrony runs NTP-only)"
+    ),
+    "guard.time_unknown": (
+        "Time offset unknown (chronyc not responding) — no TX without a reading"
+    ),
     "guard.time_offset": "Time offset {offset} s > {max} s allowed",
     "guard.swr": "SWR {swr} above limit {max} — check antenna",
     "guard.alc": "ALC {alc} % > {max} % — audio level too high",
@@ -209,6 +231,10 @@ _EN: dict[str, str] = {
     "guard.rig_link": (
         "No readings from the rig for {age} s (max {max} s) — check rigctld, "
         "the USB cable and the transceiver"
+    ),
+    "guard.dial": (
+        "Rig is on {mhz} MHz — not a configured FT8/FT4 dial "
+        "(tolerance {tol} Hz). Pick a band or roll back"
     ),
     "lock.ptt_stuck": "PTT-stuck recovery",
     "lock.tx_locked_prefix": "TX locked: {reason}",

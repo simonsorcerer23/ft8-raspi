@@ -173,6 +173,8 @@ def test_battery_guard_stays_quiet_without_a_sensor() -> None:
 
 
 def test_battery_guard_fires_on_a_flat_pack() -> None:
-    res = battery_guard(HardwareState(battery_v=10.8), GuardLimits())
+    # Limit explizit: seit 2026-09-06 ist der Default 0 = aus (der alte
+    # feste Wert 12,0 V passte nicht zum 7,4-V-Akku des IC-705).
+    res = battery_guard(HardwareState(battery_v=10.8), GuardLimits(battery_min_v=12.0))
     assert res.ok is False
     assert res.code == "guard.battery"

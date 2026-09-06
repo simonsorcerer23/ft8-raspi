@@ -10,9 +10,12 @@ and assert that the guards + state machine react correctly:
 * rigctld TCP socket dies (mock closes the connection)
 
 Every chaos scenario that removes a *required* condition MUST end with
-TX_LOCKED and a forced PTT-off. Time is the exception: ``time_guard`` accepts
-GPS **or** a synced chrony, so losing GPS alone is not a lock reason — see
-``test_chaos_gps_lost_but_ntp_good_keeps_tx``.
+TX_LOCKED and a forced PTT-off. Time: since 2026-09-06 ``time_guard`` trusts
+**chrony only** — on this system GPS never disciplines the clock (chrony runs
+NTP-only, see architecture.md §3.5), so a GPS fix is not a time source and
+losing it is not a lock reason either. What locks is chrony losing its
+source — see ``test_chaos_chrony_loses_source_mid_qso_locks_tx`` and its
+counterpart ``test_chaos_gps_lost_but_ntp_good_keeps_tx``.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from ft8_appliance.gps import GpsdClient
 from ft8_appliance.rig import RigctldClient
 from ft8_appliance.runtime import FakeSlotClock, Orchestrator, SlotTick
 from ft8_appliance.runtime import orchestrator as orchestrator_mod
-from ft8_appliance.statemachine import DecodedMsg, HardwareState
+from ft8_appliance.statemachine import HardwareState
 from ft8_appliance.util.system_health import ChronyStatus
 from tests.mocks.mock_gpsd import MockGpsd
 from tests.mocks.mock_rigctld import MockRigctld
@@ -91,29 +94,53 @@ def _tick(i: int) -> SlotTick:
 
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_chaos_gps_loses_fix_mid_qso_locks_tx(
+async def test_chaos_chrony_loses_source_mid_qso_locks_tx(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GPS fix drops to 0 and no NTP is left → time_guard fails → TX_LOCKED."""
-    _force_chrony(monkeypatch, None)
+    """chrony loses its source mid-QSO → time_guard fails → TX_LOCKED.
+
+    Until 2026-09-06 this test was "GPS loses fix" and started the CQ with
+    chrony=None, i.e. it *relied* on a GPS fix alone unlocking TX. That was
+    the flaw the audit found (A1): GPS does not discipline the clock here.
+    """
+    holder: dict[str, ChronyStatus | None] = {
+        "status": ChronyStatus(offset_s=0.001, stratum=3),
+    }
+
+    async def _stub() -> ChronyStatus | None:
+        return holder["status"]
+
+    monkeypatch.setattr(orchestrator_mod, "read_chrony_tracking", _stub)
     async with MockRigctld() as mock_rig, MockGpsd() as mock_gps:
         orch = await _make_orch(mock_rig, mock_gps)
         await orch.handle_start_cq()
         assert orch.status().state == "CQ_CALLING"
 
-        # Now GPS loses fix
-        mock_gps.set_fix(mode=0)
-        await mock_gps.emit_tpv()
-        await asyncio.sleep(0.1)
+        # chronyc stops answering (daemon died / no source left)
+        holder["status"] = None
 
-        # Drive a slot — the orchestrator refreshes hardware state and the
-        # state machine's next on_slot_tick should hit time_guard and lock
         await orch.process_slot(_tick(0))
         snap = orch.status()
         assert snap.state == "TX_LOCKED", f"expected TX_LOCKED, got {snap.state}"
-        assert "GPS" in (snap.last_lock_reason or "")
+        assert "chrony" in (snap.last_lock_reason or "").lower()
         # PTT must be off after lock
         assert mock_rig.state.ptt is False
+        await orch.stop()
+
+
+@pytest.mark.asyncio
+async def test_chaos_gps_fix_alone_never_unlocks_tx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Audit 2026-09-06 A1, at orchestrator level: GPS fix, chrony without a
+    source → the very first CQ attempt locks, and the reason says so."""
+    _force_chrony(monkeypatch, None)
+    async with MockRigctld() as mock_rig, MockGpsd() as mock_gps:
+        orch = await _make_orch(mock_rig, mock_gps)
+        await orch.handle_start_cq()
+        snap = orch.status()
+        assert snap.state == "TX_LOCKED", f"expected TX_LOCKED, got {snap.state}"
+        assert "GPS" in (snap.last_lock_reason or "")
         await orch.stop()
 
 

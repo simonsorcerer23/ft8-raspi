@@ -631,6 +631,8 @@ class Orchestrator:
                 swr_max=self.config.operating.swr_max,
                 alc_max=self.config.operating.alc_max,
                 rig_link_max_age_s=self.config.operating.rig_link_max_age_s,
+                battery_min_v=self.config.operating.battery_min_v,
+                dial_tolerance_hz=self.config.operating.dial_tolerance_hz,
             ),
             qso_max_stale_slots=self.config.operating.qso_max_stale_slots,
             qso_max_cq_resends=self.config.operating.qso_max_cq_resends,
@@ -746,6 +748,20 @@ class Orchestrator:
             await self.rig.connect()
         except Exception as exc:
             log.warning("rig.connect() failed at boot (rigctld down?): %s — will retry in poll loop", exc)
+        else:
+            # PTT beim Start raeumen (Audit 2026-09-06 B3). Der Panic vor dem
+            # Self-Update-Restart deckt nur den geplanten Neustart; nach
+            # Watchdog-Kill, OOM oder Crash mitten im Burst haelt rigctld
+            # PTT, und bis hierher raeumte erst der PTT-Stuck-Watchdog nach
+            # max_ptt_s + 2 s auf — mit Boot und RestartSec rund 30 s
+            # Dauertraeger. self_update.md, Lesson 3: "Idle = state machine
+            # AND physical state". Best-effort: rigctld kann hier noch
+            # nicht bereit sein, dann faengt es der Rig-Poll beim ersten
+            # brauchbaren Snapshot (_boot_ptt_checked).
+            try:
+                await self.rig.set_ptt(False)
+            except Exception as exc:
+                log.warning("boot PTT-off failed (rigctld not ready?): %s", exc)
         # Sebastian v0.4.2: nach erfolgreichem Connect Rig-Dial auf
         # die mode-passende Sub-Band-Freq setzen. FT4 hat eigene Sub-
         # Bänder (z.B. 14.080 vs 14.074 MHz auf 20m). Ohne diesen
@@ -2546,6 +2562,12 @@ class Orchestrator:
         # Operating limits → guards
         self.state_machine.limits.swr_max = new_cfg.operating.swr_max
         self.state_machine.limits.alc_max = new_cfg.operating.alc_max
+        # Jedes Guard-Limit mit Config-Gegenstueck gehoert hierher — sonst
+        # wirkt eine Einstellung erst nach dem naechsten Service-Neustart
+        # (Audit 2026-09-06 C3: rig_link_max_age_s lag genau so herum).
+        self.state_machine.limits.rig_link_max_age_s = new_cfg.operating.rig_link_max_age_s
+        self.state_machine.limits.battery_min_v = new_cfg.operating.battery_min_v
+        self.state_machine.limits.dial_tolerance_hz = new_cfg.operating.dial_tolerance_hz
         self.state_machine.qso_max_stale_slots = new_cfg.operating.qso_max_stale_slots
         self.state_machine.qso_max_cq_resends = new_cfg.operating.qso_max_cq_resends
         self.state_machine.qso_max_report_resends = new_cfg.operating.qso_max_report_resends
@@ -2698,6 +2720,9 @@ class Orchestrator:
     # Monotonic-Zeitstempel des letzten BRAUCHBAREN Snapshots (siehe
     # rig_link_guard). None = seit dem Start noch keiner angekommen.
     _last_rig_at: float | None = field(default=None, init=False)
+    # Einmal pro Prozess: beim ersten brauchbaren Snapshot pruefen, ob PTT
+    # noch von einem Vorgaenger-Prozess ansteht (siehe start()).
+    _boot_ptt_checked: bool = field(default=False, init=False)
 
     async def _slot_loop(self) -> None:
         try:
@@ -4677,6 +4702,26 @@ class Orchestrator:
             # Lebenszeichen, und die Sperre feuerte nie.
             if self._last_rig.freq_hz is not None:
                 self._last_rig_at = time.monotonic()
+                if not self._boot_ptt_checked:
+                    self._boot_ptt_checked = True
+                    # Steht PTT an, obwohl dieser Prozess noch nie gesendet
+                    # hat, stammt es von einem abgestuerzten Vorgaenger
+                    # (rigctld haelt PTT ueber unseren Tod hinaus). Sofort
+                    # aus statt max_ptt_s + 2 s zu warten.
+                    if self._last_rig.ptt and self._last_tx_message_at == 0.0:
+                        log.warning(
+                            "PTT stand beim Start noch an (Vorgaenger-Prozess?) — "
+                            "forciere aus"
+                        )
+                        try:
+                            await self.rig.set_ptt(False)
+                        except Exception as exc:
+                            log.error("boot PTT-off im Poll fehlgeschlagen: %s", exc)
+                        self.state_machine.ctx.last_lock_code = "lock.ptt_stuck"
+                        self.state_machine.ctx.last_lock_params = None
+                        self.state_machine.ctx.last_lock_reason = _i18n.translate(
+                            "lock.ptt_stuck"
+                        )
 
             await self._reconcile_dial_once_after_rig_ready()
 
@@ -5645,7 +5690,10 @@ class Orchestrator:
 
         self._hardware_state = HardwareState(
             gps_fix_mode=gps.mode,
-            time_offset_s=self._chrony.offset_s if self._chrony else 0.0,
+            # None = chronyc hat nicht geantwortet: unbekannt, nicht 0,0.
+            # Der time_guard sperrt dann — ein erfundener Idealwert liess
+            # bis 2026-09-06 eine frei laufende Uhr als synchron durchgehen.
+            time_offset_s=self._chrony.offset_s if self._chrony else None,
             swr=rig.swr if rig.swr is not None else 1.0,
             # ALC aus dem letzten TX-Burst (Peak, gesetzt an der
             # PTT-Abfallflanke). Stand hier bis 2026-07-30 hartkodiert auf
@@ -5657,7 +5705,9 @@ class Orchestrator:
             # Beim IC-705 im Akkubetrieb kommt hier ein echter Wert an;
             # vorher war er hartkodiert None und der Guard damit tot.
             battery_v=self._last_rig.battery_v,
-            cpu_temp_c=cpu_temp if cpu_temp is not None else 50.0,
+            # None = Sensor nicht lesbar; der temp_guard laesst das passieren
+            # statt ueber erfundene 50 Grad zu urteilen.
+            cpu_temp_c=cpu_temp,
             # Ehrliche Luecke: eine Sample-Drift-Messung existiert nirgends
             # im Projekt, es gibt also keine Quelle fuer diesen Wert. Die 0
             # ist kein Messwert, sondern "unbekannt" — der audio_drift_guard
@@ -5667,6 +5717,12 @@ class Orchestrator:
             antenna_covers_band=antenna_ok,
             band_allowed_for_license=self._band_allowed_for_license(),
             chrony_synced=chrony_synced,
+            # Steht das Rig auf einem konfigurierten FT8/FT4-Dial? None =
+            # Frequenz unbekannt (Sache des rig_link_guard). Siehe dial_guard:
+            # die grobe Banderkennung hat Region-2-Kanten und liess Off-Band-
+            # Frequenzen als "80 m"/"40 m" durch.
+            dial_on_configured_freq=self._dial_on_configured_freq(),
+            rig_freq_hz=rig.freq_hz,
             # Alter des letzten brauchbaren Rig-Snapshots. Ohne das
             # urteilen swr/battery/antenna/license-Guard bei totem rigctld
             # ueber lauter None und gehen dabei alle auf gruen.
@@ -5687,6 +5743,27 @@ class Orchestrator:
         if self._last_rig.freq_hz is None:
             return None
         return _band_from_freq_hz(self._last_rig.freq_hz)
+
+    def configured_dials_hz(self) -> set[int]:
+        """Alle FT8- und FT4-Dials der konfigurierten Baender in Hz.
+
+        Beide Modi, weil der Mode-Switch den Dial selbst umsetzt und ein
+        Rig auf dem FT4-Dial im FT8-Modus kein Off-Band-Fall ist — den
+        Mode-Mismatch meldet der Tamper-Watchdog.
+        """
+        dials: set[int] = set()
+        for b in self.config.bands:
+            for mode in ("FT8", "FT4"):
+                dials.add(int(b.freq_for_mode(mode)) * 1000)
+        return dials
+
+    def _dial_on_configured_freq(self) -> bool | None:
+        """Input fuer den dial_guard. None = Rig-Frequenz unbekannt."""
+        hz = self._last_rig.freq_hz
+        if hz is None:
+            return None
+        tol = self.config.operating.dial_tolerance_hz
+        return any(abs(hz - d) <= tol for d in self.configured_dials_hz())
 
     def _band_for_rig_freq(self, hz: int):
         """Welcher konfigurierte BandConfig deckt diese On-Air-Frequenz ab?

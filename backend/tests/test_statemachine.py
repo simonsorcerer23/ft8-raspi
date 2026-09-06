@@ -68,7 +68,10 @@ def test_start_cq_emits_cq_message(sm: StateMachine, good_hw: HardwareState) -> 
 
 
 def test_guard_violation_locks_tx(sm: StateMachine) -> None:
-    bad_hw = HardwareState(gps_fix_mode=0)  # no GPS fix
+    # Keine Zeitquelle: chrony ohne Quelle UND kein GPS-Fix. Seit
+    # 2026-09-06 zaehlt fuer den time_guard nur chrony (GPS stellt die
+    # Uhr auf diesem System nicht) — der GPS-Fix geht nur in den Grund ein.
+    bad_hw = HardwareState(gps_fix_mode=0, chrony_synced=False)
     sm.on_user_start_cq(bad_hw)
     actions = sm.drain_actions()
     assert sm.state is State.TX_LOCKED
@@ -79,7 +82,7 @@ def test_guard_violation_locks_tx(sm: StateMachine) -> None:
 
 
 def test_reset_lock_returns_to_idle(sm: StateMachine) -> None:
-    sm.on_user_start_cq(HardwareState(gps_fix_mode=0))
+    sm.on_user_start_cq(HardwareState(gps_fix_mode=0, chrony_synced=False))
     assert sm.state is State.TX_LOCKED
     sm.on_user_reset_lock()
     assert sm.state is State.IDLE

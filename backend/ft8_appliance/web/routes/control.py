@@ -123,7 +123,24 @@ async def set_freq(
     Wird hauptsächlich von der ntfy-Action "Auf <Band> zurück" genutzt
     nachdem ein Frequenz-Tamper erkannt wurde — Tap aufs Handy schickt
     POST mit dem Soll-Wert, Pi schreibt's via Hamlib zurück ans Rig.
+
+    Nur konfigurierte FT8-/FT4-Dials (Audit 2026-09-06 A3): dieser
+    Endpoint ist ueber den engen ntfy-Action-Token erreichbar, und der
+    Token steht in den Action-URLs jedes QSO-Pushes auf einem oeffentlich
+    lesbaren ntfy-Topic. Ein beliebiger Frequenzwert waere damit ein
+    beliebiger Sendeort. Der Rollback-Button schickt exakt den Soll-Dial,
+    das Frontend nutzt den Endpoint nicht — die Einschraenkung kostet
+    keinen legitimen Aufrufer etwas.
     """
+    allowed = orch.configured_dials_hz()
+    if req.freq_hz not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"freq_hz={req.freq_hz} ist kein konfigurierter FT8/FT4-Dial; "
+                f"erlaubt: {sorted(allowed)}"
+            ),
+        )
     try:
         await orch.handle_set_freq(req.freq_hz)
     except Exception as exc:

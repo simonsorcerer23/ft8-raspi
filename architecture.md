@@ -110,6 +110,14 @@ GPS time is extremely accurate at ±100 ns. FT8 requires < 500 ms. Time is
 therefore guaranteed **independently of the internet** as long as GPS has
 sky view.
 
+> **Reality check (2026-09-06):** the GPS → chrony leg above is *not*
+> currently active — gpsd 3.25 does not populate the SHM refclock on this
+> install, so chrony runs NTP-only (see `docs/decoder_evolution.md`, v0.6.0 D).
+> Consequently the time guard trusts **chrony only**; a GPS fix by itself
+> never unlocks TX. Portable operation without internet therefore blocks TX
+> until the GPS → chrony path is repaired (diagnosis: `chronyc sources -v`,
+> Reach column for `SHM 0`).
+
 ---
 
 ## 4. Software stack
@@ -254,13 +262,15 @@ partner repeats their RR73 (= our RR73 was not decoded). If so: we send a
 Otherwise, after one slot, on to CQ_CALLING (auto_cq=True) or IDLE.
 
 **Before every TX transition the state machine checks:**
-- Time guard: GPS sync OK, DT < 0.5 s
+- Time guard: chrony synced (stratum < 16) with |offset| < 0.5 s — a GPS fix alone does not count (see §3.5)
+- Rig-link guard: the rig has delivered a usable snapshot within the last 60 s
+- Dial guard: the rig sits within ±500 Hz of a configured FT8/FT4 dial (guards against off-band TX after a manual VFO turn)
 - PTT watchdog: max. 18 s per transmission
 - ALC: level in the green zone
 - SWR: < configured threshold (default 2.0)
-- Battery: IC-705 internal voltage > 12 V (if on battery)
+- Battery: IC-705 voltage above `operating.battery_min_v` — off by default (0), to be set after a live reading; the old fixed 12 V never matched the 7.4 V pack
 - Band lockout: the active antenna covers the band
-- IARU band-plan lockout: TX frequency within the permitted FT8 segment of the GPS-determined region
+- IARU band-plan lockout per region: *planned, not wired* — `util/bandplan.is_in_ft8_segment()` exists but has no caller; the dial guard above covers the off-band case via the configured dials
 
 On violation of any condition: TX is refused, the UI shows an alarm badge.
 
@@ -414,7 +424,7 @@ Additional modes:
 - Storage watcher (SSD wear, disk space)
 - Multi-level watchdog: in-process heartbeat + systemd watchdog + optional GPIO HW watchdog
 - PTT-stuck detection (PTT on but no audio → immediate off)
-- Time guard (no TX without GPS sync)
+- Time guard (no TX without a chrony-synced clock)
 - **Blitzortung.org** live data, alarm for thunderstorms inside a configurable
   radius (default 30 km, `alarm_radius_km`; hot-reloadable since 2026-06)
 

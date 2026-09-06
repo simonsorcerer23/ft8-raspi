@@ -35,6 +35,10 @@ class ChronyStatus:
     stratum: int | None = None
     rms_offset_s: float | None = None
     leap_status: str | None = None
+    # Name der aktuellen Quelle aus "Reference ID : 47505300 (GPS)".
+    # "GPS" heisst: der SHM-Refclock liefert wirklich — dann ist die
+    # Architektur-Zusage aus §3.5 erfuellt. Alles andere ist NTP.
+    ref_id_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -104,7 +108,15 @@ def parse_chrony_tracking(text: str) -> ChronyStatus | None:
     if lm:
         leap = lm.group(1)
 
-    return ChronyStatus(offset_s=offset, stratum=stratum, rms_offset_s=rms, leap_status=leap)
+    ref_name: str | None = None
+    rm2 = re.search(r"Reference ID\s*:\s*[0-9A-Fa-f]+\s*\(([^)]*)\)", text)
+    if rm2:
+        ref_name = rm2.group(1).strip() or None
+
+    return ChronyStatus(
+        offset_s=offset, stratum=stratum, rms_offset_s=rms, leap_status=leap,
+        ref_id_name=ref_name,
+    )
 
 
 # ---------------------------------------------------------------------------

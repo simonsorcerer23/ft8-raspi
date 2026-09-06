@@ -333,6 +333,17 @@ class OperatingConfig(BaseModel):
     # USB-Re-Enumeration fallen bewusst nicht darunter, weil der Lock
     # sticky ist und quittiert werden muss.
     rig_link_max_age_s: float = Field(default=60.0, ge=15.0, le=600.0)
+    # Akku-Guard (battery_guard). 0 = aus. Erst nach einer Live-Messung
+    # am IC-705 setzen (rig.battery_v im Status): der frueher fest
+    # verdrahtete Wert 12,0 V passte nicht zum 7,4-V-Akku und haette beim
+    # ersten TX am Akku sticky gesperrt. Der IC-7300 liefert kein VOLTSEN,
+    # dort ist der Guard ohnehin inert.
+    battery_min_v: float = Field(default=0.0, ge=0.0, le=60.0)
+    # Dial-Guard: wie weit die Rig-Frequenz von einem konfigurierten
+    # FT8-/FT4-Dial abweichen darf, bevor TX gesperrt wird. 500 Hz
+    # decken Anzeige-Rundung und CAT-Latenz; ein bewusster VFO-Dreh von
+    # 1 kHz verlaesst das FT8-Segment bereits.
+    dial_tolerance_hz: int = Field(default=500, ge=100, le=5000)
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift

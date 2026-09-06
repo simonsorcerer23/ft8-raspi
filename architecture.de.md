@@ -97,6 +97,14 @@ GPS-Satelliten → VK-162 → gpsd → chrony → Systemzeit
 
 GPS-Zeit ist mit ±100 ns extrem genau. FT8 verlangt < 500 ms. Zeit ist damit **unabhängig vom Internet** garantiert, solange GPS Sky-View hat.
 
+> **Realitätsabgleich (2026-09-06):** der Pfad GPS → chrony ist derzeit
+> *nicht* aktiv — gpsd 3.25 befüllt den SHM-Refclock auf dieser
+> Installation nicht, chrony läuft NTP-only (siehe
+> `docs/decoder_evolution.md`, v0.6.0 D). Der Zeit-Guard vertraut deshalb
+> **nur chrony**; ein GPS-Fix allein gibt TX nie frei. Portabler Betrieb
+> ohne Internet sperrt TX, bis der Pfad GPS → chrony repariert ist
+> (Diagnose: `chronyc sources -v`, Reach-Spalte für `SHM 0`).
+
 ---
 
 ## 4. Software-Stack
@@ -240,13 +248,15 @@ ein 73 (Tx6) hinterher als Closure-Bestätigung — analog WSJT-X. Sonst
 nach 1 Slot weiter zu CQ_CALLING (auto_cq=True) oder IDLE.
 
 **Vor jedem TX-Transition prüft die State Machine:**
-- Time-Guard: GPS-Sync OK, DT < 0.5 s
+- Zeit-Guard: chrony synchron (Stratum < 16) mit |Offset| < 0,5 s — ein GPS-Fix allein zählt nicht (siehe §3.5)
 - PTT-Watchdog: max. 18 s pro Aussendung
 - ALC: Pegel im grünen Bereich
 - SWR: < konfigurierter Schwellwert (default 2.0)
-- Battery: IC-705 internal voltage > 12 V (falls auf Akku-Betrieb)
+- Akku: IC-705-Spannung über `operating.battery_min_v` — Default aus (0), erst nach Live-Messung setzen; die alte feste 12-V-Schwelle passte nie zum 7,4-V-Akku
+- Rig-Link-Guard: das Rig hat in den letzten 60 s einen brauchbaren Snapshot geliefert
+- Dial-Guard: das Rig steht ±500 Hz an einem konfigurierten FT8-/FT4-Dial (gegen Off-Band-TX nach manuellem VFO-Dreh)
 - Band-Lockout: aktive Antenne deckt das Band ab
-- IARU-Bandplan-Lockout: TX-Frequenz im erlaubten FT8-Segment der GPS-bestimmten Region
+- IARU-Bandplan-Lockout pro Region: *geplant, nicht verdrahtet* — `util/bandplan.is_in_ft8_segment()` existiert ohne Aufrufer; den Off-Band-Fall deckt der Dial-Guard über die konfigurierten Dials
 
 Bei Verletzung einer Bedingung: TX wird verweigert, UI zeigt Alarm-Badge.
 
@@ -399,7 +409,7 @@ Zusätzliche Modi:
 - Storage-Watcher (SSD-Wear, Plattenplatz)
 - Multi-Level Watchdog: in-process Heartbeat + systemd Watchdog + optional GPIO HW-Watchdog
 - PTT-Stuck-Detection (PTT-an aber kein Audio → sofort off)
-- Time-Guard (kein TX ohne GPS-Sync)
+- Zeit-Guard (kein TX ohne chrony-synchrone Uhr)
 - **Blitzortung.org** Live-Daten, Alarm bei Gewitter innerhalb eines
   konfigurierbaren Radius (Default 30 km, `alarm_radius_km`; seit 2026-06 hot-reloadbar)
 

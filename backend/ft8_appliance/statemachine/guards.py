@@ -32,11 +32,18 @@ class HardwareState:
     """Snapshot of the live measurements the guards reason over."""
 
     gps_fix_mode: int = 3  # 0=no, 2=2D, 3=3D
-    time_offset_s: float = 0.0  # |chrony / GPS offset|
+    # chrony-Offset der Systemuhr in Sekunden. None = chronyc hat nicht
+    # geantwortet, also UNBEKANNT — nicht 0,0. Ein erfundener Idealwert
+    # war bis 2026-09-06 genau die Luecke, durch die eine frei laufende
+    # Uhr als "perfekt synchron" durchging.
+    time_offset_s: float | None = 0.0
     swr: float = 1.2
     alc_pct: int = 0
     battery_v: float | None = None  # None = on external power
-    cpu_temp_c: float = 50.0
+    # None = Sensor nicht lesbar (kein /sys/class/thermal, Dev-Rechner).
+    # Der temp_guard laesst das passieren: der Pi drosselt sich selbst,
+    # und ein erfundener Wert waere schlechter als keiner.
+    cpu_temp_c: float | None = 50.0
     audio_drift_samples: int = 0
     # Antenna lockout: True if the active antenna covers the current band.
     # Default True so legacy tests don't trip; production wiring sets this
@@ -47,10 +54,17 @@ class HardwareState:
     # orchestrator via AppConfig.can_tx_on(). Default True for the same
     # reason as above.
     band_allowed_for_license: bool = True
-    # Chrony has reached an upstream NTP source — used as a fallback when
-    # GPS has no fix (indoor installs, basement shacks). chrony stratum
-    # 2-3 with sub-100 ms offset is more than tight enough for FT8.
-    chrony_synced: bool = False
+    # chrony ist auf eine Quelle synchronisiert (Stratum < 16). Das ist
+    # DIE Zeitquelle fuer den time_guard — nicht der GPS-Fix, siehe dort.
+    # Default True, weil die HardwareState-Defaults bewusst "alles gruen"
+    # sind; die Produktion setzt das Feld jeden Slot aus chronyc.
+    chrony_synced: bool = True
+    # True, wenn die Rig-Frequenz innerhalb der Toleranz an einem
+    # konfigurierten FT8-/FT4-Dial liegt; False = Rig steht woanders;
+    # None = Frequenz unbekannt (dann urteilt der rig_link_guard).
+    dial_on_configured_freq: bool | None = None
+    # Nur fuer den Sperrgrund des dial_guard (Anzeige in MHz).
+    rig_freq_hz: int | None = None
     # Sekunden seit dem letzten BRAUCHBAREN Rig-Snapshot (einer mit
     # Frequenz). None = seit dem Start noch keiner angekommen, also kein
     # Verlust den wir feststellen koennten — siehe rig_link_guard.
@@ -63,12 +77,16 @@ class GuardLimits:
 
     swr_max: float = 2.0
     alc_max: int = 0
-    battery_min_v: float = 12.0
+    # 0 = Guard aus (gleiche Semantik wie alc_max). Der fruehere Default
+    # 12,0 V wurde nie gegen ein Geraet gehalten und passt nicht zum
+    # 7,4-V-Akku des IC-705 — siehe battery_guard.
+    battery_min_v: float = 0.0
     cpu_temp_max_c: float = 75.0
     audio_drift_warn_samples: int = 5
     audio_drift_fail_samples: int = 50
     time_offset_max_s: float = 0.5
     rig_link_max_age_s: float = 60.0
+    dial_tolerance_hz: int = 500
 
 
 Guard = Callable[[HardwareState, GuardLimits], GuardResult]
@@ -76,16 +94,32 @@ Guard = Callable[[HardwareState, GuardLimits], GuardResult]
 
 # ---------------------------------------------------------------------------
 def time_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
-    # FT8 only needs ~100 ms time accuracy. Two sources can deliver that:
-    # GPS fix (authoritative) or a chrony daemon synced to an NTP source.
-    # Either is sufficient as long as the |offset| stays within the limit;
-    # we only block when both are unavailable.
-    # Reasons are emitted as i18n code + params (Sebastian 2026-06-01) and
-    # localized at serialize time / with the config lang — see i18n.py.
-    has_gps = hw.gps_fix_mode >= 2
-    has_chrony = hw.chrony_synced
-    if not has_gps and not has_chrony:
-        return GuardResult(False, "time_guard", "guard.time_no_sync")
+    """Blocke TX, wenn die Systemuhr nicht nachweislich synchron ist.
+
+    Bis 2026-09-06 reichte ein GPS-Fix ("has_gps or has_chrony"). Die
+    Annahme dahinter stand in architecture.md §3.5: GPS → gpsd → chrony
+    → Systemuhr. Auf diesem System ist das nicht so — chrony laeuft
+    NTP-only (decoder_evolution.md, v0.6.0 D: gpsd 3.25 schreibt nicht
+    ins SHM). Ein GPS-Fix sagt damit NICHTS ueber die Systemuhr aus.
+    Portabel ohne Internet, Pi ohne RTC, war das genau der Fall, in dem
+    der Guard falsch gruen zeigte: chrony ohne Quelle, GPS-Fix da, Uhr
+    frei laufend, TX im falschen Slot.
+
+    Darum zaehlt nur noch chrony. Ist chrony auf GPS synchronisiert
+    (Refid "GPS"), ist das automatisch abgedeckt — dann meldet chrony
+    "synchron". Der GPS-Fix geht nur noch in den Sperrgrund ein, damit
+    im Banner steht, ob GPS zwar da ist, aber die Uhr nicht stellt.
+    """
+    if not hw.chrony_synced:
+        code = (
+            "guard.time_no_sync_gps_idle" if hw.gps_fix_mode >= 2
+            else "guard.time_no_sync"
+        )
+        return GuardResult(False, "time_guard", code)
+    if hw.time_offset_s is None:
+        # chrony synchron gemeldet, aber der Offset war nicht lesbar —
+        # ohne Messwert kein Urteil, und ohne Urteil kein TX.
+        return GuardResult(False, "time_guard", "guard.time_unknown")
     if abs(hw.time_offset_s) > lim.time_offset_max_s:
         return GuardResult(
             False, "time_guard", "guard.time_offset",
@@ -127,6 +161,37 @@ def rig_link_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     return GuardResult(True, "rig_link_guard")
 
 
+def dial_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
+    """Blocke TX, wenn das Rig nicht auf einem konfigurierten Dial steht.
+
+    architecture.md §5 verspricht eine IARU-Segment-Sperre; der Code
+    dafuer (util/bandplan.is_in_ft8_segment) wurde nie aufgerufen. Was
+    lief, war die grobe Banderkennung mit Region-2-Kanten: 80 m bis
+    4 000 kHz, 40 m bis 7 300 — ein VFO auf 3,900 MHz galt als "80 m",
+    Lizenz- und Antennen-Guard waren gruen, und die Box sendete
+    ausserhalb der deutschen Zuteilung.
+
+    Der Abgleich hier nutzt die Config als Wahrheit: die FT8- und
+    FT4-Dials aller konfigurierten Baender, mit Toleranz
+    (operating.dial_tolerance_hz). Bewusst nicht die IARU-Tabelle: die
+    kennt fuer 60 m nur Region 2 und keine FT4-Fenster — naiv verdrahtet
+    haette sie Dads 60 m in DL komplett gesperrt.
+
+    None (Frequenz unbekannt) sperrt hier nicht — das ist der Fall des
+    rig_link_guard, der davor steht. Der Tamper-Push mit Rollback-Button
+    bleibt daneben bestehen; er ist Komfort, das hier ist der Guard.
+    """
+    if hw.dial_on_configured_freq is None:
+        return GuardResult(True, "dial_guard")
+    if not hw.dial_on_configured_freq:
+        mhz = f"{hw.rig_freq_hz / 1e6:.4f}" if hw.rig_freq_hz is not None else "?"
+        return GuardResult(
+            False, "dial_guard", "guard.dial",
+            {"mhz": mhz, "tol": lim.dial_tolerance_hz},
+        )
+    return GuardResult(True, "dial_guard")
+
+
 def swr_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     if hw.swr > lim.swr_max:
         return GuardResult(
@@ -158,6 +223,14 @@ def alc_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
 
 
 def battery_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
+    # battery_min_v <= 0 heisst "Guard aus". Der alte feste Default von
+    # 12,0 V (architecture.md §5) wurde nie gegen ein Geraet gehalten,
+    # weil der Guard bis 2026-09-06 hartkodiert battery_v=None bekam. Der
+    # interne Akku des IC-705 liegt nominal bei 7,4 V — ein Lock beim
+    # ersten TX am Akku waere das wahrscheinlichste Ergebnis gewesen. Der
+    # Wert gehoert nach einer Live-Messung in die Config, nicht hierher.
+    if lim.battery_min_v <= 0:
+        return GuardResult(True, "battery_guard")
     if hw.battery_v is None:
         return GuardResult(True, "battery_guard")  # external power, no check
     if hw.battery_v < lim.battery_min_v:
@@ -169,6 +242,10 @@ def battery_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
 
 
 def temp_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
+    if hw.cpu_temp_c is None:
+        # Sensor nicht lesbar. Kein Urteil ueber einen erfundenen Wert;
+        # der Pi drosselt sich thermisch ohnehin selbst.
+        return GuardResult(True, "temp_guard")
     if hw.cpu_temp_c > lim.cpu_temp_max_c:
         return GuardResult(
             False, "temp_guard", "guard.temp",
@@ -225,6 +302,9 @@ DEFAULT_GUARDS: tuple[Guard, ...] = (
     # ist deren Urteil wertlos. Der Grund fuer die Sperre soll dann
     # "Rig nicht erreichbar" heissen und nicht "SWR ok".
     rig_link_guard,
+    # Direkt dahinter: steht das Rig auf keinem konfigurierten Dial, ist
+    # das Band-Urteil von license/antenna wertlos (Region-2-Kanten).
+    dial_guard,
     license_guard,
     antenna_guard,
     swr_guard,
