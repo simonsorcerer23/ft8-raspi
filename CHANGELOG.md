@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.73.0 — 2026-09-06
+- feat: Feinsynchronisation + symbolsynchrone Demodulation im Hint-Pass — Korpus 300 -> 309 Treffer
+
 ## v0.72.1 — 2026-09-06
 - feat: std-Pass mit time_osr 4, Dedupe ueber die Nutzlast statt CRC-14, Stufe-2-LDPC 150 %
 
