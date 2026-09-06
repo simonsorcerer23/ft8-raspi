@@ -8,8 +8,13 @@ IFACE=wlan0
 systemctl stop ft8-hostapd.service || true
 systemctl stop dnsmasq || true
 nft delete table inet ft8_captive 2>/dev/null || true
-ip addr flush dev "${IFACE}" || true
-nmcli device set "${IFACE}" managed yes || true
+# Only undo what start-ap-fallback.sh did. If wlan0 is already back under
+# NetworkManager (someone ran this script by hand, then `systemctl stop`
+# runs it again as ExecStop), flushing its address would drop a live WLAN.
+if nmcli -t -f DEVICE,STATE device status 2>/dev/null | grep -q "^${IFACE}:unmanaged"; then
+    ip addr flush dev "${IFACE}" || true
+    nmcli device set "${IFACE}" managed yes || true
+fi
 # Ask NetworkManager to pick the best known WLAN right away. Usually it does
 # so by itself, but a profile that was taken down by hand (nmcli connection
 # down) stays autoconnect-blocked until asked — seen 2026-09-06 while testing

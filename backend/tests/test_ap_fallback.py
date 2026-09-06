@@ -117,6 +117,32 @@ def test_nmcli_parsing_counts_only_ethernet_and_wifi() -> None:
     assert asyncio.run(run(ap)) is False
 
 
+@pytest.mark.asyncio
+async def test_active_check_asks_hostapd_not_the_oneshot_unit() -> None:
+    """Die oneshot-Unit bleibt 'active', wenn der AP am Unit-Manager vorbei
+    gestoppt wird — dann duerfte der Watchdog nie wieder starten."""
+    from ft8_appliance.util import network as net
+
+    seen: list[list[str]] = []
+
+    async def fake_run(cmd, **kw):
+        seen.append(cmd)
+        return 0, "inactive\n", ""
+
+    orig = net._run
+    net._run = fake_run  # type: ignore[assignment]
+    try:
+        assert await Orchestrator.ap_fallback_is_active(SimpleNamespace()) is False
+    finally:
+        net._run = orig  # type: ignore[assignment]
+    assert seen and "ft8-hostapd.service" in seen[0]
+
+
+def test_stop_script_only_flushes_an_unmanaged_wlan0() -> None:
+    stop = (ROOT / "deploy/scripts/stop-ap-fallback.sh").read_text()
+    assert ':unmanaged"' in stop and "ip addr flush" in stop
+
+
 def test_watchdog_is_spawned_in_start() -> None:
     import inspect
 
