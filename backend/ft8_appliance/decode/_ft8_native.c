@@ -654,11 +654,15 @@ static void (*_cffi_call_python_org)(struct _cffi_externpy_s *, char *);
         uint64_t pass_hint;
         uint64_t slots_decoded;
         uint64_t pass_subtract_round2;
+        uint64_t pass_osd;
     } ft8_shim_pass_stats_t;
 
     void ft8_shim_pass_stats_reset(void);
     void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out);
     int ft8_shim_subtract_message(int16_t* pcm, int n_samples, const char* text, float freq_hz, float dt_s);
+    void ft8_shim_set_osd_depth(int depth);
+    void ft8_shim_set_osd_params(int order2_tail, int crc_tries);
+    int ft8_shim_get_osd_depth(void);
 
     void ft8_shim_set_ldpc_factor(int pct);
     int  ft8_shim_get_ldpc_factor(void);
@@ -670,22 +674,22 @@ static void (*_cffi_call_python_org)(struct _cffi_externpy_s *, char *);
 /************************************************************/
 
 static void *_cffi_types[] = {
-/*  0 */ _CFFI_OP(_CFFI_OP_FUNCTION, 73), // ftx_message_rc_t()(ftx_message_t *, void *, char const *)
-/*  1 */ _CFFI_OP(_CFFI_OP_POINTER, 74), // ftx_message_t *
-/*  2 */ _CFFI_OP(_CFFI_OP_POINTER, 85), // void *
-/*  3 */ _CFFI_OP(_CFFI_OP_POINTER, 67), // char const *
+/*  0 */ _CFFI_OP(_CFFI_OP_FUNCTION, 77), // ftx_message_rc_t()(ftx_message_t *, void *, char const *)
+/*  1 */ _CFFI_OP(_CFFI_OP_POINTER, 78), // ftx_message_t *
+/*  2 */ _CFFI_OP(_CFFI_OP_POINTER, 89), // void *
+/*  3 */ _CFFI_OP(_CFFI_OP_POINTER, 71), // char const *
 /*  4 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
-/*  5 */ _CFFI_OP(_CFFI_OP_FUNCTION, 73), // ftx_message_rc_t()(ftx_message_t const *, void *, char *, ftx_message_offsets_t *)
-/*  6 */ _CFFI_OP(_CFFI_OP_POINTER, 74), // ftx_message_t const *
+/*  5 */ _CFFI_OP(_CFFI_OP_FUNCTION, 77), // ftx_message_rc_t()(ftx_message_t const *, void *, char *, ftx_message_offsets_t *)
+/*  6 */ _CFFI_OP(_CFFI_OP_POINTER, 78), // ftx_message_t const *
 /*  7 */ _CFFI_OP(_CFFI_OP_NOOP, 2),
-/*  8 */ _CFFI_OP(_CFFI_OP_POINTER, 67), // char *
-/*  9 */ _CFFI_OP(_CFFI_OP_POINTER, 72), // ftx_message_offsets_t *
+/*  8 */ _CFFI_OP(_CFFI_OP_POINTER, 71), // char *
+/*  9 */ _CFFI_OP(_CFFI_OP_POINTER, 76), // ftx_message_offsets_t *
 /* 10 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
 /* 11 */ _CFFI_OP(_CFFI_OP_FUNCTION, 16), // int()(char const *, float, float, int16_t *, int)
 /* 12 */ _CFFI_OP(_CFFI_OP_NOOP, 3),
 /* 13 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 13), // float
 /* 14 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 13),
-/* 15 */ _CFFI_OP(_CFFI_OP_POINTER, 75), // int16_t *
+/* 15 */ _CFFI_OP(_CFFI_OP_POINTER, 79), // int16_t *
 /* 16 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 7), // int
 /* 17 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
 /* 18 */ _CFFI_OP(_CFFI_OP_FUNCTION, 16), // int()(char const *, uint32_t)
@@ -700,11 +704,11 @@ static void *_cffi_types[] = {
 /* 27 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 13),
 /* 28 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
 /* 29 */ _CFFI_OP(_CFFI_OP_FUNCTION, 16), // int()(int16_t const *, int, char const *, int, ft8_shim_result_t *, int)
-/* 30 */ _CFFI_OP(_CFFI_OP_POINTER, 75), // int16_t const *
+/* 30 */ _CFFI_OP(_CFFI_OP_POINTER, 79), // int16_t const *
 /* 31 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 7),
 /* 32 */ _CFFI_OP(_CFFI_OP_NOOP, 3),
 /* 33 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 7),
-/* 34 */ _CFFI_OP(_CFFI_OP_POINTER, 71), // ft8_shim_result_t *
+/* 34 */ _CFFI_OP(_CFFI_OP_POINTER, 75), // ft8_shim_result_t *
 /* 35 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 7),
 /* 36 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
 /* 37 */ _CFFI_OP(_CFFI_OP_FUNCTION, 16), // int()(int16_t const *, int, ft8_shim_result_t *, int)
@@ -722,40 +726,44 @@ static void *_cffi_types[] = {
 /* 49 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
 /* 50 */ _CFFI_OP(_CFFI_OP_FUNCTION, 16), // int()(void)
 /* 51 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
-/* 52 */ _CFFI_OP(_CFFI_OP_FUNCTION, 85), // void()(ft8_shim_pass_stats_t *)
-/* 53 */ _CFFI_OP(_CFFI_OP_POINTER, 70), // ft8_shim_pass_stats_t *
+/* 52 */ _CFFI_OP(_CFFI_OP_FUNCTION, 89), // void()(ft8_shim_pass_stats_t *)
+/* 53 */ _CFFI_OP(_CFFI_OP_POINTER, 74), // ft8_shim_pass_stats_t *
 /* 54 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
-/* 55 */ _CFFI_OP(_CFFI_OP_FUNCTION, 85), // void()(ftx_message_t *)
+/* 55 */ _CFFI_OP(_CFFI_OP_FUNCTION, 89), // void()(ftx_message_t *)
 /* 56 */ _CFFI_OP(_CFFI_OP_NOOP, 1),
 /* 57 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
-/* 58 */ _CFFI_OP(_CFFI_OP_FUNCTION, 85), // void()(int)
+/* 58 */ _CFFI_OP(_CFFI_OP_FUNCTION, 89), // void()(int)
 /* 59 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 7),
 /* 60 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
-/* 61 */ _CFFI_OP(_CFFI_OP_FUNCTION, 85), // void()(uint8_t const *, uint8_t *)
-/* 62 */ _CFFI_OP(_CFFI_OP_POINTER, 82), // uint8_t const *
-/* 63 */ _CFFI_OP(_CFFI_OP_POINTER, 82), // uint8_t *
+/* 61 */ _CFFI_OP(_CFFI_OP_FUNCTION, 89), // void()(int, int)
+/* 62 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 7),
+/* 63 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 7),
 /* 64 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
-/* 65 */ _CFFI_OP(_CFFI_OP_FUNCTION, 85), // void()(void)
-/* 66 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
-/* 67 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 2), // char
-/* 68 */ _CFFI_OP(_CFFI_OP_ARRAY, 67), // char[40]
-/* 69 */ (_cffi_opcode_t)(40),
-/* 70 */ _CFFI_OP(_CFFI_OP_STRUCT_UNION, 0), // ft8_shim_pass_stats_t
-/* 71 */ _CFFI_OP(_CFFI_OP_STRUCT_UNION, 1), // ft8_shim_result_t
-/* 72 */ _CFFI_OP(_CFFI_OP_STRUCT_UNION, 2), // ftx_message_offsets_t
-/* 73 */ _CFFI_OP(_CFFI_OP_ENUM, 0), // ftx_message_rc_t
-/* 74 */ _CFFI_OP(_CFFI_OP_STRUCT_UNION, 3), // ftx_message_t
-/* 75 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 19), // int16_t
-/* 76 */ _CFFI_OP(_CFFI_OP_ARRAY, 75), // int16_t[3]
-/* 77 */ (_cffi_opcode_t)(3),
-/* 78 */ _CFFI_OP(_CFFI_OP_ARRAY, 16), // int[3]
-/* 79 */ (_cffi_opcode_t)(3),
-/* 80 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 20), // uint16_t
-/* 81 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 24), // uint64_t
-/* 82 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 18), // uint8_t
-/* 83 */ _CFFI_OP(_CFFI_OP_ARRAY, 82), // uint8_t[10]
-/* 84 */ (_cffi_opcode_t)(10),
-/* 85 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 0), // void
+/* 65 */ _CFFI_OP(_CFFI_OP_FUNCTION, 89), // void()(uint8_t const *, uint8_t *)
+/* 66 */ _CFFI_OP(_CFFI_OP_POINTER, 86), // uint8_t const *
+/* 67 */ _CFFI_OP(_CFFI_OP_POINTER, 86), // uint8_t *
+/* 68 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
+/* 69 */ _CFFI_OP(_CFFI_OP_FUNCTION, 89), // void()(void)
+/* 70 */ _CFFI_OP(_CFFI_OP_FUNCTION_END, 0),
+/* 71 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 2), // char
+/* 72 */ _CFFI_OP(_CFFI_OP_ARRAY, 71), // char[40]
+/* 73 */ (_cffi_opcode_t)(40),
+/* 74 */ _CFFI_OP(_CFFI_OP_STRUCT_UNION, 0), // ft8_shim_pass_stats_t
+/* 75 */ _CFFI_OP(_CFFI_OP_STRUCT_UNION, 1), // ft8_shim_result_t
+/* 76 */ _CFFI_OP(_CFFI_OP_STRUCT_UNION, 2), // ftx_message_offsets_t
+/* 77 */ _CFFI_OP(_CFFI_OP_ENUM, 0), // ftx_message_rc_t
+/* 78 */ _CFFI_OP(_CFFI_OP_STRUCT_UNION, 3), // ftx_message_t
+/* 79 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 19), // int16_t
+/* 80 */ _CFFI_OP(_CFFI_OP_ARRAY, 79), // int16_t[3]
+/* 81 */ (_cffi_opcode_t)(3),
+/* 82 */ _CFFI_OP(_CFFI_OP_ARRAY, 16), // int[3]
+/* 83 */ (_cffi_opcode_t)(3),
+/* 84 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 20), // uint16_t
+/* 85 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 24), // uint64_t
+/* 86 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 18), // uint8_t
+/* 87 */ _CFFI_OP(_CFFI_OP_ARRAY, 86), // uint8_t[10]
+/* 88 */ (_cffi_opcode_t)(10),
+/* 89 */ _CFFI_OP(_CFFI_OP_PRIMITIVE, 0), // void
 };
 
 _CFFI_UNUSED_FN
@@ -769,6 +777,7 @@ static void _cffi_checkfld_typedef_ft8_shim_pass_stats_t(ft8_shim_pass_stats_t *
   (void)((p->pass_hint) | 0);  /* check that 'ft8_shim_pass_stats_t.pass_hint' is an integer */
   (void)((p->slots_decoded) | 0);  /* check that 'ft8_shim_pass_stats_t.slots_decoded' is an integer */
   (void)((p->pass_subtract_round2) | 0);  /* check that 'ft8_shim_pass_stats_t.pass_subtract_round2' is an integer */
+  (void)((p->pass_osd) | 0);  /* check that 'ft8_shim_pass_stats_t.pass_osd' is an integer */
 }
 struct _cffi_align_typedef_ft8_shim_pass_stats_t { char x; ft8_shim_pass_stats_t y; };
 
@@ -866,19 +875,19 @@ _cffi_f_ft4_encode(PyObject *self, PyObject *args)
     return NULL;
 
   datasize = _cffi_prepare_pointer_call_argument(
-      _cffi_type(62), arg0, (char **)&x0);
+      _cffi_type(66), arg0, (char **)&x0);
   if (datasize != 0) {
     x0 = ((size_t)datasize) <= 640 ? (uint8_t const *)alloca((size_t)datasize) : NULL;
-    if (_cffi_convert_array_argument(_cffi_type(62), arg0, (char **)&x0,
+    if (_cffi_convert_array_argument(_cffi_type(66), arg0, (char **)&x0,
             datasize, &large_args_free) < 0)
       return NULL;
   }
 
   datasize = _cffi_prepare_pointer_call_argument(
-      _cffi_type(63), arg1, (char **)&x1);
+      _cffi_type(67), arg1, (char **)&x1);
   if (datasize != 0) {
     x1 = ((size_t)datasize) <= 640 ? (uint8_t *)alloca((size_t)datasize) : NULL;
-    if (_cffi_convert_array_argument(_cffi_type(63), arg1, (char **)&x1,
+    if (_cffi_convert_array_argument(_cffi_type(67), arg1, (char **)&x1,
             datasize, &large_args_free) < 0)
       return NULL;
   }
@@ -1124,19 +1133,19 @@ _cffi_f_ft8_encode(PyObject *self, PyObject *args)
     return NULL;
 
   datasize = _cffi_prepare_pointer_call_argument(
-      _cffi_type(62), arg0, (char **)&x0);
+      _cffi_type(66), arg0, (char **)&x0);
   if (datasize != 0) {
     x0 = ((size_t)datasize) <= 640 ? (uint8_t const *)alloca((size_t)datasize) : NULL;
-    if (_cffi_convert_array_argument(_cffi_type(62), arg0, (char **)&x0,
+    if (_cffi_convert_array_argument(_cffi_type(66), arg0, (char **)&x0,
             datasize, &large_args_free) < 0)
       return NULL;
   }
 
   datasize = _cffi_prepare_pointer_call_argument(
-      _cffi_type(63), arg1, (char **)&x1);
+      _cffi_type(67), arg1, (char **)&x1);
   if (datasize != 0) {
     x1 = ((size_t)datasize) <= 640 ? (uint8_t *)alloca((size_t)datasize) : NULL;
-    if (_cffi_convert_array_argument(_cffi_type(63), arg1, (char **)&x1,
+    if (_cffi_convert_array_argument(_cffi_type(67), arg1, (char **)&x1,
             datasize, &large_args_free) < 0)
       return NULL;
   }
@@ -1471,6 +1480,32 @@ _cffi_f_ft8_shim_get_ldpc_factor(PyObject *self, PyObject *noarg)
 #  define _cffi_f_ft8_shim_get_ldpc_factor _cffi_d_ft8_shim_get_ldpc_factor
 #endif
 
+static int _cffi_d_ft8_shim_get_osd_depth(void)
+{
+  return ft8_shim_get_osd_depth();
+}
+#ifndef PYPY_VERSION
+static PyObject *
+_cffi_f_ft8_shim_get_osd_depth(PyObject *self, PyObject *noarg)
+{
+  int result;
+  PyObject *pyresult;
+
+  Py_BEGIN_ALLOW_THREADS
+  _cffi_restore_errno();
+  { result = ft8_shim_get_osd_depth(); }
+  _cffi_save_errno();
+  Py_END_ALLOW_THREADS
+
+  (void)self; /* unused */
+  (void)noarg; /* unused */
+  pyresult = _cffi_from_c_int(result, int);
+  return pyresult;
+}
+#else
+#  define _cffi_f_ft8_shim_get_osd_depth _cffi_d_ft8_shim_get_osd_depth
+#endif
+
 static int _cffi_d_ft8_shim_hash_table_count(void)
 {
   return ft8_shim_hash_table_count();
@@ -1631,6 +1666,72 @@ _cffi_f_ft8_shim_set_ldpc_factor(PyObject *self, PyObject *arg0)
 }
 #else
 #  define _cffi_f_ft8_shim_set_ldpc_factor _cffi_d_ft8_shim_set_ldpc_factor
+#endif
+
+static void _cffi_d_ft8_shim_set_osd_depth(int x0)
+{
+  ft8_shim_set_osd_depth(x0);
+}
+#ifndef PYPY_VERSION
+static PyObject *
+_cffi_f_ft8_shim_set_osd_depth(PyObject *self, PyObject *arg0)
+{
+  int x0;
+
+  x0 = _cffi_to_c_int(arg0, int);
+  if (x0 == (int)-1 && PyErr_Occurred())
+    return NULL;
+
+  Py_BEGIN_ALLOW_THREADS
+  _cffi_restore_errno();
+  { ft8_shim_set_osd_depth(x0); }
+  _cffi_save_errno();
+  Py_END_ALLOW_THREADS
+
+  (void)self; /* unused */
+  Py_INCREF(Py_None);
+  return Py_None;
+}
+#else
+#  define _cffi_f_ft8_shim_set_osd_depth _cffi_d_ft8_shim_set_osd_depth
+#endif
+
+static void _cffi_d_ft8_shim_set_osd_params(int x0, int x1)
+{
+  ft8_shim_set_osd_params(x0, x1);
+}
+#ifndef PYPY_VERSION
+static PyObject *
+_cffi_f_ft8_shim_set_osd_params(PyObject *self, PyObject *args)
+{
+  int x0;
+  int x1;
+  PyObject *arg0;
+  PyObject *arg1;
+
+  if (!PyArg_UnpackTuple(args, "ft8_shim_set_osd_params", 2, 2, &arg0, &arg1))
+    return NULL;
+
+  x0 = _cffi_to_c_int(arg0, int);
+  if (x0 == (int)-1 && PyErr_Occurred())
+    return NULL;
+
+  x1 = _cffi_to_c_int(arg1, int);
+  if (x1 == (int)-1 && PyErr_Occurred())
+    return NULL;
+
+  Py_BEGIN_ALLOW_THREADS
+  _cffi_restore_errno();
+  { ft8_shim_set_osd_params(x0, x1); }
+  _cffi_save_errno();
+  Py_END_ALLOW_THREADS
+
+  (void)self; /* unused */
+  Py_INCREF(Py_None);
+  return Py_None;
+}
+#else
+#  define _cffi_f_ft8_shim_set_osd_params _cffi_d_ft8_shim_set_osd_params
 #endif
 
 static int _cffi_d_ft8_shim_subtract_message(int16_t * x0, int x1, char const * x2, float x3, float x4)
@@ -1842,7 +1943,7 @@ _cffi_f_ftx_message_decode(PyObject *self, PyObject *args)
   Py_END_ALLOW_THREADS
 
   (void)self; /* unused */
-  pyresult = _cffi_from_c_deref((char *)&result, _cffi_type(73));
+  pyresult = _cffi_from_c_deref((char *)&result, _cffi_type(77));
   if (large_args_free != NULL) _cffi_free_array_arguments(large_args_free);
   return pyresult;
 }
@@ -1906,7 +2007,7 @@ _cffi_f_ftx_message_encode(PyObject *self, PyObject *args)
   Py_END_ALLOW_THREADS
 
   (void)self; /* unused */
-  pyresult = _cffi_from_c_deref((char *)&result, _cffi_type(73));
+  pyresult = _cffi_from_c_deref((char *)&result, _cffi_type(77));
   if (large_args_free != NULL) _cffi_free_array_arguments(large_args_free);
   return pyresult;
 }
@@ -1957,21 +2058,24 @@ static const struct _cffi_global_s _cffi_globals[] = {
   { "FTX_MESSAGE_RC_ERROR_SUFFIX", (void *)_cffi_const_FTX_MESSAGE_RC_ERROR_SUFFIX, _CFFI_OP(_CFFI_OP_ENUM, -1), (void *)0 },
   { "FTX_MESSAGE_RC_ERROR_TYPE", (void *)_cffi_const_FTX_MESSAGE_RC_ERROR_TYPE, _CFFI_OP(_CFFI_OP_ENUM, -1), (void *)0 },
   { "FTX_MESSAGE_RC_OK", (void *)_cffi_const_FTX_MESSAGE_RC_OK, _CFFI_OP(_CFFI_OP_ENUM, -1), (void *)0 },
-  { "ft4_encode", (void *)_cffi_f_ft4_encode, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 61), (void *)_cffi_d_ft4_encode },
+  { "ft4_encode", (void *)_cffi_f_ft4_encode, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 65), (void *)_cffi_d_ft4_encode },
   { "ft4_shim_decode_slot", (void *)_cffi_f_ft4_shim_decode_slot, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 37), (void *)_cffi_d_ft4_shim_decode_slot },
   { "ft4_shim_decode_slot_v2", (void *)_cffi_f_ft4_shim_decode_slot_v2, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 43), (void *)_cffi_d_ft4_shim_decode_slot_v2 },
   { "ft4_shim_synth_message", (void *)_cffi_f_ft4_shim_synth_message, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 11), (void *)_cffi_d_ft4_shim_synth_message },
-  { "ft8_encode", (void *)_cffi_f_ft8_encode, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 61), (void *)_cffi_d_ft8_encode },
+  { "ft8_encode", (void *)_cffi_f_ft8_encode, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 65), (void *)_cffi_d_ft8_encode },
   { "ft8_shim_decode_slot", (void *)_cffi_f_ft8_shim_decode_slot, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 37), (void *)_cffi_d_ft8_shim_decode_slot },
   { "ft8_shim_decode_slot_ap", (void *)_cffi_f_ft8_shim_decode_slot_ap, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 29), (void *)_cffi_d_ft8_shim_decode_slot_ap },
   { "ft8_shim_decode_slot_multipass", (void *)_cffi_f_ft8_shim_decode_slot_multipass, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 43), (void *)_cffi_d_ft8_shim_decode_slot_multipass },
   { "ft8_shim_decode_slot_v2", (void *)_cffi_f_ft8_shim_decode_slot_v2, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 43), (void *)_cffi_d_ft8_shim_decode_slot_v2 },
   { "ft8_shim_get_ldpc_factor", (void *)_cffi_f_ft8_shim_get_ldpc_factor, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 50), (void *)_cffi_d_ft8_shim_get_ldpc_factor },
+  { "ft8_shim_get_osd_depth", (void *)_cffi_f_ft8_shim_get_osd_depth, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 50), (void *)_cffi_d_ft8_shim_get_osd_depth },
   { "ft8_shim_hash_table_count", (void *)_cffi_f_ft8_shim_hash_table_count, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 50), (void *)_cffi_d_ft8_shim_hash_table_count },
   { "ft8_shim_hash_table_save", (void *)_cffi_f_ft8_shim_hash_table_save, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 18), (void *)_cffi_d_ft8_shim_hash_table_save },
   { "ft8_shim_pass_stats_get", (void *)_cffi_f_ft8_shim_pass_stats_get, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_O, 52), (void *)_cffi_d_ft8_shim_pass_stats_get },
-  { "ft8_shim_pass_stats_reset", (void *)_cffi_f_ft8_shim_pass_stats_reset, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 65), (void *)_cffi_d_ft8_shim_pass_stats_reset },
+  { "ft8_shim_pass_stats_reset", (void *)_cffi_f_ft8_shim_pass_stats_reset, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 69), (void *)_cffi_d_ft8_shim_pass_stats_reset },
   { "ft8_shim_set_ldpc_factor", (void *)_cffi_f_ft8_shim_set_ldpc_factor, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_O, 58), (void *)_cffi_d_ft8_shim_set_ldpc_factor },
+  { "ft8_shim_set_osd_depth", (void *)_cffi_f_ft8_shim_set_osd_depth, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_O, 58), (void *)_cffi_d_ft8_shim_set_osd_depth },
+  { "ft8_shim_set_osd_params", (void *)_cffi_f_ft8_shim_set_osd_params, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 61), (void *)_cffi_d_ft8_shim_set_osd_params },
   { "ft8_shim_subtract_message", (void *)_cffi_f_ft8_shim_subtract_message, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 22), (void *)_cffi_d_ft8_shim_subtract_message },
   { "ft8_shim_synth_message", (void *)_cffi_f_ft8_shim_synth_message, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 11), (void *)_cffi_d_ft8_shim_synth_message },
   { "ftx_message_decode", (void *)_cffi_f_ftx_message_decode, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 5), (void *)_cffi_d_ftx_message_decode },
@@ -1982,25 +2086,28 @@ static const struct _cffi_global_s _cffi_globals[] = {
 static const struct _cffi_field_s _cffi_fields[] = {
   { "pass_standard", offsetof(ft8_shim_pass_stats_t, pass_standard),
                      sizeof(((ft8_shim_pass_stats_t *)0)->pass_standard),
-                     _CFFI_OP(_CFFI_OP_NOOP, 81) },
+                     _CFFI_OP(_CFFI_OP_NOOP, 85) },
   { "pass_deep", offsetof(ft8_shim_pass_stats_t, pass_deep),
                  sizeof(((ft8_shim_pass_stats_t *)0)->pass_deep),
-                 _CFFI_OP(_CFFI_OP_NOOP, 81) },
+                 _CFFI_OP(_CFFI_OP_NOOP, 85) },
   { "pass_subtract_residual", offsetof(ft8_shim_pass_stats_t, pass_subtract_residual),
                               sizeof(((ft8_shim_pass_stats_t *)0)->pass_subtract_residual),
-                              _CFFI_OP(_CFFI_OP_NOOP, 81) },
+                              _CFFI_OP(_CFFI_OP_NOOP, 85) },
   { "pass_hint", offsetof(ft8_shim_pass_stats_t, pass_hint),
                  sizeof(((ft8_shim_pass_stats_t *)0)->pass_hint),
-                 _CFFI_OP(_CFFI_OP_NOOP, 81) },
+                 _CFFI_OP(_CFFI_OP_NOOP, 85) },
   { "slots_decoded", offsetof(ft8_shim_pass_stats_t, slots_decoded),
                      sizeof(((ft8_shim_pass_stats_t *)0)->slots_decoded),
-                     _CFFI_OP(_CFFI_OP_NOOP, 81) },
+                     _CFFI_OP(_CFFI_OP_NOOP, 85) },
   { "pass_subtract_round2", offsetof(ft8_shim_pass_stats_t, pass_subtract_round2),
                             sizeof(((ft8_shim_pass_stats_t *)0)->pass_subtract_round2),
-                            _CFFI_OP(_CFFI_OP_NOOP, 81) },
+                            _CFFI_OP(_CFFI_OP_NOOP, 85) },
+  { "pass_osd", offsetof(ft8_shim_pass_stats_t, pass_osd),
+                sizeof(((ft8_shim_pass_stats_t *)0)->pass_osd),
+                _CFFI_OP(_CFFI_OP_NOOP, 85) },
   { "message", offsetof(ft8_shim_result_t, message),
                sizeof(((ft8_shim_result_t *)0)->message),
-               _CFFI_OP(_CFFI_OP_NOOP, 68) },
+               _CFFI_OP(_CFFI_OP_NOOP, 72) },
   { "snr_db_est", offsetof(ft8_shim_result_t, snr_db_est),
                   sizeof(((ft8_shim_result_t *)0)->snr_db_est),
                   _CFFI_OP(_CFFI_OP_NOOP, 16) },
@@ -2015,41 +2122,41 @@ static const struct _cffi_field_s _cffi_fields[] = {
              _CFFI_OP(_CFFI_OP_NOOP, 16) },
   { "types", offsetof(ftx_message_offsets_t, types),
              sizeof(((ftx_message_offsets_t *)0)->types),
-             _CFFI_OP(_CFFI_OP_NOOP, 78) },
+             _CFFI_OP(_CFFI_OP_NOOP, 82) },
   { "offsets", offsetof(ftx_message_offsets_t, offsets),
                sizeof(((ftx_message_offsets_t *)0)->offsets),
-               _CFFI_OP(_CFFI_OP_NOOP, 76) },
+               _CFFI_OP(_CFFI_OP_NOOP, 80) },
   { "payload", offsetof(ftx_message_t, payload),
                sizeof(((ftx_message_t *)0)->payload),
-               _CFFI_OP(_CFFI_OP_NOOP, 83) },
+               _CFFI_OP(_CFFI_OP_NOOP, 87) },
   { "hash", offsetof(ftx_message_t, hash),
             sizeof(((ftx_message_t *)0)->hash),
-            _CFFI_OP(_CFFI_OP_NOOP, 80) },
+            _CFFI_OP(_CFFI_OP_NOOP, 84) },
 };
 
 static const struct _cffi_struct_union_s _cffi_struct_unions[] = {
-  { "$ft8_shim_pass_stats_t", 70, _CFFI_F_CHECK_FIELDS,
-    sizeof(ft8_shim_pass_stats_t), offsetof(struct _cffi_align_typedef_ft8_shim_pass_stats_t, y), 0, 6 },
-  { "$ft8_shim_result_t", 71, _CFFI_F_CHECK_FIELDS,
-    sizeof(ft8_shim_result_t), offsetof(struct _cffi_align_typedef_ft8_shim_result_t, y), 6, 5 },
-  { "$ftx_message_offsets_t", 72, _CFFI_F_CHECK_FIELDS,
-    sizeof(ftx_message_offsets_t), offsetof(struct _cffi_align_typedef_ftx_message_offsets_t, y), 11, 2 },
-  { "$ftx_message_t", 74, _CFFI_F_CHECK_FIELDS,
-    sizeof(ftx_message_t), offsetof(struct _cffi_align_typedef_ftx_message_t, y), 13, 2 },
+  { "$ft8_shim_pass_stats_t", 74, _CFFI_F_CHECK_FIELDS,
+    sizeof(ft8_shim_pass_stats_t), offsetof(struct _cffi_align_typedef_ft8_shim_pass_stats_t, y), 0, 7 },
+  { "$ft8_shim_result_t", 75, _CFFI_F_CHECK_FIELDS,
+    sizeof(ft8_shim_result_t), offsetof(struct _cffi_align_typedef_ft8_shim_result_t, y), 7, 5 },
+  { "$ftx_message_offsets_t", 76, _CFFI_F_CHECK_FIELDS,
+    sizeof(ftx_message_offsets_t), offsetof(struct _cffi_align_typedef_ftx_message_offsets_t, y), 12, 2 },
+  { "$ftx_message_t", 78, _CFFI_F_CHECK_FIELDS,
+    sizeof(ftx_message_t), offsetof(struct _cffi_align_typedef_ftx_message_t, y), 14, 2 },
 };
 
 static const struct _cffi_enum_s _cffi_enums[] = {
-  { "$ftx_message_rc_t", 73, _cffi_prim_int(sizeof(ftx_message_rc_t), ((ftx_message_rc_t)-1) <= 0),
+  { "$ftx_message_rc_t", 77, _cffi_prim_int(sizeof(ftx_message_rc_t), ((ftx_message_rc_t)-1) <= 0),
     "FTX_MESSAGE_RC_OK,FTX_MESSAGE_RC_ERROR_CALLSIGN1,FTX_MESSAGE_RC_ERROR_CALLSIGN2,FTX_MESSAGE_RC_ERROR_SUFFIX,FTX_MESSAGE_RC_ERROR_GRID,FTX_MESSAGE_RC_ERROR_TYPE" },
 };
 
 static const struct _cffi_typename_s _cffi_typenames[] = {
-  { "ft8_shim_pass_stats_t", 70 },
-  { "ft8_shim_result_t", 71 },
+  { "ft8_shim_pass_stats_t", 74 },
+  { "ft8_shim_result_t", 75 },
   { "ftx_field_t", 16 },
-  { "ftx_message_offsets_t", 72 },
-  { "ftx_message_rc_t", 73 },
-  { "ftx_message_t", 74 },
+  { "ftx_message_offsets_t", 76 },
+  { "ftx_message_rc_t", 77 },
+  { "ftx_message_t", 78 },
 };
 
 static const struct _cffi_type_context_s _cffi_type_context = {
@@ -2059,12 +2166,12 @@ static const struct _cffi_type_context_s _cffi_type_context = {
   _cffi_struct_unions,
   _cffi_enums,
   _cffi_typenames,
-  26,  /* num_globals */
+  29,  /* num_globals */
   4,  /* num_struct_unions */
   1,  /* num_enums */
   6,  /* num_typenames */
   NULL,  /* no includes */
-  86,  /* num_types */
+  90,  /* num_types */
   0,  /* flags */
 };
 

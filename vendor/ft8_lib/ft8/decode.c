@@ -590,3 +590,16 @@ static void pack_bits(const uint8_t bit_array[], int num_bits, uint8_t packed[])
         }
     }
 }
+
+/* ft8-raspi 2026-09-06: Log-Likelihoods eines Kandidaten nach aussen
+ * reichen, damit das Shim nach einem BP-Fehlschlag OSD (ordered
+ * statistics decoding) auf denselben Werten fahren kann. Identisch zum
+ * Anfang von ftx_decode_candidate(). */
+void ftx_extract_llr(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, float* log174)
+{
+    if (wf->protocol == FTX_PROTOCOL_FT4)
+        ft4_extract_likelihood(wf, cand, log174);
+    else
+        ft8_extract_likelihood(wf, cand, log174);
+    ftx_normalize_logl(log174);
+}
