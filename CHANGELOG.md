@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.75.1 — 2026-09-06
+- fix: Known-Call-Tabelle nahm alle Python-Eintraege in EINEM Slot auf (n22=0-Dedupe)
+- chore: Decoder-Korpus-Benchmark als Repo-Skript (scripts/bench_decoder_corpus.py), Doku-Verweis
+
 ## v0.75.0 — 2026-09-06
 - feat: FT4 — 2-Symbol-Analysefenster fuer den osr-4-Pass, kohaerente Subtraktion, Pass-Dedupe; Doku Pi 4B/Decoder-Stand
 - test: Tier-Zaehler 21 (lonely_cq); Feinsync-Raster als Knoepfe (9x9 bleibt Optimum: 309 vs 307/308)
