@@ -252,8 +252,11 @@ def _drive_burst(
     pwr_meter: float | None = None,
     pwr_norm: float | None = None,
 ) -> None:
-    """Simuliert einen TX-Burst: PTT-on, N Samples, PTT-off."""
+    """Simuliert einen EIGENEN TX-Burst: PTT-on, N Samples, PTT-off.
+    2026-09-06: die Regelung misst nur noch bei _tx_burst_active (fremde
+    Tastung am Rig ist nicht unser Burst)."""
     from ft8_appliance.rig.rigctld_client import RigSnapshot
+    orch._tx_burst_active = True
     orch._last_rig = RigSnapshot(
         ptt=True, alc=alc_values[0],
         rfpower_meter=pwr_meter, rfpower_norm=pwr_norm,
@@ -265,6 +268,7 @@ def _drive_burst(
             rfpower_meter=pwr_meter, rfpower_norm=pwr_norm,
         )
         orch._apply_alc_closed_loop()
+    orch._tx_burst_active = False
     orch._last_rig = RigSnapshot(
         ptt=False, alc=None,
         rfpower_meter=pwr_meter, rfpower_norm=pwr_norm,
