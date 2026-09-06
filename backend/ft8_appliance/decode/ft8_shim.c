@@ -176,6 +176,9 @@ static int s_knob_window_deep = 4;    /* ... fuer osr-4-Paesse: Hann 2 Symbole s
 static int s_knob_window_hint = 4;    /* ... fuer den Hint-Pass */
 static int s_knob_refine      = 1;    /* Feinsync-Demodulation im Hint-Pass nach BP/OSD-Fehlschlag */
 static int s_knob_refine_max  = 40;   /* max. verfeinerte Kandidaten pro Slot */
+static int s_knob_refine_span   = 4;  /* Feinsuche: +-N Schritte */
+static int s_knob_refine_tstep  = 60; /* Zeitschritt in Samples */
+static int s_knob_refine_fstep  = 20; /* Frequenzschritt in 0,01 Hz */
 static int s_knob_refine_nogate = 1;  /* 1: Feinsync-Decodes per BP+CRC (ohne OSD) brauchen keinen bekannten Call — so vertrauenswuerdig wie der std-Pass */
 static int s_knob_llr_scales  = 1;    /* 1 = nur BP mit Original-LLR; 2..4 = zusaetzliche Skalierungen (WSJT-X: llra..llrd) */
 int ft8_shim_set_knob(const char* name, int value) {
@@ -194,6 +197,9 @@ int ft8_shim_set_knob(const char* name, int value) {
     else if (strcmp(name, "refine") == 0) s_knob_refine = value;
     else if (strcmp(name, "refine_max") == 0) s_knob_refine_max = value;
     else if (strcmp(name, "refine_nogate") == 0) s_knob_refine_nogate = value;
+    else if (strcmp(name, "refine_span") == 0) s_knob_refine_span = value;
+    else if (strcmp(name, "refine_tstep") == 0) s_knob_refine_tstep = value;
+    else if (strcmp(name, "refine_fstep") == 0) s_knob_refine_fstep = value;
     else if (strcmp(name, "max_cand") == 0) s_knob_max_cand = value < 1 ? 1 : (value > FT8_SHIM_MAX_CANDIDATES ? FT8_SHIM_MAX_CANDIDATES : value);
     else return -1;
     return 0;
@@ -984,10 +990,11 @@ static bool _ft8_refine_decode(const float* signal, float dt_s, float freq_hz, i
                                ftx_message_t* message, int* via_osd) {
     int t0 = (int)lrintf((dt_s + FT8_DT_ORIGIN_S) * (float)FT8_SAMPLE_RATE_HZ);
     int best_dt = 0; float best_df = 0.0f; double best_e = -1.0;
-    for (int a = -4; a <= 4; ++a) {
-        for (int b = -4; b <= 4; ++b) {
-            double e = _refine_sync_energy(signal, t0 + a * 60, freq_hz + (float)b * 0.2f);
-            if (e > best_e) { best_e = e; best_dt = a * 60; best_df = (float)b * 0.2f; }
+    const int span = s_knob_refine_span, ts = s_knob_refine_tstep; const float fs = (float)s_knob_refine_fstep * 0.01f;
+    for (int a = -span; a <= span; ++a) {
+        for (int b = -span; b <= span; ++b) {
+            double e = _refine_sync_energy(signal, t0 + a * ts, freq_hz + (float)b * fs);
+            if (e > best_e) { best_e = e; best_dt = a * ts; best_df = (float)b * fs; }
         }
     }
     int s0 = t0 + best_dt; float f0 = freq_hz + best_df;

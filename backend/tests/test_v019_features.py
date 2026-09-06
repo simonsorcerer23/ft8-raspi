@@ -150,8 +150,8 @@ def test_migration_adds_not_in_pileup():
     assert "not_in_pileup" in cfg.hunt_priority
 
 
-def test_migration_len_is_20():
+def test_migration_len_is_21():
     """Current default: 20 known Tiers."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 20
+    assert len(cfg.hunt_priority) == 21  # 2026-09-06: + lonely_cq
