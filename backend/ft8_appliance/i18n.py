@@ -113,6 +113,12 @@ _DE: dict[str, str] = {
         "CPU vermutlich am Limit — Deep-Mode aus, andere Loads reduzieren?"
     ),
     "push.decoder_late_title": "🐢 FT8 Pi: Decoder-Last hoch",
+    "push.tx_late_msg": (
+        "TX startet {latency} s nach der Slot-Grenze (Limit {max} s, {count}x in "
+        "Folge) — Partner-Decoder suchen nur ±2,5 s. Decoder auf 'standard' "
+        "zurueckgeschaltet."
+    ),
+    "push.tx_late_title": "🐢 FT8 Pi: TX startet zu spaet",
     "push.act_back_to_band": "🔄 Auf {band} zurück",
     "push.freq_tamper_msg": (
         "Rig ist auf {mhz} MHz ({delta} Hz von {band}/{khz} kHz). Wer hat gedreht?"
@@ -290,6 +296,12 @@ _EN: dict[str, str] = {
         "CPU likely maxed out — turn off deep mode, reduce other loads?"
     ),
     "push.decoder_late_title": "🐢 FT8 Pi: decoder load high",
+    "push.tx_late_msg": (
+        "TX starts {latency} s after the slot boundary (limit {max} s, {count}x in "
+        "a row) — partner decoders only search ±2.5 s. Decoder switched back to "
+        "'standard'."
+    ),
+    "push.tx_late_title": "🐢 FT8 Pi: TX starting late",
     "push.act_back_to_band": "🔄 Back to {band}",
     "push.freq_tamper_msg": (
         "Rig is on {mhz} MHz ({delta} Hz off {band}/{khz} kHz). Who turned the dial?"

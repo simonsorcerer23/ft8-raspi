@@ -344,6 +344,14 @@ class OperatingConfig(BaseModel):
     # decken Anzeige-Rundung und CAT-Latenz; ein bewusster VFO-Dreh von
     # 1 kHz verlaesst das FT8-Segment bereits.
     dial_tolerance_hz: int = Field(default=500, ge=100, le=5000)
+    # TX-Latenz-Watchdog (Audit 2026-09-06 B1): Zeit vom Slot-Tick bis zum
+    # Sendestart. Der Decoder laeuft VOR der TX-Entscheidung im selben
+    # Slot; im extreme-Modus auf einem Pi 4 kann das 2-3 s kosten, und die
+    # Partner-Decoder suchen nur ±2,5 s um die Slot-Grenze. Drei TX in
+    # Folge ueber diesem Wert -> Decoder auf "standard" + ntfy. Der
+    # bestehende Late-Slot-Fallback greift erst bei 80 % Slot-Laenge (12 s)
+    # und schuetzt vor Slot-Ueberlauf, nicht vor spaetem TX.
+    tx_latency_max_s: float = Field(default=1.5, ge=0.5, le=5.0)
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift

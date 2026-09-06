@@ -270,6 +270,11 @@ class OrchestratorStatus:
     decoder_late_slot_count: int = 0  # zaehlt seit Service-Start
     # v0.8.0 Build C: Per-Pass-Decoder-Statistics (extreme mode only)
     decoder_pass_stats: dict | None = None
+    # Audit 2026-09-06 B1: Sekunden nach der Slot-Grenze, zu denen der
+    # letzte Burst begann (None = noch kein TX seit Start) + Mittel der
+    # letzten 10. Ueber ~1,5 s sehen uns Partner-Decoder schlechter.
+    tx_start_offset_s: float | None = None
+    tx_start_offset_avg_s: float | None = None
     # i18n: the lock reason's message key + params so the web layer can
     # re-localize it into the browser's chosen language (last_lock_reason
     # itself stays in the config-default lang for non-UI consumers).
@@ -530,6 +535,16 @@ class Orchestrator:
     # Up-Adjustment darf nur greifen wenn wir kuerzlich (15s) wirklich
     # einen Burst losgelassen haben — sonst sind ALC=0%-Reads phantom.
     _last_tx_message_at: float = field(default=0.0, init=False)
+    # TX-Start-Versatz zur Slot-Grenze (Audit 2026-09-06 B1/B4). Fuer
+    # slot-getriebene TX ist das die Latenz Tick -> Sendestart (chronyc +
+    # extract_delay + Decode + State-Machine); fuer manuelle TX (CQ-Klick,
+    # Reply-Klick) zeigt es, wie weit im Slot der Burst begann — nichts
+    # wartet dort auf die Grenze. Beides gehoert gemessen, bevor jemand
+    # daran baut.
+    _tx_start_offsets_s: list[float] = field(default_factory=list, init=False)
+    _in_slot_tick: bool = field(default=False, init=False)
+    _consecutive_late_tx: int = field(default=0, init=False)
+    _last_tx_late_alert_at: float = field(default=0.0, init=False)
     # Burst-Peak-basiertes ALC-Adjustment: Samples werden waehrend
     # eines TX-Bursts gesammelt und am Burst-Ende (PTT-Abfallflanke)
     # ausgewertet — verhindert Per-Tick-Oszillation zwischen Bursts.
@@ -1691,6 +1706,13 @@ class Orchestrator:
                 "late_slot_count", 0,
             ) if hasattr(self.decode_source, "metrics") else 0,
             decoder_pass_stats=_safe_get_pass_stats(),
+            tx_start_offset_s=(
+                self._tx_start_offsets_s[-1] if self._tx_start_offsets_s else None
+            ),
+            tx_start_offset_avg_s=(
+                round(sum(self._tx_start_offsets_s) / len(self._tx_start_offsets_s), 3)
+                if self._tx_start_offsets_s else None
+            ),
         )
 
     def is_worked_before(self, call: str | None) -> bool:
@@ -2657,6 +2679,27 @@ class Orchestrator:
                 "config hot-reload: rig change %s -> %s, applying tx-power safety-floor",
                 self._last_rig_hamlib_id, new_hamlib_id,
             )
+            # Audit C5: der Gain gehoert zur Audio-Kette des Rigs. Fuer das
+            # neue Modell den gespeicherten Wert nehmen, sonst Config-Default
+            # — nie den eingeregelten Wert des alten Rigs weiterfahren.
+            # VOR dem Safety-Floor: der persistiert den Runtime-State, und
+            # self.config zeigt hier schon auf das neue Rig — er wuerde den
+            # alten Gain unter dem neuen Modell ablegen und wir laesen ihn
+            # gleich wieder ein.
+            new_gain: float | None = None
+            try:
+                data = json.loads(self._runtime_state_path.read_text(encoding="utf-8"))
+                by_rig = data.get("audio_gain_by_rig")
+                if isinstance(by_rig, dict) and new_cfg.rig.model in by_rig:
+                    new_gain = self._persisted_gain_for_rig(data, new_cfg.rig.model)
+            except Exception:
+                new_gain = None
+            if new_gain is None:
+                new_gain = float(new_cfg.operating.audio_gain)
+            log.info("rig change: audio_gain %.2f -> %.2f (%s)",
+                     self._audio_gain, new_gain, new_cfg.rig.model)
+            self._audio_gain = new_gain
+            self._pwr_integrator = 0.0
             await self._apply_tx_power_safety_floor("rig_change")
         self._last_rig_hamlib_id = new_hamlib_id
         # Online-integrations: tear down + rebuild
@@ -2740,7 +2783,13 @@ class Orchestrator:
 
     async def _on_slot(self, tick: SlotTick) -> None:
         self._last_slot = tick
+        self._in_slot_tick = True
+        try:
+            await self._on_slot_inner(tick)
+        finally:
+            self._in_slot_tick = False
 
+    async def _on_slot_inner(self, tick: SlotTick) -> None:
         # 1. refresh hardware state for guards
         await self._refresh_hardware_state(tick)
 
@@ -5373,10 +5422,10 @@ class Orchestrator:
         try:
             raw = self._runtime_state_path.read_text(encoding="utf-8")
             data = json.loads(raw)
-            persisted = float(data.get("audio_gain", -1.0))
-            if 0.05 <= persisted <= 1.0:
-                log.info("runtime_state: loaded audio_gain %.2f (config-default was %.2f)",
-                         persisted, self._audio_gain)
+            persisted = self._persisted_gain_for_rig(data, self.config.rig.model)
+            if persisted is not None:
+                log.info("runtime_state: loaded audio_gain %.2f for %s (config-default was %.2f)",
+                         persisted, self.config.rig.model, self._audio_gain)
                 self._audio_gain = persisted
                 self._last_persisted_gain = persisted
                 self._last_persisted_gain_at = time.monotonic()
@@ -5399,6 +5448,32 @@ class Orchestrator:
         except Exception as exc:
             log.warning("runtime_state load failed: %s", exc)
 
+    @staticmethod
+    def _persisted_gain_for_rig(data: dict, model: str) -> float | None:
+        """Gain fuer DIESES Rig-Modell aus dem Runtime-State (Audit C5).
+
+        Der Gain ist eine Eigenschaft der Audio-Kette (USB-CODEC-Pegel
+        des Rigs), nicht der Box. Ein fuer den IC-7300 eingeregelter Wert
+        kann den IC-705 uebersteuern. Reihenfolge: per-Rig-Eintrag, sonst
+        der alte modell-lose Schluessel "audio_gain" (Bestandsdateien) —
+        der wird beim naechsten Persist unter dem aktuellen Modell
+        abgelegt.
+        """
+        by_rig = data.get("audio_gain_by_rig")
+        if isinstance(by_rig, dict) and model in by_rig:
+            try:
+                g = float(by_rig[model])
+            except (TypeError, ValueError):
+                g = -1.0
+            if 0.05 <= g <= 1.0:
+                return g
+            return None
+        try:
+            legacy = float(data.get("audio_gain", -1.0))
+        except (TypeError, ValueError):
+            return None
+        return legacy if 0.05 <= legacy <= 1.0 else None
+
     def _maybe_persist_runtime_state(self, force: bool = False) -> None:
         """Write runtime-state (audio_gain, tx_power_w) to disk.
 
@@ -5415,10 +5490,21 @@ class Orchestrator:
                 return
         try:
             self._runtime_state_path.parent.mkdir(parents=True, exist_ok=True)
+            # Bestehende per-Rig-Eintraege anderer Modelle mitnehmen.
+            by_rig: dict[str, float] = {}
+            try:
+                prev = json.loads(self._runtime_state_path.read_text(encoding="utf-8"))
+                if isinstance(prev.get("audio_gain_by_rig"), dict):
+                    by_rig = dict(prev["audio_gain_by_rig"])
+            except Exception:
+                pass
+            by_rig[self.config.rig.model] = round(self._audio_gain, 3)
             tmp = self._runtime_state_path.with_suffix(".json.tmp")
             tmp.write_text(
                 json.dumps({
+                    # Alter Schluessel bleibt fuer aeltere Versionen lesbar.
                     "audio_gain": round(self._audio_gain, 3),
+                    "audio_gain_by_rig": by_rig,
                     "tx_power_w": int(self._tx_power_w),
                 }),
                 encoding="utf-8",
@@ -5884,6 +5970,9 @@ class Orchestrator:
         self._last_tx_message_at = time.monotonic()
         log.info("TX_MESSAGE: %s @ %.0fHz gain=%.2f alc_last=%s",
                  text, audio_freq_hz, self._audio_gain, self._last_alc_pct)
+        # Vor dem playback-Return, damit auch Tests und Dev-Betrieb messen.
+        # Synth + PTT-Kommando kommen real noch dazu (Millisekunden).
+        self._record_tx_start_offset()
 
         if self.playback is None:
             return  # noop in dev / tests
@@ -5929,6 +6018,78 @@ class Orchestrator:
                 await self.rig.set_ptt(False)
             except Exception as exc:
                 log.error("set_ptt(False) post-TX failed: %s", exc)
+
+    def _slot_phase_s(self) -> float:
+        """Sekunden seit der letzten Slot-Grenze (Wanduhr, nicht Tick)."""
+        from .slot_clock import FT4_SLOT_SECONDS, SLOT_SECONDS
+        slot_s = FT4_SLOT_SECONDS if self.config.operating.mode == "FT4" else SLOT_SECONDS
+        return time.time() % slot_s
+
+    def _record_tx_start_offset(self) -> None:
+        """TX-Start-Versatz messen; bei slot-getriebenem TX den Decoder
+        zurueckschalten, wenn er den Sendestart zu spaet macht.
+
+        Der Decoder laeuft im selben Slot VOR der TX-Entscheidung
+        (architecture.md §8 beschreibt einen Pre-Decode bei t=13,5 s, der
+        nie gebaut wurde). Partner-Decoder suchen ±2,5 s um die Grenze;
+        der bestehende Late-Slot-Fallback greift erst bei 80 % Slot-Laenge
+        und schuetzt vor Slot-Ueberlauf, nicht vor spaetem TX.
+
+        Manuelle TX (CQ-/Reply-Klick) zaehlen NICHT gegen den Decoder: sie
+        starten heute, wann immer der Klick kommt — das ist ein eigener
+        Befund (B4) und wird hier nur sichtbar gemacht.
+        """
+        phase = self._slot_phase_s()
+        self._tx_start_offsets_s.append(round(phase, 3))
+        del self._tx_start_offsets_s[:-10]
+        op = self.config.operating
+        if not self._in_slot_tick:
+            if phase > 3.0:
+                log.warning(
+                    "manueller TX-Start %.1f s nach der Slot-Grenze — Burst kreuzt "
+                    "die Grenze, Partner-Decoder sehen ihn kaum (B4)", phase,
+                )
+            else:
+                log.info("manueller TX-Start %.2f s nach der Slot-Grenze", phase)
+            return
+        if phase <= op.tx_latency_max_s:
+            self._consecutive_late_tx = 0
+            return
+        self._consecutive_late_tx += 1
+        log.warning(
+            "TX-Start %.2f s nach der Slot-Grenze (Limit %.1f s, %d× in Folge)",
+            phase, op.tx_latency_max_s, self._consecutive_late_tx,
+        )
+        if self._consecutive_late_tx < 3:
+            return
+        mode = getattr(self.decode_source, "decoder_mode", "standard")
+        if mode in ("deep", "multi", "extreme"):
+            log.warning("decoder auto-fallback (TX zu spaet): %s -> standard", mode)
+            # decode_source ist typisiert als Callable; die echte Pipeline
+            # hat die Attribute, Test-Closures nicht — gleicher Schutz wie
+            # im Hot-Reload.
+            try:
+                setattr(self.decode_source, "decoder_mode", "standard")
+                setattr(self.decode_source, "_consecutive_late_slots", 0)
+            except Exception:
+                pass
+        now = time.monotonic()
+        if now - self._last_tx_late_alert_at > 3600:
+            self._last_tx_late_alert_at = now
+            ntfy = self.integrations.ntfy if self.integrations else None
+            if ntfy and ntfy.enabled:
+                try:
+                    asyncio.create_task(ntfy.notify(
+                        _t("push.tx_late_msg", latency=f"{phase:.1f}",
+                           max=f"{op.tx_latency_max_s:.1f}",
+                           count=self._consecutive_late_tx),
+                        title=_t("push.tx_late_title"),
+                        priority="default",
+                        tags=["warning"],
+                    ))
+                except Exception:
+                    pass
+        self._consecutive_late_tx = 0
 
     async def _do_stop_tx(self, _: dict) -> None:
         try:

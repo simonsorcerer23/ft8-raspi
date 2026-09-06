@@ -101,6 +101,10 @@ class StatusResponse(BaseModel):
     decoder_late_slot_count: int = 0
     # v0.8.0 Build C: Per-Pass-Decoder-Statistics (extreme mode only)
     decoder_pass_stats: dict | None = None
+    # Audit 2026-09-06 B1: Sekunden nach der Slot-Grenze, zu denen der
+    # letzte Burst begann, + Mittel der letzten 10.
+    tx_start_offset_s: float | None = None
+    tx_start_offset_avg_s: float | None = None
 
 
 @router.get("/status", response_model=StatusResponse)
@@ -177,6 +181,8 @@ async def get_status(
         actual_decoder_mode=getattr(s, "actual_decoder_mode", "standard"),
         decoder_late_slot_count=getattr(s, "decoder_late_slot_count", 0),
         decoder_pass_stats=getattr(s, "decoder_pass_stats", None),
+        tx_start_offset_s=getattr(s, "tx_start_offset_s", None),
+        tx_start_offset_avg_s=getattr(s, "tx_start_offset_avg_s", None),
     )
 
 
