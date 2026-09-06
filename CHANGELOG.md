@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.70.0 — 2026-09-06
+- fix: Decoder-dt auf WSJT-X kalibriert, Subtraktion jetzt kohaerent, Stack-Ueberlauf im Hash-Lookup
+
 ## v0.69.0 — 2026-09-06
 - feat: Hunting — gerichtete CQs respektieren, Antwort auf freier Frequenz, Stufe 2 mit mehr LDPC
 
