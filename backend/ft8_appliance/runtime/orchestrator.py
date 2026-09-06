@@ -5960,6 +5960,19 @@ class Orchestrator:
         self.state_machine.ctx.pile_up_calls = self._detect_pile_ups(
             self._last_decodes, rarity_scores,
         )
+        # 2026-09-06: eigener Call + aktueller QSO-Partner immer in der
+        # Known-Call-Tabelle — sonst faellt eine schwache Antwort AN UNS,
+        # die erst OSD/Feinsync liefert, am Known-Call-Gate durch, wenn
+        # wir den Partner in dieser Session noch nie selbst decodiert
+        # haben (z. B. nach einem Neustart mitten im QSO).
+        try:
+            from ..decode.ft8_native import lib as _hint_lib
+            for _c in (self.state_machine.ctx.tx_callsign, self.state_machine.ctx.callsign,
+                       getattr(self.state_machine.qso, "their_call", None)):
+                if _c:
+                    _hint_lib.ft8_shim_hash_table_save(str(_c).upper().encode("ascii", "ignore"), 0)
+        except Exception:
+            pass
         # 2026-09-06 lonely_cq: gleichparitaetiger Slot davor + Slot dazwischen
         h = self._slot_history
         self.state_machine.ctx.lonely_cq_calls = detect_lonely_cqs(
