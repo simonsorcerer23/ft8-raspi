@@ -6047,7 +6047,8 @@ class Orchestrator:
                  text, audio_freq_hz, self._audio_gain, self._last_alc_pct)
         # Vor dem playback-Return, damit auch Tests und Dev-Betrieb messen.
         # Synth + PTT-Kommando kommen real noch dazu (Millisekunden).
-        self._record_tx_start_offset()
+        if not self._record_tx_start_offset():
+            return  # B4: manueller Burst mitten im Slot — entfaellt, s.u.
 
         if self.playback is None:
             return  # noop in dev / tests
@@ -6100,9 +6101,11 @@ class Orchestrator:
         slot_s = FT4_SLOT_SECONDS if self.config.operating.mode == "FT4" else SLOT_SECONDS
         return time.time() % slot_s
 
-    def _record_tx_start_offset(self) -> None:
+    def _record_tx_start_offset(self) -> bool:
         """TX-Start-Versatz messen; bei slot-getriebenem TX den Decoder
         zurueckschalten, wenn er den Sendestart zu spaet macht.
+
+        Rueckgabe False = diesen Burst NICHT senden (B4, s.u.).
 
         Der Decoder laeuft im selben Slot VOR der TX-Entscheidung
         (architecture.md §8 beschreibt einen Pre-Decode bei t=13,5 s, der
@@ -6110,33 +6113,39 @@ class Orchestrator:
         der bestehende Late-Slot-Fallback greift erst bei 80 % Slot-Laenge
         und schuetzt vor Slot-Ueberlauf, nicht vor spaetem TX.
 
-        Manuelle TX (CQ-/Reply-Klick) zaehlen NICHT gegen den Decoder: sie
-        starten heute, wann immer der Klick kommt — das ist ein eigener
-        Befund (B4) und wird hier nur sichtbar gemacht.
+        Manuelle TX (CQ-/Reply-Klick, B4) zaehlen NICHT gegen den Decoder —
+        und ab tx_latency_max_s Versatz entfallen sie ganz: ein Burst, der
+        bei Sekunde 9 beginnt, kreuzt die Slot-Grenze und wird von keinem
+        Partner-Decoder gesehen (live 2026-09-06: erster CQ-Klick bei
+        +3,15 s, kein Effekt). Was ihn ersetzt, tut die State-Machine
+        ohnehin: CQ_CALLING sendet an jeder paritaetspassenden Grenze
+        neu, QSO_RESPOND wiederholt die Antwort beim naechsten CQ des
+        Partners (qso_max_cq_resends). Der weggelassene Burst kostet also
+        nichts, was er haette bringen koennen.
         """
         phase = self._slot_phase_s()
         self._tx_start_offsets_s.append(round(phase, 3))
         del self._tx_start_offsets_s[:-10]
         op = self.config.operating
         if not self._in_slot_tick:
-            if phase > 3.0:
+            if phase > op.tx_latency_max_s:
                 log.warning(
-                    "manueller TX-Start %.1f s nach der Slot-Grenze — Burst kreuzt "
-                    "die Grenze, Partner-Decoder sehen ihn kaum (B4)", phase,
+                    "manueller TX-Start %.1f s nach der Slot-Grenze — Burst entfaellt, "
+                    "die State-Machine sendet an der naechsten Grenze (B4)", phase,
                 )
-            else:
-                log.info("manueller TX-Start %.2f s nach der Slot-Grenze", phase)
-            return
+                return False
+            log.info("manueller TX-Start %.2f s nach der Slot-Grenze", phase)
+            return True
         if phase <= op.tx_latency_max_s:
             self._consecutive_late_tx = 0
-            return
+            return True
         self._consecutive_late_tx += 1
         log.warning(
             "TX-Start %.2f s nach der Slot-Grenze (Limit %.1f s, %d× in Folge)",
             phase, op.tx_latency_max_s, self._consecutive_late_tx,
         )
         if self._consecutive_late_tx < 3:
-            return
+            return True
         mode = getattr(self.decode_source, "decoder_mode", "standard")
         if mode in ("deep", "multi", "extreme"):
             log.warning("decoder auto-fallback (TX zu spaet): %s -> standard", mode)
@@ -6165,6 +6174,7 @@ class Orchestrator:
                 except Exception:
                     pass
         self._consecutive_late_tx = 0
+        return True
 
     async def _do_stop_tx(self, _: dict) -> None:
         try:

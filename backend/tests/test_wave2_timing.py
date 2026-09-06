@@ -145,6 +145,38 @@ async def test_manual_tx_never_counts_against_the_decoder() -> None:
 
 
 @pytest.mark.asyncio
+async def test_manual_tx_late_in_the_slot_is_dropped() -> None:
+    """B4: der Mid-Slot-Burst eines Klicks entfaellt — die State-Machine
+    sendet an der naechsten Grenze. Gemessen wird er trotzdem."""
+    orch = _orch(_cfg(tx_latency_max_s=1.5))
+    orch.playback = SimpleNamespace(play=lambda pcm: None)  # wuerde sonst PTT tasten
+    orch.rig.set_ptt = AsyncMock()
+    await _tx(orch, 9.0, in_slot=False)
+    orch.rig.set_ptt.assert_not_called()
+    assert orch.status().tx_start_offset_s == pytest.approx(9.0)
+
+
+@pytest.mark.asyncio
+async def test_manual_tx_early_in_the_slot_still_goes_out() -> None:
+    orch = _orch(_cfg(tx_latency_max_s=1.5))
+    assert orch._record_tx_start_offset.__func__ is not None
+    orch._slot_phase_s = lambda: 0.6  # type: ignore[method-assign]
+    orch._in_slot_tick = False
+    assert orch._record_tx_start_offset() is True
+
+
+@pytest.mark.asyncio
+async def test_slot_driven_tx_is_never_dropped_even_when_late() -> None:
+    """Spaet ist nicht gleich sinnlos: ein slot-getriebener Burst bei 2,4 s
+    ist grenzwertig, aber der Fallback kuemmert sich — nicht das Weglassen."""
+    orch = _orch(_cfg(tx_latency_max_s=1.5))
+    orch.decode_source = SimpleNamespace(decoder_mode="standard", _consecutive_late_slots=0)
+    orch._slot_phase_s = lambda: 2.4  # type: ignore[method-assign]
+    orch._in_slot_tick = True
+    assert orch._record_tx_start_offset() is True
+
+
+@pytest.mark.asyncio
 async def test_slot_tick_sets_and_clears_the_in_slot_flag() -> None:
     from datetime import UTC, datetime
 
