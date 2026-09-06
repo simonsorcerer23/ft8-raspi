@@ -2,6 +2,10 @@
 # Switch wlan0 from client-mode to access-point mode.
 # Triggered by the controller when no upstream WiFi has been reachable
 # for fallback_delay_s seconds (see config.yaml -> network.fallback_delay_s).
+#
+# Does NOT touch /etc/hostapd/ft8-ap.conf: SSID, passphrase and country code
+# come from that file as installed; config.yaml's ap_fallback block is not
+# rendered into it (deliberate, 2026-09-06 — see deploy/hostapd/ap.conf).
 
 set -euo pipefail
 

@@ -179,8 +179,14 @@ async def set_ap_fallback(
 
     Geht über denselben Hot-Reload-Pfad wie /api/config — Pydantic
     validiert (Längen-Constraints), File-Write atomisch, dann
-    Orchestrator.on_config_changed damit der nftables/hostapd-
-    Reload-Hook das neue AP-Profil verteilt.
+    Orchestrator.on_config_changed.
+
+    Ehrlich gesagt (Audit 2026-09-06): es gibt KEINEN hostapd-Reload-Hook.
+    Der Wert landet in der config.yaml und in der UI, hostapd liest ihn
+    nie — die Passphrase des Fallback-APs steht in
+    /etc/hostapd/ft8-ap.conf auf dem Pi und wird dort gesetzt (siehe
+    deploy/hostapd/ap.conf). Bewusst so belassen, damit das oeffentliche
+    Repo nur einen Platzhalter traegt.
     """
     cfg = get_config()
     # Pydantic computed_fields werden von model_dump() mit-emittiert,
