@@ -44,7 +44,7 @@
  * Pool-Worker single-threaded fuer diese Funktion). Bei zukuenftiger
  * Parallelisierung muesste das ein mutex bekommen.
  */
-#define HASH_TABLE_SIZE 256
+#define HASH_TABLE_SIZE 1024  /* 2026-09-06: war 256; Hint-Pass validiert gegen bekannte Calls, mehr Kandidaten = mehr Treffer */
 
 typedef struct {
     uint32_t n22;
@@ -74,8 +74,13 @@ static bool shim_lookup_hash(ftx_callsign_hash_type_t type, uint32_t hash, char*
                 break;
         }
         if (match) {
-            strncpy(call_out, s_hash_table[i].call, 13);
-            call_out[13] = '\0';
+            /* 2026-09-06: ft8_lib reicht hier ein char[12] durch
+             * (message.c lookup_callsign: c11). 13+NUL hat den Stack
+             * zerlegt — "stack smashing detected", Controller tot —
+             * sobald ein Hash-Call mit Tabellentreffer decodiert wurde.
+             * Calls sind ohnehin max. 11 Zeichen (pack58). */
+            strncpy(call_out, s_hash_table[i].call, 11);
+            call_out[11] = '\0';
             return true;
         }
     }
@@ -160,6 +165,27 @@ typedef struct {
  *
  * Returns the number of decodes written to *out*, or -1 on error.
  */
+
+/* 2026-09-06: dt-Kalibrierung. ft8_lib misst die Kandidatenzeit am ENDE
+ * des Hann-Analysefensters (monitor.c: last_frame wird um subblock
+ * geschoben, nfft = block * freq_osr). Der wahre Symbolstart liegt darum
+ * (block/2 + nfft/2 - subblock) Samples frueher: +0,16 s bei osr 2/2,
+ * +0,36 s bei osr 4/4. Gemessen mit synthetischen Slots und gegen die
+ * WSJT-X-Referenzdecodes in vendor/ft8_lib/test/wav (OH3NIV ZS6S: WSJT-X
+ * DT 1,0 s, wir vorher 1,60 std / 1,80 deep). Folgen der alten Werte:
+ * DT-Spalte pass-abhaengig falsch, |dt|<=2,5-Filter im Hunting schief,
+ * DT-Drift-Detektor um +0,66 s vorgespannt, und die Subtraktion traf die
+ * Referenz nie (Feinsuche +-0,04 s gegen 0,16 s Fehler).
+ *
+ * Konvention: DT wie WSJT-X, d.h. relativ zum nominalen Sendestart
+ * FT8_DT_ORIGIN_S nach der Slotgrenze. */
+#define FT8_DT_ORIGIN_S 0.5f
+#define FT4_DT_ORIGIN_S 0.5f
+static inline float _dt_window_corr_s(const monitor_t* mon) {
+    return ((float)mon->block_size * 0.5f + (float)mon->nfft * 0.5f - (float)mon->subblock_size)
+           / 12000.0f;
+}
+
 int ft8_shim_decode_slot(
     const int16_t* pcm,
     int            n_samples,
@@ -252,7 +278,7 @@ int ft8_shim_decode_slot(
         r->snr_db_est = (cand->score / 2) - 24;
         r->score      = cand->score;
         r->dt_s = (cand->time_offset + (float)cand->time_sub / mon.wf.time_osr)
-                   * mon.symbol_period;
+                   * mon.symbol_period - _dt_window_corr_s(&mon) - FT8_DT_ORIGIN_S;
         r->freq_hz = (mon.min_bin
                       + cand->freq_offset
                       + (float)cand->freq_sub / mon.wf.freq_osr)
@@ -502,7 +528,7 @@ static int _ft8_decode_one_pass(
         r->snr_db_est = (cand->score / 2) - 24;
         r->score      = cand->score;
         r->dt_s = (cand->time_offset + (float)cand->time_sub / mon.wf.time_osr)
-                   * mon.symbol_period;
+                   * mon.symbol_period - _dt_window_corr_s(&mon) - FT8_DT_ORIGIN_S;
         r->freq_hz = (mon.min_bin
                       + cand->freq_offset
                       + (float)cand->freq_sub / mon.wf.freq_osr)
@@ -532,6 +558,8 @@ typedef struct {
     uint64_t pass_subtract_residual;
     uint64_t pass_hint;
     uint64_t slots_decoded;
+    /* 2026-09-06: zweite Subtract-Runde (JTDX macht 2-3) */
+    uint64_t pass_subtract_round2;
 } ft8_shim_pass_stats_t;
 
 static ft8_shim_pass_stats_t s_pass_stats = {0, 0, 0, 0, 0};
@@ -562,6 +590,7 @@ void ft8_shim_pass_stats_reset(void) {
     s_pass_stats.pass_subtract_residual = 0;
     s_pass_stats.pass_hint = 0;
     s_pass_stats.slots_decoded = 0;
+    s_pass_stats.pass_subtract_round2 = 0;
 }
 
 void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out) {
@@ -659,7 +688,7 @@ static int _ft8_hint_pass(
         r->snr_db_est = (cand->score / 2) - 24;
         r->score      = cand->score;
         r->dt_s = (cand->time_offset + (float)cand->time_sub / mon->wf.time_osr)
-                   * mon->symbol_period;
+                   * mon->symbol_period - _dt_window_corr_s(mon) - FT8_DT_ORIGIN_S;
         r->freq_hz = (mon->min_bin
                       + cand->freq_offset
                       + (float)cand->freq_sub / mon->wf.freq_osr)
@@ -703,6 +732,80 @@ static int _ft8_hint_pass_signal(
 }
 
 
+/* 2026-09-06: kohaerente Subtraktion (nach dem Muster von WSJT-X
+ * subtractft8.f90). Die Vorgaengerversion zog eine synthetische GFSK-
+ * Welle mit fester Amplitude 0,4 und zufaelliger Phase ab — das war
+ * keine Subtraktion, sondern ein zweiter Stoerer. Im Benchmark (starke
+ * Signale 30 dB ueber schwachen Nachbarn in 20-30 Hz Abstand) fand der
+ * Residual-Pass danach exakt null zusaetzliche Decodes.
+ *
+ * Jetzt:
+ *   1. komplexe Referenz e^{j phi(t)} des decodierten Signals synthetisieren
+ *   2. Feinsuche ueber Frequenz (+-1,5 Hz) und Zeit (+-0,04 s), weil der
+ *      Decoder nur auf 3,125 Hz / 0,08 s aufloest
+ *   3. komplexe Amplitude A(t) = 2 conj(<x * ref>) gleitend ueber ~0,33 s
+ *      schaetzen (Betrag UND Phase, zeitvariant -> Fading mitgenommen)
+ *   4. Re(A(t) * ref(t)) abziehen
+ * Ein Fehl-Decode ergibt A ~ 0 und zieht praktisch nichts ab. */
+
+#define SUB_WIN        4000   /* Glaettungsfenster in Samples (WSJT-X: nfilt=4000) */
+#define SUB_N_DF       5
+#define SUB_N_DT       5
+
+static void _synth_gfsk_iq(const uint8_t* tones, float f0, float* out_i, float* out_q) {
+    int n_spsym = FT8_SAMPLES_PER_SYM;
+    int n_wave  = FT8_NUM_SYMBOLS * n_spsym;
+    int n_total = n_wave + 2 * n_spsym;
+    float dphi_peak = 2.0f * (float)M_PI / n_spsym;
+    float* dphi = (float*)calloc((size_t)n_total, sizeof(float));
+    if (dphi == NULL) return;
+    for (int i = 0; i < n_total; ++i) dphi[i] = 2.0f * (float)M_PI * f0 / 12000.0f;
+    float pulse[3 * FT8_SAMPLES_PER_SYM];
+    _gfsk_pulse(n_spsym, FT8_SYMBOL_BT, pulse);
+    for (int i = 0; i < FT8_NUM_SYMBOLS; ++i) {
+        int ib = i * n_spsym;
+        for (int j = 0; j < 3 * n_spsym; ++j) dphi[j + ib] += dphi_peak * (float)tones[i] * pulse[j];
+    }
+    for (int j = 0; j < 2 * n_spsym; ++j) {
+        dphi[j] = dphi[2 * n_spsym] - dphi_peak * (float)tones[0];
+        dphi[j + FT8_NUM_SYMBOLS * n_spsym] =
+            dphi[FT8_NUM_SYMBOLS * n_spsym - 1] - dphi_peak * (float)tones[FT8_NUM_SYMBOLS - 1];
+    }
+    float phi = 0.0f;
+    for (int k = 0; k < n_wave; ++k) {
+        out_i[k] = cosf(phi);
+        out_q[k] = sinf(phi);
+        phi += dphi[k + n_spsym];
+        if (phi >= 2.0f * (float)M_PI) phi -= 2.0f * (float)M_PI;
+    }
+    free(dphi);
+}
+
+/* Energie, die ein gleitendes Fenster der Laenge SUB_WIN aus x*ref
+ * kohaerent einsammelt — das Mass fuer "Referenz passt". Mit
+ * Frequenzversatz df (als Phasor-Rekurrenz) und Zeitversatz ds. */
+static double _sub_coherence(const float* x, int x_len, const float* ri, const float* rq,
+                             int start, float df) {
+    double ci = cos(2.0 * M_PI * df / 12000.0), cq = sin(2.0 * M_PI * df / 12000.0);
+    double pi_ = 1.0, pq_ = 0.0;   /* laufender Phasor e^{j 2 pi df n / fs} */
+    double acc_i = 0.0, acc_q = 0.0, energy = 0.0;
+    int cnt = 0;
+    for (int n = 0; n < FT8_TX_SAMPLES; ++n) {
+        int m = start + n;
+        double rri = ri[n] * pi_ - rq[n] * pq_;   /* ref * phasor */
+        double rrq = ri[n] * pq_ + rq[n] * pi_;
+        double t = pi_ * ci - pq_ * cq; pq_ = pi_ * cq + pq_ * ci; pi_ = t;
+        if (m < 0 || m >= x_len) continue;
+        acc_i += x[m] * rri; acc_q += x[m] * rrq; ++cnt;
+        if (cnt == SUB_WIN) {
+            energy += acc_i * acc_i + acc_q * acc_q;
+            acc_i = acc_q = 0.0; cnt = 0;
+        }
+    }
+    if (cnt > SUB_WIN / 2) energy += (acc_i * acc_i + acc_q * acc_q) * ((double)SUB_WIN / cnt);
+    return energy;
+}
+
 static void _ft8_subtract_decoded(
     float*      signal,
     const char* text,
@@ -714,20 +817,74 @@ static void _ft8_subtract_decoded(
     uint8_t tones[FT8_NUM_SYMBOLS];
     ft8_encode(msg.payload, tones);
 
-    float* sub_signal = (float*)malloc(sizeof(float) * FT8_TX_SAMPLES);
-    if (sub_signal == NULL) return;
-    _synth_gfsk(tones, freq_hz, sub_signal);
+    float* ri = (float*)malloc(sizeof(float) * FT8_TX_SAMPLES);
+    float* rq = (float*)malloc(sizeof(float) * FT8_TX_SAMPLES);
+    float* zi = (float*)malloc(sizeof(float) * (FT8_TX_SAMPLES + 1));
+    float* zq = (float*)malloc(sizeof(float) * (FT8_TX_SAMPLES + 1));
+    if (ri == NULL || rq == NULL || zi == NULL || zq == NULL) { free(ri); free(rq); free(zi); free(zq); return; }
+    _synth_gfsk_iq(tones, freq_hz, ri, rq);
 
-    int start = (int)(dt_s * (float)FT8_SAMPLE_RATE_HZ);
-    if (start < 0) start = 0;
-    int end = start + FT8_TX_SAMPLES;
-    if (end > FT8_SLOT_SAMPLES) end = FT8_SLOT_SAMPLES;
-
-    const float amp = 0.4f;
-    for (int i = start; i < end; ++i) {
-        signal[i] -= amp * sub_signal[i - start];
+    int start0 = (int)lrintf((dt_s + FT8_DT_ORIGIN_S) * (float)FT8_SAMPLE_RATE_HZ);
+    static const float dfs[SUB_N_DF] = { -1.5f, -0.75f, 0.0f, 0.75f, 1.5f };
+    static const int   dss[SUB_N_DT] = { -480, -240, 0, 240, 480 };
+    float best_df = 0.0f; int best_ds = 0; double best_e = -1.0;
+    for (int a = 0; a < SUB_N_DF; ++a) {
+        for (int b = 0; b < SUB_N_DT; ++b) {
+            double e = _sub_coherence(signal, FT8_SLOT_SAMPLES, ri, rq, start0 + dss[b], dfs[a]);
+            if (e > best_e) { best_e = e; best_df = dfs[a]; best_ds = dss[b]; }
+        }
     }
-    free(sub_signal);
+    int start = start0 + best_ds;
+
+    /* Referenz auf die feine Frequenz drehen, dann z = x * ref und
+     * Praefixsummen fuer das gleitende Fenster. */
+    {
+        double ci = cos(2.0 * M_PI * best_df / 12000.0), cq = sin(2.0 * M_PI * best_df / 12000.0);
+        double pi_ = 1.0, pq_ = 0.0;
+        for (int n = 0; n < FT8_TX_SAMPLES; ++n) {
+            float rri = (float)(ri[n] * pi_ - rq[n] * pq_);
+            float rrq = (float)(ri[n] * pq_ + rq[n] * pi_);
+            ri[n] = rri; rq[n] = rrq;
+            double t = pi_ * ci - pq_ * cq; pq_ = pi_ * cq + pq_ * ci; pi_ = t;
+        }
+    }
+    zi[0] = 0.0f; zq[0] = 0.0f;
+    for (int n = 0; n < FT8_TX_SAMPLES; ++n) {
+        int m = start + n;
+        float x = (m >= 0 && m < FT8_SLOT_SAMPLES) ? signal[m] : 0.0f;
+        zi[n + 1] = zi[n] + x * ri[n];
+        zq[n + 1] = zq[n] + x * rq[n];
+    }
+    for (int n = 0; n < FT8_TX_SAMPLES; ++n) {
+        int m = start + n;
+        if (m < 0 || m >= FT8_SLOT_SAMPLES) continue;
+        int lo = n - SUB_WIN / 2; if (lo < 0) lo = 0;
+        int hi = n + SUB_WIN / 2; if (hi > FT8_TX_SAMPLES) hi = FT8_TX_SAMPLES;
+        float inv = 1.0f / (float)(hi - lo);
+        float avg_i = (zi[hi] - zi[lo]) * inv;
+        float avg_q = (zq[hi] - zq[lo]) * inv;
+        /* A = 2 conj(avg); Re(A * ref) = 2 (avg_i * ri + avg_q * rq) */
+        signal[m] -= 2.0f * (avg_i * ri[n] + avg_q * rq[n]);
+    }
+    free(ri); free(rq); free(zi); free(zq);
+}
+
+
+/* Testzugang: eine decodierte Nachricht aus einem PCM-Slot subtrahieren
+ * (in place). Damit laesst sich die Guete der Subtraktion in dB messen. */
+int ft8_shim_subtract_message(int16_t* pcm, int n_samples, const char* text, float freq_hz, float dt_s) {
+    if (pcm == NULL || text == NULL || n_samples < FT8_SLOT_SAMPLES) return -1;
+    float* signal = (float*)malloc(sizeof(float) * FT8_SLOT_SAMPLES);
+    if (signal == NULL) return -1;
+    for (int i = 0; i < FT8_SLOT_SAMPLES; ++i) signal[i] = (float)pcm[i] / 32768.0f;
+    _ft8_subtract_decoded(signal, text, freq_hz, dt_s);
+    for (int i = 0; i < FT8_SLOT_SAMPLES; ++i) {
+        float v = signal[i] * 32768.0f;
+        if (v > 32767.0f) v = 32767.0f; if (v < -32768.0f) v = -32768.0f;
+        pcm[i] = (int16_t)lrintf(v);
+    }
+    free(signal);
+    return 0;
 }
 
 
@@ -798,6 +955,32 @@ int ft8_shim_decode_slot_v2(
                                             out, max_out, seen, &num_seen, num_out);
         }
         s_pass_stats.pass_subtract_residual += (num_out - before);
+
+        /* 2026-09-06: zweite Subtract-Runde. Was die Residual-Paesse
+         * neu gefunden haben, ebenfalls abziehen und noch einmal
+         * standard + deep ueber den Rest. JTDX faehrt 2-3 solcher
+         * Runden; auf dem Pi 4B kostet eine Runde ~0,8 s, und Stufe 2
+         * hat 12 s Budget. Nur, wenn die Runde davor etwas brachte —
+         * sonst gibt es nichts abzuziehen. */
+        int after_residual = num_out;
+        if (after_residual > after_first) {
+            for (int i = after_first; i < after_residual; ++i) {
+                if (out[i].score >= 20) {
+                    _ft8_subtract_decoded(signal, out[i].message,
+                                           out[i].freq_hz, out[i].dt_s);
+                }
+            }
+            before = num_out;
+            if (num_out < max_out) {
+                num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+                                                out, max_out, seen, &num_seen, num_out);
+            }
+            if (num_out < max_out) {
+                num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
+                                                out, max_out, seen, &num_seen, num_out);
+            }
+            s_pass_stats.pass_subtract_round2 += (num_out - before);
+        }
 
         before = num_out;
         if (num_out < max_out) {
@@ -893,7 +1076,8 @@ static int _ft4_decode_one_pass(
         r->message[FT8_SHIM_MSG_LEN - 1] = '\0';
         r->snr_db_est = (cand->score / 2) - 24;
         r->score = cand->score;
-        r->dt_s = (cand->time_offset + (float)cand->time_sub / mon.wf.time_osr) * mon.symbol_period;
+        r->dt_s = (cand->time_offset + (float)cand->time_sub / mon.wf.time_osr) * mon.symbol_period
+                   - _dt_window_corr_s(&mon) - FT4_DT_ORIGIN_S;
         r->freq_hz = (mon.min_bin + cand->freq_offset + (float)cand->freq_sub / mon.wf.freq_osr) / mon.symbol_period;
     }
     monitor_free(&mon);
@@ -1007,7 +1191,7 @@ int ft4_shim_decode_slot(
         r->snr_db_est = (cand->score / 2) - 24;
         r->score      = cand->score;
         r->dt_s = (cand->time_offset + (float)cand->time_sub / mon.wf.time_osr)
-                   * mon.symbol_period;
+                   * mon.symbol_period - _dt_window_corr_s(&mon) - FT8_DT_ORIGIN_S;
         r->freq_hz = (mon.min_bin
                       + cand->freq_offset
                       + (float)cand->freq_sub / mon.wf.freq_osr)
