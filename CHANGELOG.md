@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.75.2 — 2026-09-06
+- feat: eigener Call und QSO-Partner jeden Slot in der Known-Call-Tabelle
+
 ## v0.75.1 — 2026-09-06
 - fix: Known-Call-Tabelle nahm alle Python-Eintraege in EINEM Slot auf (n22=0-Dedupe)
 - chore: Decoder-Korpus-Benchmark als Repo-Skript (scripts/bench_decoder_corpus.py), Doku-Verweis
