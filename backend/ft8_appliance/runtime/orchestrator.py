@@ -552,6 +552,8 @@ class Orchestrator:
     # wartet dort auf die Grenze. Beides gehoert gemessen, bevor jemand
     # daran baut.
     _tx_start_offsets_s: list[float] = field(default_factory=list, init=False)
+    # nur tatsaechlich gesendete Bursts — verworfene (B4) verfaelschen sonst den Mittelwert
+    _tx_sent_offsets_s: list[float] = field(default_factory=list, init=False)
     _in_slot_tick: bool = field(default=False, init=False)
     _consecutive_late_tx: int = field(default=0, init=False)
     _last_tx_late_alert_at: float = field(default=0.0, init=False)
@@ -1768,8 +1770,8 @@ class Orchestrator:
                 self._tx_start_offsets_s[-1] if self._tx_start_offsets_s else None
             ),
             tx_start_offset_avg_s=(
-                round(sum(self._tx_start_offsets_s) / len(self._tx_start_offsets_s), 3)
-                if self._tx_start_offsets_s else None
+                round(sum(self._tx_sent_offsets_s) / len(self._tx_sent_offsets_s), 3)
+                if self._tx_sent_offsets_s else None
             ),
         )
 
@@ -6202,6 +6204,10 @@ class Orchestrator:
         slot_s = FT4_SLOT_SECONDS if self.config.operating.mode == "FT4" else SLOT_SECONDS
         return time.time() % slot_s
 
+    def _note_tx_sent_offset(self, phase: float) -> None:
+        self._tx_sent_offsets_s.append(round(phase, 3))
+        del self._tx_sent_offsets_s[:-10]
+
     def _record_tx_start_offset(self) -> bool:
         """TX-Start-Versatz messen; bei slot-getriebenem TX den Decoder
         zurueckschalten, wenn er den Sendestart zu spaet macht.
@@ -6236,7 +6242,9 @@ class Orchestrator:
                 )
                 return False
             log.info("manueller TX-Start %.2f s nach der Slot-Grenze", phase)
+            self._note_tx_sent_offset(phase)
             return True
+        self._note_tx_sent_offset(phase)
         if phase <= op.tx_latency_max_s:
             self._consecutive_late_tx = 0
             return True

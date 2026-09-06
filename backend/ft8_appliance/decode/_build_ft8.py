@@ -166,6 +166,7 @@ ffi.cdef(
     void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out);
     int ft8_shim_subtract_message(int16_t* pcm, int n_samples, const char* text, float freq_hz, float dt_s);
     void ft8_shim_set_osd_depth(int depth);
+    int ft8_shim_set_knob(const char* name, int value);
     void ft8_shim_set_osd_params(int order2_tail, int crc_tries);
     int ft8_shim_get_osd_depth(void);
 
@@ -283,6 +284,7 @@ ffi.set_source(
     void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out);
     int ft8_shim_subtract_message(int16_t* pcm, int n_samples, const char* text, float freq_hz, float dt_s);
     void ft8_shim_set_osd_depth(int depth);
+    int ft8_shim_set_knob(const char* name, int value);
     void ft8_shim_set_osd_params(int order2_tail, int crc_tries);
     int ft8_shim_get_osd_depth(void);
 

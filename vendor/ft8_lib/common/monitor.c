@@ -64,13 +64,26 @@ void monitor_init(monitor_t* me, const monitor_config_t* cfg)
     // const int len_window = 1.8f * me->block_size; // hand-picked and optimized
 
     me->window = (float*)malloc(me->nfft * sizeof(me->window[0]));
+    /* ft8-raspi 2026-09-06: waehlbares Fenster. Das Original-Hann ueber
+     * nfft = block * freq_osr mischt bei freq_osr 2 zwei, bei 4 vier
+     * Symbole in eine Analyse (Inter-Symbol-Schmieren). Alternativen
+     * legen ein kuerzeres Fenster ans ENDE des Frames (juengste Samples)
+     * und padden mit Nullen auf nfft (Frequenz-Interpolation ohne
+     * Schmieren). window_len ist die wirksame Laenge fuer die dt-Korrektur. */
+    int wl = me->nfft;
+    if (cfg->window_mode == 1 || cfg->window_mode == 2) wl = me->block_size;
+    else if (cfg->window_mode == 3) wl = (me->block_size * 3) / 2;
+    else if (cfg->window_mode == 4) wl = me->block_size * 2;
+    else if (cfg->window_mode == 5) wl = (me->block_size * 5) / 2;
+    if (wl > me->nfft) wl = me->nfft;
+    me->window_len = wl;
+    int start = me->nfft - wl;
     for (int i = 0; i < me->nfft; ++i)
     {
-        // window[i] = 1;
-        me->window[i] = me->fft_norm * hann_i(i, me->nfft);
-        // me->window[i] = blackman_i(i, me->nfft);
-        // me->window[i] = hamming_i(i, me->nfft);
-        // me->window[i] = (i < len_window) ? hann_i(i, len_window) : 0;
+        if (i < start) { me->window[i] = 0.0f; continue; }
+        int k = i - start;
+        if (cfg->window_mode == 1) me->window[i] = me->fft_norm;
+        else me->window[i] = me->fft_norm * hann_i(k, wl);
     }
     me->last_frame = (float*)calloc(me->nfft, sizeof(me->last_frame[0]));
 
