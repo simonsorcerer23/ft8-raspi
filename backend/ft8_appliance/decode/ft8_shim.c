@@ -156,9 +156,36 @@ int ft8_shim_hash_table_count(void)
  * (~40 % weniger schwache Decodes). Pi5 hat reichlich CPU-Headroom,
  * Bump auf 300 kostet ~50-100 ms pro Slot und bringt typisch
  * 20-30 % mehr Decodes am unteren Rand (-22 .. -26 dB SNR). */
-#define FT8_SHIM_MAX_CANDIDATES 300
+#define FT8_SHIM_MAX_CANDIDATES 1200  /* Puffergroesse; wirksam ist s_knob_max_cand */
 #define FT8_SHIM_MIN_SCORE      10
 #define FT8_SHIM_LDPC_ITERS     25
+
+/* 2026-09-06: Experimentier-Knoepfe (Laufzeit, fuer Benchmarks auf dem
+ * WSJT-X-Korpus). Defaults = produktives Verhalten. */
+static int s_knob_sub_score   = 20;   /* Subtraktion nur fuer Decodes mit score >= */
+static int s_knob_hint_osr    = 4;    /* time/freq-OSR des Hint-Passes (2026-09-06: 4, mit 2-Symbol-Fenster) */
+static int s_knob_sub_rounds  = 2;    /* Subtract-Runden */
+static int s_knob_min_score   = 10;   /* Kandidaten-Mindestscore std/deep */
+static int s_knob_deep_ldpc   = 50;   /* LDPC-Iterationen deep */
+static int s_knob_max_cand    = 300;  /* Kandidaten pro Pass (Puffer 1200) */
+static int s_knob_window_std  = 0;    /* monitor window_mode (s. monitor.h) fuer osr-2-Paesse */
+static int s_knob_window_deep = 4;    /* ... fuer osr-4-Paesse: Hann 2 Symbole statt 4 (Korpus: deep 0 -> 14 Decodes) */
+static int s_knob_window_hint = 4;    /* ... fuer den Hint-Pass */
+static int s_knob_llr_scales  = 1;    /* 1 = nur BP mit Original-LLR; 2..4 = zusaetzliche Skalierungen (WSJT-X: llra..llrd) */
+int ft8_shim_set_knob(const char* name, int value) {
+    if (strcmp(name, "sub_score") == 0) s_knob_sub_score = value;
+    else if (strcmp(name, "hint_osr") == 0) s_knob_hint_osr = value;
+    else if (strcmp(name, "sub_rounds") == 0) s_knob_sub_rounds = value;
+    else if (strcmp(name, "min_score") == 0) s_knob_min_score = value;
+    else if (strcmp(name, "deep_ldpc") == 0) s_knob_deep_ldpc = value;
+    else if (strcmp(name, "window_std") == 0) s_knob_window_std = value;
+    else if (strcmp(name, "window_deep") == 0) s_knob_window_deep = value;
+    else if (strcmp(name, "window_hint") == 0) s_knob_window_hint = value;
+    else if (strcmp(name, "llr_scales") == 0) s_knob_llr_scales = value < 1 ? 1 : (value > 4 ? 4 : value);
+    else if (strcmp(name, "max_cand") == 0) s_knob_max_cand = value < 1 ? 1 : (value > FT8_SHIM_MAX_CANDIDATES ? FT8_SHIM_MAX_CANDIDATES : value);
+    else return -1;
+    return 0;
+}
 
 #define FT8_SHIM_MSG_LEN  40
 
@@ -197,7 +224,7 @@ typedef struct {
 #define FT8_DT_ORIGIN_S 0.5f
 #define FT4_DT_ORIGIN_S 0.5f
 static inline float _dt_window_corr_s(const monitor_t* mon) {
-    return ((float)mon->block_size * 0.5f + (float)mon->nfft * 0.5f - (float)mon->subblock_size)
+    return ((float)mon->block_size * 0.5f + (float)mon->window_len * 0.5f - (float)mon->subblock_size)
            / 12000.0f;
 }
 
@@ -232,6 +259,7 @@ int ft8_shim_decode_slot(
     cfg.time_osr    = 2;
     cfg.freq_osr    = 2;
     cfg.protocol    = FTX_PROTOCOL_FT8;
+    cfg.window_mode = s_knob_window_std;
     monitor_init(&mon, &cfg);
 
     /* Slide through the slot accumulating the waterfall */
@@ -243,11 +271,11 @@ int ft8_shim_decode_slot(
     /* Find sync candidates */
     ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
     int num_cand = ftx_find_candidates(
-        &mon.wf, FT8_SHIM_MAX_CANDIDATES, candidates, FT8_SHIM_MIN_SCORE
+        &mon.wf, s_knob_max_cand, candidates, FT8_SHIM_MIN_SCORE
     );
 
     /* Decode each candidate; dedupe by message.hash */
-    uint16_t seen[50];
+    uint16_t seen[200];
     int      num_seen = 0;
     int      num_out  = 0;
 
@@ -481,6 +509,34 @@ int ft8_shim_decode_slot_multipass(
  * _ft8_decode_one_pass darauf zugreifen kann. Definition kommt unten. */
 static int s_ldpc_factor_pct;
 
+
+static int _osd_crc_ok(const uint8_t plain174[FTX_LDPC_N]);
+
+/* 2026-09-06: BP mit mehreren LLR-Skalierungen. Belief Propagation ist
+ * empfindlich gegen die absolute Skala der Soft-Bits; WSJT-X probiert
+ * darum bis zu vier Varianten (llra..llrd) pro Kandidat. ft8_lib normiert
+ * auf Varianz 24 und probiert nur diese eine. */
+static bool _ft8_decode_candidate_scaled(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, int max_iterations,
+                                         ftx_message_t* message, ftx_decode_status_t* status) {
+    if (s_knob_llr_scales <= 1) return ftx_decode_candidate(wf, cand, max_iterations, message, status);
+    static const float scales[4] = { 1.0f, 0.5f, 2.0f, 0.25f };
+    float log174[FTX_LDPC_N], work[FTX_LDPC_N];
+    uint8_t plain174[FTX_LDPC_N];
+    ftx_extract_llr(wf, cand, log174);
+    for (int si = 0; si < s_knob_llr_scales; ++si) {
+        for (int i = 0; i < FTX_LDPC_N; ++i) work[i] = log174[i] * scales[si];
+        bp_decode(work, max_iterations, plain174, &status->ldpc_errors);
+        if (status->ldpc_errors > 0) continue;
+        if (!_osd_crc_ok(plain174)) continue;
+        uint8_t a91[FTX_LDPC_K_BYTES]; memset(a91, 0, sizeof(a91));
+        for (int i = 0; i < FTX_LDPC_K; ++i) if (plain174[i]) a91[i >> 3] |= (uint8_t)(0x80u >> (i & 7));
+        message->hash = ftx_extract_crc(a91);
+        for (int i = 0; i < 10; ++i) message->payload[i] = a91[i];
+        return true;
+    }
+    return false;
+}
+
 static int _ft8_decode_one_pass(
     float*             signal,
     int                signal_len,
@@ -501,6 +557,7 @@ static int _ft8_decode_one_pass(
     cfg.time_osr    = time_osr;
     cfg.freq_osr    = freq_osr;
     cfg.protocol    = FTX_PROTOCOL_FT8;
+    cfg.window_mode = (freq_osr >= 4) ? s_knob_window_deep : s_knob_window_std;
     monitor_init(&mon, &cfg);
 
     for (int pos = 0; pos + mon.block_size <= signal_len; pos += mon.block_size) {
@@ -509,7 +566,7 @@ static int _ft8_decode_one_pass(
 
     ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
     int num_cand = ftx_find_candidates(
-        &mon.wf, FT8_SHIM_MAX_CANDIDATES, candidates, FT8_SHIM_MIN_SCORE
+        &mon.wf, s_knob_max_cand, candidates, s_knob_min_score
     );
 
     /* v0.8.0 Build D: adaptive LDPC-Iter via global factor (Pipeline-set) */
@@ -521,7 +578,7 @@ static int _ft8_decode_one_pass(
 
         ftx_message_t       message;
         ftx_decode_status_t status;
-        if (!ftx_decode_candidate(&mon.wf, cand, eff_ldpc_iters, &message, &status)) {
+        if (!_ft8_decode_candidate_scaled(&mon.wf, cand, eff_ldpc_iters, &message, &status)) {
             continue;
         }
 
@@ -530,7 +587,7 @@ static int _ft8_decode_one_pass(
             if (seen[j] == message.hash) { dup = 1; break; }
         }
         if (dup) continue;
-        if (*num_seen < 50) seen[(*num_seen)++] = message.hash;
+        if (*num_seen < 200) seen[(*num_seen)++] = message.hash;
 
         char                   text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t  offsets;
@@ -857,7 +914,7 @@ static int _ft8_hint_pass(
     ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
     /* min_score=5 (vs 10 Standard): viel mehr Candidates */
     int num_cand = ftx_find_candidates(
-        &mon->wf, FT8_SHIM_MAX_CANDIDATES, candidates, 5
+        &mon->wf, s_knob_max_cand, candidates, 5
     );
     int num_out = num_out_initial;
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
@@ -892,7 +949,7 @@ static int _ft8_hint_pass(
                 fprintf(stderr, "OSD-DEBUG %s | nhard=%d metric=%.1f score=%d\n", text, s_osd_last_nhard, s_osd_last_metric, cand->score);
         }
 
-        if (*num_seen < 50) seen[(*num_seen)++] = message.hash;
+        if (*num_seen < 200) seen[(*num_seen)++] = message.hash;
 
         ft8_shim_result_t* r = &out[num_out];
         strncpy(r->message, text, FT8_SHIM_MSG_LEN - 1);
@@ -934,6 +991,7 @@ static int _ft8_hint_pass_signal(
     cfg.time_osr    = time_osr;
     cfg.freq_osr    = freq_osr;
     cfg.protocol    = FTX_PROTOCOL_FT8;
+    cfg.window_mode = s_knob_window_hint;
     monitor_init(&mon, &cfg);
     for (int pos = 0; pos + mon.block_size <= signal_len; pos += mon.block_size) {
         monitor_process(&mon, signal + pos);
@@ -1117,7 +1175,7 @@ int ft8_shim_decode_slot_v2(
         signal[i] = (float)pcm[i] / 32768.0f;
     }
 
-    uint16_t seen[50];
+    uint16_t seen[200];
     int num_seen = 0;
     int num_out = 0;
 
@@ -1134,70 +1192,46 @@ int ft8_shim_decode_slot_v2(
                                             out, max_out, seen, &num_seen, num_out);
         }
     } else if (mode == 3) {
-        /* v0.7.0 Build 1: subtract-and-rerun + v0.7.0 Build 2 Hint
-         * Pass-Stats v0.8.0: zaehle Decodes pro Pass-Type. */
         int before;
-
         before = num_out;
         num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
                                         out, max_out, seen, &num_seen, 0);
         s_pass_stats.pass_standard += (num_out - before);
-
         before = num_out;
         if (num_out < max_out) {
-            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
+            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, s_knob_deep_ldpc,
                                             out, max_out, seen, &num_seen, num_out);
         }
         s_pass_stats.pass_deep += (num_out - before);
 
-        int after_first = num_out;
-        for (int i = 0; i < after_first; ++i) {
-            if (out[i].score >= 20) {
-                _ft8_subtract_decoded(signal, out[i].message,
-                                       out[i].freq_hz, out[i].dt_s);
-            }
-        }
-
-        before = num_out;
-        if (num_out < max_out) {
-            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
-                                            out, max_out, seen, &num_seen, num_out);
-        }
-        if (num_out < max_out) {
-            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
-                                            out, max_out, seen, &num_seen, num_out);
-        }
-        s_pass_stats.pass_subtract_residual += (num_out - before);
-
-        /* 2026-09-06: zweite Subtract-Runde. Was die Residual-Paesse
-         * neu gefunden haben, ebenfalls abziehen und noch einmal
-         * standard + deep ueber den Rest. JTDX faehrt 2-3 solcher
-         * Runden; auf dem Pi 4B kostet eine Runde ~0,8 s, und Stufe 2
-         * hat 12 s Budget. Nur, wenn die Runde davor etwas brachte —
-         * sonst gibt es nichts abzuziehen. */
-        int after_residual = num_out;
-        if (after_residual > after_first) {
-            for (int i = after_first; i < after_residual; ++i) {
-                if (out[i].score >= 20) {
-                    _ft8_subtract_decoded(signal, out[i].message,
-                                           out[i].freq_hz, out[i].dt_s);
+        /* Subtract-Runden: alles Neue der letzten Runde kohaerent abziehen,
+         * dann standard + deep ueber das Residuum. JTDX faehrt 2-3 Runden;
+         * eine Runde kostet auf dem Pi 4B ~0,8 s, Stufe 2 hat 12 s Budget.
+         * Abbruch, sobald eine Runde nichts Neues bringt. */
+        int round_start = 0;
+        for (int round = 0; round < s_knob_sub_rounds && num_out < max_out; ++round) {
+            int round_end = num_out;
+            if (round_end <= round_start) break;
+            for (int i = round_start; i < round_end; ++i) {
+                if (out[i].score >= s_knob_sub_score) {
+                    _ft8_subtract_decoded(signal, out[i].message, out[i].freq_hz, out[i].dt_s);
                 }
             }
+            round_start = round_end;
             before = num_out;
+            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+                                            out, max_out, seen, &num_seen, num_out);
             if (num_out < max_out) {
-                num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+                num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, s_knob_deep_ldpc,
                                                 out, max_out, seen, &num_seen, num_out);
             }
-            if (num_out < max_out) {
-                num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
-                                                out, max_out, seen, &num_seen, num_out);
-            }
-            s_pass_stats.pass_subtract_round2 += (num_out - before);
+            if (round == 0) s_pass_stats.pass_subtract_residual += (num_out - before);
+            else            s_pass_stats.pass_subtract_round2 += (num_out - before);
         }
 
         before = num_out;
         if (num_out < max_out) {
-            num_out = _ft8_hint_pass_signal(signal, FT8_SLOT_SAMPLES, 2, 2,
+            num_out = _ft8_hint_pass_signal(signal, FT8_SLOT_SAMPLES, s_knob_hint_osr, s_knob_hint_osr,
                                              out, max_out, seen, &num_seen, num_out);
         }
         s_pass_stats.pass_hint += (num_out - before);
@@ -1259,7 +1293,7 @@ static int _ft4_decode_one_pass(
     cfg.sample_rate = FT8_SAMPLE_RATE_HZ;
     cfg.time_osr    = time_osr;
     cfg.freq_osr    = freq_osr;
-    cfg.protocol    = FTX_PROTOCOL_FT4;
+    cfg.protocol    = FTX_PROTOCOL_FT4; cfg.window_mode = 0;
     monitor_init(&mon, &cfg);
     for (int pos = 0; pos + mon.block_size <= FT4_SLOT_SAMPLES; pos += mon.block_size) {
         monitor_process(&mon, signal + pos);
@@ -1267,11 +1301,11 @@ static int _ft4_decode_one_pass(
     free(signal);
 
     ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
-    int num_cand = ftx_find_candidates(&mon.wf, FT8_SHIM_MAX_CANDIDATES, candidates, FT8_SHIM_MIN_SCORE);
+    int num_cand = ftx_find_candidates(&mon.wf, s_knob_max_cand, candidates, FT8_SHIM_MIN_SCORE);
     int eff_ldpc = (ldpc_iters * s_ldpc_factor_pct) / 100;
     if (eff_ldpc < 5) eff_ldpc = 5;
 
-    uint16_t seen[50];
+    uint16_t seen[200];
     int num_seen = 0, num_out = 0;
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
         const ftx_candidate_t* cand = &candidates[idx];
@@ -1280,7 +1314,7 @@ static int _ft4_decode_one_pass(
         int dup = 0;
         for (int j = 0; j < num_seen; ++j) if (seen[j] == message.hash) { dup = 1; break; }
         if (dup) continue;
-        if (num_seen < 50) seen[num_seen++] = message.hash;
+        if (num_seen < 200) seen[num_seen++] = message.hash;
         char text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t offsets;
         if (ftx_message_decode(&message, &s_hash_if, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
@@ -1358,7 +1392,7 @@ int ft4_shim_decode_slot(
     cfg.sample_rate = FT8_SAMPLE_RATE_HZ;
     cfg.time_osr    = 2;
     cfg.freq_osr    = 2;
-    cfg.protocol    = FTX_PROTOCOL_FT4;
+    cfg.protocol    = FTX_PROTOCOL_FT4; cfg.window_mode = 0;
     monitor_init(&mon, &cfg);
 
     for (int pos = 0; pos + mon.block_size <= FT4_SLOT_SAMPLES; pos += mon.block_size) {
@@ -1368,10 +1402,10 @@ int ft4_shim_decode_slot(
 
     ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
     int num_cand = ftx_find_candidates(
-        &mon.wf, FT8_SHIM_MAX_CANDIDATES, candidates, FT8_SHIM_MIN_SCORE
+        &mon.wf, s_knob_max_cand, candidates, FT8_SHIM_MIN_SCORE
     );
 
-    uint16_t seen[50];
+    uint16_t seen[200];
     int      num_seen = 0;
     int      num_out  = 0;
 

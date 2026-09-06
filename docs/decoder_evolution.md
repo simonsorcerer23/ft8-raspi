@@ -248,3 +248,30 @@ schrieb (jetzt Lese-Interface bis nach dem Gate). Korpus: 279 → 285
 Treffer (+2 %), alle OSD-Decodes mit WSJT-X-Bestätigung oder plausiblen
 Calls; x86 +0,16 s/Slot in Stufe 2. Eigene Export-Funktion
 `ftx_extract_llr()` in `vendor/ft8_lib/ft8/decode.c`.
+
+### v0.72.0 — Analysefenster pro Pass, Hint-Pass auf osr 4
+Befund auf dem Korpus: der deep-Pass (osr 4/4) fand **null** Decodes — in
+allen Messungen, auch live am Pi (0 von 380). Ursache: ft8_lib legt das
+Hann-Fenster über `nfft = block · freq_osr`, bei osr 4 also über **vier
+Symbole**; die Symbolenergie verschmiert. Jetzt bekommt `monitor_config_t`
+ein `window_mode`: kürzeres Hann-Fenster am Frame-Ende, zero-padded auf
+`nfft` (Frequenz-Interpolation ohne Schmieren). Gemessen (extreme, Korpus):
+
+| std / deep / hint Fenster        | Treffer | deep-Pass |
+|----------------------------------|---------|-----------|
+| Original (2 / 4 / 2 Symbole)     | 285     | 0         |
+| deep 1,5 Symbole                 | 295     | 14        |
+| deep 2 Symbole                   | 294     | 14        |
+| deep 2, hint 2 Symbole, hint osr 4 | **299** | 14      |
+| Rechteck 1 Symbol überall        | 289 (+5 Phantome) | 22 |
+
+Der std-Pass bleibt beim Original (2-Symbol-Fenster ist dort das Optimum:
+256 vs. 254/238/231). Recall nach SNR (WSJT-X-Decodes als Wahrheit):
+unter −13 dB jetzt 57–70 % (vorher ≈ 50 %), ab −12 dB 83–100 %.
+Gesamt: **298–299 / 353 = 84 %** (Sessionbeginn: 279 = 79 %; standard: 257 = 73 %).
+
+Negativ getestet und verworfen (keine Änderung der Trefferzahl):
+mehr Kandidaten (300 → 600 → 1200), Mindestscore 10 → 8 → 6, deep-LDPC
+50 → 100, BP mit vier LLR-Skalierungen (WSJT-X llra..llrd), dritte
+Subtract-Runde, Subtraktion ab Score 0/10 statt 20 (±0). Die Knöpfe bleiben
+als `ft8_shim_set_knob()` für weitere Messungen im Shim.
