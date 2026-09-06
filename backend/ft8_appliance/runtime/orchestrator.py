@@ -811,6 +811,8 @@ class Orchestrator:
             setattr(self.decode_source, "late_pass_sink", self._ingest_late_decodes)
             setattr(self.decode_source, "two_stage",
                     bool(getattr(self.config.operating, "decoder_late_pass", True)))
+            setattr(self.decode_source, "late_ldpc_pct",
+                    int(getattr(self.config.operating, "decoder_late_ldpc_pct", 250)))
         self._spawn(self.gps.run_forever(), name="gpsd")
         self._spawn(self._slot_loop(), name="slot-loop")
         self._spawn(self._rig_poll_loop(), name="rig-poll")
@@ -1364,9 +1366,31 @@ class Orchestrator:
                     for c in self._worked_calls:
                         if c and len(c) <= 13:
                             lib.ft8_shim_hash_table_save(c.encode("ascii"), 0)
+                    # 2026-09-06: dazu die zuletzt gehoerten Calls (12 h) —
+                    # wer gestern Abend auf dem Band war, ist heute meist
+                    # wieder da. 128 juengste, damit die 256er Ringtabelle
+                    # nicht nur aus Historie besteht.
+                    n_heard = 0
+                    try:
+                        from ..db.models import Heard as _Heard
+                        since = datetime.now(UTC) - timedelta(hours=12)
+                        heard_rows = (await s.execute(
+                            select(_Heard.call)
+                            .where(_Heard.last_seen >= since)
+                            .order_by(_Heard.last_seen.desc())
+                            .limit(128)
+                        )).scalars()
+                        for c in heard_rows:
+                            c = (c or "").upper()
+                            if c and 3 <= len(c) <= 13 and not c.startswith("<"):
+                                lib.ft8_shim_hash_table_save(c.encode("ascii"), 0)
+                                n_heard += 1
+                    except Exception as exc:
+                        log.debug("Hint-Decoder heard-push skipped: %s", exc)
                     log.info(
-                        "Hint-Decoder: %d worked-Calls in C-Shim-Hash-Table gepusht",
-                        len(self._worked_calls),
+                        "Hint-Decoder: %d worked-Calls + %d heard-Calls (12 h) in "
+                        "C-Shim-Hash-Table gepusht",
+                        len(self._worked_calls), n_heard,
                     )
                 except Exception as exc:
                     log.warning("Hint-Decoder hash-push failed: %s", exc)
@@ -2692,6 +2716,8 @@ class Orchestrator:
         if hasattr(self.decode_source, "two_stage"):
             setattr(self.decode_source, "two_stage",
                     bool(getattr(new_cfg.operating, "decoder_late_pass", True)))
+            setattr(self.decode_source, "late_ldpc_pct",
+                    int(getattr(new_cfg.operating, "decoder_late_ldpc_pct", 250)))
         # v0.7.0 Build 3: auto_notch_enabled live-toggle
         new_notch_enabled = getattr(new_cfg.operating, "auto_notch_enabled", True)
         has_notch_now = getattr(self.decode_source, "notch_detector", None) is not None
@@ -4182,6 +4208,17 @@ class Orchestrator:
                         if cached_mode == mode:
                             merged |= s
                     self._psk_heard_us_cache = merged
+                    # 2026-09-06: Wer uns hoert, ist ein Kandidat fuer den
+                    # Hint-Pass des Decoders (marginale Decodes werden gegen
+                    # bekannte Calls validiert). Kleine Zahl, kein Flooding
+                    # der 256er Ringtabelle.
+                    try:
+                        from ..decode.ft8_native import lib as _ft8_lib
+                        for c in list(merged)[:64]:
+                            if c and 3 <= len(c) <= 13:
+                                _ft8_lib.ft8_shim_hash_table_save(c.encode("ascii"), 0)
+                    except Exception:
+                        pass
                     # v0.64.0 — SNR-Merge (bester Wert ueber alle Op-Calls).
                     merged_snr: dict[str, int] = {}
                     for (_call, cached_mode), sm in per_call_snr.items():
@@ -5773,6 +5810,21 @@ class Orchestrator:
         self.state_machine.ctx.skip_worked = self.config.operating.hunt_skip_worked
         self.state_machine.ctx.dxcc_only_mode = self.config.operating.hunt_dxcc_only
         self.state_machine.ctx.hunt_snr_floor_db = self.config.operating.hunt_snr_floor_db
+        self.state_machine.ctx.hunt_respect_directed_cq = bool(
+            getattr(self.config.operating, "hunt_respect_directed_cq", True)
+        )
+        self.state_machine.ctx.hunt_reply_quiet_freq = bool(
+            getattr(self.config.operating, "hunt_reply_quiet_freq", True)
+        )
+        # Unser Kontinent fuer den Directed-CQ-Filter (aus cty.dat, per Slot
+        # billig — Lookup ist ein Dict).
+        try:
+            cty = self.integrations.cty
+            my_call = self.state_machine.ctx.tx_callsign or self.config.operator.callsign
+            rec = cty.lookup(my_call) if cty else None
+            self.state_machine.ctx.my_continent = rec.entity.continent if rec else None
+        except Exception:
+            self.state_machine.ctx.my_continent = None
         self.state_machine.ctx.hunt_profile = self.config.operating.hunt_profile
         self.state_machine.ctx.mode = (
             self.config.operating.mode

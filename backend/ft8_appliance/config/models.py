@@ -358,6 +358,10 @@ class OperatingConfig(BaseModel):
     # und liefert zusaetzliche Decodes nach. So passt "extreme" auch auf
     # den Pi 4B, ohne dass der Sendestart 2,8 s nach der Slot-Grenze liegt.
     decoder_late_pass: bool = True
+    # LDPC-Iterationsfaktor (Prozent) NUR fuer Stufe 2. Sie hat auf dem Pi 4B
+    # rund 12 s Budget und braucht ~2 s — mehr Iterationen holen marginale
+    # Decodes, ohne den Sendestart zu beruehren. 100 = wie Stufe 1.
+    decoder_late_ldpc_pct: int = Field(default=250, ge=100, le=500)
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift
@@ -533,6 +537,13 @@ class OperatingConfig(BaseModel):
     # (Award-Hunter-Modus).
     hunt_skip_worked: bool = False
     hunt_dxcc_only: bool = False
+    # 2026-09-06: gerichtete CQs respektieren ("CQ NA", "CQ JA", "CQ DX" von
+    # Stationen des eigenen Kontinents) — die erwarten uns nicht, antworten
+    # nicht, und wir verbrennen Slots bis zum Bail.
+    hunt_respect_directed_cq: bool = True
+    # 2026-09-06: Antwort auf der ruhigsten Audio-Frequenz statt exakt auf
+    # der des CQ-Rufers (dort sammeln sich die anderen Anrufer).
+    hunt_reply_quiet_freq: bool = True
     # v0.10.0 Hunt-Priority-Tiers (Sebastian-Wunsch):
     # Mehrstufige Priorisierung beim Picker statt nur "DXCC zuerst, dann SNR".
     # Reihenfolge der Liste = Reihenfolge der Tiers (top-priority zuerst).
