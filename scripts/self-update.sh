@@ -203,6 +203,12 @@ PYPROJECT_HASH_BEFORE="$(sha256sum backend/pyproject.toml 2>/dev/null | awk '{pr
 # -----------------------------------------------------------------------------
 T0="$(date +%s)"
 log "checkout ${LATEST_TAG}"
+# _ft8_native.c ist tracked UND wird vom cffi-Build (_build_ft8) neu
+# geschrieben — nach jedem Update ist der Checkout damit "dirty", und ein
+# spaeterer `git checkout <tag>` scheitert an "local changes would be
+# overwritten" (Pi 2026-09-06: "v0.67.0-dirty" direkt nach dem Update).
+# Generat zuruecksetzen, der Build nach dem Checkout erzeugt es ohnehin neu.
+git checkout --quiet -- backend/ft8_appliance/decode/_ft8_native.c 2>/dev/null || true
 if ! git checkout --quiet "${LATEST_TAG}"; then
     die "git checkout ${LATEST_TAG} failed — Pi bleibt auf ${CURRENT_DESC}"
 fi
