@@ -5198,7 +5198,11 @@ class Orchestrator:
         """
         if self._last_rig is None:
             return
-        ptt_on = bool(self._last_rig.ptt)
+        # 2026-09-06: nur EIGENE Bursts messen. Live 20:53: jemand hat am
+        # Rig von Hand getastet (Abstimmen, AM/USB, Leistungsknopf) — die
+        # Regelung nahm das als unsere Bursts, schnitt den Gain 0,45 -> 0,05
+        # und der Guard sperrte spaeter mit dem alten 92-%-Wert.
+        ptt_on = bool(self._last_rig.ptt) and self._tx_burst_active
         alc = self._last_rig.alc
         pwr_m = self._last_rig.rfpower_meter
         if ptt_on and not self._ptt_was_on:
@@ -5471,6 +5475,13 @@ class Orchestrator:
             return
 
         # Stufe 1: Hard-Runaway → sofort cut
+        # 2026-09-06: nur waehrend EIGENER Bursts eingreifen. Beim Abstimmen
+        # von Hand (live 20:53: SWR 2,58 am Rig) hat der Runaway-Cut PTT
+        # weggeschaltet und TX gesperrt — mitten in Dads Abstimmvorgang.
+        if not self._tx_burst_active:
+            if swr < hard:
+                self._swr_runaway_active = False
+            return
         if swr >= hard:
             if self._swr_runaway_active:
                 return  # bereits in diesem Burst gehandled, nicht spammen
