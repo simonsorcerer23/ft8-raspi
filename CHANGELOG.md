@@ -3,6 +3,27 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.67.0 — 2026-09-06
+- fix: AP-Fallback startet jetzt wirklich — Watchdog im Controller, eigene hostapd-Unit
+- fix: Upload-Pfad — kein Fremdkonto fuer verwaiste QSOs, QRZ-Sync liest den Key pro Zyklus
+- fix: Lizenztabelle gegen AFuV Anlage 1, CEPT-Gruende zweisprachig, Config-Lock
+- fix: TX-Start-Versatz zur Slot-Grenze messen, Audio-Gain pro Rig persistieren
+- fix: Sendepfad-Guards schliessen — Zeit, Dial, set-freq, Akku, PTT beim Start
+- docs: hostapd-Kommentare sagen, was wirklich passiert (PSK wird nicht gerendert)
+- fix: TX sperren wenn das Rig nicht mehr auslesbar ist
+- fix: sterbende Background-Loops melden sich statt still auszufallen
+- fix: ADIF-Export schreibt das tatsaechlich gesendete Rufzeichen
+- fix: ALC- und Akku-Guard scharfschalten (waren seit jeher tot)
+- fix: RR73, Folge-CQ und TX-Power-Slider laufen nicht mehr an den Limits vorbei
+- fix: Upload-Drains verlieren keine QSOs mehr (inaktiver Operator, Head-of-Line)
+- fix: Audit-Befunde - Secret-Leak, stiller QSO-Verlust, fehlender Lizenz-Guard
+- test: Chaos-Tests unterscheiden GPS-Verlust von echtem Zeitverlust
+- fix: Installer auf Raspberry Pi OS Trixie lauffaehig machen
+- docs: verbleibende Multi-Pi-Referenzen auf einen Pi zurueckgebaut
+- fix: CPU-Fallback greift jetzt auch im Decoder-Mode "extreme"
+- feat: QRZ- und ClubLog-Zugangsdaten pro Operator verwalten
+- docs: Projekt auf einen Pi reduziert (ft8-2 abgezogen)
+
 ## v0.66.16 — 2026-06-15
 - fix: download ADIF exports with auth header
 
