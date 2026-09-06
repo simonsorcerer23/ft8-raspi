@@ -97,13 +97,15 @@ GPS-Satelliten → VK-162 → gpsd → chrony → Systemzeit
 
 GPS-Zeit ist mit ±100 ns extrem genau. FT8 verlangt < 500 ms. Zeit ist damit **unabhängig vom Internet** garantiert, solange GPS Sky-View hat.
 
-> **Realitätsabgleich (2026-09-06):** der Pfad GPS → chrony ist derzeit
-> *nicht* aktiv — gpsd 3.25 befüllt den SHM-Refclock auf dieser
-> Installation nicht, chrony läuft NTP-only (siehe
-> `docs/decoder_evolution.md`, v0.6.0 D). Der Zeit-Guard vertraut deshalb
-> **nur chrony**; ein GPS-Fix allein gibt TX nie frei. Portabler Betrieb
-> ohne Internet sperrt TX, bis der Pfad GPS → chrony repariert ist
-> (Diagnose: `chronyc sources -v`, Reach-Spalte für `SHM 0`).
+> **Realitätsabgleich (2026-09-06, gemessen):** der Pfad GPS → chrony
+> funktioniert — aber erst, wenn der Empfänger einen Fix hat. Im Raum
+> bleibt der VK-162 bei mode 1 (kein Fix), der SHM-Refclock zeigt Reach 0
+> (das war die Notiz „gpsd schreibt nicht ins SHM" in
+> `docs/decoder_evolution.md`, v0.6.0 D). Am Fenster kam ein 3D-Fix, chrony
+> führte `GPS` mit Reach 77 bei etwa ±200 ms (USB, kein PPS); mit Internet
+> bevorzugt chrony den ±12-ms-NTP-Peer, ohne Internet fällt er auf GPS
+> zurück. Der Zeit-Guard vertraut **nur chrony** — ein GPS-Fix allein gibt
+> TX nie frei, er gibt es über chrony frei.
 
 ---
 

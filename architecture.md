@@ -110,13 +110,14 @@ GPS time is extremely accurate at ±100 ns. FT8 requires < 500 ms. Time is
 therefore guaranteed **independently of the internet** as long as GPS has
 sky view.
 
-> **Reality check (2026-09-06):** the GPS → chrony leg above is *not*
-> currently active — gpsd 3.25 does not populate the SHM refclock on this
-> install, so chrony runs NTP-only (see `docs/decoder_evolution.md`, v0.6.0 D).
-> Consequently the time guard trusts **chrony only**; a GPS fix by itself
-> never unlocks TX. Portable operation without internet therefore blocks TX
-> until the GPS → chrony path is repaired (diagnosis: `chronyc sources -v`,
-> Reach column for `SHM 0`).
+> **Reality check (2026-09-06, measured):** the GPS → chrony leg works — but
+> only once the receiver has a fix. Indoors the VK-162 sits at mode 1 (no
+> fix) and the SHM refclock shows Reach 0 (that was the "gpsd doesn't feed
+> SHM" note in `docs/decoder_evolution.md`, v0.6.0 D). Near a window it
+> reached a 3D fix and chrony listed `GPS` with Reach 77 at about ±200 ms
+> (USB, no PPS); with internet present chrony prefers the ±12 ms NTP peer,
+> without internet it falls back to GPS. The time guard trusts **chrony
+> only** — a GPS fix by itself never unlocks TX; it unlocks via chrony.
 
 ---
 
