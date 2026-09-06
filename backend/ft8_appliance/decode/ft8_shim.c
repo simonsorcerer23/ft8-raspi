@@ -167,6 +167,9 @@ static int s_knob_hint_osr    = 4;    /* time/freq-OSR des Hint-Passes (2026-09-
 static int s_knob_sub_rounds  = 2;    /* Subtract-Runden */
 static int s_knob_min_score   = 10;   /* Kandidaten-Mindestscore std/deep */
 static int s_knob_deep_ldpc   = 50;   /* LDPC-Iterationen deep */
+static int s_knob_std_tosr    = 4;    /* time_osr des std-Passes (2026-09-06: 4 — Korpus 256 -> 265, +13 ms x86) */
+static int s_knob_std_ldpc    = 25;   /* LDPC-Iterationen std */
+static int s_knob_deep_fosr   = 4;    /* freq_osr des deep-Passes */
 static int s_knob_max_cand    = 300;  /* Kandidaten pro Pass (Puffer 1200) */
 static int s_knob_window_std  = 0;    /* monitor window_mode (s. monitor.h) fuer osr-2-Paesse */
 static int s_knob_window_deep = 4;    /* ... fuer osr-4-Paesse: Hann 2 Symbole statt 4 (Korpus: deep 0 -> 14 Decodes) */
@@ -178,6 +181,9 @@ int ft8_shim_set_knob(const char* name, int value) {
     else if (strcmp(name, "sub_rounds") == 0) s_knob_sub_rounds = value;
     else if (strcmp(name, "min_score") == 0) s_knob_min_score = value;
     else if (strcmp(name, "deep_ldpc") == 0) s_knob_deep_ldpc = value;
+    else if (strcmp(name, "std_tosr") == 0) s_knob_std_tosr = value;
+    else if (strcmp(name, "std_ldpc") == 0) s_knob_std_ldpc = value;
+    else if (strcmp(name, "deep_fosr") == 0) s_knob_deep_fosr = value;
     else if (strcmp(name, "window_std") == 0) s_knob_window_std = value;
     else if (strcmp(name, "window_deep") == 0) s_knob_window_deep = value;
     else if (strcmp(name, "window_hint") == 0) s_knob_window_hint = value;
@@ -256,7 +262,7 @@ int ft8_shim_decode_slot(
     cfg.f_min       = 200.0f;
     cfg.f_max       = 3000.0f;
     cfg.sample_rate = FT8_SAMPLE_RATE_HZ;
-    cfg.time_osr    = 2;
+    cfg.time_osr    = s_knob_std_tosr;
     cfg.freq_osr    = 2;
     cfg.protocol    = FTX_PROTOCOL_FT8;
     cfg.window_mode = s_knob_window_std;
@@ -275,7 +281,7 @@ int ft8_shim_decode_slot(
     );
 
     /* Decode each candidate; dedupe by message.hash */
-    uint16_t seen[200];
+    uint8_t seen[200][10];   /* 2026-09-06: volle 77-Bit-Nutzlast statt CRC-14 (Kollision 1:16384 -> pro Slot ~3 %) */
     int      num_seen = 0;
     int      num_out  = 0;
 
@@ -284,20 +290,20 @@ int ft8_shim_decode_slot(
 
         ftx_message_t       message;
         ftx_decode_status_t status;
-        if (!ftx_decode_candidate(&mon.wf, cand, FT8_SHIM_LDPC_ITERS, &message, &status)) {
+        if (!ftx_decode_candidate(&mon.wf, cand, s_knob_std_ldpc, &message, &status)) {
             continue;  /* LDPC fail or CRC mismatch */
         }
 
         int dup = 0;
         for (int j = 0; j < num_seen; ++j) {
-            if (seen[j] == message.hash) {
+            if (memcmp(seen[j], message.payload, 10) == 0) {
                 dup = 1;
                 break;
             }
         }
         if (dup) continue;
         if (num_seen < (int)(sizeof(seen) / sizeof(seen[0]))) {
-            seen[num_seen++] = message.hash;
+            memcpy(seen[num_seen++], message.payload, 10);
         }
 
         /* Unpack the 77-bit payload to human-readable text. We do not pass
@@ -531,6 +537,7 @@ static bool _ft8_decode_candidate_scaled(const ftx_waterfall_t* wf, const ftx_ca
         uint8_t a91[FTX_LDPC_K_BYTES]; memset(a91, 0, sizeof(a91));
         for (int i = 0; i < FTX_LDPC_K; ++i) if (plain174[i]) a91[i >> 3] |= (uint8_t)(0x80u >> (i & 7));
         message->hash = ftx_extract_crc(a91);
+        a91[9] &= 0xF8;   /* wie ftx_decode_candidate: CRC-Bits raus, sonst schlaegt die Payload-Dedupe fehl */
         for (int i = 0; i < 10; ++i) message->payload[i] = a91[i];
         return true;
     }
@@ -545,7 +552,7 @@ static int _ft8_decode_one_pass(
     int                ldpc_iters,
     ft8_shim_result_t* out,
     int                max_out,
-    uint16_t*          seen,
+    uint8_t          (*seen)[10],
     int*               num_seen,
     int                num_out_initial
 ) {
@@ -557,7 +564,7 @@ static int _ft8_decode_one_pass(
     cfg.time_osr    = time_osr;
     cfg.freq_osr    = freq_osr;
     cfg.protocol    = FTX_PROTOCOL_FT8;
-    cfg.window_mode = (freq_osr >= 4) ? s_knob_window_deep : s_knob_window_std;
+    cfg.window_mode = (time_osr >= 4 && freq_osr >= 4) ? s_knob_window_deep : s_knob_window_std;
     monitor_init(&mon, &cfg);
 
     for (int pos = 0; pos + mon.block_size <= signal_len; pos += mon.block_size) {
@@ -584,10 +591,10 @@ static int _ft8_decode_one_pass(
 
         int dup = 0;
         for (int j = 0; j < *num_seen; ++j) {
-            if (seen[j] == message.hash) { dup = 1; break; }
+            if (memcmp(seen[j], message.payload, 10) == 0) { dup = 1; break; }
         }
         if (dup) continue;
-        if (*num_seen < 200) seen[(*num_seen)++] = message.hash;
+        if (*num_seen < 200) memcpy(seen[(*num_seen)++], message.payload, 10);
 
         char                   text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t  offsets;
@@ -899,6 +906,7 @@ static bool _ft8_decode_candidate_osd(const ftx_waterfall_t* wf, const ftx_candi
     uint8_t a91[FTX_LDPC_K_BYTES]; memset(a91, 0, sizeof(a91));
     for (int i = 0; i < FTX_LDPC_K; ++i) if (plain174[i]) a91[i >> 3] |= (uint8_t)(0x80u >> (i & 7));
     message->hash = ftx_extract_crc(a91);
+    a91[9] &= 0xF8;   /* s.o. */
     for (int i = 0; i < 10; ++i) message->payload[i] = a91[i];
     return true;
 }
@@ -907,7 +915,7 @@ static int _ft8_hint_pass(
     monitor_t*         mon,
     ft8_shim_result_t* out,
     int                max_out,
-    uint16_t*          seen,
+    uint8_t          (*seen)[10],
     int*               num_seen,
     int                num_out_initial
 ) {
@@ -928,7 +936,7 @@ static int _ft8_hint_pass(
 
         int dup = 0;
         for (int j = 0; j < *num_seen; ++j) {
-            if (seen[j] == message.hash) { dup = 1; break; }
+            if (memcmp(seen[j], message.payload, 10) == 0) { dup = 1; break; }
         }
         if (dup) continue;
 
@@ -949,7 +957,7 @@ static int _ft8_hint_pass(
                 fprintf(stderr, "OSD-DEBUG %s | nhard=%d metric=%.1f score=%d\n", text, s_osd_last_nhard, s_osd_last_metric, cand->score);
         }
 
-        if (*num_seen < 200) seen[(*num_seen)++] = message.hash;
+        if (*num_seen < 200) memcpy(seen[(*num_seen)++], message.payload, 10);
 
         ft8_shim_result_t* r = &out[num_out];
         strncpy(r->message, text, FT8_SHIM_MSG_LEN - 1);
@@ -979,7 +987,7 @@ static int _ft8_hint_pass_signal(
     int                freq_osr,
     ft8_shim_result_t* out,
     int                max_out,
-    uint16_t*          seen,
+    uint8_t          (*seen)[10],
     int*               num_seen,
     int                num_out_initial
 ) {
@@ -1175,7 +1183,7 @@ int ft8_shim_decode_slot_v2(
         signal[i] = (float)pcm[i] / 32768.0f;
     }
 
-    uint16_t seen[200];
+    uint8_t seen[200][10];   /* 2026-09-06: volle 77-Bit-Nutzlast statt CRC-14 (Kollision 1:16384 -> pro Slot ~3 %) */
     int num_seen = 0;
     int num_out = 0;
 
@@ -1185,7 +1193,7 @@ int ft8_shim_decode_slot_v2(
                                         out, max_out, seen, &num_seen, 0);
     } else if (mode == 2) {
         /* multi: standard then deep, accumulate */
-        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, s_knob_std_tosr, 2, s_knob_std_ldpc,
                                         out, max_out, seen, &num_seen, 0);
         if (num_out < max_out) {
             num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, 50,
@@ -1194,12 +1202,12 @@ int ft8_shim_decode_slot_v2(
     } else if (mode == 3) {
         int before;
         before = num_out;
-        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, s_knob_std_tosr, 2, s_knob_std_ldpc,
                                         out, max_out, seen, &num_seen, 0);
         s_pass_stats.pass_standard += (num_out - before);
         before = num_out;
         if (num_out < max_out) {
-            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, s_knob_deep_ldpc,
+            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, s_knob_deep_fosr, s_knob_deep_ldpc,
                                             out, max_out, seen, &num_seen, num_out);
         }
         s_pass_stats.pass_deep += (num_out - before);
@@ -1219,10 +1227,10 @@ int ft8_shim_decode_slot_v2(
             }
             round_start = round_end;
             before = num_out;
-            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+            num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, s_knob_std_tosr, 2, s_knob_std_ldpc,
                                             out, max_out, seen, &num_seen, num_out);
             if (num_out < max_out) {
-                num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, 4, s_knob_deep_ldpc,
+                num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 4, s_knob_deep_fosr, s_knob_deep_ldpc,
                                                 out, max_out, seen, &num_seen, num_out);
             }
             if (round == 0) s_pass_stats.pass_subtract_residual += (num_out - before);
@@ -1239,7 +1247,7 @@ int ft8_shim_decode_slot_v2(
         s_pass_stats.slots_decoded++;
     } else {
         /* mode 0 / default: standard */
-        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, 2, 2, 25,
+        num_out = _ft8_decode_one_pass(signal, FT8_SLOT_SAMPLES, s_knob_std_tosr, 2, s_knob_std_ldpc,
                                         out, max_out, seen, &num_seen, 0);
     }
 
@@ -1305,16 +1313,16 @@ static int _ft4_decode_one_pass(
     int eff_ldpc = (ldpc_iters * s_ldpc_factor_pct) / 100;
     if (eff_ldpc < 5) eff_ldpc = 5;
 
-    uint16_t seen[200];
+    uint8_t seen[200][10];   /* 2026-09-06: volle 77-Bit-Nutzlast statt CRC-14 (Kollision 1:16384 -> pro Slot ~3 %) */
     int num_seen = 0, num_out = 0;
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
         const ftx_candidate_t* cand = &candidates[idx];
         ftx_message_t message; ftx_decode_status_t status;
         if (!ftx_decode_candidate(&mon.wf, cand, eff_ldpc, &message, &status)) continue;
         int dup = 0;
-        for (int j = 0; j < num_seen; ++j) if (seen[j] == message.hash) { dup = 1; break; }
+        for (int j = 0; j < num_seen; ++j) if (memcmp(seen[j], message.payload, 10) == 0) { dup = 1; break; }
         if (dup) continue;
-        if (num_seen < 200) seen[num_seen++] = message.hash;
+        if (num_seen < 200) memcpy(seen[num_seen++], message.payload, 10);
         char text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t offsets;
         if (ftx_message_decode(&message, &s_hash_if, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
@@ -1405,7 +1413,7 @@ int ft4_shim_decode_slot(
         &mon.wf, s_knob_max_cand, candidates, FT8_SHIM_MIN_SCORE
     );
 
-    uint16_t seen[200];
+    uint8_t seen[200][10];   /* 2026-09-06: volle 77-Bit-Nutzlast statt CRC-14 (Kollision 1:16384 -> pro Slot ~3 %) */
     int      num_seen = 0;
     int      num_out  = 0;
 
@@ -1420,11 +1428,11 @@ int ft4_shim_decode_slot(
 
         int dup = 0;
         for (int j = 0; j < num_seen; ++j) {
-            if (seen[j] == message.hash) { dup = 1; break; }
+            if (memcmp(seen[j], message.payload, 10) == 0) { dup = 1; break; }
         }
         if (dup) continue;
         if (num_seen < (int)(sizeof(seen) / sizeof(seen[0]))) {
-            seen[num_seen++] = message.hash;
+            memcpy(seen[num_seen++], message.payload, 10);
         }
 
         char                   text[FTX_MAX_MESSAGE_LENGTH];
