@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.74.0 — 2026-09-06
+- feat: Hunt-Tier lonely_cq — einsame CQ-Rufer bevorzugen (Pick-Telemetrie: 56 % went silent)
+
 ## v0.73.0 — 2026-09-06
 - feat: Feinsynchronisation + symbolsynchrone Demodulation im Hint-Pass — Korpus 300 -> 309 Treffer
 
