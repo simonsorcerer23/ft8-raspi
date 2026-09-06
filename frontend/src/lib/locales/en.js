@@ -39,6 +39,7 @@ export const en = {
   'control.tx_locked': 'TX locked:',
   'control.unknown': 'unknown',
   'control.unlock': 'Release lock',
+  'control.restore_rig': 'Restore rig: PKTUSB, 2700 Hz, dial',
   'control.cq': 'CQ',
   'control.cq_stop': 'STOP CQ',
   'control.answer': 'Answer',

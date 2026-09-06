@@ -192,3 +192,8 @@ Wenn ISO selbst sich ändert (sehr selten — Eswatini=SZ war 2018):
 
 1. Eintrag korrigieren
 2. Tests laufen lassen
+
+
+### `operating.rig_auto_restore` (2026-09-06, Default `false`)
+
+Sieht die Tamper-Erkennung eine fremde Betriebsart (nicht PKTUSB) oder eine Filterbreite unter 2000 Hz, setzt die App nach spätestens 15 s Betriebsart, 2700 Hz und den konfigurierten Dial des aktuellen Bands zurück, nie während eines eigenen Bursts und nie die Leistung. Ohne das Flag gibt es dafür den Button „Rig zurücksetzen“ im Steuerpanel (`POST /api/control/restore-rig`). Anlass: Bedienung am IC-7300 mit USB und 350-Hz-Filter.

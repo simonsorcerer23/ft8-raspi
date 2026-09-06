@@ -150,6 +150,10 @@
     </button>
   {/if}
 
+  <button class="skip restore" onclick={() => call(api.restoreRig)} disabled={busy}>
+    {t('control.restore_rig')}
+  </button>
+
   <!-- v0.20.0 Directed CQ — Send-Side-Filter. Wirkt nur im CQ-Modus. -->
   <div class="cq-directed">
     <label>
