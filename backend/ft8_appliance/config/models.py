@@ -361,7 +361,7 @@ class OperatingConfig(BaseModel):
     # LDPC-Iterationsfaktor (Prozent) NUR fuer Stufe 2. Sie hat auf dem Pi 4B
     # rund 12 s Budget und braucht ~2 s — mehr Iterationen holen marginale
     # Decodes, ohne den Sendestart zu beruehren. 100 = wie Stufe 1.
-    decoder_late_ldpc_pct: int = Field(default=250, ge=100, le=500)
+    decoder_late_ldpc_pct: int = Field(default=150, ge=100, le=500)
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift

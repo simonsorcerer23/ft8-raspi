@@ -275,3 +275,15 @@ mehr Kandidaten (300 → 600 → 1200), Mindestscore 10 → 8 → 6, deep-LDPC
 50 → 100, BP mit vier LLR-Skalierungen (WSJT-X llra..llrd), dritte
 Subtract-Runde, Subtraktion ab Score 0/10 statt 20 (±0). Die Knöpfe bleiben
 als `ft8_shim_set_knob()` für weitere Messungen im Shim.
+
+### v0.72.1 — std-Pass mit time_osr 4, Dedupe über die Nutzlast, Stufe 2 mit 150 %
+- **std-Pass (Stufe 1, entscheidet über TX) mit time_osr 4**: Korpus 257 → 266
+  Decodes im reinen Standardmodus, x86 +13 ms/Slot (Pi: ~+0,15 s beim
+  Sendestart, Limit 1,5 s). Mehr Ziele im Antwortmodus, ohne Stufe 2 abzuwarten.
+- **Dedupe über die 77-Bit-Nutzlast statt CRC-14**: bei ~30 Decodes/Slot
+  kollidierten zwei verschiedene Nachrichten in ~3 % der Slots im 14-Bit-Hash,
+  die zweite fiel stumm weg.
+- **Stufe-2-LDPC-Faktor 250 → 150 %**: auf dem Korpus identische Trefferzahl
+  bei 400 %, 250 %, 150 % und 100 %; 150 % spart ~15 % Stufe-2-Zeit am Pi 4B.
+- Live am Pi 4B nach v0.72.0 (8 Slots): deep-Pass 4 Decodes — vorher in 380
+  Slots null. OSD lieferte in v0.71.0 live 22 Decodes in 76 Slots (~7 %).
