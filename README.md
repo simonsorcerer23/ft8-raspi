@@ -211,7 +211,7 @@ MIT — see [LICENSE](./LICENSE). Third-party components are credited in
 
 ## Status
 
-Active development. Runs on a single Raspberry Pi 5 (`ft8`) in field use,
+Active development. Runs on a single Raspberry Pi 4B 8 GB (`ft8`) in field use,
 multi-operator (DK9XR + DO3XR on the one Pi). Built and used by a father-son
 team of amateur radio operators in Germany.
 

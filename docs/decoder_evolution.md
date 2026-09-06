@@ -301,3 +301,13 @@ BP + OSD. Feinsync-Decodes per BP+CRC brauchen keinen bekannten Call
 Max. 40 Kandidaten pro Slot (120 brachten nichts mehr, 2,7× Zeit).
 Korpus: 300 → **309 / 353 = 87,5 %**, x86 +0,3 s/Slot in Stufe 2
 (Pi 4B geschätzt +1,5 s; Budget 12 s). Neue Statistik `pass_refine`.
+
+### v0.75.0 — FT4: Analysefenster und kohärente Subtraktion
+Synthetischer FT4-Korpus (8 Signale, 6 Slots, Maskierung + schwach):
+std 25/48; deep/extreme mit Original-Fenster **13/48** — der osr-4-Pass war
+für FT4 bisher *schlechter* als standard (4-Symbol-Fenster bei 48-ms-
+Symbolen). Mit Hann-2-Symbol-Fenster 27/48, mit kohärenter Subtraktion
+(`_ft4_subtract_decoded`, 2 Runden, Feinsuche ±1 Hz/±144 Samples) 28/48.
+FT4-dt gegen die Synthese-Wahrheit: ±0,01 s (WSJT-X-Konvention −0,5 s).
+Stufe-2-Pässe deduplizieren jetzt gegen die Ergebnisse früherer Pässe
+(vorher konnten Duplikate an die Pipeline gehen).

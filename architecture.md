@@ -3,7 +3,7 @@
 **🇬🇧 English** · [🇩🇪 Deutsch](architecture.de.md)
 
 **Version:** 3.0
-**Status:** In field use — a single Raspberry Pi 5 (`ft8`) in production (a
+**Status:** In field use — a single Raspberry Pi 4B 8 GB (`ft8`; the docs said Pi 5 for a while, the box is a 4B) in production (a
 second unit `ft8-2` was trialled during bring-up, then repurposed for another
 project, 2026-06)
 **Operators:** DK9XR + DO3XR (multi-operator, both on the one Pi)
@@ -851,9 +851,10 @@ hochgericht-ft8/
 | Audio slot sync | phase-lock to GPS time, hard cut per slot | sample count, resampling | drift does not accumulate, no real-time DSP needed |
 | Captive-portal connectivity check | 204 answers for Google/Ubuntu probes | do nothing | otherwise Android drops off the Pi Wi-Fi |
 | Online-integration resilience | cache + graceful degrade + circuit breaker | hard dependencies | field-capability without internet |
-| Decoder mode mix | standard / deep / multi / extreme (default extreme since v0.7.1) | only 1 fixed mode | the Pi 5 has CPU headroom, subtract+hint+notch yield ~5-6% more decodes; CPU-adaptive fallback on overload |
-| Decoder subtract path | real subtract-and-rerun (synth → in-place subtract → re-decode) | only pass1+pass2 merge | JTDX-style: masked weaker signals become visible |
-| Hint-pass validation | decoded text must contain a known call | AP decoding | false-positive filter equivalent to JTDX type 2; avoids AP phantoms |
+| Decoder mode mix | standard / deep / multi / extreme (default extreme since v0.7.1), two-stage since v0.68: stage 1 standard (~0.35 s, decides TX), stage 2 in a thread | only 1 fixed mode | on the Pi 4B the whole extreme mode before the TX decision put the TX start 2.8 s after the boundary; two-stage keeps 0.3–0.4 s. CPU-adaptive fallback on overload |
+| Decoder subtract path | coherent subtract-and-rerun (complex reference, fine search ±1.5 Hz/±0.04 s, sliding complex amplitude), 2 rounds | fixed-amplitude synth subtract (what v0.6–v0.69 actually did: a second interferer, 0 gain) | −26 dB residual; masked neighbours 20–30 Hz away become decodable (2026-09-06, see docs/decoder_evolution.md) |
+| Weak-signal passes | OSD (order 1+2) and fine-sync + symbol-synchronous demodulation in the hint pass, per-pass analysis window (2 symbols for osr-4 passes) | ft8_lib as-is | WSJT-X reference corpus: standard 73 %, extreme 79 % → 87.5 % of WSJT-X's decodes; the osr-4 deep pass found nothing before the window fix |
+| Hint-pass validation | decoded text must contain a call known *before* the decode (read-only hash interface), OSD additionally nhard ≤ 32 / metric ≤ 60 | AP decoding | false-positive filter equivalent to JTDX type 2; avoids AP phantoms |
 | Auto-notch path | FFT spectral notch per slot, numpy-only | scipy biquad cascade | avoids the 150 MB scipy dep on the Pi |
 | Pass-stats tracking | per-pass counts in `/api/status.decoder_pass_stats` | only a total counter | data-driven insight into which pass adds real value |
 | DT-offset correction | auto-calibration via rolling median | only a diagnostic push | self-correcting for systematic audio-buffer offsets |

@@ -211,7 +211,7 @@ MIT — siehe [LICENSE](./LICENSE). Drittkomponenten sind in
 
 ## Status
 
-Aktive Entwicklung. Läuft auf einem einzelnen Raspberry Pi 5 (`ft8`) im
+Aktive Entwicklung. Läuft auf einem einzelnen Raspberry Pi 4B 8 GB (`ft8`) im
 Feldbetrieb, Multi-Operator (DK9XR + DO3XR auf dem einen Pi). Gebaut und
 genutzt von einem Vater-Sohn-Team von Funkamateuren in Deutschland.
 
