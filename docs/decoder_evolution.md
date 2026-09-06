@@ -313,3 +313,15 @@ Symbolen). Mit Hann-2-Symbol-Fenster 27/48, mit kohärenter Subtraktion
 FT4-dt gegen die Synthese-Wahrheit: ±0,01 s (WSJT-X-Konvention −0,5 s).
 Stufe-2-Pässe deduplizieren jetzt gegen die Ergebnisse früherer Pässe
 (vorher konnten Duplikate an die Pipeline gehen).
+
+### v0.75.1 — Known-Call-Tabelle war ein einziger Slot
+`ft8_shim_hash_table_save(call, 0)` — so füttern Orchestrator (Worked-Calls,
+Heard 12 h, PSK-Empfänger, Watchlist) und Benchmarks die Tabelle — landete
+über `shim_save_hash` immer im **selben** Eintrag: die Dedupe „gleicher
+n22 → Call aktualisieren" traf bei n22 = 0 den ersten Eintrag. Praktisch
+war nur bekannt, was der Decoder selbst in der Session gehört hatte.
+Jetzt rechnet das Shim den 22-Bit-Hash wie `save_callsign` in ft8_lib
+(`_call_n22`), Einträge sind eindeutig, und `<…>`-Hash-Calls dieser
+Stationen werden auch aufgelöst. `decoder_pass_stats.hint_table_calls`
+zeigt die Belegung. Korpus: Tabelle aus Referenz-Calls 311 vs. leer 304 —
+die Zufuhr wirkt jetzt messbar.
