@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.75.3 — 2026-09-06
+- fix: Stufe-2-Decodes senden nie in einen laufenden Burst und zaehlen nie als slot-getriebener TX
+
 ## v0.75.2 — 2026-09-06
 - feat: eigener Call und QSO-Partner jeden Slot in der Known-Call-Tabelle
 
