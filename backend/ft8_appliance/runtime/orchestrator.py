@@ -6539,9 +6539,13 @@ class Orchestrator:
         return False
 
     async def ap_fallback_is_active(self) -> bool:
+        """Laeuft der AP wirklich? Massgeblich ist hostapd, nicht die
+        oneshot-Unit: die bleibt "active" (RemainAfterExit), wenn jemand
+        den AP am Unit-Manager vorbei stoppt — so beim Watchdog-Test am
+        06.09., danach haette der Watchdog nie wieder einen AP gestartet."""
         from ..util import network as net
         _rc, out, _err = await net._run(
-            ["systemctl", "is-active", "ft8-ap-fallback.service"],
+            ["systemctl", "is-active", "ft8-hostapd.service"],
         )
         return out.strip() == "active"
 
