@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.72.0 — 2026-09-06
+- feat: Analysefenster pro Decoder-Pass, Hint-Pass auf osr 4 — Korpus 285 -> 299 Treffer
+
 ## v0.71.0 — 2026-09-06
 - feat: OSD-Decoder im Hint-Pass (ordered statistics decoding), Known-Call-Gate nicht mehr zirkulaer
 
