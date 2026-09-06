@@ -176,6 +176,9 @@ Default seit v0.7.1: `extreme`. CPU-Adaptive-Fallback bei Überlast.
 - **AP-Decoding** — bewusst weggelassen (False-Positive-Quelle, K1JT hat es
   mehrfach mit Filter nachgepatcht; JTDX hat Type-2-Filter eingebaut).
   Hint-Decoder gibt ähnlichen Sensitivity-Boost ohne Phantome.
+  *Nachtrag v0.71.0:* OSD ist **kein** AP (keine a-priori-Bits, sondern ein
+  besserer Decoder auf denselben Soft-Bits) und läuft nur im Hint-Pass
+  hinter CRC, Härte-Schwelle und Known-Call-Gate — siehe Nachtrag unten.
 - **GPU/NPU-Acceleration** — Pi 5 VideoCore VII nicht trivial CUDA-style
   für ft8_lib nutzbar. Spielerei.
 - **Multi-Threaded Decoder** — Race-Risk hoch, marginal gain.
@@ -229,3 +232,19 @@ extreme-Modus 2,8 s nach der Slotgrenze (gemessen am Pi 4B).
 - Stand gegen WSJT-X auf den Referenzaufnahmen: standard trifft 73 %,
   extreme 79 % (11 Decodes nur bei uns, alle plausibel). Lücke liegt unter
   −13 dB (≈50 %): dort arbeitet WSJT-X mit OSD — nächster Schritt.
+
+### v0.71.0 — OSD im Hint-Pass
+Ordered statistics decoding (Fossorier/Lin; WSJT-X `osd174_91.f90`): wenn
+Belief Propagation scheitert, werden die 91 zuverlässigsten linear
+unabhängigen Codewort-Positionen als Informationsmenge genommen, das
+Generator-System per Gauß-Jordan gelöst und Ordnung 1 (91 Einzel-Flips)
+plus Ordnung 2 über die 60 unsichersten Infobits probiert; die 16 besten
+Kandidaten nach Soft-Metrik bekommen die CRC-Prüfung. Absicherung gegen
+Phantome (ein OSD-Ergebnis ist immer ein gültiges Codewort): CRC-14,
+Hamming-Abstand zur harten Entscheidung ≤ 32 und Metrik ≤ 60, und das
+Known-Call-Gate des Hint-Passes — das vorher zirkulär war, weil
+`ftx_message_decode` die gerade entpackten Calls selbst in die Tabelle
+schrieb (jetzt Lese-Interface bis nach dem Gate). Korpus: 279 → 285
+Treffer (+2 %), alle OSD-Decodes mit WSJT-X-Bestätigung oder plausiblen
+Calls; x86 +0,16 s/Slot in Stufe 2. Eigene Export-Funktion
+`ftx_extract_llr()` in `vendor/ft8_lib/ft8/decode.c`.

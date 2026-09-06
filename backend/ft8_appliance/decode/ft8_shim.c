@@ -15,11 +15,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "ft8/decode.h"
 #include "ft8/message.h"
 #include "common/monitor.h"
+#include "ft8/ldpc.h"
+#include "ft8/crc.h"
+#include "ft8/constants.h"
 
 /* ===================================================================
  * Callsign Hash-Tabelle (Sebastian-Request 2026-05-24, v0.5.0)
@@ -105,9 +109,20 @@ static void shim_save_hash(const char* callsign, uint32_t n22) {
     s_hash_head = (s_hash_head + 1) % HASH_TABLE_SIZE;
 }
 
+static void shim_save_hash_noop(const char* callsign, uint32_t n22) { (void)callsign; (void)n22; }
+
 static ftx_callsign_hash_interface_t s_hash_if = {
     .lookup_hash = shim_lookup_hash,
     .save_hash   = shim_save_hash,
+};
+
+/* 2026-09-06: Lese-Interface fuer das Known-Call-Gate. ftx_message_decode
+ * speichert sonst die gerade entpackten Calls in unserer Tabelle — und das
+ * Gate fand danach "bekannt", was es selbst eben eingetragen hatte
+ * (Phantom "5J4ZBT 45PQH NB60" ging so durch). */
+static ftx_callsign_hash_interface_t s_hash_if_readonly = {
+    .lookup_hash = shim_lookup_hash,
+    .save_hash   = shim_save_hash_noop,
 };
 
 /* Optional API: aus Python pre-populate (z.B. aus DB worked-Calls).
@@ -560,6 +575,7 @@ typedef struct {
     uint64_t slots_decoded;
     /* 2026-09-06: zweite Subtract-Runde (JTDX macht 2-3) */
     uint64_t pass_subtract_round2;
+    uint64_t pass_osd;   /* 2026-09-06: Hint-Pass-Decodes, die erst OSD geliefert hat */
 } ft8_shim_pass_stats_t;
 
 static ft8_shim_pass_stats_t s_pass_stats = {0, 0, 0, 0, 0};
@@ -591,6 +607,7 @@ void ft8_shim_pass_stats_reset(void) {
     s_pass_stats.pass_hint = 0;
     s_pass_stats.slots_decoded = 0;
     s_pass_stats.pass_subtract_round2 = 0;
+    s_pass_stats.pass_osd = 0;
 }
 
 void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out) {
@@ -646,6 +663,189 @@ static bool _ft8_text_has_known_call(const char* text) {
 }
 
 
+
+/* ======================================================================
+ * 2026-09-06: OSD — ordered statistics decoding (nach Fossorier/Lin, wie
+ * WSJT-X osd174_91.f90). Wenn Belief Propagation scheitert, nehmen wir
+ * die 91 zuverlaessigsten, linear unabhaengigen Codewort-Positionen als
+ * Informationsmenge, loesen das Generator-System darauf und probieren
+ * Ordnung 1 (alle Einzel-Flips) plus Ordnung 2 auf den unsichersten
+ * Informationsbits. Ein OSD-Ergebnis ist immer ein gueltiges Codewort —
+ * einziger Pruefstein ist die CRC-14 (1/16384 pro Versuch). Darum wird
+ * OSD nur im Hint-Pass verwendet und dort zusaetzlich durch das Known-
+ * Call-Gate abgesichert (kein Phantom ohne bekanntes Rufzeichen).
+ * ====================================================================== */
+
+typedef struct { uint64_t w[2]; } bits91_t;   /* 91 Bits: w[0] Bits 0..63, w[1] 64..90 */
+
+static inline int _b91_get(const bits91_t* b, int k) { return (int)((b->w[k >> 6] >> (k & 63)) & 1u); }
+static inline void _b91_set(bits91_t* b, int k) { b->w[k >> 6] |= (uint64_t)1 << (k & 63); }
+static inline int _b91_parity_and(const bits91_t* a, const bits91_t* b) {
+    return (int)((__builtin_popcountll(a->w[0] & b->w[0]) + __builtin_popcountll(a->w[1] & b->w[1])) & 1);
+}
+static inline int _b91_zero(const bits91_t* b) { return b->w[0] == 0 && b->w[1] == 0; }
+
+static int s_osd_depth = 2;           /* 0 aus, 1 Ordnung 1, 2 Ordnung 1+2 (teilweise) */
+static int s_osd_order2_tail = 60;    /* Ordnung 2 nur ueber die unsichersten N Infobits */
+static int s_osd_crc_tries = 16;      /* beste Kandidaten nach Metrik, die eine CRC-Pruefung bekommen */
+#define OSD_CRC_TRIES_MAX 32
+static int s_osd_last_nhard = 0;      /* Diagnose: Hamming-Abstand harte Entscheidung <-> Codewort */
+static float s_osd_last_metric = 0.0f;
+void ft8_shim_set_osd_params(int order2_tail, int crc_tries) {
+    s_osd_order2_tail = order2_tail < 0 ? 0 : (order2_tail > FTX_LDPC_K ? FTX_LDPC_K : order2_tail);
+    s_osd_crc_tries = crc_tries < 1 ? 1 : (crc_tries > OSD_CRC_TRIES_MAX ? OSD_CRC_TRIES_MAX : crc_tries);
+}
+
+void ft8_shim_set_osd_depth(int depth) { s_osd_depth = depth < 0 ? 0 : (depth > 2 ? 2 : depth); }
+int  ft8_shim_get_osd_depth(void) { return s_osd_depth; }
+
+/* Generatorzeile fuer Codewort-Position n (0..173) als 91-Bit-Vektor ueber
+ * die Nachrichtenbits: Identitaet fuer n<91, sonst kFTX_LDPC_generator. */
+static void _osd_gen_row(int n, bits91_t* out) {
+    out->w[0] = out->w[1] = 0;
+    if (n < FTX_LDPC_K) { _b91_set(out, n); return; }
+    const uint8_t* row = kFTX_LDPC_generator[n - FTX_LDPC_K];
+    for (int k = 0; k < FTX_LDPC_K; ++k) {
+        if ((row[k >> 3] >> (7 - (k & 7))) & 1) _b91_set(out, k);
+    }
+}
+
+static int _osd_crc_ok(const uint8_t plain174[FTX_LDPC_N]) {
+    uint8_t a91[FTX_LDPC_K_BYTES];
+    memset(a91, 0, sizeof(a91));
+    for (int i = 0; i < FTX_LDPC_K; ++i) {
+        if (plain174[i]) a91[i >> 3] |= (uint8_t)(0x80u >> (i & 7));
+    }
+    uint16_t crc_ext = ftx_extract_crc(a91);
+    a91[9] &= 0xF8; a91[10] &= 0x00;
+    return ftx_compute_crc(a91, 96 - 14) == crc_ext;
+}
+
+typedef struct { float metric; int i, j; } osd_cand_t;
+
+/* Liefert 1 und plain174, wenn ein Codewort mit gueltiger CRC gefunden wurde. */
+static int _osd_decode(const float* llr, int depth, uint8_t plain174[FTX_LDPC_N]) {
+    static bits91_t gen[FTX_LDPC_N];
+    static int gen_ready = 0;
+    if (!gen_ready) { for (int n = 0; n < FTX_LDPC_N; ++n) _osd_gen_row(n, &gen[n]); gen_ready = 1; }
+
+    uint8_t hard[FTX_LDPC_N]; float rel[FTX_LDPC_N]; int order[FTX_LDPC_N];
+    for (int n = 0; n < FTX_LDPC_N; ++n) { hard[n] = llr[n] > 0.0f; rel[n] = fabsf(llr[n]); order[n] = n; }
+    for (int a = 1; a < FTX_LDPC_N; ++a) {
+        int v = order[a]; int b = a - 1;
+        while (b >= 0 && rel[order[b]] < rel[v]) { order[b + 1] = order[b]; --b; }
+        order[b + 1] = v;
+    }
+
+    /* 91 unabhaengige, moeglichst zuverlaessige Positionen einsammeln. */
+    bits91_t rv[FTX_LDPC_K], rw[FTX_LDPC_K]; int sel[FTX_LDPC_K]; int count = 0;
+    bits91_t piv_v[FTX_LDPC_K]; int piv_used[FTX_LDPC_K];
+    memset(piv_used, 0, sizeof(piv_used));
+    for (int a = 0; a < FTX_LDPC_N && count < FTX_LDPC_K; ++a) {
+        int n = order[a];
+        bits91_t v = gen[n];
+        for (int p = 0; p < FTX_LDPC_K; ++p) {
+            if (piv_used[p] && _b91_get(&v, p)) { v.w[0] ^= piv_v[p].w[0]; v.w[1] ^= piv_v[p].w[1]; }
+        }
+        if (_b91_zero(&v)) continue;
+        int p = v.w[0] ? __builtin_ctzll(v.w[0]) : 64 + __builtin_ctzll(v.w[1]);
+        piv_v[p] = v; piv_used[p] = 1;
+        rv[count] = gen[n]; rw[count].w[0] = rw[count].w[1] = 0; _b91_set(&rw[count], count);
+        sel[count] = n; ++count;
+    }
+    if (count < FTX_LDPC_K) return 0;
+
+    /* Gauss-Jordan auf [R | I] -> [I | R^-1]; rw[i] = Zeile i von R^-1 */
+    for (int c = 0; c < FTX_LDPC_K; ++c) {
+        int r = -1;
+        for (int k = c; k < FTX_LDPC_K; ++k) if (_b91_get(&rv[k], c)) { r = k; break; }
+        if (r < 0) return 0;
+        if (r != c) { bits91_t t = rv[r]; rv[r] = rv[c]; rv[c] = t; t = rw[r]; rw[r] = rw[c]; rw[c] = t; }
+        for (int k = 0; k < FTX_LDPC_K; ++k) {
+            if (k != c && _b91_get(&rv[k], c)) { rv[k].w[0] ^= rv[c].w[0]; rv[k].w[1] ^= rv[c].w[1]; rw[k].w[0] ^= rw[c].w[0]; rw[k].w[1] ^= rw[c].w[1]; }
+        }
+    }
+
+    /* Harte Entscheidungen auf der Informationsmenge -> Nachricht m0 -> Codewort c0 */
+    bits91_t hs; hs.w[0] = hs.w[1] = 0;
+    for (int i = 0; i < FTX_LDPC_K; ++i) if (hard[sel[i]]) _b91_set(&hs, i);
+    bits91_t m0; m0.w[0] = m0.w[1] = 0;
+    for (int p = 0; p < FTX_LDPC_K; ++p) if (_b91_parity_and(&rw[p], &hs)) _b91_set(&m0, p);
+    uint8_t c0[FTX_LDPC_N]; float d0 = 0.0f;
+    for (int n = 0; n < FTX_LDPC_N; ++n) { c0[n] = (uint8_t)_b91_parity_and(&gen[n], &m0); if (c0[n] != hard[n]) d0 += rel[n]; }
+
+    /* Flip-Codewoerter f_i = G * (R^-1 e_i) */
+    static uint8_t f[FTX_LDPC_K][FTX_LDPC_N];
+    for (int i = 0; i < FTX_LDPC_K; ++i) {
+        bits91_t d; d.w[0] = d.w[1] = 0;
+        for (int p = 0; p < FTX_LDPC_K; ++p) if (_b91_get(&rw[p], i)) _b91_set(&d, p);
+        for (int n = 0; n < FTX_LDPC_N; ++n) f[i][n] = (uint8_t)_b91_parity_and(&gen[n], &d);
+    }
+    osd_cand_t best[OSD_CRC_TRIES_MAX]; int nbest = 0; const int OSD_CRC_TRIES = s_osd_crc_tries;
+    #define OSD_PUSH(M, I, J) do { \
+        if (nbest < OSD_CRC_TRIES || (M) < best[nbest - 1].metric) { \
+            int _k = (nbest < OSD_CRC_TRIES) ? nbest++ : nbest - 1; \
+            best[_k].metric = (M); best[_k].i = (I); best[_k].j = (J); \
+            while (_k > 0 && best[_k].metric < best[_k - 1].metric) { osd_cand_t _t = best[_k]; best[_k] = best[_k - 1]; best[_k - 1] = _t; --_k; } \
+        } } while (0)
+    OSD_PUSH(d0, -1, -1);
+    float gain[FTX_LDPC_K];
+    for (int i = 0; i < FTX_LDPC_K; ++i) {
+        float g = 0.0f;
+        for (int n = 0; n < FTX_LDPC_N; ++n) if (f[i][n]) g += (c0[n] == hard[n]) ? rel[n] : -rel[n];
+        gain[i] = g;
+        if (depth >= 1) OSD_PUSH(d0 + g, i, -1);
+    }
+    if (depth >= 2) {
+        int lo = FTX_LDPC_K - s_osd_order2_tail; if (lo < 0) lo = 0;
+        for (int i = lo; i < FTX_LDPC_K; ++i) {
+            for (int j = i + 1; j < FTX_LDPC_K; ++j) {
+                float g = gain[i] + gain[j];
+                for (int n = 0; n < FTX_LDPC_N; ++n) {
+                    if (f[i][n] && f[j][n]) g -= 2.0f * ((c0[n] == hard[n]) ? rel[n] : -rel[n]);
+                }
+                OSD_PUSH(d0 + g, i, j);
+            }
+        }
+    }
+    #undef OSD_PUSH
+    for (int k = 0; k < nbest; ++k) {
+        for (int n = 0; n < FTX_LDPC_N; ++n) {
+            uint8_t b = c0[n];
+            if (best[k].i >= 0) b ^= f[best[k].i][n];
+            if (best[k].j >= 0) b ^= f[best[k].j][n];
+            plain174[n] = b;
+        }
+        if (_osd_crc_ok(plain174)) {
+            int nh = 0; for (int n = 0; n < FTX_LDPC_N; ++n) nh += (plain174[n] != hard[n]);
+            s_osd_last_nhard = nh; s_osd_last_metric = best[k].metric;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Wie ftx_decode_candidate (FT8), aber mit OSD-Fallback nach BP-Fehlschlag. */
+static bool _ft8_decode_candidate_osd(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, int max_iterations,
+                                      ftx_message_t* message, int* via_osd) {
+    float log174[FTX_LDPC_N];
+    uint8_t plain174[FTX_LDPC_N];
+    int ldpc_errors = 0;
+    *via_osd = 0;
+    ftx_extract_llr(wf, cand, log174);
+    bp_decode(log174, max_iterations, plain174, &ldpc_errors);
+    if (ldpc_errors > 0) {
+        if (s_osd_depth <= 0 || !_osd_decode(log174, s_osd_depth, plain174)) return false;
+        *via_osd = 1;
+    }
+    if (!_osd_crc_ok(plain174)) return false;
+    uint8_t a91[FTX_LDPC_K_BYTES]; memset(a91, 0, sizeof(a91));
+    for (int i = 0; i < FTX_LDPC_K; ++i) if (plain174[i]) a91[i >> 3] |= (uint8_t)(0x80u >> (i & 7));
+    message->hash = ftx_extract_crc(a91);
+    for (int i = 0; i < 10; ++i) message->payload[i] = a91[i];
+    return true;
+}
+
 static int _ft8_hint_pass(
     monitor_t*         mon,
     ft8_shim_result_t* out,
@@ -665,7 +865,9 @@ static int _ft8_hint_pass(
         ftx_message_t       message;
         ftx_decode_status_t status;
         /* LDPC=120 (vs 25 Standard): mehr Iterationen für marginale Signale */
-        if (!ftx_decode_candidate(&mon->wf, cand, 120, &message, &status)) continue;
+        int via_osd = 0;
+        (void)status;
+        if (!_ft8_decode_candidate_osd(&mon->wf, cand, 120, &message, &via_osd)) continue;
 
         int dup = 0;
         for (int j = 0; j < *num_seen; ++j) {
@@ -675,10 +877,20 @@ static int _ft8_hint_pass(
 
         char text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t offsets;
-        if (ftx_message_decode(&message, &s_hash_if, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
+        if (ftx_message_decode(&message, &s_hash_if_readonly, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
 
-        /* Hint-Gate: nur akzeptieren wenn known call drin */
+        /* Hint-Gate: nur akzeptieren wenn ein VORHER bekannter Call drin ist */
         if (!_ft8_text_has_known_call(text)) continue;
+        /* OSD-Ergebnisse sind immer gueltige Codewoerter; zusaetzlich zur CRC
+         * verlangen wir Naehe zur harten Entscheidung (Phantom: nhard 37 / 80). */
+        if (via_osd && (s_osd_last_nhard > 32 || s_osd_last_metric > 60.0f)) continue;
+        /* jetzt regulaer entpacken, damit die Calls in die Tabelle kommen */
+        ftx_message_decode(&message, &s_hash_if, text, &offsets);
+        if (via_osd) {
+            s_pass_stats.pass_osd++;
+            if (getenv("FT8_SHIM_OSD_DEBUG") != NULL)
+                fprintf(stderr, "OSD-DEBUG %s | nhard=%d metric=%.1f score=%d\n", text, s_osd_last_nhard, s_osd_last_metric, cand->score);
+        }
 
         if (*num_seen < 50) seen[(*num_seen)++] = message.hash;
 
@@ -880,7 +1092,8 @@ int ft8_shim_subtract_message(int16_t* pcm, int n_samples, const char* text, flo
     _ft8_subtract_decoded(signal, text, freq_hz, dt_s);
     for (int i = 0; i < FT8_SLOT_SAMPLES; ++i) {
         float v = signal[i] * 32768.0f;
-        if (v > 32767.0f) v = 32767.0f; if (v < -32768.0f) v = -32768.0f;
+        if (v > 32767.0f) v = 32767.0f;
+        if (v < -32768.0f) v = -32768.0f;
         pcm[i] = (int16_t)lrintf(v);
     }
     free(signal);

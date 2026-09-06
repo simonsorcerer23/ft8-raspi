@@ -159,11 +159,15 @@ ffi.cdef(
         uint64_t pass_hint;
         uint64_t slots_decoded;
         uint64_t pass_subtract_round2;
+        uint64_t pass_osd;
     } ft8_shim_pass_stats_t;
 
     void ft8_shim_pass_stats_reset(void);
     void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out);
     int ft8_shim_subtract_message(int16_t* pcm, int n_samples, const char* text, float freq_hz, float dt_s);
+    void ft8_shim_set_osd_depth(int depth);
+    void ft8_shim_set_osd_params(int order2_tail, int crc_tries);
+    int ft8_shim_get_osd_depth(void);
 
     /* v0.8.0 Build D: Adaptive LDPC-Iter-Factor (100 = standard). */
     void ft8_shim_set_ldpc_factor(int pct);
@@ -272,11 +276,15 @@ ffi.set_source(
         uint64_t pass_hint;
         uint64_t slots_decoded;
         uint64_t pass_subtract_round2;
+        uint64_t pass_osd;
     } ft8_shim_pass_stats_t;
 
     void ft8_shim_pass_stats_reset(void);
     void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out);
     int ft8_shim_subtract_message(int16_t* pcm, int n_samples, const char* text, float freq_hz, float dt_s);
+    void ft8_shim_set_osd_depth(int depth);
+    void ft8_shim_set_osd_params(int order2_tail, int crc_tries);
+    int ft8_shim_get_osd_depth(void);
 
     void ft8_shim_set_ldpc_factor(int pct);
     int  ft8_shim_get_ldpc_factor(void);

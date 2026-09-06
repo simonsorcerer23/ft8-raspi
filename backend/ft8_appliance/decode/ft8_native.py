@@ -156,6 +156,7 @@ def get_pass_stats() -> dict[str, int]:
         "pass_hint": int(stats.pass_hint),
         "slots_decoded": int(stats.slots_decoded),
         "pass_subtract_round2": int(stats.pass_subtract_round2),
+        "pass_osd": int(stats.pass_osd),
     }
 
 
