@@ -661,7 +661,7 @@ class WifiProfile(BaseModel):
 class ApFallbackConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ssid: str = "ft8-hochgericht"
+    ssid: str = "ft8-hotspot"
     psk: str = "changeme-please"
 
 

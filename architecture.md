@@ -65,7 +65,7 @@ NetworkManager with a prioritised profile list:
 
 ### 3.2 AP fallback
 
-- SSID: `ft8-hochgericht`
+- SSID: `ft8-hotspot` (renamed 2026-09-06; was `ft8-hochgericht`)
 - WPA2-PSK, password in `config.yaml`
 - Own captive portal: `hostapd` + `dnsmasq` + nftables DNAT to the local web server
 - Android opens the UI automatically when joining the Wi-Fi
@@ -607,7 +607,7 @@ network:
     - { ssid: "Seb-iPhone", psk: "..." }
     - { ssid: "Dad-Android", psk: "..." }
   ap_fallback:
-    ssid: "ft8-hochgericht"
+    ssid: "ft8-hotspot"
     psk: "..."
 
 integrations:

@@ -203,7 +203,7 @@ rig:
   model: ic7300
 network:
   ap_fallback:
-    ssid: ft8-hochgericht
+    ssid: ft8-hotspot
     psk: ${AP_PSK}
 ui:
   language: de

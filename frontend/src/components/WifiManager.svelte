@@ -226,7 +226,7 @@
     <h3>{t('wifi.emergency_hotspot')}</h3>
     <div class="grid">
       <label><span>SSID</span>
-        <input type="text" bind:value={apFb.ssid} placeholder="ft8-hochgericht"
+        <input type="text" bind:value={apFb.ssid} placeholder="ft8-hotspot"
                maxlength="32"/>
       </label>
       <label><span>{t('wifi.pw_label')}</span>
