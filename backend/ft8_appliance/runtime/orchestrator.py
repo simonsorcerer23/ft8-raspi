@@ -535,6 +535,8 @@ class Orchestrator:
     # Up-Adjustment darf nur greifen wenn wir kuerzlich (15s) wirklich
     # einen Burst losgelassen haben — sonst sind ALC=0%-Reads phantom.
     _last_tx_message_at: float = field(default=0.0, init=False)
+    # Audit K4: user_callsigns ohne Profil, fuer die schon gewarnt wurde.
+    _orphan_upload_warned: set[str] = field(default_factory=set, init=False)
     # Audit 2026-09-06 C6: drei Schreiber lesen die laufende Config, aendern
     # sie und schreiben zurueck (PUT /api/config, PUT /network/ap-fallback,
     # persist_config). Der Write-Lock in util/atomicfile serialisiert nur
@@ -1179,7 +1181,10 @@ class Orchestrator:
         from ..integrations import qrz_logbook as _qrz
 
         call = (call or "").upper().strip()
-        owner = self._operator_for_call(call)
+        # Pre-Flight wird mit dem On-Air-Call eines vorhandenen Profils
+        # aufgerufen; ohne Treffer bleibt der aktive Operator hier die
+        # richtige Bezugsperson (es geht um SEIN Setup, nicht um Upload).
+        owner = self._operator_for_call(call) or self.config.operator
 
         # --- QRZ ---
         key = owner.qrz_key_for(call)
@@ -1277,8 +1282,16 @@ class Orchestrator:
 
         Reihenfolge: erst EXAKTER Profil-Match (das DK9XR/AM-Profil mit
         eigenem Logbook-Key gewinnt vor DK9XR), sonst per Person
-        (base_call), sonst der aktive Operator als Fallback."""
+        (base_call), sonst None.
+
+        Bis 2026-09-06 fiel das auf den AKTIVEN Operator zurueck (Audit
+        K4): ein QSO eines geloeschten Profils — oder eine Zeile ohne
+        user_callsign — waere damit mit den Credentials von wem auch immer
+        gerade aktiv ist hochgeladen worden, ins falsche QRZ-Logbuch.
+        """
         c = (call or "").upper().strip()
+        if not c:
+            return None
         for op in self.config.operators:
             if op.callsign == c:
                 return op
@@ -1286,7 +1299,7 @@ class Orchestrator:
         for op in self.config.operators:
             if base_call(op.callsign) == base:
                 return op
-        return self.config.operator
+        return None
 
     def _operator_for_qso(self, qso):
         """Owner-Profil eines QSO (ueber dessen user_callsign)."""
@@ -4279,22 +4292,35 @@ class Orchestrator:
         Schedule: einmalig 60 s nach Boot (Service muss erst laufen,
         Internet warm), danach alle 24 h. Bei Fehler 5-min-Backoff.
         """
-        from ..integrations.qrz_logbook import QrzLogbookError, fetch_log_adif
-        api_key = self.config.integrations.qrz.logbook_api_key
-        if not api_key:
-            return
+        from ..integrations import qrz_logbook as _qrzlog
         # Erste Sync ein Minütchen nach Boot — gibt Netzwerk + chrony
         # Zeit sauber zu landen.
         await asyncio.sleep(60.0)
+        auth_failures = 0
         while True:
+            # Audit H2: Key PRO ZYKLUS lesen, nicht einmal vor der Schleife.
+            # Der Wert spiegelt den aktiven Operator; nach einem Wechsel
+            # zog der Loop sonst 24 h lang das Logbuch des falschen.
+            api_key = self.config.integrations.qrz.logbook_api_key
+            if not api_key:
+                await asyncio.sleep(300.0)
+                continue
             try:
                 log.info("QRZ logbook sync starting…")
                 # Mit hartem Timeout damit ein hängender QRZ-Server
                 # uns nicht endlos im await-State festhält.
                 records = await asyncio.wait_for(
-                    fetch_log_adif(api_key, timeout=90.0),
+                    _qrzlog.fetch_log_adif(api_key, timeout=90.0),
                     timeout=120.0,
                 )
+                if self.config.integrations.qrz.logbook_api_key != api_key:
+                    # Operator-Wechsel waehrend des Fetches: die Daten
+                    # gehoeren zum alten Konto und wuerden die frisch
+                    # geleerten Worked-Sets des neuen kontaminieren.
+                    log.info("QRZ logbook sync: Key hat sich waehrend des Fetches "
+                             "geaendert — Ergebnis verworfen")
+                    continue
+                auth_failures = 0
                 added_calls = 0
                 added_dxccs: set[str] = set()
                 for rec in records:
@@ -4336,9 +4362,21 @@ class Orchestrator:
                     len(records), added_calls, len(added_dxccs),
                     len(self._worked_calls), len(self._worked_dxccs),
                 )
-            except QrzLogbookError as exc:
-                log.warning("QRZ logbook sync rejected: %s", exc)
-                await asyncio.sleep(300.0)
+            except _qrzlog.QrzLogbookError as exc:
+                # Audit H2: ein dauerhafter Auth-Fehler (falscher/abgelaufener
+                # Key) aendert sich nicht durch Retry alle 5 min. Nach dem
+                # dritten Mal 1 h Backoff + einmal ein Push, statt endlos
+                # QRZ zu belaestigen und das Log zu fluten.
+                auth_failures += 1
+                if auth_failures >= 3:
+                    log.error("QRZ logbook sync: %d× abgelehnt (%s) — 1 h Pause",
+                              auth_failures, exc)
+                    if auth_failures == 3:
+                        await self._note_drain_outcome("QRZ-Sync", exc)
+                    await asyncio.sleep(3600.0)
+                else:
+                    log.warning("QRZ logbook sync rejected: %s", exc)
+                    await asyncio.sleep(300.0)
                 continue
             except Exception as exc:
                 log.warning("QRZ logbook sync hiccup: %s — retry 5 min",
@@ -4410,6 +4448,20 @@ class Orchestrator:
                         # Key kein Upload-Versuch (bleibt pending; Pre-Flight
                         # warnt) statt ihn falsch ins Heimat-Logbuch zu kippen.
                         owner = self._operator_for_qso(qso)
+                        if owner is None:
+                            # Audit K4: kein Profil zu diesem user_callsign
+                            # (geloescht oder leer). Liegen lassen statt
+                            # unter dem aktiven Konto hochzuladen. Einmal
+                            # pro Callsign loggen, sonst Log-Spam pro Sweep.
+                            uc = getattr(qso, "user_callsign", None) or "<leer>"
+                            if uc not in self._orphan_upload_warned:
+                                self._orphan_upload_warned.add(uc)
+                                log.warning(
+                                    "QRZ: QSO %s gehoert zu %s — kein Operator-Profil, "
+                                    "kein Upload (Profil neu anlegen, dann laeuft es nach)",
+                                    qso.call, uc,
+                                )
+                            continue
                         qso_key = owner.qrz_key_for(qso.station_callsign)
                         if not qso_key:
                             continue
@@ -4569,10 +4621,19 @@ class Orchestrator:
                         for qso in eligible:
                             qso.clublog_uploaded = True
                     else:
+                        # Audit H3: im Bulk erreichen viele QSOs das Ceiling
+                        # im selben Sweep — EIN Push mit der Liste statt
+                        # einer pro QSO.
+                        given_up = []
                         for qso in eligible:
                             if qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
                                 qso.clublog_uploaded = True
-                                self._alert_upload_giveup("ClubLog", qso.call)
+                                given_up.append(qso.call)
+                        if given_up:
+                            log.error("ClubLog bulk: %d QSOs nach %d Versuchen aufgegeben: %s",
+                                      len(given_up), self._UPLOAD_MAX_ATTEMPTS,
+                                      ", ".join(given_up))
+                            self._alert_upload_giveup_many("ClubLog", given_up)
                         log.info("ClubLog bulk deferred (%d QSOs): %s",
                                  len(eligible), exc)
                 except Exception as exc:
@@ -6399,6 +6460,29 @@ class Orchestrator:
                     )
                 except Exception:
                     pass
+
+    def _alert_upload_giveup_many(self, service: str, calls: list[str]) -> None:
+        """Ein Push fuer eine ganze aufgegebene Charge (Audit H3)."""
+        if not calls:
+            return
+        if len(calls) == 1:
+            self._alert_upload_giveup(service, calls[0])
+            return
+        if self.integrations.ntfy and self.integrations.ntfy.enabled:
+            shown = ", ".join(calls[:8]) + (" …" if len(calls) > 8 else "")
+            try:
+                asyncio.create_task(self.integrations.ntfy.notify(
+                    _t(
+                        "push.upload_giveup_many_msg",
+                        service=service, n=len(calls), calls=shown,
+                        attempts=self._UPLOAD_MAX_ATTEMPTS,
+                    ),
+                    title=_t("push.upload_giveup_title"),
+                    priority="default",
+                    tags=["warning"],
+                ))
+            except Exception:
+                pass
 
     def _alert_upload_giveup(self, service: str, call: str | None) -> None:
         if self.integrations.ntfy and self.integrations.ntfy.enabled:

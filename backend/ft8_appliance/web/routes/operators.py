@@ -17,6 +17,7 @@ setzt und worked/blacklist fuer den neuen User aus der DB neu laedt.
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,6 +29,8 @@ from ...db import session_scope
 from ...db.models import Qso
 from ...runtime import Orchestrator
 from ..deps import get_orchestrator
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -243,6 +246,11 @@ async def create_operator(
 class DeleteOperatorResponse(BaseModel):
     ok: bool
     deleted: str
+    # Audit 2026-09-06 M2: QSO-Zeilen, die unter diesem user_callsign in
+    # der DB bleiben (nur bei force=true > 0). Sie gehen nicht verloren,
+    # werden aber von den Upload-Drains uebersprungen, bis ein Profil mit
+    # demselben Callsign wieder existiert.
+    orphaned_qsos: int = 0
 
 
 @router.delete("/operators/{callsign}", response_model=DeleteOperatorResponse)
@@ -280,23 +288,29 @@ async def delete_operator(
             status_code=400,
             detail="Letzter Operator kann nicht geloescht werden.",
         )
-    if not force:
-        async with session_scope() as s:
-            qso_count = (await s.execute(
-                select(func.count()).select_from(Qso)
-                .where(Qso.user_callsign == target)
-            )).scalar_one()
-        if qso_count > 0:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"{target} hat {qso_count} QSOs in der DB. "
-                    "Loeschen waeisst die Rows — sende force=true wenn das ok ist."
-                ),
-            )
+    async with session_scope() as s:
+        qso_count = (await s.execute(
+            select(func.count()).select_from(Qso)
+            .where(Qso.user_callsign == target)
+        )).scalar_one()
+    if qso_count > 0 and not force:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{target} hat {qso_count} QSOs in der DB. "
+                "Loeschen verwaist die Zeilen (sie bleiben erhalten, werden aber "
+                "nicht mehr hochgeladen) — sende force=true wenn das ok ist."
+            ),
+        )
+    if qso_count > 0:
+        log.warning(
+            "Operator %s geloescht (force): %d QSO-Zeilen bleiben ohne Profil in der "
+            "DB — Upload-Drains ueberspringen sie, bis das Profil wieder existiert",
+            target, qso_count,
+        )
     cfg.operators = [op for op in cfg.operators if op.callsign != target]
     await orch.persist_config()
-    return DeleteOperatorResponse(ok=True, deleted=target)
+    return DeleteOperatorResponse(ok=True, deleted=target, orphaned_qsos=qso_count)
 
 
 class UpdateOperatorRequest(BaseModel):

@@ -211,6 +211,10 @@ _DE: dict[str, str] = {
         "QSO bleibt lokal im Log + ADIF — bei Bedarf manuell hochladen."
     ),
     "push.upload_giveup_title": "⚠️ Upload aufgegeben",
+    "push.upload_giveup_many_msg": (
+        "{service}-Upload fuer {n} QSOs nach {attempts} Versuchen aufgegeben: "
+        "{calls}. QSOs bleiben lokal im Log + ADIF — bei Bedarf manuell hochladen."
+    ),
     "push.bg_task_died_msg": (
         "Der Hintergrund-Task {name} ist abgestuerzt: {err}. Diese Funktion "
         "faellt bis zum Neustart des Dienstes aus, der Rest laeuft weiter."
@@ -410,6 +414,10 @@ _EN: dict[str, str] = {
         "QSO stays local in the log + ADIF — upload manually if needed."
     ),
     "push.upload_giveup_title": "⚠️ Upload given up",
+    "push.upload_giveup_many_msg": (
+        "{service} upload for {n} QSOs given up after {attempts} attempts: "
+        "{calls}. QSOs stay local in the log + ADIF — upload manually if needed."
+    ),
     "push.bg_task_died_msg": (
         "Background task {name} crashed: {err}. This function stays down "
         "until the service is restarted; everything else keeps running."
