@@ -265,6 +265,18 @@ def _tier_not_in_pileup(d: DecodedMsg, ctx: MachineContext) -> int:
     return 0 if call in ctx.pile_up_calls else 1
 
 
+def _tier_lonely_cq(d: DecodedMsg, ctx: MachineContext) -> int:
+    """2026-09-06 — 1, wenn der Rufer schon im Slot davor (gleiche
+    Paritaet) CQ gerufen hat und dazwischen niemand ihn angerufen hat.
+    Pick-Telemetrie am 6.9.: 55 Picks, 6 vollendet, 31 "went silent" —
+    die Rufer hatten meist schon einen anderen Partner. Wer zweimal
+    hintereinander unbeantwortet ruft, hat keinen Pile-Up und hoert zu.
+    Die Erkennung liegt im Orchestrator (detect_lonely_cqs)."""
+    if not d.call_from:
+        return 0
+    return 1 if d.call_from.upper() in ctx.lonely_cq_calls else 0
+
+
 def _tier_buddy_seen(d: DecodedMsg, ctx: MachineContext) -> int:
     """v0.17.0 — Call ist global worked (wir wissen er hoert uns) ABER
     nicht auf DIESEM Band gearbeitet → +Boost.
@@ -386,6 +398,7 @@ HUNT_TIERS: dict[str, callable] = {  # type: ignore[type-arg]
     "buddy_seen":      _tier_buddy_seen,    # v0.17.0
     "new_dxcc_psk":    _tier_new_dxcc_psk,
     "new_dxcc":        _tier_new_dxcc,
+    "lonely_cq":       _tier_lonely_cq,       # 2026-09-06
     "psk_heard_us":    _tier_psk_heard_us,
     "psk_snr":         _tier_psk_snr,
     "new_dxcc_band":   _tier_new_dxcc_band,

@@ -374,6 +374,7 @@ export const de = {
   'tier.not_bad_reputation': 'Soft-Blacklist meiden (Bail-Reason-aware)',
   'tier.not_his_tx_slot': 'Nicht in SEINEM TX-Slot anrufen',
   'tier.not_in_pileup': 'Pile-Up meiden (rare DX mit vielen Callern)',
+  'tier.lonely_cq': 'Einsamer CQ-Rufer (ruft unbeantwortet weiter)',
   'tier.marine_psk': 'Marinefunker + PSK sagt "hört uns"',
   'tier.marine': 'Marinefunker (auch ohne PSK)',
   'tier.tail_end_target': 'Tail-End: Station hat gerade QSO beendet',

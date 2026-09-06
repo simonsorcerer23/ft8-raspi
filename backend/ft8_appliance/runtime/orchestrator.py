@@ -209,6 +209,24 @@ def _safe_get_pass_stats() -> dict | None:
         return None
 
 
+
+def detect_lonely_cqs(current: list, prev1: list | None, prev2: list | None) -> set[str]:
+    """2026-09-06 — Rufer, die jetzt UND im gleichparitaetigen Slot davor
+    (prev2) CQ gerufen haben, ohne dass im Slot dazwischen (prev1) jemand
+    sie angerufen hat. Reine Funktion fuer den lonely_cq-Tier."""
+    if prev1 is None or prev2 is None:
+        return set()
+
+    def cq_callers(decodes: list) -> set[str]:
+        return {
+            (d.call_from or "").upper()
+            for d in decodes
+            if d.call_from and d.call_to is None and (d.message or "").startswith("CQ")
+        }
+
+    answered = {(d.call_to or "").upper() for d in prev1 if d.call_to}
+    return {c for c in cq_callers(current) & cq_callers(prev2) if c not in answered}
+
 @dataclass(slots=True)
 class OrchestratorStatus:
     """Snapshot for /api/status."""
@@ -554,6 +572,8 @@ class Orchestrator:
     _tx_start_offsets_s: list[float] = field(default_factory=list, init=False)
     # nur tatsaechlich gesendete Bursts — verworfene (B4) verfaelschen sonst den Mittelwert
     _tx_sent_offsets_s: list[float] = field(default_factory=list, init=False)
+    # 2026-09-06 lonely_cq: Decodes der letzten Slots (aelteste zuerst)
+    _slot_history: list[list] = field(default_factory=list, init=False)
     _in_slot_tick: bool = field(default=False, init=False)
     _consecutive_late_tx: int = field(default=0, init=False)
     _last_tx_late_alert_at: float = field(default=0.0, init=False)
@@ -2880,6 +2900,8 @@ class Orchestrator:
             log.warning("decode_source failed for slot %s: %s", tick.index, exc)
             decodes = []
         self._last_decodes = decodes
+        self._slot_history.append(list(decodes))
+        del self._slot_history[:-4]
         # v0.15.0 Slot-Parity-Tracking: aktuelle Parity dieses Slots
         # in ctx setzen, dann pro Decode mit call_from die Vote-Tally
         # erhoehen. Bei klarer Praeferenz (>=3 Votes, eine Seite >=70%)
@@ -3050,6 +3072,8 @@ class Orchestrator:
         if not decodes:
             return
         self._last_decodes = list(self._last_decodes) + list(decodes)
+        if self._slot_history:
+            self._slot_history[-1].extend(decodes)
         self._last_decode_recv_at = time.time()
         try:
             from ..decode.ft8_native import lib as _ft8_lib
@@ -5931,6 +5955,13 @@ class Orchestrator:
         # v0.19.0 Pile-Up-Detection: pro Slot aus aktuellen Decodes.
         self.state_machine.ctx.pile_up_calls = self._detect_pile_ups(
             self._last_decodes, rarity_scores,
+        )
+        # 2026-09-06 lonely_cq: gleichparitaetiger Slot davor + Slot dazwischen
+        h = self._slot_history
+        self.state_machine.ctx.lonely_cq_calls = detect_lonely_cqs(
+            self._last_decodes,
+            h[-2] if len(h) >= 2 else None,
+            h[-3] if len(h) >= 3 else None,
         )
         # PSK-Reciprocity: aktueller Set "wer hat uns recently gehört".
         # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;

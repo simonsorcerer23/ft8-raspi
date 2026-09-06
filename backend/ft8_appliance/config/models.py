@@ -575,6 +575,7 @@ class OperatingConfig(BaseModel):
             # gehört"-Flag taugt als Picker-Signal wenig — der graduelle
             # psk_snr-Wert ist der echte Prädiktor (reine Telemetrie). Steht
             # jetzt unter allen Award-/Propagations-Tiers, knapp vor snr.
+            "lonely_cq",         # 2026-09-06 — Rufer ruft unbeantwortet weiter (kein Pile-Up)
             "psk_heard_us",      # PSK sagt "hört uns" (schwaches Signal)
             "psk_snr",           # gradueller PSK-SNR-Wert (hoeher = besser)
             "snr",               # Haupt-Tie-Breaker — bestes Signal gewinnt
@@ -611,7 +612,7 @@ class OperatingConfig(BaseModel):
             "new_dxcc_psk", "new_dxcc",
             "grayline", "band_open", "active_hour", "buddy_seen",
             "new_dxcc_band", "new_grid", "new_grid_band", "not_worked",
-            "dxcc_rarity", "psk_heard_us", "psk_snr", "snr", "tail_end_target",
+            "dxcc_rarity", "lonely_cq", "psk_heard_us", "psk_snr", "snr", "tail_end_target",
         ]
         if not v:
             return list(known)  # leere Liste → komplette Default rein
