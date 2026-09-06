@@ -62,6 +62,8 @@ class DecodedMsg:
     # True, wenn der Decode aus der zweiten (langsamen) Decoder-Stufe kam
     # und erst nach der TX-Entscheidung des Slots eintraf (2026-09-06).
     late: bool = False
+    # Gerichtetes CQ: Token nach "CQ" (DX, EU, NA, JA, POTA …), sonst None.
+    cq_directed: str | None = None
 
 
 @dataclass(slots=True)
@@ -128,6 +130,16 @@ class MachineContext:
     # while idle. We never call CQ ourselves in this mode — just listen
     # and respond. Architecture §6.1 (Hunting).
     auto_answer: bool = False
+    # Unser Kontinent (EU/NA/…, aus cty.dat fuer den TX-Call). Der Picker
+    # laesst "CQ NA"/"CQ JA" und "CQ DX" von Stationen des eigenen
+    # Kontinents aus — die erwarten uns nicht und antworten nicht.
+    my_continent: str | None = None
+    hunt_respect_directed_cq: bool = True
+    # Antwort auf einen CQ auf der ruhigsten Frequenz statt exakt auf
+    # der des Rufers: dort stapeln sich die anderen Anrufer, und wer
+    # als Einziger auf einem freien Bin steht, wird sauber decodiert.
+    # Der CQ-Rufer dekodiert ohnehin das ganze Passband.
+    hunt_reply_quiet_freq: bool = True
     # WSJT-Z-style "Auto CQ": after a QSO completes, automatically return
     # to CQ_CALLING (instead of IDLE). Set when the user presses the CQ
     # button; cleared by Stop. Without this, CQ mode is one-shot.

@@ -16,9 +16,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Literal, TypeGuard
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, TypeGuard
 
 from .. import i18n as _i18n
 from ..util.callsign import base_call
@@ -49,7 +47,7 @@ def _is_usable_partner_call(call: str | None) -> TypeGuard[str]:
 # Reihenfolge wird per ctx.hunt_priority gesteuert (vom User editierbar).
 # ---------------------------------------------------------------------------
 
-def _tier_marine_psk(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_marine_psk(d: DecodedMsg, ctx: MachineContext) -> int:
     """Marinefunker AND PSK sagt 'hört uns' — beste kombi."""
     if not d.call_from:
         return 0
@@ -59,14 +57,14 @@ def _tier_marine_psk(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 1 if (in_marine and in_psk) else 0
 
 
-def _tier_marine(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_marine(d: DecodedMsg, ctx: MachineContext) -> int:
     """Marinefunker (egal ob PSK-Bestätigung)."""
     if not d.call_from:
         return 0
     return 1 if d.call_from.upper() in ctx.marine_calls else 0
 
 
-def _tier_new_dxcc_psk(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_new_dxcc_psk(d: DecodedMsg, ctx: MachineContext) -> int:
     """Neues DXCC + PSK sagt 'hört uns'."""
     if not d.call_from:
         return 0
@@ -76,21 +74,21 @@ def _tier_new_dxcc_psk(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 1 if (is_new and in_psk) else 0
 
 
-def _tier_new_dxcc(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_new_dxcc(d: DecodedMsg, ctx: MachineContext) -> int:
     """Neues DXCC (auch ohne PSK)."""
     if not d.call_from:
         return 0
     return 1 if d.call_from.upper() in ctx.new_dxcc_calls else 0
 
 
-def _tier_psk_heard_us(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_psk_heard_us(d: DecodedMsg, ctx: MachineContext) -> int:
     """Reine PSK-Reciprocity (egal welches Land)."""
     if not d.call_from:
         return 0
     return 1 if d.call_from.upper() in ctx.psk_heard_us else 0
 
 
-def _tier_psk_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_psk_snr(d: DecodedMsg, ctx: MachineContext) -> int:
     """Graduelles PSK-Reciprocity-Signal.
 
     Hoeher ist besser. Fehlt der PSK-Wert, bekommt der Call einen sehr
@@ -107,7 +105,7 @@ def _tier_psk_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return int(val) if val is not None else -99
 
 
-def _tier_new_dxcc_band(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_new_dxcc_band(d: DecodedMsg, ctx: MachineContext) -> int:
     """5BWAS: DXCC haben wir, aber auf DIESEM Band noch nicht."""
     if not d.call_from:
         return 0
@@ -120,7 +118,7 @@ def _tier_new_dxcc_band(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 1
 
 
-def _tier_new_grid(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_new_grid(d: DecodedMsg, ctx: MachineContext) -> int:
     """Neues Grid-Quadrat überhaupt (Maidenhead Award).
 
     Der CQ-Decoder hat das Grid bereits aus dem Message-Text extrahiert
@@ -135,7 +133,7 @@ def _tier_new_grid(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 0 if g4 in ctx.worked_grids else 1
 
 
-def _tier_new_grid_band(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_new_grid_band(d: DecodedMsg, ctx: MachineContext) -> int:
     """Grid haben wir, aber auf DIESEM Band noch nicht (VUCC-Band-Variation)."""
     if not d.grid:
         return 0
@@ -145,14 +143,14 @@ def _tier_new_grid_band(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 0 if (g4, ctx.band) in ctx.worked_grid_band else 1
 
 
-def _tier_not_worked(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_not_worked(d: DecodedMsg, ctx: MachineContext) -> int:
     """Call noch nie gearbeitet (allgemein, kein Band-Kriterium)."""
     if not d.call_from:
         return 0
     return 0 if d.call_from.upper() in ctx.worked else 1
 
 
-def _tier_dxcc_rarity(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_dxcc_rarity(d: DecodedMsg, ctx: MachineContext) -> int:
     """Rarity-Score 0..100 aus dxcc_rarity-Tabelle (höher = seltener)."""
     if not d.call_from:
         return 0
@@ -194,7 +192,7 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
-def _tier_grayline(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_grayline(d: DecodedMsg, ctx: MachineContext) -> int:
     """v0.14.0 — CQ-Rufer ist gerade im eigenen Grayline-Fenster.
 
     Lat/Lon kommt aus ctx.call_to_latlon (vom Orchestrator pro Slot
@@ -217,7 +215,7 @@ def _tier_grayline(d: "DecodedMsg", ctx: "MachineContext") -> int:
         return 0
 
 
-def _tier_band_open(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_band_open(d: DecodedMsg, ctx: MachineContext) -> int:
     """v0.14.0 — hamqsl meldet aktuell "Good"-Conditions auf dem Band.
 
     Day/Night-Auswahl basiert auf der Sonne ueber UNSEREM QTH (my_grid).
@@ -242,7 +240,7 @@ def _tier_band_open(d: "DecodedMsg", ctx: "MachineContext") -> int:
         return 0
 
 
-def _tier_not_in_pileup(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_not_in_pileup(d: DecodedMsg, ctx: MachineContext) -> int:
     """v0.19.0 — Inverse-Filter: 0 wenn der Call wahrscheinlich in einem
     Pile-Up steckt (rare DX + viele Caller auf seiner Frequenz), sonst 1.
 
@@ -267,7 +265,7 @@ def _tier_not_in_pileup(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 0 if call in ctx.pile_up_calls else 1
 
 
-def _tier_buddy_seen(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_buddy_seen(d: DecodedMsg, ctx: MachineContext) -> int:
     """v0.17.0 — Call ist global worked (wir wissen er hoert uns) ABER
     nicht auf DIESEM Band gearbeitet → +Boost.
 
@@ -286,7 +284,7 @@ def _tier_buddy_seen(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 1
 
 
-def _tier_active_hour(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_active_hour(d: DecodedMsg, ctx: MachineContext) -> int:
     """v0.16.0 — Aktuelle UTC-Stunde ist historisch aktiv fuer den
     Continent des CQ-Rufers.
 
@@ -306,7 +304,7 @@ def _tier_active_hour(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 1 if (continent, hour) in ctx.active_continent_hours else 0
 
 
-def _tier_not_bad_reputation(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_not_bad_reputation(d: DecodedMsg, ctx: MachineContext) -> int:
     """v0.15.0 — Soft-Blacklist-Aware: 0 fuer Calls die wir mehrfach
     erfolglos angerufen haben (Reputation-Score >= 5), sonst 1.
 
@@ -321,7 +319,7 @@ def _tier_not_bad_reputation(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 0 if base_call(d.call_from) in ctx.soft_blacklist else 1
 
 
-def _tier_not_his_tx_slot(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_not_his_tx_slot(d: DecodedMsg, ctx: MachineContext) -> int:
     """v0.15.0 — Slot-Parity-Awareness: 0 wenn der Op gerade in SEINEM
     eigenen TX-Slot ist (= er sendet, er hoert uns nicht), sonst 1.
 
@@ -341,7 +339,7 @@ def _tier_not_his_tx_slot(d: "DecodedMsg", ctx: "MachineContext") -> int:
     return 0 if his_parity == ctx.current_slot_parity else 1
 
 
-def _tier_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_snr(d: DecodedMsg, ctx: MachineContext) -> int:
     """SNR als Tie-Breaker — bestes Signal gewinnt."""
     return d.snr_db if d.snr_db is not None else -99
 
@@ -350,7 +348,7 @@ def _tier_snr(d: "DecodedMsg", ctx: "MachineContext") -> int:
 TAIL_END_COOLDOWN_S = 24 * 3600  # 24h pro Station
 
 
-def _tier_tail_end_target(d: "DecodedMsg", ctx: "MachineContext") -> int:
+def _tier_tail_end_target(d: DecodedMsg, ctx: MachineContext) -> int:
     """Station hat in den letzten 30 s ein Closing (RR73/RRR/73)
     gesendet → sie ist gleich frei wie nach einem CQ. Wir koennen
     sie direkt anrufen statt zu warten bis ihr naechster CQ kommt.
@@ -375,7 +373,7 @@ def _tier_tail_end_target(d: "DecodedMsg", ctx: "MachineContext") -> int:
 
 # Registry: name → scoring function. Unbekannte Namen werden in
 # _compute_tier_score() ignoriert (defensive, kein KeyError bei Tippfehler).
-HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
+HUNT_TIERS: dict[str, callable] = {  # type: ignore[type-arg]
     "not_bad_reputation": _tier_not_bad_reputation,  # v0.15.0
     "not_his_tx_slot":    _tier_not_his_tx_slot,     # v0.15.0
     "not_in_pileup":      _tier_not_in_pileup,       # v0.19.0
@@ -399,7 +397,7 @@ HUNT_TIERS: dict[str, "callable"] = {  # type: ignore[type-arg]
 }
 
 
-def _compute_tier_score(d: "DecodedMsg", ctx: "MachineContext") -> tuple[int, ...]:
+def _compute_tier_score(d: DecodedMsg, ctx: MachineContext) -> tuple[int, ...]:
     """Kaskadierender Score nach ctx.hunt_priority-Reihenfolge.
 
     Unbekannte Tier-Namen werden übersprungen (kein Crash). Wenn die
@@ -698,11 +696,21 @@ class StateMachine:
             if best is not None:
                 if not self._check_guards(hw):
                     return
+                # Antwortfrequenz (2026-09-06): auf dem ruhigsten Bin statt
+                # exakt auf der des Rufers — dort stapeln sich die anderen
+                # Anrufer. Der Rufer dekodiert das ganze Passband.
+                reply_hz = best.freq_offset_hz or 1500
+                if self.ctx.hunt_reply_quiet_freq:
+                    quiet = self._next_cq_freq_hz()
+                    if quiet:
+                        log.info("hunt reply on quiet bin %d Hz (CQ at %d Hz)",
+                                 quiet, reply_hz)
+                        reply_hz = quiet
                 self.qso = QsoContext(
                     their_call=best.call_from or "?",
                     their_grid=best.grid,
                     band=best.band,
-                    freq_offset_hz=best.freq_offset_hz or 1500,
+                    freq_offset_hz=reply_hz,
                     their_snr_at_us=best.snr_db,
                 )
                 # v0.30.0 — Pick-Attempt-Telemetrie (reine Messung, kein
@@ -993,7 +1001,7 @@ class StateMachine:
                         self.qso.stale_slots = 0
                         self._emit_send_r_report()
 
-    def on_slot_tick(self, hw: HardwareState, tick: "SlotTick | None" = None) -> None:
+    def on_slot_tick(self, hw: HardwareState, tick: SlotTick | None = None) -> None:
         # v0.11.0 — Tail-End-Candidates altert: jeder Slot pruefen ob
         # die 30-s-Expiry abgelaufen ist. Laeuft auch wenn der Toggle
         # aus ist (defensiv — falls jemand wechselt waehrend Candidates
@@ -1545,7 +1553,7 @@ class StateMachine:
             ))
         return synth
 
-    def _decisive_tier(self, winner: "DecodedMsg", cqs: list["DecodedMsg"]) -> str:
+    def _decisive_tier(self, winner: DecodedMsg, cqs: list[DecodedMsg]) -> str:
         """v0.64.0 — welcher hunt_priority-Tier den Pick entschied: der erste
         Tier (in Prioritaetsreihenfolge), an dem der Gewinner den besten
         Mitbewerber strikt schlaegt. 'sole' bei nur einem Kandidaten, 'tie'
@@ -1574,7 +1582,7 @@ class StateMachine:
         except Exception:
             return "unknown"
 
-    def _is_award_or_context_pick(self, d: "DecodedMsg") -> bool:
+    def _is_award_or_context_pick(self, d: DecodedMsg) -> bool:
         if not d.call_from:
             return False
         norm = d.call_from.upper()
@@ -1590,7 +1598,7 @@ class StateMachine:
             return True
         return False
 
-    def _decode_distance_km(self, d: "DecodedMsg") -> float | None:
+    def _decode_distance_km(self, d: DecodedMsg) -> float | None:
         try:
             my_lat, my_lon = _maidenhead_to_latlon(self.ctx.my_grid)
             if d.grid:
@@ -1605,7 +1613,7 @@ class StateMachine:
             return None
         return None
 
-    def _is_high_confidence_pick(self, d: "DecodedMsg", *, strict: bool) -> bool:
+    def _is_high_confidence_pick(self, d: DecodedMsg, *, strict: bool) -> bool:
         if not strict and self.ctx.hunt_snr_floor_db is None:
             return True
         if self._is_award_or_context_pick(d):
@@ -1629,7 +1637,7 @@ class StateMachine:
             return True
         return False
 
-    def _apply_hunt_profile(self, cqs: list["DecodedMsg"]) -> list["DecodedMsg"]:
+    def _apply_hunt_profile(self, cqs: list[DecodedMsg]) -> list[DecodedMsg]:
         profile = self.ctx.hunt_profile
         if profile == "balanced" and self.ctx.mode == "FT4":
             profile = "rate"
@@ -1695,6 +1703,19 @@ class StateMachine:
             d for d in cqs
             if not _is_contest_cq(d.message or "", contest_tokens)
         ]
+        # Gerichtete CQs (2026-09-06): "CQ NA", "CQ JA", "CQ AS" gelten nicht
+        # uns, "CQ DX" von einer Station des eigenen Kontinents auch nicht.
+        # Wer sie trotzdem anruft, wird ignoriert und verbrennt bis zum Bail
+        # 3-6 Slots. Unbekannte Tokens (POTA, SOTA, …) schliessen nichts aus.
+        if self.ctx.hunt_respect_directed_cq and self.ctx.my_continent:
+            cqs = [
+                d for d in cqs
+                if not _directed_cq_excludes_us(
+                    getattr(d, "cq_directed", None),
+                    self.ctx.call_to_continent.get((d.call_from or "").upper()),
+                    self.ctx.my_continent,
+                )
+            ]
         # SNR-Floor: sehr schwache Decodes uebersprungen — die Station hoert
         # uns wahrscheinlich nicht. Sebastian 2026-05-22: rst_rcvd-Median
         # bei seinem Setup ist -10 dB, 90%-Perzentil ~-18 dB. Stationen
@@ -2094,6 +2115,33 @@ def _find_answer_with_report_to_us(
             continue
         return int(m.group(1)), d
     return None
+
+
+_CONTINENT_TOKENS = {"EU", "NA", "SA", "AF", "AS", "OC", "AN"}
+# Laender-/Regions-Tokens, die man in gerichteten CQs sieht, auf Kontinente.
+_REGION_TOKENS = {
+    "JA": "AS", "VK": "OC", "ZL": "OC", "USA": "NA", "US": "NA", "EUR": "EU",
+    "ASIA": "AS", "AFR": "AF", "SAM": "SA", "NAM": "NA", "OCE": "OC",
+}
+
+
+def _directed_cq_excludes_us(
+    token: str | None, their_continent: str | None, my_continent: str | None,
+) -> bool:
+    """Gilt ein gerichtetes CQ NICHT uns? Unbekannt heisst: gilt uns."""
+    if not token or not my_continent:
+        return False
+    t = token.upper()
+    if t == "DX":
+        # "CQ DX" heisst: nicht mein eigener Kontinent. Steht der Rufer
+        # auf unserem Kontinent, sind wir kein DX fuer ihn.
+        return bool(their_continent) and their_continent == my_continent
+    if t in _CONTINENT_TOKENS:
+        return t != my_continent
+    region = _REGION_TOKENS.get(t)
+    if region is not None:
+        return region != my_continent
+    return False
 
 
 def _is_contest_cq(message: str, contest_tokens: set[str]) -> bool:

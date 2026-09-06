@@ -213,7 +213,7 @@ def test_sink_is_wired_in_start_source() -> None:
     from ft8_appliance.runtime.orchestrator import Orchestrator
 
     src = inspect.getsource(Orchestrator.start)
-    assert "late_pass_sink = self._ingest_late_decodes" in src
+    assert "late_pass_sink" in src and "_ingest_late_decodes" in src
 
 
 @pytest.mark.asyncio

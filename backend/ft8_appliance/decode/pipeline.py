@@ -73,6 +73,9 @@ class ParsedMessage:
     report: str | None  # e.g. "-10" or "R-10"
     is_cq: bool
     is_freetext: bool = False
+    # Token nach "CQ", wenn es kein Call ist: DX, EU, NA, JA, POTA, TEST …
+    # (2026-09-06: der Picker soll "CQ NA" nicht aus Europa beantworten.)
+    cq_directed: str | None = None
 
 
 def parse_message(text: str) -> ParsedMessage:
@@ -120,18 +123,21 @@ def parse_message(text: str) -> ParsedMessage:
         # always have at least one digit. That filter is more robust than
         # a length cap and admits 4-letter awards like POTA/SOTA.
         rest = tokens[1:]
+        directed: str | None = None
         if (
             len(rest) >= 2
             and rest[0].isalpha()
             and rest[0] != "CQ"
         ):
+            directed = rest[0].upper()
             rest = rest[1:]
         if not rest:
-            return ParsedMessage(None, None, None, None, True)
+            return ParsedMessage(None, None, None, None, True, cq_directed=directed)
         call_from = rest[0]
         grid = rest[1] if len(rest) >= 2 and _GRID_RE.fullmatch(rest[1]) else None
         return ParsedMessage(
-            call_from=call_from, call_to=None, grid=grid, report=None, is_cq=True
+            call_from=call_from, call_to=None, grid=grid, report=None, is_cq=True,
+            cq_directed=directed,
         )
 
     if len(tokens) >= 2:
@@ -288,6 +294,8 @@ class DecodePipeline:
     # findet — an late_pass_sink (Orchestrator: UI, DB, PSK, State-Machine).
     two_stage: bool = True
     late_pass_sink: Callable[[list[DecodedMsg], SlotTick], Awaitable[None]] | None = None
+    # LDPC-Faktor (Prozent) fuer Stufe 2; Stufe 1 behaelt den adaptiven.
+    late_ldpc_pct: int = 250
     _late_task: asyncio.Task | None = field(default=None, init=False, repr=False)
     _late_overruns: int = field(default=0, init=False, repr=False)
     _late_executor: ThreadPoolExecutor = field(
@@ -490,8 +498,27 @@ class DecodePipeline:
         import time as _time
         loop = asyncio.get_running_loop()
         t0 = _time.monotonic()
+
+        def _late_call() -> list[ShimDecode]:
+            # Stufe 2 darf teurer sein: eigener LDPC-Faktor, danach zurueck
+            # auf den adaptiven Wert von Stufe 1. Laeuft im Late-Thread;
+            # Stufe 1 des naechsten Slots kommt erst ~12 s spaeter.
+            try:
+                from .ft8_native import lib as _ft8_lib
+                _ft8_lib.ft8_shim_set_ldpc_factor(int(self.late_ldpc_pct))
+            except Exception:
+                _ft8_lib = None
+            try:
+                return late_decoder(pcm)
+            finally:
+                if _ft8_lib is not None:
+                    try:
+                        _ft8_lib.ft8_shim_set_ldpc_factor(int(round(self.ldpc_factor * 100)))
+                    except Exception:
+                        pass
+
         try:
-            raw = await loop.run_in_executor(self._late_executor, late_decoder, pcm)
+            raw = await loop.run_in_executor(self._late_executor, _late_call)
         except Exception as exc:
             log.warning("%s late pass failed for tick %s: %s", self.mode, tick.index, exc)
             return
@@ -534,6 +561,7 @@ def _to_decoded_msg(
         band=band,
         is_freetext=parsed.is_freetext,
         late=late,
+        cq_directed=parsed.cq_directed,
     )
 
 
