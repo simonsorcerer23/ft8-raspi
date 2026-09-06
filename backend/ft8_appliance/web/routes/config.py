@@ -185,6 +185,14 @@ async def save_config(
     from ...config import set_config_for_tests
     from ...config.loader import get_current_path
 
+    # Audit 2026-09-06 C6: der ganze Lesen-Aendern-Schreiben-Zyklus unter
+    # dem Orchestrator-Lock, sonst ueberschreiben sich zwei Saves.
+    async with orch._config_rmw_lock:
+        return await _save_config_locked(req, orch, yaml, set_config_for_tests,
+                                         get_current_path)
+
+
+async def _save_config_locked(req, orch, yaml, set_config_for_tests, get_current_path):
     try:
         raw = yaml.safe_load(req.yaml_text) or {}
         # DATENSCHUTZ-GUARD: Operatoren, Credentials, WLAN-Liste + Integra-

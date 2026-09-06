@@ -57,6 +57,23 @@ _DE: dict[str, str] = {
         "Rig steht auf {mhz} MHz — kein konfigurierter FT8/FT4-Dial "
         "(Toleranz {tol} Hz). Band waehlen oder Rollback"
     ),
+    # --- CEPT-Sperrgruende (integrations/cept.py) ---
+    "cept.unknown_country": "Land {code} nicht in CEPT-DB — manuell pruefen",
+    "cept.suspended": (
+        "{name}: CEPT-Mitgliedschaft ausgesetzt (Stand 2026-05-16) — kein "
+        "Gastbetrieb moeglich"
+    ),
+    "cept.class_a_needs_guest": (
+        "{name}: kurzfristiger Gastbetrieb braucht eine Gast-Lizenz (kein "
+        "CEPT-Drop-in fuer Klasse A)"
+    ),
+    "cept.class_e_blocked": (
+        "Klasse E (CEPT-Novice) ist in {name} nicht fuer Gastbetrieb zugelassen "
+        "— dort darf nur Klasse A (T/R 61-01)"
+    ),
+    "cept.class_not_recognised": (
+        "Klasse {cls} ist international nicht anerkannt — kein Auslandsbetrieb"
+    ),
     # --- other lock reasons (orchestrator) ---
     "lock.ptt_stuck": "PTT-stuck recovery",
     "lock.tx_locked_prefix": "TX gesperrt: {reason}",
@@ -241,6 +258,22 @@ _EN: dict[str, str] = {
     "guard.dial": (
         "Rig is on {mhz} MHz — not a configured FT8/FT4 dial "
         "(tolerance {tol} Hz). Pick a band or roll back"
+    ),
+    "cept.unknown_country": "Country {code} not in the CEPT database — check manually",
+    "cept.suspended": (
+        "{name}: CEPT membership suspended (as of 2026-05-16) — no guest "
+        "operation possible"
+    ),
+    "cept.class_a_needs_guest": (
+        "{name}: short-term guest operation needs a guest licence (no CEPT "
+        "drop-in for class A)"
+    ),
+    "cept.class_e_blocked": (
+        "Class E (CEPT Novice) is not admitted for guest operation in {name} "
+        "— only class A (T/R 61-01) may operate there"
+    ),
+    "cept.class_not_recognised": (
+        "Class {cls} is not recognised internationally — no operation abroad"
     ),
     "lock.ptt_stuck": "PTT-stuck recovery",
     "lock.tx_locked_prefix": "TX locked: {reason}",

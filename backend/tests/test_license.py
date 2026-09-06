@@ -6,8 +6,6 @@ Stand der Tabellen: BNetzA AFuV nach Reform Juni 2024 (siehe
 
 from __future__ import annotations
 
-import pytest
-
 from ft8_appliance.config.license import (
     LICENSE_BANDS,
     is_band_allowed,
@@ -39,13 +37,19 @@ class TestKlasseA:
 # ---------------------------------------------------------------------------
 class TestKlasseE:
     def test_erlaubte_baender(self) -> None:
+        # 160m seit Audit 2026-09-06 (C1) drin: AFuV Anlage 1, Fassung
+        # 24.06.2024, Zeilen 3-5 — Klasse E 100 W im FT8-Segment.
         assert LICENSE_BANDS["E"] == frozenset(
-            {"80m", "15m", "10m", "2m", "70cm"}
+            {"160m", "80m", "15m", "10m", "2m", "70cm"}
         )
 
     def test_nicht_erlaubte_baender(self) -> None:
-        """40m, 30m, 20m, 17m, 12m, 60m, 160m, 6m — alle gesperrt für E."""
-        for band in ["160m", "60m", "40m", "30m", "20m", "17m", "12m", "6m"]:
+        """40m, 30m, 20m, 17m, 12m, 60m, 6m — alle gesperrt für E.
+
+        160m NICHT mehr in dieser Liste: die AFuV Anlage 1 (Fassung
+        24.06.2024, Zeilen 3-5) erlaubt es Klasse E (Audit 2026-09-06 C1).
+        """
+        for band in ["60m", "40m", "30m", "20m", "17m", "12m", "6m"]:
             assert not is_band_allowed("E", band), \
                 f"Klasse E darf {band} NICHT — Bug in der Allowlist!"
             assert max_power_for("E", band) is None
@@ -65,15 +69,18 @@ class TestKlasseE:
 # ---------------------------------------------------------------------------
 class TestKlasseN:
     def test_erlaubte_baender_sehr_eingeschraenkt(self) -> None:
-        assert LICENSE_BANDS["N"] == frozenset({"160m", "2m", "70cm"})
+        # Kein 160m: Anlage 1 fuehrt Klasse N auf allen drei 160-m-
+        # Segmenten mit "-" (Audit 2026-09-06 C1; stand bis dahin drin).
+        assert LICENSE_BANDS["N"] == frozenset({"2m", "70cm"})
 
     def test_10m_nicht_erlaubt_weil_ft8_freq_ausserhalb_n_segment(self) -> None:
         """N darf 10m nur 29.510-29.700 MHz — übliche FT8 ist 28.074 MHz."""
         assert not is_band_allowed("N", "10m")
 
     def test_10w_cap_ueberall(self) -> None:
-        for band in ["160m", "2m", "70cm"]:
+        for band in ["2m", "70cm"]:
             assert max_power_for("N", band) == 10
+        assert max_power_for("N", "160m") is None  # nicht freigegeben
 
 
 # ---------------------------------------------------------------------------

@@ -378,37 +378,26 @@ def cept_compliance(
         # Keine DX-Aktivität oder Heimat → keine CEPT-Pruefung noetig
         return (True, None)
     info = COUNTRIES.get(country_code)
+    # Begruendungen ueber den Backend-i18n-Katalog (Audit 2026-09-06 C4) —
+    # waren hartkodiert deutsch, ausserhalb der drei i18n-Gates. Sie gehen
+    # in Lock-Banner und API-Antworten; die Sprache ist die konfigurierte
+    # Default-Sprache, wie bei ntfy-Texten.
+    from ..i18n import translate as _t
     if info is None:
         # Unbekanntes Land → defensiv blocken
-        return (False, f"Land {country_code} nicht in CEPT-DB — manuell prüfen")
+        return (False, _t("cept.unknown_country", code=country_code))
     if info.cept_suspended:
-        return (
-            False,
-            f"{info.name}: CEPT-Mitgliedschaft ausgesetzt (Stand 2026-05-16) "
-            f"— kein Gastbetrieb möglich",
-        )
+        return (False, _t("cept.suspended", name=info.name))
     if license_class == "A":
         if info.cept_class_a_allowed:
             return (True, None)
-        return (
-            False,
-            f"{info.name}: kurzfristiger Gastbetrieb braucht eine Gast-Lizenz "
-            f"(kein CEPT-Drop-in für Klasse A)",
-        )
+        return (False, _t("cept.class_a_needs_guest", name=info.name))
     if license_class == "E":
         if info.cept_class_e_allowed:
             return (True, None)
-        return (
-            False,
-            f"Klasse E (CEPT-Novice) ist in {info.name} nicht für Gastbetrieb "
-            f"zugelassen — dort darf nur Klasse A (T/R 61-01)",
-        )
+        return (False, _t("cept.class_e_blocked", name=info.name))
     # Klasse N (Einsteiger) — international nicht anerkannt
-    return (
-        False,
-        f"Klasse {license_class} ist international nicht anerkannt — "
-        f"kein Auslandsbetrieb",
-    )
+    return (False, _t("cept.class_not_recognised", cls=license_class))
 
 
 def cept_power_cap(country_code: str | None, home_country: str) -> int | None:

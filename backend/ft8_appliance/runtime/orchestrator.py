@@ -535,6 +535,12 @@ class Orchestrator:
     # Up-Adjustment darf nur greifen wenn wir kuerzlich (15s) wirklich
     # einen Burst losgelassen haben — sonst sind ALC=0%-Reads phantom.
     _last_tx_message_at: float = field(default=0.0, init=False)
+    # Audit 2026-09-06 C6: drei Schreiber lesen die laufende Config, aendern
+    # sie und schreiben zurueck (PUT /api/config, PUT /network/ap-fallback,
+    # persist_config). Der Write-Lock in util/atomicfile serialisiert nur
+    # das Schreiben; dieser hier den ganzen Zyklus. on_config_changed ruft
+    # persist_config NICHT (geprueft), sonst waere das ein Deadlock.
+    _config_rmw_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
     # TX-Start-Versatz zur Slot-Grenze (Audit 2026-09-06 B1/B4). Fuer
     # slot-getriebene TX ist das die Latenz Tick -> Sendestart (chronyc +
     # extract_delay + Decode + State-Machine); fuer manuelle TX (CQ-Klick,
@@ -1919,6 +1925,10 @@ class Orchestrator:
         interpretiert, wird die ``operators``-Liste ueberschrieben →
         Multi-Op-Setup verloren. Daher hier exkludieren.
         """
+        async with self._config_rmw_lock:
+            await self._persist_config_locked()
+
+    async def _persist_config_locked(self) -> None:
         try:
             from ..config import set_config_for_tests
             from ..config.loader import get_current_path

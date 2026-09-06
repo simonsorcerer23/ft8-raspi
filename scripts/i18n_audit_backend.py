@@ -44,6 +44,7 @@ SCAN_FILES = [
     "ft8_appliance/web/routes/sse.py",
     "ft8_appliance/statemachine/machine.py",
     "ft8_appliance/statemachine/guards.py",
+    "ft8_appliance/integrations/cept.py",
 ]
 
 

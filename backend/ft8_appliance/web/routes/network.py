@@ -188,6 +188,12 @@ async def set_ap_fallback(
     deploy/hostapd/ap.conf). Bewusst so belassen, damit das oeffentliche
     Repo nur einen Platzhalter traegt.
     """
+    # Audit 2026-09-06 C6: Lesen-Aendern-Schreiben unter dem Orchestrator-Lock.
+    async with orch._config_rmw_lock:
+        return await _set_ap_fallback_locked(req, orch)
+
+
+async def _set_ap_fallback_locked(req: APFallbackRequest, orch: Orchestrator) -> APFallbackOut:
     cfg = get_config()
     # Pydantic computed_fields werden von model_dump() mit-emittiert,
     # aber von model_validate() unter extra='forbid' rejected. Strip

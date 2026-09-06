@@ -1136,7 +1136,12 @@ class AppConfig(BaseModel):
         from .license import max_power_for
         from ..integrations.cept import cept_power_cap
         op = self.operator
-        license_cap = max_power_for(op.license_class, band_name)
+        # Dial mitgeben: auf 160m haengt der Cap vom Segment ab (Audit C1).
+        band_cfg = next((b for b in self.bands if b.name == band_name), None)
+        freq_khz = (
+            float(band_cfg.freq_for_mode(self.operating.mode)) if band_cfg else None
+        )
+        license_cap = max_power_for(op.license_class, band_name, freq_khz)
         if license_cap is None:
             return 0
         caps = [license_cap, self.rig.effective_max_power_w]
