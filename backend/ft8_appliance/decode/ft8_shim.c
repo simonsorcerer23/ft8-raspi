@@ -173,7 +173,8 @@ static int s_knob_deep_fosr   = 4;    /* freq_osr des deep-Passes */
 static int s_knob_max_cand    = 300;  /* Kandidaten pro Pass (Puffer 1200) */
 static int s_knob_window_std  = 0;    /* monitor window_mode (s. monitor.h) fuer osr-2-Paesse */
 static int s_knob_window_deep = 4;    /* ... fuer osr-4-Paesse: Hann 2 Symbole statt 4 (Korpus: deep 0 -> 14 Decodes) */
-static int s_knob_window_hint = 4;    /* ... fuer den Hint-Pass */
+static int s_knob_window_hint = 4;
+static int s_knob_window_ft4  = 4;    /* ... fuer FT4-Paesse (osr 4): Hann 2 Symbole; Original-Fenster machte deep SCHLECHTER als std (13 vs 25 von 48) */    /* ... fuer den Hint-Pass */
 static int s_knob_refine      = 1;    /* Feinsync-Demodulation im Hint-Pass nach BP/OSD-Fehlschlag */
 static int s_knob_refine_max  = 40;   /* max. verfeinerte Kandidaten pro Slot */
 static int s_knob_refine_span   = 4;  /* Feinsuche: +-N Schritte */
@@ -193,6 +194,7 @@ int ft8_shim_set_knob(const char* name, int value) {
     else if (strcmp(name, "window_std") == 0) s_knob_window_std = value;
     else if (strcmp(name, "window_deep") == 0) s_knob_window_deep = value;
     else if (strcmp(name, "window_hint") == 0) s_knob_window_hint = value;
+    else if (strcmp(name, "window_ft4") == 0) s_knob_window_ft4 = value;
     else if (strcmp(name, "llr_scales") == 0) s_knob_llr_scales = value < 1 ? 1 : (value > 4 ? 4 : value);
     else if (strcmp(name, "refine") == 0) s_knob_refine = value;
     else if (strcmp(name, "refine_max") == 0) s_knob_refine_max = value;
@@ -1408,18 +1410,18 @@ extern void ft4_encode(const uint8_t *payload, uint8_t *tones);
  * FT8 (kein Subtract weil 7.5s-Slot zu kurz fuer sinnvolle Residual-
  * Decodes). mode=0/standard: osr=2, LDPC=25; mode=1/deep+higher: osr=4,
  * LDPC=50. Adaptive LDPC-Factor wird auch hier respektiert. */
-static int _ft4_decode_one_pass(
-    int16_t const* pcm,
+/* 2026-09-06: Signal-Variante (fuer Subtract-and-Rerun). out_prev/n_prev:
+ * bereits gefundene Ergebnisse frueherer Paesse, gegen die dedupliziert wird. */
+static int _ft4_decode_one_pass_signal(
+    const float*   signal,
     int            time_osr,
     int            freq_osr,
     int            ldpc_iters,
     ft8_shim_result_t* out,
-    int                max_out
+    int                max_out,
+    const ft8_shim_result_t* out_prev,
+    int                n_prev
 ) {
-    float* signal = (float*)malloc(sizeof(float) * FT4_SLOT_SAMPLES);
-    if (signal == NULL) return -1;
-    for (int i = 0; i < FT4_SLOT_SAMPLES; ++i) signal[i] = (float)pcm[i] / 32768.0f;
-
     monitor_t mon;
     monitor_config_t cfg;
     cfg.f_min       = 200.0f;
@@ -1427,12 +1429,11 @@ static int _ft4_decode_one_pass(
     cfg.sample_rate = FT8_SAMPLE_RATE_HZ;
     cfg.time_osr    = time_osr;
     cfg.freq_osr    = freq_osr;
-    cfg.protocol    = FTX_PROTOCOL_FT4; cfg.window_mode = 0;
+    cfg.protocol    = FTX_PROTOCOL_FT4; cfg.window_mode = (cfg.freq_osr >= 4) ? s_knob_window_ft4 : 0;
     monitor_init(&mon, &cfg);
     for (int pos = 0; pos + mon.block_size <= FT4_SLOT_SAMPLES; pos += mon.block_size) {
         monitor_process(&mon, signal + pos);
     }
-    free(signal);
 
     ftx_candidate_t candidates[FT8_SHIM_MAX_CANDIDATES];
     int num_cand = ftx_find_candidates(&mon.wf, s_knob_max_cand, candidates, FT8_SHIM_MIN_SCORE);
@@ -1452,6 +1453,9 @@ static int _ft4_decode_one_pass(
         char text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t offsets;
         if (ftx_message_decode(&message, &s_hash_if, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
+        int prev_dup = 0;
+        for (int q = 0; q < n_prev; ++q) if (strncmp(out_prev[q].message, text, FT8_SHIM_MSG_LEN) == 0) { prev_dup = 1; break; }
+        if (prev_dup) continue;
         ft8_shim_result_t* r = &out[num_out++];
         strncpy(r->message, text, FT8_SHIM_MSG_LEN - 1);
         r->message[FT8_SHIM_MSG_LEN - 1] = '\0';
@@ -1466,6 +1470,115 @@ static int _ft4_decode_one_pass(
 }
 
 
+
+static int _ft4_decode_one_pass(
+    int16_t const* pcm,
+    int            time_osr,
+    int            freq_osr,
+    int            ldpc_iters,
+    ft8_shim_result_t* out,
+    int                max_out
+) {
+    float* signal = (float*)malloc(sizeof(float) * FT4_SLOT_SAMPLES);
+    if (signal == NULL) return -1;
+    for (int i = 0; i < FT4_SLOT_SAMPLES; ++i) signal[i] = (float)pcm[i] / 32768.0f;
+    int n = _ft4_decode_one_pass_signal(signal, time_osr, freq_osr, ldpc_iters, out, max_out, NULL, 0);
+    free(signal);
+    return n;
+}
+
+/* 2026-09-06: kohaerente FT4-Subtraktion — gleiche Methode wie bei FT8
+ * (_ft8_subtract_decoded): komplexe Referenz, Feinsuche, gleitende
+ * komplexe Amplitude, Re(A(t) ref) abziehen. FT4: 576 Samples/Symbol,
+ * 105 Symbole, Tonabstand 20,83 Hz, BT 1,0. */
+#define FT4_SUB_WIN 1200
+static void _ft4_synth_gfsk_iq(const uint8_t* tones, float f0, float* out_i, float* out_q) {
+    int n_spsym = FT4_SAMPLES_PER_SYM_C;
+    int n_wave  = FT4_NUM_SYMBOLS_C * n_spsym;
+    int n_total = n_wave + 2 * n_spsym;
+    float dphi_peak = 2.0f * (float)M_PI * FT4_TONE_SPACING_HZ / FT8_SAMPLE_RATE_HZ;
+    float* dphi = (float*)calloc((size_t)n_total, sizeof(float));
+    if (dphi == NULL) return;
+    for (int i = 0; i < n_total; ++i) dphi[i] = 2.0f * (float)M_PI * f0 / 12000.0f;
+    float pulse[3 * FT4_SAMPLES_PER_SYM_C];
+    _gfsk_pulse(n_spsym, FT4_SYMBOL_BT, pulse);
+    for (int i = 0; i < FT4_NUM_SYMBOLS_C; ++i) {
+        int ib = i * n_spsym;
+        for (int j = 0; j < 3 * n_spsym; ++j) dphi[j + ib] += dphi_peak * (float)tones[i] * pulse[j];
+    }
+    for (int j = 0; j < 2 * n_spsym; ++j) {
+        dphi[j] = dphi[2 * n_spsym] - dphi_peak * (float)tones[0];
+        dphi[j + FT4_NUM_SYMBOLS_C * n_spsym] = dphi[FT4_NUM_SYMBOLS_C * n_spsym - 1] - dphi_peak * (float)tones[FT4_NUM_SYMBOLS_C - 1];
+    }
+    float phi = 0.0f;
+    for (int k = 0; k < n_wave; ++k) {
+        out_i[k] = cosf(phi); out_q[k] = sinf(phi);
+        phi += dphi[k + n_spsym];
+        if (phi >= 2.0f * (float)M_PI) phi -= 2.0f * (float)M_PI;
+    }
+    free(dphi);
+}
+
+static double _ft4_sub_coherence(const float* x, const float* ri, const float* rq, int start, float df) {
+    double ci = cos(2.0 * M_PI * df / 12000.0), cq = sin(2.0 * M_PI * df / 12000.0);
+    double pi_ = 1.0, pq_ = 0.0, acc_i = 0.0, acc_q = 0.0, energy = 0.0; int cnt = 0;
+    for (int n = 0; n < FT4_TX_SAMPLES; ++n) {
+        int m = start + n;
+        double rri = ri[n] * pi_ - rq[n] * pq_, rrq = ri[n] * pq_ + rq[n] * pi_;
+        double t = pi_ * ci - pq_ * cq; pq_ = pi_ * cq + pq_ * ci; pi_ = t;
+        if (m < 0 || m >= FT4_SLOT_SAMPLES) continue;
+        acc_i += x[m] * rri; acc_q += x[m] * rrq; ++cnt;
+        if (cnt == FT4_SUB_WIN) { energy += acc_i * acc_i + acc_q * acc_q; acc_i = acc_q = 0.0; cnt = 0; }
+    }
+    if (cnt > FT4_SUB_WIN / 2) energy += (acc_i * acc_i + acc_q * acc_q) * ((double)FT4_SUB_WIN / cnt);
+    return energy;
+}
+
+static void _ft4_subtract_decoded(float* signal, const char* text, float freq_hz, float dt_s) {
+    ftx_message_t msg;
+    if (ftx_message_encode(&msg, &s_hash_if, text) != FTX_MESSAGE_RC_OK) return;
+    uint8_t tones[FT4_NUM_SYMBOLS_C];
+    ft4_encode(msg.payload, tones);
+    float* ri = (float*)malloc(sizeof(float) * FT4_TX_SAMPLES);
+    float* rq = (float*)malloc(sizeof(float) * FT4_TX_SAMPLES);
+    float* zi = (float*)malloc(sizeof(float) * (FT4_TX_SAMPLES + 1));
+    float* zq = (float*)malloc(sizeof(float) * (FT4_TX_SAMPLES + 1));
+    if (ri == NULL || rq == NULL || zi == NULL || zq == NULL) { free(ri); free(rq); free(zi); free(zq); return; }
+    _ft4_synth_gfsk_iq(tones, freq_hz, ri, rq);
+    int start0 = (int)lrintf((dt_s + FT4_DT_ORIGIN_S) * (float)FT8_SAMPLE_RATE_HZ);
+    static const float dfs[5] = { -1.0f, -0.5f, 0.0f, 0.5f, 1.0f };
+    static const int   dss[5] = { -144, -72, 0, 72, 144 };
+    float best_df = 0.0f; int best_ds = 0; double best_e = -1.0;
+    for (int a = 0; a < 5; ++a) for (int b = 0; b < 5; ++b) {
+        double e = _ft4_sub_coherence(signal, ri, rq, start0 + dss[b], dfs[a]);
+        if (e > best_e) { best_e = e; best_df = dfs[a]; best_ds = dss[b]; }
+    }
+    int start = start0 + best_ds;
+    {
+        double ci = cos(2.0 * M_PI * best_df / 12000.0), cq = sin(2.0 * M_PI * best_df / 12000.0);
+        double pi_ = 1.0, pq_ = 0.0;
+        for (int n = 0; n < FT4_TX_SAMPLES; ++n) {
+            float rri = (float)(ri[n] * pi_ - rq[n] * pq_), rrq = (float)(ri[n] * pq_ + rq[n] * pi_);
+            ri[n] = rri; rq[n] = rrq;
+            double t = pi_ * ci - pq_ * cq; pq_ = pi_ * cq + pq_ * ci; pi_ = t;
+        }
+    }
+    zi[0] = zq[0] = 0.0f;
+    for (int n = 0; n < FT4_TX_SAMPLES; ++n) {
+        int m = start + n; float x = (m >= 0 && m < FT4_SLOT_SAMPLES) ? signal[m] : 0.0f;
+        zi[n + 1] = zi[n] + x * ri[n]; zq[n + 1] = zq[n] + x * rq[n];
+    }
+    for (int n = 0; n < FT4_TX_SAMPLES; ++n) {
+        int m = start + n; if (m < 0 || m >= FT4_SLOT_SAMPLES) continue;
+        int lo = n - FT4_SUB_WIN / 2; if (lo < 0) lo = 0;
+        int hi = n + FT4_SUB_WIN / 2; if (hi > FT4_TX_SAMPLES) hi = FT4_TX_SAMPLES;
+        float inv = 1.0f / (float)(hi - lo);
+        float avg_i = (zi[hi] - zi[lo]) * inv, avg_q = (zq[hi] - zq[lo]) * inv;
+        signal[m] -= 2.0f * (avg_i * ri[n] + avg_q * rq[n]);
+    }
+    free(ri); free(rq); free(zi); free(zq);
+}
+
 int ft4_shim_decode_slot_v2(
     const int16_t* pcm,
     int            n_samples,
@@ -1476,24 +1589,38 @@ int ft4_shim_decode_slot_v2(
     if (pcm == NULL || out == NULL || max_out <= 0) return -1;
     if (n_samples < FT4_SLOT_SAMPLES) return -1;
     if (mode == 1) {
-        /* deep: osr=4 LDPC=50 */
         return _ft4_decode_one_pass(pcm, 4, 4, 50, out, max_out);
     } else if (mode == 2 || mode == 3) {
-        /* multi/extreme: pass1 standard + dedupe-skip handled inside;
-         * fuer FT4 nehmen wir nur deep weil 7.5s-Slot zu kurz fuer
-         * sinnvolle Subtract-Loops. Trotzdem hoehere LDPC-Iter bringt
-         * Mehrwert. */
-        int n = _ft4_decode_one_pass(pcm, 2, 2, 25, out, max_out);
-        if (n < 0) return n;
-        /* nochmal mit deep, in zweite Haelfte (Dedupe per Pi-Code im
-         * Picker — FT4 ist weniger congested, Dups selten) */
+        float* signal = (float*)malloc(sizeof(float) * FT4_SLOT_SAMPLES);
+        if (signal == NULL) return -1;
+        for (int i = 0; i < FT4_SLOT_SAMPLES; ++i) signal[i] = (float)pcm[i] / 32768.0f;
+        int n = _ft4_decode_one_pass_signal(signal, 2, 2, 25, out, max_out, NULL, 0);
+        if (n < 0) { free(signal); return n; }
         if (n < max_out) {
-            int n2 = _ft4_decode_one_pass(pcm, 4, 4, 50, out + n, max_out - n);
+            int n2 = _ft4_decode_one_pass_signal(signal, 4, 4, 50, out + n, max_out - n, out, n);
             if (n2 > 0) n += n2;
         }
+        if (mode == 3) {
+            /* 2026-09-06: Subtract-and-Rerun auch fuer FT4 (bis zu 2 Runden) */
+            int round_start = 0;
+            for (int round = 0; round < 2 && n < max_out; ++round) {
+                int round_end = n;
+                if (round_end <= round_start) break;
+                for (int i = round_start; i < round_end; ++i)
+                    if (out[i].score >= s_knob_sub_score) _ft4_subtract_decoded(signal, out[i].message, out[i].freq_hz, out[i].dt_s);
+                round_start = round_end;
+                int n3 = _ft4_decode_one_pass_signal(signal, 2, 2, 25, out + n, max_out - n, out, n);
+                if (n3 > 0) n += n3;
+                if (n < max_out) {
+                    int n4 = _ft4_decode_one_pass_signal(signal, 4, 4, 50, out + n, max_out - n, out, n);
+                    if (n4 > 0) n += n4;
+                }
+                s_pass_stats.pass_subtract_residual += (n - round_end);
+            }
+        }
+        free(signal);
         return n;
     }
-    /* mode=0 standard */
     return _ft4_decode_one_pass(pcm, 2, 2, 25, out, max_out);
 }
 
@@ -1526,7 +1653,7 @@ int ft4_shim_decode_slot(
     cfg.sample_rate = FT8_SAMPLE_RATE_HZ;
     cfg.time_osr    = 2;
     cfg.freq_osr    = 2;
-    cfg.protocol    = FTX_PROTOCOL_FT4; cfg.window_mode = 0;
+    cfg.protocol    = FTX_PROTOCOL_FT4; cfg.window_mode = (cfg.freq_osr >= 4) ? s_knob_window_ft4 : 0;
     monitor_init(&mon, &cfg);
 
     for (int pos = 0; pos + mon.block_size <= FT4_SLOT_SAMPLES; pos += mon.block_size) {

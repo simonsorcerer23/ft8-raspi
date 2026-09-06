@@ -835,9 +835,10 @@ hochgericht-ft8/
 | Audio-Slot-Sync | Phase-Lock zu GPS-Zeit, harter Cut pro Slot | Sample-Count, Resampling | Drift akkumuliert nicht, kein Echtzeit-DSP nötig |
 | Captive-Portal Connectivity-Check | 204-Antworten für Google/Ubuntu-Probes | nichts tun | Android koppelt sonst vom Pi-WLAN ab |
 | Online-Integrations-Resilience | Cache + Graceful Degrade + Circuit Breaker | Hard-Dependencies | Field-Tauglichkeit ohne Internet |
-| Decoder-Mode-Mix | standard / deep / multi / extreme (Default extreme seit v0.7.1) | nur 1 fixer Mode | Pi 5 hat CPU-Reserve, Subtract+Hint+Notch bringen ~5-6% mehr Decodes; CPU-Adaptive Fallback bei Überlast |
-| Decoder-Subtract-Pfad | echter Subtract-and-Rerun (synth → in-place subtract → re-decode) | nur Pass1+Pass2-Merge | JTDX-Style maskierte schwächere Signale werden sichtbar |
-| Hint-Pass-Validation | Decoded text muss known-call enthalten | AP-Decoding | False-Positive-Filter äquivalent zu JTDX Type-2; vermeidet AP-Phantome |
+| Decoder-Mode-Mix | standard / deep / multi / extreme (Default extreme seit v0.7.1), zweistufig seit v0.68: Stufe 1 standard (~0,35 s, entscheidet über TX), Stufe 2 im Thread | nur 1 fixer Mode | am Pi 4B lag der Sendestart mit dem ganzen extreme-Modus vor der TX-Entscheidung 2,8 s nach der Slotgrenze; zweistufig 0,3–0,4 s. CPU-Adaptive Fallback bei Überlast |
+| Decoder-Subtract-Pfad | kohärenter Subtract-and-Rerun (komplexe Referenz, Feinsuche ±1,5 Hz/±0,04 s, gleitende komplexe Amplitude), 2 Runden | Synth-Subtraktion mit fester Amplitude (das tat v0.6–v0.69 tatsächlich: ein zweiter Störer, 0 Gewinn) | −26 dB Restenergie; maskierte Nachbarn in 20–30 Hz Abstand werden decodierbar (2026-09-06, s. docs/decoder_evolution.md) |
+| Schwachsignal-Pässe | OSD (Ordnung 1+2) und Feinsync + symbolsynchrone Demodulation im Hint-Pass, Analysefenster pro Pass (2 Symbole für osr-4-Pässe) | ft8_lib wie geliefert | WSJT-X-Referenzkorpus: standard 73 %, extreme 79 % → 87,5 % der WSJT-X-Decodes; der osr-4-deep-Pass fand vor dem Fenster-Fix nichts |
+| Hint-Pass-Validation | Decoded text muss einen *vor* dem Decode bekannten Call enthalten (Lese-Interface), OSD zusätzlich nhard ≤ 32 / Metrik ≤ 60 | AP-Decoding | False-Positive-Filter äquivalent zu JTDX Type-2; vermeidet AP-Phantome |
 | Auto-Notch-Pfad | FFT-Spektral-Notch pro Slot, numpy-only | scipy biquad-cascade | scipy 150MB Dep auf Pi vermieden |
 | Pass-Stats-Tracking | Per-Pass-Counts in `/api/status.decoder_pass_stats` | nur Gesamt-Counter | datengetriebene Insight welcher Pass real Mehrwert bringt |
 | DT-Offset-Korrektur | Auto-Kalibrierung via rolling-Median | nur Diagnose-Push | Self-correcting bei systematischen Audio-Buffer-Offsets |
