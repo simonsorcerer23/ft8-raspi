@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.69.0 — 2026-09-06
+- feat: Hunting — gerichtete CQs respektieren, Antwort auf freier Frequenz, Stufe 2 mit mehr LDPC
+
 ## v0.68.0 — 2026-09-06
 - fix: two_stage/late_pass_sink per setattr — decode_source ist als Callable typisiert (mypy-Gate)
 - feat: zweistufiger Decoder — Standard-Pass entscheidet ueber TX, der teure Rest laeuft nebenher
