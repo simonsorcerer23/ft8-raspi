@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.71.0 — 2026-09-06
+- feat: OSD-Decoder im Hint-Pass (ordered statistics decoding), Known-Call-Gate nicht mehr zirkulaer
+
 ## v0.70.0 — 2026-09-06
 - fix: Decoder-dt auf WSJT-X kalibriert, Subtraktion jetzt kohaerent, Stack-Ueberlauf im Hash-Lookup
 
