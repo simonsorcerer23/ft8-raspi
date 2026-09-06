@@ -579,6 +579,13 @@ class Orchestrator:
     # 2026-09-06 lonely_cq: Decodes der letzten Slots (aelteste zuerst)
     _slot_history: list[list] = field(default_factory=list, init=False)
     _in_slot_tick: bool = field(default=False, init=False)
+    # 2026-09-06: Stufe-2-Ingest laeuft, waehrend der Slot-Handler noch den
+    # Burst abwartet (_in_slot_tick bleibt 12 s lang True). Eigene Flags,
+    # damit spaete Decodes nie als slot-getriebener TX zaehlen und nie in
+    # einen laufenden Burst hineinsenden (live 17:35: "Device or resource
+    # busy", danach PTT aus — mitten im Burst an OD5ZZ).
+    _in_late_ingest: bool = field(default=False, init=False)
+    _tx_burst_active: bool = field(default=False, init=False)
     _consecutive_late_tx: int = field(default=0, init=False)
     _last_tx_late_alert_at: float = field(default=0.0, init=False)
     # Burst-Peak-basiertes ALC-Adjustment: Samples werden waehrend
@@ -3104,7 +3111,11 @@ class Orchestrator:
         # on_decodes ersetzt last_decodes durch die Charge — fuer den
         # CQ-Frequenz-Picker soll der ganze Slot sichtbar bleiben.
         self.state_machine.last_decodes = list(self._last_decodes)
-        await self._drain_actions()
+        self._in_late_ingest = True
+        try:
+            await self._drain_actions()
+        finally:
+            self._in_late_ingest = False
         self._push_status()
 
     def _autopilot_allowed_modes(self) -> list[str]:
@@ -6216,7 +6227,11 @@ class Orchestrator:
             log.error("FT8 synth failed for %r: %s", text, exc)
             return
 
+        if self._tx_burst_active:
+            log.warning("TX %r verworfen: ein Burst laeuft noch — die State-Machine sendet an der naechsten Grenze", text)
+            return
         loop = asyncio.get_running_loop()
+        self._tx_burst_active = True
         try:
             await self.rig.set_ptt(True)
             # Mark PTT-On-Zeitpunkt fuer Settling-Period im SWR-Live-Cut.
@@ -6228,6 +6243,7 @@ class Orchestrator:
             # bliebe hier ein Dauertraeger stehen, denn der finally-Block
             # unten wird nie erreicht.
             log.error("set_ptt(True) failed: %s — aborting TX, forcing PTT off", exc)
+            self._tx_burst_active = False
             try:
                 await self.rig.set_ptt(False)
             except Exception as off_exc:
@@ -6245,6 +6261,7 @@ class Orchestrator:
                 await self.rig.set_ptt(False)
             except Exception as exc:
                 log.error("set_ptt(False) post-TX failed: %s", exc)
+            self._tx_burst_active = False
 
     def _slot_phase_s(self) -> float:
         """Sekunden seit der letzten Slot-Grenze (Wanduhr, nicht Tick)."""
@@ -6282,7 +6299,7 @@ class Orchestrator:
         self._tx_start_offsets_s.append(round(phase, 3))
         del self._tx_start_offsets_s[:-10]
         op = self.config.operating
-        if not self._in_slot_tick:
+        if not self._in_slot_tick or self._in_late_ingest:
             if phase > op.tx_latency_max_s:
                 log.warning(
                     "manueller TX-Start %.1f s nach der Slot-Grenze — Burst entfaellt, "
