@@ -336,6 +336,11 @@ class MachineContext:
     # `not_in_pileup` liefert 0 fuer diese Calls = Picker pickt sie
     # nur wenn andere Tiers grün sind.
     pile_up_calls: set[str] = field(default_factory=set)
+    # 2026-09-06 lonely_cq: Rufer, die im Slot davor (gleiche Paritaet) schon
+    # CQ gerufen haben und dazwischen von niemandem angerufen wurden.
+    # Pick-Telemetrie: 56 % der Picks "went silent" — der Rufer hatte
+    # laengst einen anderen. Ein einsamer CQ-Rufer antwortet eher.
+    lonely_cq_calls: set[str] = field(default_factory=set)
     # v0.22.0 — DX-Operating-Location. Wenn current_operating_country
     # gesetzt UND != home_country, wird der TX-Callsign zu
     # "<prefix>/<callsign>" (z.B. 9A/DK9XR). Beide aus OperatorConfig

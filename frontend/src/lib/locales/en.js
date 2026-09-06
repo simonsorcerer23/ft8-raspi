@@ -374,6 +374,7 @@ export const en = {
   'tier.not_bad_reputation': 'Avoid soft-blacklist (bail-reason-aware)',
   'tier.not_his_tx_slot': "Don't call in HIS TX slot",
   'tier.not_in_pileup': 'Avoid pile-up (rare DX with many callers)',
+  'tier.lonely_cq': 'Lonely CQ caller (keeps calling unanswered)',
   'tier.marine_psk': 'Maritime operator + PSK says "hears us"',
   'tier.marine': 'Maritime operator (even without PSK)',
   'tier.tail_end_target': 'Tail-end: station just finished a QSO',
