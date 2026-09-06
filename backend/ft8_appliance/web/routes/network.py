@@ -169,7 +169,7 @@ async def get_ap_fallback(orch: Orchestrator = Depends(get_orchestrator)) -> APF
     if cfg.network is None or cfg.network.ap_fallback is None:
         # Fallback-Defaults wenn Config-Block fehlt — User kann das
         # dann im UI auf gewünschte Werte überschreiben.
-        return APFallbackOut(ssid="ft8-hochgericht", psk="ft8setup1", active=active)
+        return APFallbackOut(ssid="ft8-hotspot", psk="ft8setup1", active=active)
     return APFallbackOut(
         ssid=cfg.network.ap_fallback.ssid,
         psk=cfg.network.ap_fallback.psk,

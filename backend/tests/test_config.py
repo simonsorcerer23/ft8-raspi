@@ -49,7 +49,7 @@ network:
     - { ssid: "Heimnetz", psk: "secret" }
     - { ssid: "Dad-Android" }
   ap_fallback:
-    ssid: "ft8-hochgericht"
+    ssid: "ft8-hotspot"
     psk: "changeme123"
 
 integrations:
