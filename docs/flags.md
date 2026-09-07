@@ -207,3 +207,10 @@ Aus der Pick-Telemetrie des 6.9. (381 Picks, 7 % vollendet): Ziele unter −13 d
 - `hunt_cq_fallback` (nach `hunt_cq_fallback_after_slots`, Default 2, Slots ohne brauchbaren Rufer): die Box ruft selbst CQ, bis der Picker wieder etwas findet; ein brauchbarer Rufer hat Vorrang vor dem eigenen CQ. Zähler `cq_fallback_starts` / `cq_fallback_qsos` in `/api/status`.
 - `hunt_cq_fallback_max_cqs` (Default 20) / `hunt_cq_fallback_pause_min` (Default 10): nach so vielen unbeantworteten Fallback-CQs geht die Box für die Pause zurück ins reine Hunting. Der „CQ-Idle ohne Antwort“-Push bleibt im Fallback stumm; er gilt nur für den von Hand gestarteten CQ-Modus.
 - `hunt_reply_ab_test`: Antworten abwechselnd auf dem ruhigen Bin und auf der Rufer-Frequenz; `pick_attempt.reply_kind` und `/api/stats/pick-attempts` → `by_reply_kind` liefern die Vollendungsquote je Variante. Abschalten, sobald eine Variante gewonnen hat, und `hunt_reply_quiet_freq` entsprechend setzen.
+
+
+### Automatischer Bandwechsel (vorbereitet 2026-09-07)
+
+Der Hunt-Autopilot (`autopilot_enabled`, `autopilot_allowed_bands`, Fenster `autopilot_window_min`, Sperre `autopilot_cooldown_min`) bewertet alle 15 Minuten die erlaubten Bänder nach Decodes, Anrufversuchen, Vollendungen, einer Tageszeit-Prior je Band und den hamqsl-Bandbedingungen und wechselt auf das beste Band/Modus-Paar. Neu: Die Antenne trägt `auto_band_switch` (Häkchen „Auto-Band" in der Antennenzeile). Ohne das Häkchen bleibt der Autopilot auf dem Band, auf dem das Rig steht (Dipol mit Tuner-Zwang, wie derzeit `spitzwegstrasse`), nur der Moduswechsel FT8/FT4 bleibt möglich. Mit Häkchen (Multiband-Antenne ohne Abstimmung) wechselt er innerhalb der Bänder, die die Antenne abdeckt und die in `autopilot_allowed_bands` stehen.
+
+Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne setzen, `autopilot_allowed_bands` prüfen, `autopilot_enabled: true`.

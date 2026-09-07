@@ -409,6 +409,8 @@ export const de = {
   'cfg.remove_ft4_title': 'FT4 für dieses Band entfernen',
   'cfg.enable_ft4': '+ FT4 für {band} aktivieren',
   'cfg.add_antenna': '+ Antenne',
+  'cfg.antenna_auto_band_switch': 'Bandwechsel ohne Abstimmung möglich (Multiband-Antenne): erst dann darf der Autopilot das Band wechseln',
+  'cfg.antenna_auto_band_switch_short': 'Auto-Band',
   'cfg.mode_ft8': 'FT8 — 15 s Slots (Standard)',
   'cfg.mode_ft4': 'FT4 — 7.5 s Slots (schneller, weniger DX)',
   'cfg.dec_standard': 'Standard — schnellste (Pi 4)',
