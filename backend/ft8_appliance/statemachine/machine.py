@@ -2002,6 +2002,14 @@ class StateMachine:
     def set_auto_answer(self, enabled: bool) -> None:
         """Toggle hunting mode. Active only while state is IDLE."""
         self.ctx.auto_answer = enabled
+        # 2026-09-07: Antwortmodus aus beendet auch den CQ-Fallback — der
+        # gehoert zum Hunting, nicht zum manuellen CQ-Modus.
+        if not enabled and self.ctx.cq_fallback_active and self.state is State.CQ_CALLING:
+            self.ctx.cq_fallback_active = False
+            self.ctx.idle_slots_without_pick = 0
+            self.ctx.cq_count = 0
+            self.state = State.IDLE
+            self._pending.append(Action("STOP_TX", {}))
 
     # ------------------------------------------------------------------ tail-end hunter
     # v0.11.0 — siehe docstring im Picker und feature_completeness-Memory.
