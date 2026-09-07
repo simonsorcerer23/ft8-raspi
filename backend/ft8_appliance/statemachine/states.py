@@ -149,6 +149,9 @@ class MachineContext:
     hunt_cq_fallback_max_cqs: int = 20
     hunt_cq_fallback_pause_min: int = 10
     cq_fallback_paused_until: float = 0.0   # POSIX
+    # 2026-09-07: Self-Update wartet nur das laufende QSO ab, keine neuen
+    # Picks/CQs/Antworten mehr ("Ping-Pong abwarten, dann Update").
+    drain_for_update: bool = False
     hunt_reply_ab_test: bool = True
     reply_ab_counter: int = 0
     idle_slots_without_pick: int = 0

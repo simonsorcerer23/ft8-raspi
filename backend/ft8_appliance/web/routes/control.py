@@ -195,6 +195,19 @@ async def reboot(orch: Orchestrator = Depends(get_orchestrator)) -> ControlRespo
     return ControlResponse(ok=True, state=orch.status().state, detail="reboot")
 
 
+class UpdateHoldRequest(BaseModel):
+    enabled: bool = True
+
+
+@router.post("/update-hold", response_model=ControlResponse)
+async def update_hold(
+    req: UpdateHoldRequest, orch: Orchestrator = Depends(get_orchestrator)
+) -> ControlResponse:
+    """2026-09-07: Self-Update angekuendigt — laufendes QSO beenden, nichts Neues anfangen."""
+    r = await orch.handle_update_hold(req.enabled)
+    return ControlResponse(ok=True, state=orch.status().state, detail=f"update_safe={r.get('update_safe')}")
+
+
 @router.post("/restore-rig", response_model=ControlResponse)
 async def restore_rig(orch: Orchestrator = Depends(get_orchestrator)) -> ControlResponse:
     """2026-09-06: Rig auf FT8-Betrieb zuruecksetzen (PKTUSB, 2700 Hz, Dial)."""

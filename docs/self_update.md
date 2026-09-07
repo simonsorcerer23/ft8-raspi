@@ -394,3 +394,8 @@ prüfen — sonst kostet's später eine SIGABRT-Cascade.
 ### `update_safe` (2026-09-07)
 
 `/api/status` meldet `update_safe: true`, wenn ein Neustart niemanden stört: IDLE, TX_LOCKED oder der Hunting-CQ-Fallback (CQ_CALLING ohne laufendes QSO). `self-update.sh` behandelt das als idle; vorher fand der Timer bei aktivem Fallback stundenlang kein Fenster.
+
+
+### Drain statt Skip (2026-09-07)
+
+Ist die Box nicht IDLE, skippt `self-update.sh` nicht mehr bis zum nächsten Timer-Lauf, sondern ruft `POST /api/control/update-hold`. Der Orchestrator bringt das laufende QSO zu Ende, nimmt keine neuen Picks, Antworten oder CQs mehr an (`drain_for_update`) und meldet `update_safe: true`, sobald kein QSO mehr läuft und kein Burst spielt. Das Skript wartet darauf bis zu 4 Minuten und aktualisiert dann; nach dem Timeout aktualisiert es, sobald PTT aus ist. Nach dem Neustart ist der Drain automatisch weg. Anlass: Sebastian, 7.9.: „Ping-Pong abwarten, dann Update und fertig.“

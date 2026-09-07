@@ -299,6 +299,7 @@ class OrchestratorStatus:
     tx_start_offset_avg_s: float | None = None
     # 2026-09-07: Self-Update darf neu starten (IDLE, TX_LOCKED oder CQ-Fallback ohne QSO)
     update_safe: bool = False
+    update_drain: bool = False
     cq_fallback_starts: int = 0
     cq_fallback_qsos: int = 0
     # Zweistufiger Decoder: was Stufe 2 zuletzt/insgesamt nachgereicht hat.
@@ -1807,9 +1808,12 @@ class Orchestrator:
                 self._tx_start_offsets_s[-1] if self._tx_start_offsets_s else None
             ),
             update_safe=(
-                self.state_machine.state.name in ("IDLE", "TX_LOCKED")
+                self.state_machine.state.name in ("IDLE", "TX_LOCKED", "QSO_GRACE")
                 or (self.state_machine.state.name == "CQ_CALLING" and self.state_machine.ctx.cq_fallback_active)
-            ),
+                or (self.state_machine.ctx.drain_for_update
+                    and self.state_machine.state.name not in ("QSO_RESPOND", "QSO_REPORT", "QSO_LOG"))
+            ) and not self._tx_burst_active,
+            update_drain=self.state_machine.ctx.drain_for_update,
             cq_fallback_starts=self.state_machine.ctx.cq_fallback_starts,
             cq_fallback_qsos=self.state_machine.ctx.cq_fallback_qsos,
             tx_start_offset_avg_s=(
@@ -2441,6 +2445,15 @@ class Orchestrator:
             self._last_rig.swr = None
         self._swr_runaway_active = False
         self._swr_warn_since = None
+
+    async def handle_update_hold(self, enabled: bool = True) -> dict:
+        """2026-09-07: self-update.sh kuendigt ein Update an. Das laufende QSO
+        wird zu Ende gebracht, neue Picks/CQs unterbleiben; update_safe im
+        Status wird true, sobald kein QSO mehr laeuft und kein Burst spielt."""
+        self.state_machine.set_drain_for_update(enabled)
+        if enabled:
+            await self._drain_actions()
+        return {"ok": True, "update_safe": self.status().update_safe}
 
     async def handle_restore_rig_settings(self, reason: str = "manual") -> dict:
         """2026-09-06: Rig auf FT8-Betrieb zuruecksetzen — PKTUSB, 2700 Hz,
