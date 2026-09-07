@@ -139,6 +139,7 @@ class _FakeOrch:
 
     _STORM_THROTTLE_S = 15 * 60
     _STORM_CLOSER_KM = 5.0
+    _STORM_MIN_GAP_S = 0.0
 
     def __init__(self, lat=49.50, lon=11.10):
         from ft8_appliance.runtime.orchestrator import IntegrationContainer
@@ -268,3 +269,29 @@ def test_watchdog_skips_when_ntfy_disabled(monkeypatch):
     ))
     fo.check()
     assert scheduled == []
+
+
+
+def test_no_repeat_push_for_a_front_that_sits_or_retreats(monkeypatch):
+    """2026-09-07: 30 km + Wiederholung alle 15 min nervten. Jetzt nur bei
+    Eintritt und bei deutlicher Annaeherung; stehend oder abziehend: still."""
+    scheduled = []
+    monkeypatch.setattr(
+        "ft8_appliance.runtime.orchestrator.asyncio.create_task",
+        lambda coro, **_: scheduled.append(coro) or MagicMock(),
+    )
+    fo = _FakeOrch(lat=49.50, lon=11.10)
+    # Eintritt bei ~8 km
+    fo.integrations.blitzortung.ingest(Strike(ts=datetime.now(UTC), lat=49.572, lon=11.10))
+    fo.check(); assert len(scheduled) == 1
+    # steht (gleiche Distanz), 30 min lang: kein Push
+    fo._last_storm_alert_at = 0.0
+    for _ in range(30):
+        fo.integrations.blitzortung.ingest(Strike(ts=datetime.now(UTC), lat=49.572, lon=11.10))
+        fo.check()
+    assert len(scheduled) == 1
+    # zieht ab (auf ~20 km, noch im 30-km-Testradius): kein Push
+    fo.integrations.blitzortung._strikes.clear() if hasattr(fo.integrations.blitzortung, "_strikes") else None
+    fo.integrations.blitzortung.ingest(Strike(ts=datetime.now(UTC), lat=49.68, lon=11.10))
+    fo.check()
+    assert len(scheduled) == 1

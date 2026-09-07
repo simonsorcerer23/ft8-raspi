@@ -4423,12 +4423,21 @@ class Orchestrator:
 
     # Push-Throttle: 15 min Fenster. Frueher re-push nur wenn Strike um
     # mindestens 5 km naeher gerueckt ist.
-    _STORM_THROTTLE_S = 15 * 60
+    _STORM_THROTTLE_S = 15 * 60   # (nicht mehr fuer Wiederholungen genutzt, s. _blitzortung_check_and_alert)
     _STORM_CLOSER_KM = 5.0
+    _STORM_MIN_GAP_S = 5 * 60     # Mindestabstand zwischen zwei Pushes
 
     def _blitzortung_check_and_alert(self, bz) -> None:
         """Ein-Tick-Check des Storm-Watchdogs. Ausgelagert damit's testbar
         ist ohne den ganzen 60-s-Loop zu fahren.
+
+        2026-09-07 (Sebastian: "geht mir auf den Sack"): Push nur, wenn das
+        Gewitter in den Radius EINTRITT oder sich danach deutlich weiter
+        naehert (>= _STORM_CLOSER_KM dichter als zuletzt gemeldet UND
+        gegenueber dem letzten Tick naeher). Kein Wiederholungs-Push mehr
+        fuer eine Front, die in derselben Entfernung steht oder abzieht.
+        Verlaesst das Gewitter den Radius, meldet ein erneutes Eintreten
+        wieder.
         """
         if not bz.enabled:
             return
@@ -4439,28 +4448,27 @@ class Orchestrator:
             return
         here = (gps.lat, gps.lon)
         nearest_km = bz.nearest_strike_km(here)
+        prev_km = getattr(self, "_storm_prev_km", None)
         if nearest_km is None or nearest_km > bz.alarm_radius_km:
+            # draussen: Episode beenden, naechstes Eintreten meldet wieder
+            self._last_storm_alert_km = None
+            self._storm_prev_km = nearest_km
             return
-        # Throttle-Check
+        last = self._last_storm_alert_km
+        entering = last is None
+        approaching = prev_km is None or prev_km > bz.alarm_radius_km or nearest_km < prev_km - 0.5
+        closer_than_reported = last is not None and nearest_km <= last - self._STORM_CLOSER_KM
+        self._storm_prev_km = nearest_km
+        if not ((entering and approaching) or (closer_than_reported and approaching)):
+            return
         now = time.time()
-        since_last = now - self._last_storm_alert_at
-        if since_last < self._STORM_THROTTLE_S:
-            prev = self._last_storm_alert_km
-            # "Deutlich naeher" = aktuelles minimum ist >= 5 km dichter
-            # als das letzte gemeldete. Sonst skip — kein Spam wenn die
-            # Front in derselben Distanz hin- und herwackelt.
-            if prev is not None and nearest_km > prev - self._STORM_CLOSER_KM:
-                return
-        # Push!
+        if now - self._last_storm_alert_at < self._STORM_MIN_GAP_S:
+            return
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        # Distanz auf int runden — 27.3 km macht im Push keinen Mehrwert.
         km = int(round(nearest_km))
-        if since_last < self._STORM_THROTTLE_S and self._last_storm_alert_km is not None:
-            msg = _t("push.storm_closer", km=km)
-        else:
-            msg = _t("push.storm_msg", km=km, radius=bz.alarm_radius_km)
+        msg = _t("push.storm_msg", km=km, radius=bz.alarm_radius_km) if entering else _t("push.storm_closer", km=km)
         log.warning("blitzortung: storm alert — %s", msg)
         # Fire-and-forget — Push darf nicht den Watchdog blockieren.
         asyncio.create_task(ntfy.notify(
