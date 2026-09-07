@@ -389,3 +389,8 @@ Half-Fix-Reflex-Lehre: Bug 6 hatte ich beim Service-Unit-Schreiben
 direkt drin und niemand hat's gesehen bis zum Pi-Check. Beim
 Phase-Abschluss systemd-Direktiven gegen die Realität des Codes
 prüfen — sonst kostet's später eine SIGABRT-Cascade.
+
+
+### `update_safe` (2026-09-07)
+
+`/api/status` meldet `update_safe: true`, wenn ein Neustart niemanden stört: IDLE, TX_LOCKED oder der Hunting-CQ-Fallback (CQ_CALLING ohne laufendes QSO). `self-update.sh` behandelt das als idle; vorher fand der Timer bei aktivem Fallback stundenlang kein Fenster.
