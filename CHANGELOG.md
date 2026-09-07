@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.77.3 — 2026-09-07
+- fix: Antwortmodus aus beendet den CQ-Fallback (Box rief sonst weiter CQ)
+
 ## v0.77.2 — 2026-09-07
 - fix: Self-Update findet im Hunting-CQ-Fallback ein Fenster (status.update_safe)
 
