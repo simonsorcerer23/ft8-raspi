@@ -145,3 +145,17 @@ def test_update_safe_in_status_during_fallback_cq() -> None:
     assert o.status().update_safe is True                      # Fallback: unterbrechbar
     o.state_machine.state = State.QSO_RESPOND
     assert o.status().update_safe is False
+
+
+def test_auto_answer_off_ends_the_fallback_cq() -> None:
+    sm = _sm(hunt_cq_fallback=True, hunt_cq_fallback_after_slots=1)
+    hw = HardwareState()
+    sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(0))
+    assert sm.state is State.CQ_CALLING and sm.ctx.cq_fallback_active
+    sm.set_auto_answer(False)
+    assert sm.state is State.IDLE and sm.ctx.cq_fallback_active is False
+    assert any(a.kind == "STOP_TX" for a in sm.drain_actions())
+    # manueller CQ-Modus bleibt von auto_answer unberuehrt
+    sm.on_user_start_cq(hw)
+    sm.set_auto_answer(False)
+    assert sm.state is State.CQ_CALLING
