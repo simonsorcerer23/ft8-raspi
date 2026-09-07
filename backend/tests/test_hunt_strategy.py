@@ -117,3 +117,31 @@ def test_cq_fallback_pauses_after_max_unanswered_cqs() -> None:
     late = SlotTick(index=99, posix=sm.ctx.cq_fallback_paused_until + 15, utc_start=_dt.datetime.now(_dt.UTC))
     sm.on_decodes(hw, []); sm.on_slot_tick(hw, late)
     assert sm.state is State.CQ_CALLING
+
+
+def test_update_safe_in_status_during_fallback_cq() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from ft8_appliance.config import AntennaConfig, AppConfig, BandConfig, OperatingConfig, OperatorConfig
+    from ft8_appliance.rig.rigctld_client import RigSnapshot
+    from ft8_appliance.runtime import FakeSlotClock, Orchestrator
+
+    cfg = AppConfig(operator=OperatorConfig(callsign="DK9XR", default_locator="JN58td"),
+                    bands=[BandConfig(name="20m", freq_khz=14074, antenna="w")],
+                    antennas=[AntennaConfig(name="w", bands=["20m"])], operating=OperatingConfig())
+    rig = AsyncMock(); rig.snapshot = AsyncMock(return_value=RigSnapshot(freq_hz=14_074_000)); rig.close = AsyncMock()
+    gps = AsyncMock(); gps.snapshot = SimpleNamespace(mode=3, lat=0, lon=0, ts=None, lock_for_min=None, satellites_used=None); gps.close = AsyncMock()
+
+    async def nd(tick):
+        return []
+
+    o = Orchestrator(config=cfg, rig=rig, gps=gps, decode_source=nd, slot_clock=FakeSlotClock(count=0))
+    o._rx_audio_dbfs_peak = None; o._rx_audio_dbfs_peak_ts = 0.0
+    assert o.status().update_safe is True                      # IDLE
+    o.state_machine.state = State.CQ_CALLING
+    assert o.status().update_safe is False                     # manueller CQ-Modus
+    o.state_machine.ctx.cq_fallback_active = True
+    assert o.status().update_safe is True                      # Fallback: unterbrechbar
+    o.state_machine.state = State.QSO_RESPOND
+    assert o.status().update_safe is False

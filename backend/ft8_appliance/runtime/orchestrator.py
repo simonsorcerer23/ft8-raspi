@@ -297,6 +297,8 @@ class OrchestratorStatus:
     # letzten 10. Ueber ~1,5 s sehen uns Partner-Decoder schlechter.
     tx_start_offset_s: float | None = None
     tx_start_offset_avg_s: float | None = None
+    # 2026-09-07: Self-Update darf neu starten (IDLE, TX_LOCKED oder CQ-Fallback ohne QSO)
+    update_safe: bool = False
     cq_fallback_starts: int = 0
     cq_fallback_qsos: int = 0
     # Zweistufiger Decoder: was Stufe 2 zuletzt/insgesamt nachgereicht hat.
@@ -1803,6 +1805,10 @@ class Orchestrator:
             decoder_late_pass=self._late_pass_stats(),
             tx_start_offset_s=(
                 self._tx_start_offsets_s[-1] if self._tx_start_offsets_s else None
+            ),
+            update_safe=(
+                self.state_machine.state.name in ("IDLE", "TX_LOCKED")
+                or (self.state_machine.state.name == "CQ_CALLING" and self.state_machine.ctx.cq_fallback_active)
             ),
             cq_fallback_starts=self.state_machine.ctx.cq_fallback_starts,
             cq_fallback_qsos=self.state_machine.ctx.cq_fallback_qsos,

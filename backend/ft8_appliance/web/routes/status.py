@@ -105,6 +105,7 @@ class StatusResponse(BaseModel):
     # letzte Burst begann, + Mittel der letzten 10.
     tx_start_offset_s: float | None = None
     tx_start_offset_avg_s: float | None = None
+    update_safe: bool = False
     cq_fallback_starts: int = 0
     cq_fallback_qsos: int = 0
     # Zweistufiger Decoder: {last, total, duration_s, skipped} von Stufe 2.
@@ -188,6 +189,7 @@ async def get_status(
         decoder_late_pass=getattr(s, "decoder_late_pass", None),
         tx_start_offset_s=getattr(s, "tx_start_offset_s", None),
         tx_start_offset_avg_s=getattr(s, "tx_start_offset_avg_s", None),
+        update_safe=bool(getattr(s, "update_safe", False)),
         cq_fallback_starts=getattr(s, "cq_fallback_starts", 0),
         cq_fallback_qsos=getattr(s, "cq_fallback_qsos", 0),
     )

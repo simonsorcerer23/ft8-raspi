@@ -166,6 +166,13 @@ else
     #     Catch-22). TX_LOCKED bedeutet das Gegenteil von "TX laeuft",
     #     restart ist sicher.
     # Unsafe: QSO_RESPOND/QSO_REPORT/QSO_LOG/GRACE/CQ_CALLING (sendet aktiv).
+    # 2026-09-07: der Hunting-CQ-Fallback haelt die Box in CQ_CALLING, ohne
+    # dass ein QSO laeuft — der Orchestrator meldet dafuer update_safe=true.
+    # Ohne das fand der Timer stundenlang kein IDLE-Fenster ("not idle" x3).
+    if printf '%s' "${STATUS_JSON}" | jq -e '.update_safe == true' >/dev/null 2>&1; then
+        log "update_safe=true (IDLE, TX_LOCKED oder CQ-Fallback) — behandle als idle"
+        STATE="IDLE"
+    fi
     case "${STATE}" in
         IDLE|TX_LOCKED|"")
             : ;;
