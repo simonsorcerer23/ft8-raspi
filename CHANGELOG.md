@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.79.0 — 2026-09-07
+- feat: Antenne 'Bandwechsel ohne Abstimmung' — Autopilot wechselt das Band nur mit dieser Freigabe
+
 ## v0.78.0 — 2026-09-07
 - feat: Self-Update wartet nur das laufende QSO ab (Drain statt Skip)
 
