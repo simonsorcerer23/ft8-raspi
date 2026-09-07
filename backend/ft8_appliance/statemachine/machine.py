@@ -737,7 +737,7 @@ class StateMachine:
             self._update_tail_end_state(decodes)
 
         # Hunting mode: when idle and auto_answer is on.
-        if self.state is State.IDLE and self.ctx.auto_answer:
+        if self.state is State.IDLE and self.ctx.auto_answer and not self.ctx.drain_for_update:
             # PRIO 1 — jemand spricht UNS direkt an (Tail-Ender oder
             # verspaeteter Reply nach Slot-Verlust). Sebastian sah am
             # 2026-05-22 dass DM2HK "DK9XR DM2HK -20" sendete waehrend
@@ -1093,6 +1093,7 @@ class StateMachine:
             and self.ctx.hunt_cq_fallback
             and self.ctx.idle_slots_without_pick >= self.ctx.hunt_cq_fallback_after_slots
             and (tick is None or tick.posix >= self.ctx.cq_fallback_paused_until)
+            and not self.ctx.drain_for_update
             and self._check_guards(hw)
         ):
             # 2026-09-07: kein brauchbarer Rufer seit N Slots -> selbst CQ,
@@ -1113,6 +1114,12 @@ class StateMachine:
         # immer im TX → 0 RX-Decodes ueber 34 min trotz laufendem
         # Decoder. Funkstille-Watchdog feuerte voellig zu Recht.
         if self.state is State.CQ_CALLING:
+            if self.ctx.drain_for_update:
+                # 2026-09-07: CQ ist kein QSO — fuer das Update sofort aufhoeren
+                log.info("CQ pausiert: Self-Update wartet")
+                self.ctx.cq_fallback_active = False
+                self.state = State.IDLE
+                return
             # Guards laufen IMMER (auch in RX-Slots) — sonst wuerde bei
             # SWR-Spike/GPS-Loss im RX-Slot keine TX_LOCKED-Transition
             # ausgeloest und der naechste TX-Slot wuerde unsicher senden.
@@ -1777,6 +1784,8 @@ class StateMachine:
         v0.11.0: zusaetzlich werden synthetische CQ-Decodes fuer aktive
         Tail-End-Candidates injiziert — siehe _build_synthetic_tail_end_decodes.
         """
+        if self.ctx.drain_for_update:
+            return None   # 2026-09-07: Update wartet — keine neuen Picks
         decodes = list(decodes)
         if self.ctx.tail_end_hunter_enabled:
             decodes = decodes + self._build_synthetic_tail_end_decodes(decodes)
@@ -1998,6 +2007,14 @@ class StateMachine:
                 winner.call_from,
             )
         return winner
+
+    def set_drain_for_update(self, enabled: bool) -> None:
+        """2026-09-07: Self-Update angekuendigt — laufendes QSO zu Ende
+        bringen, aber nichts Neues anfangen. Zurueck auf False, falls das
+        Update doch nicht kommt."""
+        self.ctx.drain_for_update = enabled
+        if enabled:
+            log.info("Drain fuer Self-Update: keine neuen Picks/CQs, laufendes QSO wird beendet")
 
     def set_auto_answer(self, enabled: bool) -> None:
         """Toggle hunting mode. Active only while state is IDLE."""

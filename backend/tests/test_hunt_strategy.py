@@ -159,3 +159,54 @@ def test_auto_answer_off_ends_the_fallback_cq() -> None:
     sm.on_user_start_cq(hw)
     sm.set_auto_answer(False)
     assert sm.state is State.CQ_CALLING
+
+
+def test_drain_for_update_finishes_qso_but_starts_nothing_new() -> None:
+    sm = _sm(hunt_cq_fallback=True, hunt_cq_fallback_after_slots=1)
+    hw = HardwareState()
+    # laufendes QSO bleibt
+    sm.on_decodes(hw, [_d("CQ K1ABC FN42", "K1ABC", snr=-5)])
+    assert sm.state is State.QSO_RESPOND
+    sm.set_drain_for_update(True)
+    assert sm.state is State.QSO_RESPOND and sm.ctx.drain_for_update
+    # kein neuer Pick, kein Fallback
+    sm.state = State.IDLE; sm.qso = None
+    assert sm._pick_hunt_target([_d("CQ W1AW FN31", "W1AW", snr=-3)]) is None
+    for i in range(4):
+        sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(i))
+    assert sm.state is State.IDLE and sm.ctx.cq_fallback_starts == 0
+    # laufender Fallback-CQ hoert sofort auf
+    sm.set_drain_for_update(False)
+    sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(10))
+    assert sm.state is State.CQ_CALLING
+    sm.set_drain_for_update(True)
+    sm.on_slot_tick(hw, _tick(11))
+    assert sm.state is State.IDLE
+
+
+def test_update_safe_reflects_drain() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from ft8_appliance.config import AntennaConfig, AppConfig, BandConfig, OperatingConfig, OperatorConfig
+    from ft8_appliance.rig.rigctld_client import RigSnapshot
+    from ft8_appliance.runtime import FakeSlotClock, Orchestrator
+
+    cfg = AppConfig(operator=OperatorConfig(callsign="DK9XR", default_locator="JN58td"),
+                    bands=[BandConfig(name="20m", freq_khz=14074, antenna="w")],
+                    antennas=[AntennaConfig(name="w", bands=["20m"])], operating=OperatingConfig())
+    rig = AsyncMock(); rig.snapshot = AsyncMock(return_value=RigSnapshot(freq_hz=14_074_000)); rig.close = AsyncMock()
+    gps = AsyncMock(); gps.snapshot = SimpleNamespace(mode=3, lat=0, lon=0, ts=None, lock_for_min=None, satellites_used=None); gps.close = AsyncMock()
+
+    async def nd(tick):
+        return []
+
+    o = Orchestrator(config=cfg, rig=rig, gps=gps, decode_source=nd, slot_clock=FakeSlotClock(count=0))
+    o._rx_audio_dbfs_peak = None; o._rx_audio_dbfs_peak_ts = 0.0
+    o.state_machine.state = State.QSO_RESPOND
+    o.state_machine.ctx.drain_for_update = True
+    assert o.status().update_safe is False        # QSO laeuft noch
+    o.state_machine.state = State.QSO_GRACE
+    assert o.status().update_safe is True
+    o._tx_burst_active = True
+    assert o.status().update_safe is False        # nie mitten im Burst

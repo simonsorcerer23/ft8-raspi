@@ -173,24 +173,33 @@ else
         log "update_safe=true (IDLE, TX_LOCKED oder CQ-Fallback) — behandle als idle"
         STATE="IDLE"
     fi
-    case "${STATE}" in
-        IDLE|TX_LOCKED|"")
-            : ;;
-        *)
-            log "not idle (state=${STATE}), skip — Timer feuert wieder in 10 min"
-            ntfy "🟡" "Update ${CURRENT_TAG:-<untagged>} → ${LATEST_TAG} verfügbar, skip (state=${STATE})"
-            exit 0
-            ;;
-    esac
-    if [ -n "${QSO_CALL}" ] && [ "${QSO_CALL}" != "null" ]; then
-        log "current QSO with ${QSO_CALL} active, skip"
-        ntfy "🟡" "Update ${LATEST_TAG} verfügbar, skip (QSO mit ${QSO_CALL} läuft)"
-        exit 0
-    fi
-    if [ "${PTT}" = "true" ]; then
-        log "PTT active, skip"
-        ntfy "🟡" "Update ${LATEST_TAG} verfügbar, skip (PTT on)"
-        exit 0
+    # 2026-09-07 (Sebastian: "Ping-Pong abwarten, dann Update und fertig"):
+    # nicht mehr skippen, sondern dem Orchestrator das Update ankuendigen.
+    # Der bringt das laufende QSO zu Ende und faengt nichts Neues an; wir
+    # warten bis update_safe (max. 4 min), danach wird ohnehin aktualisiert,
+    # sobald kein Burst mehr laeuft.
+    if [ "${STATE}" != "IDLE" ] && [ "${STATE}" != "TX_LOCKED" ]; then
+        log "state=${STATE} — kuendige Update an (Drain), warte auf das Ende des laufenden QSO"
+        curl -fsS -m 5 -X POST -H 'content-type: application/json' -d '{"enabled": true}' \
+            "${API_BASE}/control/update-hold" >/dev/null 2>&1 || true
+        SAFE="false"
+        for _i in $(seq 1 48); do
+            sleep 5
+            STATUS_JSON="$(curl -fsS -m 5 "${API_BASE}/status" 2>/dev/null || echo '')"
+            if printf '%s' "${STATUS_JSON}" | jq -e '.update_safe == true' >/dev/null 2>&1; then
+                SAFE="true"; break
+            fi
+        done
+        if [ "${SAFE}" = "true" ]; then
+            log "update_safe=true nach Drain — jetzt Update"
+        else
+            log "Drain-Timeout (4 min) — Update trotzdem, sobald kein Burst laeuft"
+            for _i in $(seq 1 12); do
+                PTT="$(curl -fsS -m 5 "${API_BASE}/status" 2>/dev/null | jq -r '.rig.ptt // false')"
+                [ "${PTT}" != "true" ] && break
+                sleep 5
+            done
+        fi
     fi
 fi
 
