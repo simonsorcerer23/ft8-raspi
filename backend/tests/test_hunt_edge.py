@@ -27,6 +27,7 @@ def _d(msg: str, frm: str, hz: int = 1500, snr: int = -8, directed: str | None =
 
 
 def _sm(**ctx) -> StateMachine:
+    ctx.setdefault("hunt_reply_ab_test", False)   # 2026-09-07: A/B nur im eigenen Test
     c = MachineContext(callsign="DK9XR", my_grid="JN58ch", auto_answer=True, my_continent="EU", **ctx)
     sm = StateMachine(ctx=c)
     return sm

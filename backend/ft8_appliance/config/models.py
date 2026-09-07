@@ -548,6 +548,17 @@ class OperatingConfig(BaseModel):
     # 2026-09-06: Antwort auf der ruhigsten Audio-Frequenz statt exakt auf
     # der des CQ-Rufers (dort sammeln sich die anderen Anrufer).
     hunt_reply_quiet_freq: bool = True
+    # 2026-09-07 Hunting-Strategie aus der Pick-Telemetrie (381 Picks, 7 %):
+    # Ziele unter -13 dB kamen zu 3 % zurueck, -13..-8 zu 12 %. Schwache
+    # Ziele nur noch, wenn PSK Reporter sagt, dass sie uns hoeren; sonst
+    # nach N leeren Slots selbst CQ rufen, bis wieder ein Rufer da ist.
+    hunt_weak_snr_db: int = Field(default=-13, ge=-30, le=0)
+    hunt_weak_requires_psk: bool = True
+    hunt_cq_fallback: bool = True
+    hunt_cq_fallback_after_slots: int = Field(default=2, ge=1, le=20)
+    # A/B: Antwort abwechselnd auf ruhigem Bin / auf der Rufer-Frequenz;
+    # pick_attempt.reply_kind haelt fest, was gewonnen hat.
+    hunt_reply_ab_test: bool = True
     # v0.10.0 Hunt-Priority-Tiers (Sebastian-Wunsch):
     # Mehrstufige Priorisierung beim Picker statt nur "DXCC zuerst, dann SNR".
     # Reihenfolge der Liste = Reihenfolge der Tiers (top-priority zuerst).
@@ -579,6 +590,7 @@ class OperatingConfig(BaseModel):
             # gehört"-Flag taugt als Picker-Signal wenig — der graduelle
             # psk_snr-Wert ist der echte Prädiktor (reine Telemetrie). Steht
             # jetzt unter allen Award-/Propagations-Tiers, knapp vor snr.
+            "continent_prior",   # 2026-09-07 — eigene Telemetrie: Kontinent mit ueberdurchschnittlicher Quote
             "lonely_cq",         # 2026-09-06 — Rufer ruft unbeantwortet weiter (kein Pile-Up)
             "psk_heard_us",      # PSK sagt "hört uns" (schwaches Signal)
             "psk_snr",           # gradueller PSK-SNR-Wert (hoeher = besser)
@@ -616,7 +628,7 @@ class OperatingConfig(BaseModel):
             "new_dxcc_psk", "new_dxcc",
             "grayline", "band_open", "active_hour", "buddy_seen",
             "new_dxcc_band", "new_grid", "new_grid_band", "not_worked",
-            "dxcc_rarity", "lonely_cq", "psk_heard_us", "psk_snr", "snr", "tail_end_target",
+            "dxcc_rarity", "continent_prior", "lonely_cq", "psk_heard_us", "psk_snr", "snr", "tail_end_target",
         ]
         if not v:
             return list(known)  # leere Liste → komplette Default rein

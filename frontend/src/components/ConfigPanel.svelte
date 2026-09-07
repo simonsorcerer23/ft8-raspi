@@ -26,6 +26,7 @@
     not_his_tx_slot:    '⏱️',
     not_in_pileup:      '🌪️',
     lonely_cq:          '🙋',
+    continent_prior:    '🌍',
     marine_psk:      '⚓📡',
     marine:          '⚓',
     tail_end_target: '🎯',
@@ -49,6 +50,7 @@
     not_his_tx_slot:    t('tier.not_his_tx_slot'),
     not_in_pileup:      t('tier.not_in_pileup'),
     lonely_cq:          t('tier.lonely_cq'),
+    continent_prior:    t('tier.continent_prior'),
     marine_psk:      t('tier.marine_psk'),
     marine:          t('tier.marine'),
     tail_end_target: t('tier.tail_end_target'),
@@ -202,6 +204,13 @@
       }
     }
     s += `${ind(2)}tail_end_hunter_enabled: ${c.operating.tail_end_hunter_enabled === true}\n`;
+    // 2026-09-07 Hunting-Strategie + Rig-Auto-Restore
+    s += `${ind(2)}hunt_weak_requires_psk: ${c.operating.hunt_weak_requires_psk !== false}\n`;
+    if (c.operating.hunt_weak_snr_db !== undefined) s += `${ind(2)}hunt_weak_snr_db: ${c.operating.hunt_weak_snr_db}\n`;
+    s += `${ind(2)}hunt_cq_fallback: ${c.operating.hunt_cq_fallback !== false}\n`;
+    if (c.operating.hunt_cq_fallback_after_slots !== undefined) s += `${ind(2)}hunt_cq_fallback_after_slots: ${c.operating.hunt_cq_fallback_after_slots}\n`;
+    s += `${ind(2)}hunt_reply_ab_test: ${c.operating.hunt_reply_ab_test !== false}\n`;
+    s += `${ind(2)}rig_auto_restore: ${c.operating.rig_auto_restore === true}\n`;
     if (c.operating.dxped_ng3k_push_enabled !== undefined)
       s += `${ind(2)}dxped_ng3k_push_enabled: ${c.operating.dxped_ng3k_push_enabled === true}\n`;
     if (c.operating.dxped_ng3k_push_min_rarity !== undefined)
@@ -661,6 +670,45 @@
                     class:on={cfg.operating.tail_end_hunter_enabled}
                     onclick={() => cfg.operating.tail_end_hunter_enabled = !cfg.operating.tail_end_hunter_enabled}
                     aria-pressed={cfg.operating.tail_end_hunter_enabled}>
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+        </div>
+        <h5 class="subgroup">{t('cfg.hunt_strategy')}</h5>
+        <div class="grid">
+          <label class="field toggle-field">
+            <span>{t('cfg.hunt_weak_gate')}</span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.hunt_weak_requires_psk}
+                    onclick={() => cfg.operating.hunt_weak_requires_psk = !cfg.operating.hunt_weak_requires_psk}
+                    aria-pressed={cfg.operating.hunt_weak_requires_psk}>
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+          <label class="field toggle-field">
+            <span>{t('cfg.hunt_cq_fallback')}</span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.hunt_cq_fallback}
+                    onclick={() => cfg.operating.hunt_cq_fallback = !cfg.operating.hunt_cq_fallback}
+                    aria-pressed={cfg.operating.hunt_cq_fallback}>
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+          <label class="field toggle-field">
+            <span>{t('cfg.hunt_reply_ab')}</span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.hunt_reply_ab_test}
+                    onclick={() => cfg.operating.hunt_reply_ab_test = !cfg.operating.hunt_reply_ab_test}
+                    aria-pressed={cfg.operating.hunt_reply_ab_test}>
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+          <label class="field toggle-field">
+            <span>{t('cfg.rig_auto_restore')}</span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.rig_auto_restore}
+                    onclick={() => cfg.operating.rig_auto_restore = !cfg.operating.rig_auto_restore}
+                    aria-pressed={cfg.operating.rig_auto_restore}>
               <span class="toggle-knob"></span>
             </button>
           </label>

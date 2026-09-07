@@ -194,6 +194,8 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "our_snr_received": "INTEGER",
         "distance_km": "INTEGER",
         "continent": "TEXT",
+        # 2026-09-07
+        "reply_kind": "TEXT",
     }
     for name, ddl in cols.items():
         if name not in existing:

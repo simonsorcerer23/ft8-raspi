@@ -197,3 +197,12 @@ Wenn ISO selbst sich ändert (sehr selten — Eswatini=SZ war 2018):
 ### `operating.rig_auto_restore` (2026-09-06, Default `false`)
 
 Sieht die Tamper-Erkennung eine fremde Betriebsart (nicht PKTUSB) oder eine Filterbreite unter 2000 Hz, setzt die App nach spätestens 15 s Betriebsart, 2700 Hz und den konfigurierten Dial des aktuellen Bands zurück, nie während eines eigenen Bursts und nie die Leistung. Ohne das Flag gibt es dafür den Button „Rig zurücksetzen“ im Steuerpanel (`POST /api/control/restore-rig`). Anlass: Bedienung am IC-7300 mit USB und 350-Hz-Filter.
+
+
+### Antwortstrategie (2026-09-07): `hunt_weak_requires_psk`, `hunt_weak_snr_db`, `hunt_cq_fallback`, `hunt_cq_fallback_after_slots`, `hunt_reply_ab_test`
+
+Aus der Pick-Telemetrie des 6.9. (381 Picks, 7 % vollendet): Ziele unter −13 dB kamen zu 3 % zurück, −13…−8 dB zu 12 %; fast die Hälfte der Sendezeit ging an Grenzfälle. Deshalb, alle Default `true`:
+
+- `hunt_weak_requires_psk` (Schwelle `hunt_weak_snr_db`, Default −13): schwächere Rufer werden nur angerufen, wenn PSK Reporter sie in `psk_heard_us` führt.
+- `hunt_cq_fallback` (nach `hunt_cq_fallback_after_slots`, Default 2, Slots ohne brauchbaren Rufer): die Box ruft selbst CQ, bis der Picker wieder etwas findet; ein brauchbarer Rufer hat Vorrang vor dem eigenen CQ. Zähler `cq_fallback_starts` / `cq_fallback_qsos` in `/api/status`.
+- `hunt_reply_ab_test`: Antworten abwechselnd auf dem ruhigen Bin und auf der Rufer-Frequenz; `pick_attempt.reply_kind` und `/api/stats/pick-attempts` → `by_reply_kind` liefern die Vollendungsquote je Variante. Abschalten, sobald eine Variante gewonnen hat, und `hunt_reply_quiet_freq` entsprechend setzen.
