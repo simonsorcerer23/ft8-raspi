@@ -3189,7 +3189,14 @@ class Orchestrator:
         )
         if antenna is None:
             return True
-        return band_name in antenna.bands
+        if band_name not in antenna.bands:
+            return False
+        # 2026-09-07: ohne "Bandwechsel ohne Abstimmung" bleibt der Autopilot
+        # auf dem Band, auf dem das Rig steht (Dipol mit Tuner-Zwang).
+        if not getattr(antenna, "auto_band_switch", False):
+            cur = self._band_for_rig_freq(self._last_rig.freq_hz) if (self._last_rig and self._last_rig.freq_hz) else None
+            return cur is not None and cur.name == band_name
+        return True
 
     def _autopilot_allowed_bands(self) -> list[str]:
         configured = {b.name for b in self.config.bands}

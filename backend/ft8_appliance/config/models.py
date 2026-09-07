@@ -242,6 +242,11 @@ class AntennaConfig(BaseModel):
 
     name: str
     bands: list[str] = Field(min_length=1)
+    # 2026-09-07: Bandwechsel ohne Abstimmung moeglich (Multiband-Antenne).
+    # Nur dann darf der Autopilot das Band von sich aus wechseln; ein Dipol
+    # mit Tuner-Zwang (False) haelt den Autopilot auf dem aktuellen Band
+    # (Moduswechsel FT8/FT4 bleibt erlaubt).
+    auto_band_switch: bool = False
 
 
 # ---------------------------------------------------------------------------

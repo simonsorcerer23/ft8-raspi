@@ -158,7 +158,7 @@
     if (c.antennas?.length) {
       s += `\nantennas:\n`;
       for (const a of c.antennas) {
-        s += `${ind(2)}- { name: ${a.name}, bands: [${a.bands.map(x => `"${x}"`).join(', ')}] }\n`;
+        s += `${ind(2)}- { name: ${a.name}, bands: [${a.bands.map(x => `"${x}"`).join(', ')}], auto_band_switch: ${a.auto_band_switch === true} }\n`;
       }
     }
     s += `\noperating:\n`;
@@ -303,7 +303,7 @@
   function removeBand(i) { cfg.bands = cfg.bands.filter((_, j) => j !== i); }
 
   function addAntenna() {
-    cfg.antennas = [...(cfg.antennas || []), { name: 'new', bands: ['20m'] }];
+    cfg.antennas = [...(cfg.antennas || []), { name: 'new', bands: ['20m'], auto_band_switch: false }];
   }
   function removeAntenna(i) { cfg.antennas = cfg.antennas.filter((_, j) => j !== i); }
 
@@ -519,6 +519,10 @@
                 </label>
               {/each}
             </div>
+            <label class="chip ant-auto" title={t('cfg.antenna_auto_band_switch')}>
+              <input type="checkbox" bind:checked={a.auto_band_switch}/>
+              <span>{t('cfg.antenna_auto_band_switch_short')}</span>
+            </label>
             <button class="rm" onclick={() => removeAntenna(i)}>×</button>
           </div>
         {/each}
