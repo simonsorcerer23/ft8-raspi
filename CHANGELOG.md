@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.77.0 — 2026-09-07
+- feat: Antwortstrategie aus der Pick-Telemetrie — Schwach-Gate mit PSK-Ausnahme, CQ-Fallback, A/B Antwortfrequenz, Kontinent-Prior
+
 ## v0.76.0 — 2026-09-06
 - feat: Rig zuruecksetzen — Button (PKTUSB, 2700 Hz, Dial) und optionaler Auto-Restore aus der Tamper-Erkennung
 
