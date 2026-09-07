@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.79.1 — 2026-09-07
+- fix: Gewitterwarnung nur bei Eintritt in 10 km und bei deutlicher Annaeherung
+
 ## v0.79.0 — 2026-09-07
 - feat: Antenne 'Bandwechsel ohne Abstimmung' — Autopilot wechselt das Band nur mit dieser Freigabe
 
