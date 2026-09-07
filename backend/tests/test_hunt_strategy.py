@@ -96,3 +96,24 @@ def test_continent_prior_tier() -> None:
     assert _tier_continent_prior(_d("CQ W1AW FN31", "W1AW"), ctx) == 0
     assert _tier_continent_prior(_d("CQ JA1XYZ PM95", "JA1XYZ"), ctx) == 1      # zu wenig Daten fuer AS
     assert "continent_prior" in HUNT_TIERS
+
+
+def test_cq_fallback_pauses_after_max_unanswered_cqs() -> None:
+    sm = _sm(hunt_cq_fallback=True, hunt_cq_fallback_after_slots=1, hunt_cq_fallback_max_cqs=3,
+             hunt_cq_fallback_pause_min=10, cq_tx_slot_parity="any")
+    hw = HardwareState()
+    sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(0))
+    assert sm.state is State.CQ_CALLING
+    i = 1
+    while sm.state is State.CQ_CALLING and i < 20:
+        sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(i)); i += 1
+    assert sm.state is State.IDLE and sm.ctx.cq_fallback_active is False
+    assert sm.ctx.cq_fallback_paused_until > _tick(i).posix
+    # waehrend der Pause kein neuer Fallback
+    for j in range(i, i + 4):
+        sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(j))
+    assert sm.state is State.IDLE
+    # nach der Pause wieder
+    late = SlotTick(index=99, posix=sm.ctx.cq_fallback_paused_until + 15, utc_start=_dt.datetime.now(_dt.UTC))
+    sm.on_decodes(hw, []); sm.on_slot_tick(hw, late)
+    assert sm.state is State.CQ_CALLING

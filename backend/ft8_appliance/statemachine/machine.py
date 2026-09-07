@@ -1092,6 +1092,7 @@ class StateMachine:
             and self.ctx.auto_answer
             and self.ctx.hunt_cq_fallback
             and self.ctx.idle_slots_without_pick >= self.ctx.hunt_cq_fallback_after_slots
+            and (tick is None or tick.posix >= self.ctx.cq_fallback_paused_until)
             and self._check_guards(hw)
         ):
             # 2026-09-07: kein brauchbarer Rufer seit N Slots -> selbst CQ,
@@ -1116,6 +1117,19 @@ class StateMachine:
             # SWR-Spike/GPS-Loss im RX-Slot keine TX_LOCKED-Transition
             # ausgeloest und der naechste TX-Slot wuerde unsicher senden.
             if not self._check_guards(hw):
+                return
+            # 2026-09-07: Fallback-Deckel — nach N unbeantworteten CQs Pause,
+            # ein totes Band wird nicht endlos angerufen.
+            if (self.ctx.cq_fallback_active
+                    and self.ctx.cq_count >= self.ctx.hunt_cq_fallback_max_cqs):
+                pause_s = self.ctx.hunt_cq_fallback_pause_min * 60.0
+                self.ctx.cq_fallback_paused_until = (tick.posix if tick is not None else 0.0) + pause_s
+                log.info("CQ-Fallback: %d CQs ohne Antwort → Pause %d min, zurueck ins Hunting",
+                         self.ctx.cq_count, self.ctx.hunt_cq_fallback_pause_min)
+                self.ctx.cq_fallback_active = False
+                self.ctx.idle_slots_without_pick = 0
+                self.ctx.cq_count = 0
+                self.state = State.IDLE
                 return
             # Slot-Parity: nur in der konfigurierten Slot-Haelfte senden,
             # der andere Slot bleibt RX. Sebastian sah 2026-05-23 dass

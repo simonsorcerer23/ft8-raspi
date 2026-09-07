@@ -556,6 +556,10 @@ class OperatingConfig(BaseModel):
     hunt_weak_requires_psk: bool = True
     hunt_cq_fallback: bool = True
     hunt_cq_fallback_after_slots: int = Field(default=2, ge=1, le=20)
+    # Deckel: nach so vielen unbeantworteten Fallback-CQs Pause (Minuten),
+    # damit ein totes Band nicht endlos angerufen wird.
+    hunt_cq_fallback_max_cqs: int = Field(default=20, ge=2, le=200)
+    hunt_cq_fallback_pause_min: int = Field(default=10, ge=1, le=120)
     # A/B: Antwort abwechselnd auf ruhigem Bin / auf der Rufer-Frequenz;
     # pick_attempt.reply_kind haelt fest, was gewonnen hat.
     hunt_reply_ab_test: bool = True
