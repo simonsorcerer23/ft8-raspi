@@ -205,4 +205,5 @@ Aus der Pick-Telemetrie des 6.9. (381 Picks, 7 % vollendet): Ziele unter −13 d
 
 - `hunt_weak_requires_psk` (Schwelle `hunt_weak_snr_db`, Default −13): schwächere Rufer werden nur angerufen, wenn PSK Reporter sie in `psk_heard_us` führt.
 - `hunt_cq_fallback` (nach `hunt_cq_fallback_after_slots`, Default 2, Slots ohne brauchbaren Rufer): die Box ruft selbst CQ, bis der Picker wieder etwas findet; ein brauchbarer Rufer hat Vorrang vor dem eigenen CQ. Zähler `cq_fallback_starts` / `cq_fallback_qsos` in `/api/status`.
+- `hunt_cq_fallback_max_cqs` (Default 20) / `hunt_cq_fallback_pause_min` (Default 10): nach so vielen unbeantworteten Fallback-CQs geht die Box für die Pause zurück ins reine Hunting. Der „CQ-Idle ohne Antwort“-Push bleibt im Fallback stumm; er gilt nur für den von Hand gestarteten CQ-Modus.
 - `hunt_reply_ab_test`: Antworten abwechselnd auf dem ruhigen Bin und auf der Rufer-Frequenz; `pick_attempt.reply_kind` und `/api/stats/pick-attempts` → `by_reply_kind` liefern die Vollendungsquote je Variante. Abschalten, sobald eine Variante gewonnen hat, und `hunt_reply_quiet_freq` entsprechend setzen.

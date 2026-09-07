@@ -3776,7 +3776,11 @@ class Orchestrator:
                 sm_state = self.state_machine.state.name
                 cq_count = self.state_machine.ctx.cq_count
                 cq_idle_timeout = self.config.operating.cq_idle_timeout_min
-                if sm_state == "CQ_CALLING" and cq_idle_timeout > 0:
+                # 2026-09-07: im CQ-Fallback des Huntings ist "CQ ohne Antwort"
+                # der Normalfall, kein Alarm ("STOP oder auf Hunting wechseln?"
+                # waere Unsinn — wir SIND im Hunting).
+                if (sm_state == "CQ_CALLING" and cq_idle_timeout > 0
+                        and not self.state_machine.ctx.cq_fallback_active):
                     if cq_count == 0:
                         # QSO grad fertig oder CQ_CALLING grad erst betreten
                         # → Timer reset, Throttle reset.
@@ -5947,6 +5951,8 @@ class Orchestrator:
         self.state_machine.ctx.hunt_weak_requires_psk = bool(getattr(_op, "hunt_weak_requires_psk", True))
         self.state_machine.ctx.hunt_cq_fallback = bool(getattr(_op, "hunt_cq_fallback", True))
         self.state_machine.ctx.hunt_cq_fallback_after_slots = int(getattr(_op, "hunt_cq_fallback_after_slots", 2))
+        self.state_machine.ctx.hunt_cq_fallback_max_cqs = int(getattr(_op, "hunt_cq_fallback_max_cqs", 20))
+        self.state_machine.ctx.hunt_cq_fallback_pause_min = int(getattr(_op, "hunt_cq_fallback_pause_min", 10))
         self.state_machine.ctx.hunt_reply_ab_test = bool(getattr(_op, "hunt_reply_ab_test", True))
         # Unser Kontinent fuer den Directed-CQ-Filter (aus cty.dat, per Slot
         # billig — Lookup ist ein Dict).

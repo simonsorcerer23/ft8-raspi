@@ -146,6 +146,9 @@ class MachineContext:
     hunt_weak_requires_psk: bool = False   # Config-Default True; der Orchestrator spiegelt jeden Slot
     hunt_cq_fallback: bool = True
     hunt_cq_fallback_after_slots: int = 2
+    hunt_cq_fallback_max_cqs: int = 20
+    hunt_cq_fallback_pause_min: int = 10
+    cq_fallback_paused_until: float = 0.0   # POSIX
     hunt_reply_ab_test: bool = True
     reply_ab_counter: int = 0
     idle_slots_without_pick: int = 0
