@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.78.0 — 2026-09-07
+- feat: Self-Update wartet nur das laufende QSO ab (Drain statt Skip)
+
 ## v0.77.3 — 2026-09-07
 - fix: Antwortmodus aus beendet den CQ-Fallback (Box rief sonst weiter CQ)
 
