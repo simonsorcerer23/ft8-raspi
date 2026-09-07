@@ -154,4 +154,4 @@ def test_migration_len_is_21():
     """Current default: 20 known Tiers."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 21  # 2026-09-06: + lonely_cq
+    assert len(cfg.hunt_priority) == 22  # 2026-09-06: + lonely_cq

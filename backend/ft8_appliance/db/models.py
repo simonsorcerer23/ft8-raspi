@@ -377,3 +377,5 @@ class PickAttempt(Base):
     our_snr_received: Mapped[int | None] = mapped_column(Integer, nullable=True)
     distance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     continent: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # 2026-09-07 A/B Antwortfrequenz: quiet | on_freq
+    reply_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

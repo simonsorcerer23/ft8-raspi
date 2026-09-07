@@ -297,6 +297,8 @@ class OrchestratorStatus:
     # letzten 10. Ueber ~1,5 s sehen uns Partner-Decoder schlechter.
     tx_start_offset_s: float | None = None
     tx_start_offset_avg_s: float | None = None
+    cq_fallback_starts: int = 0
+    cq_fallback_qsos: int = 0
     # Zweistufiger Decoder: was Stufe 2 zuletzt/insgesamt nachgereicht hat.
     decoder_late_pass: dict | None = None
     # i18n: the lock reason's message key + params so the web layer can
@@ -853,6 +855,7 @@ class Orchestrator:
         if self.config.operating.mode_watchdog_min > 0:
             self._spawn(self._mode_watchdog_loop(), name="mode-watchdog")
         self._spawn(self._daily_summary_loop(), name="daily-summary")
+        self._spawn(self._continent_prior_loop(), name="continent-prior")
         self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
         if (
             self.db_enabled
@@ -1801,6 +1804,8 @@ class Orchestrator:
             tx_start_offset_s=(
                 self._tx_start_offsets_s[-1] if self._tx_start_offsets_s else None
             ),
+            cq_fallback_starts=self.state_machine.ctx.cq_fallback_starts,
+            cq_fallback_qsos=self.state_machine.ctx.cq_fallback_qsos,
             tx_start_offset_avg_s=(
                 round(sum(self._tx_sent_offsets_s) / len(self._tx_sent_offsets_s), 3)
                 if self._tx_sent_offsets_s else None
@@ -4952,6 +4957,45 @@ class Orchestrator:
         except Exception as exc:
             log.warning("ntfy country-mismatch push failed: %s", exc)
 
+    async def _continent_prior_loop(self) -> None:
+        """2026-09-07: Vollendungsquote je Kontinent aus der eigenen
+        pick_attempt-Telemetrie (letzte 14 Tage, mindestens 20 Picks je
+        Kontinent) alle 30 min in den Picker spiegeln (Tier continent_prior)."""
+        while True:
+            try:
+                await self._refresh_continent_prior()
+            except Exception as exc:
+                log.debug("continent prior: %s", exc)
+            await asyncio.sleep(1800)
+
+    async def _refresh_continent_prior(self) -> None:
+        if not self.db_enabled:
+            return
+        from datetime import timedelta
+
+        from ..db.models import PickAttempt
+        from ..db.session import session_scope
+        from sqlalchemy import select
+        since = datetime.now(UTC) - timedelta(days=14)
+        async with session_scope() as s:
+            rows = list((await s.execute(
+                select(PickAttempt.continent, PickAttempt.outcome).where(PickAttempt.ts >= since)
+            )).all())
+        by: dict[str, list[int]] = {}
+        total = 0; done = 0
+        for cont, outcome in rows:
+            ok = 1 if outcome == "completed" else 0
+            total += 1; done += ok
+            if cont:
+                by.setdefault(cont, []).append(ok)
+        rates = {c: sum(v) / len(v) for c, v in by.items() if len(v) >= 20}
+        self.state_machine.ctx.continent_success = rates
+        self.state_machine.ctx.continent_success_overall = (done / total) if total else 0.0
+        if rates:
+            log.info("continent prior: %s (gesamt %.0f %%)",
+                     {c: f"{r*100:.0f} %" for c, r in sorted(rates.items())},
+                     self.state_machine.ctx.continent_success_overall * 100)
+
     async def _rig_poll_loop(self) -> None:
         """Refresh the cached rig snapshot every second outside slot-time.
 
@@ -5897,6 +5941,13 @@ class Orchestrator:
         self.state_machine.ctx.hunt_reply_quiet_freq = bool(
             getattr(self.config.operating, "hunt_reply_quiet_freq", True)
         )
+        # 2026-09-07 Hunting-Strategie
+        _op = self.config.operating
+        self.state_machine.ctx.hunt_weak_snr_db = int(getattr(_op, "hunt_weak_snr_db", -13))
+        self.state_machine.ctx.hunt_weak_requires_psk = bool(getattr(_op, "hunt_weak_requires_psk", True))
+        self.state_machine.ctx.hunt_cq_fallback = bool(getattr(_op, "hunt_cq_fallback", True))
+        self.state_machine.ctx.hunt_cq_fallback_after_slots = int(getattr(_op, "hunt_cq_fallback_after_slots", 2))
+        self.state_machine.ctx.hunt_reply_ab_test = bool(getattr(_op, "hunt_reply_ab_test", True))
         # Unser Kontinent fuer den Directed-CQ-Filter (aus cty.dat, per Slot
         # billig — Lookup ist ein Dict).
         try:
@@ -7084,6 +7135,7 @@ class Orchestrator:
                     mode=self.config.operating.mode,
                     tx_power_w=self._tx_power_w,
                     winning_tier=meta.get("winning_tier"),
+                    reply_kind=meta.get("reply_kind"),
                     n_candidates=meta.get("n_candidates"),
                     was_tailend=meta.get("was_tailend"),
                     hunt_priority=meta.get("hunt_priority"),

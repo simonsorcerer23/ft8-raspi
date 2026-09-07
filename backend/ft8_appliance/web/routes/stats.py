@@ -44,6 +44,7 @@ class PickAttemptStats(BaseModel):
     by_winning_tier: list[dict]  # v0.64.0 — Tier-Wirksamkeit (Kernfrage)
     by_continent: list[dict]     # v0.64.0 — Completion je Kontinent
     by_psk_snr: list[dict]       # v0.64.0 — wie laut wir bei ihnen sind
+    by_reply_kind: list[dict]    # 2026-09-07 — A/B ruhiger Bin vs Rufer-Frequenz
     bail_reasons: dict[str, int]  # Fehlermodus-Aufschluesselung
     note: str
 
@@ -208,6 +209,12 @@ async def pick_attempts(
     by_continent = [
         {"continent": b, **_age_cell(v)} for b, v in sorted(cont_groups.items())
     ]
+    reply_groups: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        reply_groups.setdefault(getattr(r, "reply_kind", None) or "n/a", []).append(r)
+    by_reply_kind = [
+        {"reply_kind": b, **_age_cell(v)} for b, v in sorted(reply_groups.items())
+    ]
     psk_snr_groups: dict[str, list[PickAttempt]] = {}
     for r in rows:
         psk_snr_groups.setdefault(_psk_snr_bucket(r.psk_snr), []).append(r)
@@ -237,6 +244,7 @@ async def pick_attempts(
         by_winning_tier=by_winning_tier,
         by_continent=by_continent,
         by_psk_snr=by_psk_snr,
+        by_reply_kind=by_reply_kind,
         bail_reasons=dict(sorted(bail_reasons.items(), key=lambda kv: -kv[1])),
         note=(
             "Hunt-Picks, outcome completed/bailed. psk-Effekt: rate(with_psk) "

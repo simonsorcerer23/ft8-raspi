@@ -329,7 +329,7 @@ def test_hunt_tiers_registry_complete():
         "grayline", "band_open", "active_hour", "buddy_seen",
         "new_dxcc_psk", "new_dxcc",
         "psk_heard_us", "psk_snr", "new_dxcc_band", "new_grid", "new_grid_band",
-        "not_worked", "dxcc_rarity", "snr", "lonely_cq",
+        "not_worked", "dxcc_rarity", "snr", "lonely_cq", "continent_prior",
     }
     assert set(HUNT_TIERS.keys()) == expected
 
@@ -388,7 +388,7 @@ def test_hunt_priority_auto_migration_preserves_user_order():
     assert cfg.hunt_priority[1] == "marine"
     assert cfg.hunt_priority[-1] == "snr"
     # v0.66.0: 20 known Tiers (+ psk_snr); 2026-09-06: 21 (+ lonely_cq)
-    assert len(cfg.hunt_priority) == 21
+    assert len(cfg.hunt_priority) == 22
 
 
 def test_hunt_priority_validator_keeps_unknown_tiers():
@@ -403,7 +403,7 @@ def test_hunt_priority_validator_empty_list_to_default():
     """Leere Liste in der Config → komplette Default-Liste."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 21  # v0.66.0
+    assert len(cfg.hunt_priority) == 22  # v0.66.0
     assert cfg.hunt_priority[0] == "not_bad_reputation"
 
 

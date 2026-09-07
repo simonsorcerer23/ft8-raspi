@@ -71,6 +71,7 @@ class QsoContext:
     """Mutable per-QSO state while we work one station."""
 
     their_call: str
+    from_cq_fallback: bool = False   # 2026-09-07: QSO entstand aus dem CQ-Fallback
     their_grid: str | None = None
     their_snr: int | None = None  # snr we send them (= rst_sent fuer Log)
     our_snr_received: int | None = None  # snr they send us (= rst_rcvd fuer Log)
@@ -140,6 +141,20 @@ class MachineContext:
     # als Einziger auf einem freien Bin steht, wird sauber decodiert.
     # Der CQ-Rufer dekodiert ohnehin das ganze Passband.
     hunt_reply_quiet_freq: bool = True
+    # 2026-09-07 Hunting-Strategie (s. OperatingConfig)
+    hunt_weak_snr_db: int = -13
+    hunt_weak_requires_psk: bool = False   # Config-Default True; der Orchestrator spiegelt jeden Slot
+    hunt_cq_fallback: bool = True
+    hunt_cq_fallback_after_slots: int = 2
+    hunt_reply_ab_test: bool = True
+    reply_ab_counter: int = 0
+    idle_slots_without_pick: int = 0
+    cq_fallback_active: bool = False
+    cq_fallback_starts: int = 0
+    cq_fallback_qsos: int = 0
+    # Kontinent-Prior aus der eigenen pick_attempt-Telemetrie (Orchestrator)
+    continent_success: dict[str, float] = field(default_factory=dict)
+    continent_success_overall: float = 0.0
     # WSJT-Z-style "Auto CQ": after a QSO completes, automatically return
     # to CQ_CALLING (instead of IDLE). Set when the user presses the CQ
     # button; cleared by Stop. Without this, CQ mode is one-shot.

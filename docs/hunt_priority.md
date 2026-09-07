@@ -38,6 +38,7 @@ ist konventionell `snr` als Tie-Breaker.
 | `tail_end_target` | Station hat in den letzten 30 s ein RR73/RRR/73 gesendet (= QSO beendet, jetzt frei) — 24 h Cooldown pro Station | 0/1 | `tail_end_candidates` + Toggle `tail_end_hunter_enabled` |
 | `new_dxcc_psk` | Call ist aus neuem DXCC **und** PSK sagt „hört uns" | 0/1 | cty.dat + PSK-Cache |
 | `new_dxcc` | Call ist aus neuem DXCC (auch ohne PSK) | 0/1 | cty.dat + worked-Set |
+| `continent_prior` | Kontinent des Ziels hat in der eigenen Pick-Telemetrie (14 Tage, ≥ 20 Picks) eine mindestens durchschnittliche Vollendungsquote; unbekannt = 1 — 2026-09-07 | 0/1 | `pick_attempt` → `continent_success` (Orchestrator, alle 30 min) |
 | `lonely_cq` | Rufer hat im gleichparitätigen Slot davor schon CQ gerufen und wurde dazwischen von niemandem angerufen (kein Pile-Up, hört zu) — 2026-09-06, aus der Pick-Telemetrie (56 % „went silent“) | 0/1 | Slot-Historie im Orchestrator (`detect_lonely_cqs`) |
 | `psk_heard_us` | PSK Reporter sagt: dieser Call hat uns recently gespottet | 0/1 | PSK-Cache |
 | `new_dxcc_band` | DXCC haben wir, aber NICHT auf diesem Band (5BWAS) | 0/1 | `worked_dxcc_band`-Set |

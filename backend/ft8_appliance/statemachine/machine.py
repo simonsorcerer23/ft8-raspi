@@ -265,6 +265,21 @@ def _tier_not_in_pileup(d: DecodedMsg, ctx: MachineContext) -> int:
     return 0 if call in ctx.pile_up_calls else 1
 
 
+def _tier_continent_prior(d: DecodedMsg, ctx: MachineContext) -> int:
+    """2026-09-07 — lernende Prior aus der eigenen pick_attempt-Telemetrie:
+    1, wenn der Kontinent des Ziels eine mindestens durchschnittliche
+    Vollendungsquote hat (oder unbekannt ist), sonst 0. Am 6.9.: EU 14 %,
+    AS 8 %, AF 7 %. Wirkt nur bei mehreren Kandidaten."""
+    if not d.call_from:
+        return 0
+    if not ctx.continent_success:
+        return 1
+    cont = ctx.call_to_continent.get(d.call_from.upper())
+    if not cont or cont not in ctx.continent_success:
+        return 1
+    return 1 if ctx.continent_success[cont] >= ctx.continent_success_overall else 0
+
+
 def _tier_lonely_cq(d: DecodedMsg, ctx: MachineContext) -> int:
     """2026-09-06 — 1, wenn der Rufer schon im Slot davor (gleiche
     Paritaet) CQ gerufen hat und dazwischen niemand ihn angerufen hat.
@@ -398,6 +413,7 @@ HUNT_TIERS: dict[str, callable] = {  # type: ignore[type-arg]
     "buddy_seen":      _tier_buddy_seen,    # v0.17.0
     "new_dxcc_psk":    _tier_new_dxcc_psk,
     "new_dxcc":        _tier_new_dxcc,
+    "continent_prior": _tier_continent_prior, # 2026-09-07
     "lonely_cq":       _tier_lonely_cq,       # 2026-09-06
     "psk_heard_us":    _tier_psk_heard_us,
     "psk_snr":         _tier_psk_snr,
@@ -520,6 +536,8 @@ class StateMachine:
         self.qso = None
         self.ctx.auto_cq = False
         self.ctx.auto_answer = False
+        self.ctx.cq_fallback_active = False
+        self.ctx.idle_slots_without_pick = 0
         self._pending.append(Action("STOP_TX", {}))
 
     def on_user_skip_qso(self) -> None:
@@ -606,6 +624,105 @@ class StateMachine:
             "User-Tail-End: %s (Closing an %s, freq=%s, 24h-Cooldown gesetzt)",
             norm, closing_decode.call_to or "?", closing_decode.freq_offset_hz,
         )
+
+    def _hunt_respond_to_best(self, hw: HardwareState, decodes: list[DecodedMsg]) -> bool:
+        """PRIO 2 des Huntings: staerksten brauchbaren CQ picken und antworten.
+        True, wenn ein Pick passiert ist (State QSO_RESPOND). 2026-09-07 aus
+        on_decodes ausgegliedert, damit der CQ-Fallback denselben Pfad nutzt."""
+        # PRIO 2 — kein Direkt-Caller, picke staerksten CQ.
+        best = self._pick_hunt_target(decodes)
+        if best is not None:
+            if not self._check_guards(hw):
+                return False
+            # Antwortfrequenz (2026-09-06): auf dem ruhigsten Bin statt
+            # exakt auf der des Rufers — dort stapeln sich die anderen
+            # Anrufer. Der Rufer dekodiert das ganze Passband.
+            reply_hz = best.freq_offset_hz or 1500
+            reply_kind = "on_freq"
+            use_quiet = self.ctx.hunt_reply_quiet_freq
+            if self.ctx.hunt_reply_ab_test:
+                # 2026-09-07 A/B: abwechselnd ruhiger Bin / Rufer-Frequenz,
+                # pick_attempt.reply_kind entscheidet spaeter mit Zahlen.
+                self.ctx.reply_ab_counter += 1
+                use_quiet = (self.ctx.reply_ab_counter % 2 == 0)
+            if use_quiet:
+                quiet = self._next_cq_freq_hz()
+                if quiet:
+                    log.info("hunt reply on quiet bin %d Hz (CQ at %d Hz)",
+                             quiet, reply_hz)
+                    reply_hz = quiet
+                    reply_kind = "quiet"
+            self.qso = QsoContext(
+                their_call=best.call_from or "?",
+                their_grid=best.grid,
+                band=best.band,
+                freq_offset_hz=reply_hz,
+                their_snr_at_us=best.snr_db,
+            )
+            # v0.30.0 — Pick-Attempt-Telemetrie (reine Messung, kein
+            # Logik-Einfluss): festhalten ob dieses Hunt-Ziel uns laut
+            # PSK-Reciprocity gehoert hat, + SNR/DT/Band zum Pick-Zeit-
+            # punkt. Orchestrator schreibt beim Ausgang die pick_attempt-
+            # Zeile. base_call als Key passend zu LOG_QSO/QSO_BAIL.
+            tgt = base_call(best.call_from)
+            if tgt:
+                # Cap gegen Leak durch Picks die nie LOG_QSO/QSO_BAIL
+                # ausloesen (selten, aber moeglich).
+                if len(self.ctx.hunt_attempt_meta) > 100:
+                    self.ctx.hunt_attempt_meta.clear()
+                call_u = (best.call_from or "").upper()
+                # v0.62.0 — Alter des gepickten Decodes (s) zum Pick-
+                # Zeitpunkt. Defensiv: best.ts kann theoretisch naiv sein.
+                _now = datetime.now(UTC)
+                pick_age_s: float | None
+                try:
+                    _bts = best.ts
+                    if _bts.tzinfo is None:
+                        _bts = _bts.replace(tzinfo=UTC)
+                    pick_age_s = (_now - _bts).total_seconds()
+                except Exception:
+                    pick_age_s = None
+                # War der gepickte Decode ein CQ / an uns / an wen anders?
+                _ct = (best.call_to or "").upper()
+                if not _ct:
+                    pick_kind = "cq"
+                elif _ct in (
+                    (self.ctx.callsign or "").upper(),
+                    (self.ctx.tx_callsign or "").upper(),
+                ):
+                    pick_kind = "to_us"
+                else:
+                    pick_kind = "to_other"
+                self.ctx.hunt_attempt_meta[tgt] = {
+                    "psk_heard_us": tgt in self.ctx.psk_heard_us
+                    or call_u in self.ctx.psk_heard_us,
+                    # v0.31.0 weitere Mess-Dimensionen (reine Telemetrie):
+                    "was_worked": call_u in self.ctx.worked
+                    or tgt in self.ctx.worked,
+                    "was_new_dxcc": (best.call_from or "") in self.ctx.new_dxcc_calls,
+                    "n_decodes": len(decodes),
+                    "snr_db": best.snr_db,
+                    "dt_s": best.dt_s,
+                    "band": best.band,
+                    "ts": _now,
+                    "pick_age_s": pick_age_s,
+                    "pick_kind": pick_kind,
+                    "reply_kind": reply_kind,
+                    "freq_offset_hz": best.freq_offset_hz,
+                    "target_grid": best.grid,
+                    # v0.64.0 — Picker-Diagnose + Kontext:
+                    "winning_tier": self._last_pick_diag.get("winning_tier"),
+                    "n_candidates": self._last_pick_diag.get("n_candidates"),
+                    "was_tailend": self._last_pick_diag.get("was_tailend"),
+                    "hunt_priority": ",".join(self.ctx.hunt_priority or []) or None,
+                    "psk_snr": self.ctx.psk_snr.get(call_u)
+                    if call_u in self.ctx.psk_snr
+                    else self.ctx.psk_snr.get(tgt),
+                }
+            self.state = State.QSO_RESPOND
+            self._emit_respond_with_grid()
+            return True
+        return False
 
     def on_decodes(self, hw: HardwareState, decodes: Iterable[DecodedMsg]) -> None:
         decodes = list(decodes)
@@ -705,91 +822,13 @@ class StateMachine:
                     return
 
             # PRIO 2 — kein Direkt-Caller, picke staerksten CQ.
-            best = self._pick_hunt_target(decodes)
-            if best is not None:
-                if not self._check_guards(hw):
-                    return
-                # Antwortfrequenz (2026-09-06): auf dem ruhigsten Bin statt
-                # exakt auf der des Rufers — dort stapeln sich die anderen
-                # Anrufer. Der Rufer dekodiert das ganze Passband.
-                reply_hz = best.freq_offset_hz or 1500
-                if self.ctx.hunt_reply_quiet_freq:
-                    quiet = self._next_cq_freq_hz()
-                    if quiet:
-                        log.info("hunt reply on quiet bin %d Hz (CQ at %d Hz)",
-                                 quiet, reply_hz)
-                        reply_hz = quiet
-                self.qso = QsoContext(
-                    their_call=best.call_from or "?",
-                    their_grid=best.grid,
-                    band=best.band,
-                    freq_offset_hz=reply_hz,
-                    their_snr_at_us=best.snr_db,
-                )
-                # v0.30.0 — Pick-Attempt-Telemetrie (reine Messung, kein
-                # Logik-Einfluss): festhalten ob dieses Hunt-Ziel uns laut
-                # PSK-Reciprocity gehoert hat, + SNR/DT/Band zum Pick-Zeit-
-                # punkt. Orchestrator schreibt beim Ausgang die pick_attempt-
-                # Zeile. base_call als Key passend zu LOG_QSO/QSO_BAIL.
-                tgt = base_call(best.call_from)
-                if tgt:
-                    # Cap gegen Leak durch Picks die nie LOG_QSO/QSO_BAIL
-                    # ausloesen (selten, aber moeglich).
-                    if len(self.ctx.hunt_attempt_meta) > 100:
-                        self.ctx.hunt_attempt_meta.clear()
-                    call_u = (best.call_from or "").upper()
-                    # v0.62.0 — Alter des gepickten Decodes (s) zum Pick-
-                    # Zeitpunkt. Defensiv: best.ts kann theoretisch naiv sein.
-                    _now = datetime.now(UTC)
-                    pick_age_s: float | None
-                    try:
-                        _bts = best.ts
-                        if _bts.tzinfo is None:
-                            _bts = _bts.replace(tzinfo=UTC)
-                        pick_age_s = (_now - _bts).total_seconds()
-                    except Exception:
-                        pick_age_s = None
-                    # War der gepickte Decode ein CQ / an uns / an wen anders?
-                    _ct = (best.call_to or "").upper()
-                    if not _ct:
-                        pick_kind = "cq"
-                    elif _ct in (
-                        (self.ctx.callsign or "").upper(),
-                        (self.ctx.tx_callsign or "").upper(),
-                    ):
-                        pick_kind = "to_us"
-                    else:
-                        pick_kind = "to_other"
-                    self.ctx.hunt_attempt_meta[tgt] = {
-                        "psk_heard_us": tgt in self.ctx.psk_heard_us
-                        or call_u in self.ctx.psk_heard_us,
-                        # v0.31.0 weitere Mess-Dimensionen (reine Telemetrie):
-                        "was_worked": call_u in self.ctx.worked
-                        or tgt in self.ctx.worked,
-                        "was_new_dxcc": (best.call_from or "") in self.ctx.new_dxcc_calls,
-                        "n_decodes": len(decodes),
-                        "snr_db": best.snr_db,
-                        "dt_s": best.dt_s,
-                        "band": best.band,
-                        "ts": _now,
-                        "pick_age_s": pick_age_s,
-                        "pick_kind": pick_kind,
-                        "freq_offset_hz": best.freq_offset_hz,
-                        "target_grid": best.grid,
-                        # v0.64.0 — Picker-Diagnose + Kontext:
-                        "winning_tier": self._last_pick_diag.get("winning_tier"),
-                        "n_candidates": self._last_pick_diag.get("n_candidates"),
-                        "was_tailend": self._last_pick_diag.get("was_tailend"),
-                        "hunt_priority": ",".join(self.ctx.hunt_priority or []) or None,
-                        "psk_snr": self.ctx.psk_snr.get(call_u)
-                        if call_u in self.ctx.psk_snr
-                        else self.ctx.psk_snr.get(tgt),
-                    }
-                self.state = State.QSO_RESPOND
-                self._emit_respond_with_grid()
+            if self._hunt_respond_to_best(hw, decodes):
+                self.ctx.idle_slots_without_pick = 0
                 return
-
+            self.ctx.idle_slots_without_pick += 1
+            return
         if self.state is State.CQ_CALLING:
+            was_fallback = self.ctx.cq_fallback_active
             # Tail-Ender first: someone answered our CQ with a direct
             # signal report (skipping the grid stage). When that happens
             # we jump straight to QSO_REPORT and send the R-report,
@@ -806,7 +845,9 @@ class StateMachine:
                     freq_offset_hz=decoded.freq_offset_hz or 1500,
                     our_snr_received=their_snr,
                     their_snr_at_us=decoded.snr_db,
+                    from_cq_fallback=was_fallback,
                 )
+                self.ctx.cq_fallback_active = False
                 self.state = State.QSO_REPORT
                 self._emit_send_r_report()
                 return
@@ -824,9 +865,17 @@ class StateMachine:
                     band=ans.band,
                     freq_offset_hz=ans.freq_offset_hz or 1500,
                     their_snr_at_us=ans.snr_db,
+                    from_cq_fallback=was_fallback,
                 )
+                self.ctx.cq_fallback_active = False
                 self.state = State.QSO_RESPOND
                 self._emit_respond_with_report()
+            # 2026-09-07 CQ-Fallback: taucht ein brauchbarer Rufer auf, hat
+            # das Antworten Vorrang vor dem eigenen CQ.
+            if was_fallback and self.state is State.CQ_CALLING and self.ctx.auto_answer \
+                    and self._hunt_respond_to_best(hw, decodes):
+                self.ctx.cq_fallback_active = False
+                self.ctx.idle_slots_without_pick = 0
 
         elif self.state is State.QSO_RESPOND and self.qso is not None:
             # Tracking: bei jedem Decode des Partners their_snr_at_us
@@ -1029,12 +1078,31 @@ class StateMachine:
         # wurde aber state noch IDLE (kein User-Event seit Restart),
         # transition zu CQ_CALLING im naechsten Slot. Damit ueberlebt
         # der CQ-Modus einen Service-Restart automatisch.
+        if self.state is State.IDLE:
+            self.ctx.cq_fallback_active = False
         if (
             self.state is State.IDLE
             and self.ctx.auto_cq
             and self._check_guards(hw)
         ):
             log.info("on_slot_tick: auto_cq=True bei IDLE → CQ_CALLING")
+            self.state = State.CQ_CALLING
+        elif (
+            self.state is State.IDLE
+            and self.ctx.auto_answer
+            and self.ctx.hunt_cq_fallback
+            and self.ctx.idle_slots_without_pick >= self.ctx.hunt_cq_fallback_after_slots
+            and self._check_guards(hw)
+        ):
+            # 2026-09-07: kein brauchbarer Rufer seit N Slots -> selbst CQ,
+            # bis wieder einer da ist (on_decodes bricht ab, sobald der
+            # Picker etwas findet).
+            log.info("Hunting: %d Slots ohne brauchbaren Rufer → CQ-Fallback",
+                     self.ctx.idle_slots_without_pick)
+            self.ctx.cq_fallback_active = True
+            self.ctx.cq_fallback_starts += 1
+            self.ctx.idle_slots_without_pick = 0
+            self.ctx.cq_count = 0
             self.state = State.CQ_CALLING
 
         # In CQ_CALLING senden wir nur in der konfigurierten Slot-
@@ -1435,6 +1503,8 @@ class StateMachine:
                 "QSO mit %s wird geloggt, aber RR73 bleibt aus — Guard gesperrt",
                 self.qso.their_call,
             )
+        if self.qso is not None and getattr(self.qso, "from_cq_fallback", False):
+            self.ctx.cq_fallback_qsos += 1
         self._pending.append(
             Action(
                 "LOG_QSO",
@@ -1738,6 +1808,16 @@ class StateMachine:
             cqs = [
                 d for d in cqs
                 if d.snr_db is None or d.snr_db >= self.ctx.hunt_snr_floor_db
+            ]
+        # 2026-09-07: schwache Ziele nur mit PSK-Bestaetigung (Telemetrie:
+        # unter -13 dB kamen 3 % zurueck, darueber 12 %).
+        if self.ctx.hunt_weak_requires_psk:
+            weak = self.ctx.hunt_weak_snr_db
+            cqs = [
+                d for d in cqs
+                if d.snr_db is None or d.snr_db >= weak
+                or (d.call_from or "").upper() in self.ctx.psk_heard_us
+                or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
             ]
         # DT-Filter (Sebastian v0.5.4, Audit-Lücke 1 vs WSJT-X):
         # Stationen mit |dt_s| > 2.5s sind zwar decodebar (FT8-Decoder
