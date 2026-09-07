@@ -758,7 +758,9 @@ class HamQslConfig(BaseModel):
 class BlitzortungConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = True
-    alarm_radius_km: int = Field(default=30, ge=1, le=500)
+    # 2026-09-07 Sebastian: 30 km nervte (alle 15 min ein Push bei einer
+    # stehenden Front). Jetzt 10 km, und nur, wenn sich das Gewitter naehert.
+    alarm_radius_km: int = Field(default=10, ge=1, le=500)
 
 
 class DxClusterConfig(BaseModel):

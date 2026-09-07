@@ -750,7 +750,7 @@ def test_blitzortung_radius_hot_reload_preserves_live_client() -> None:
     orch._init_integrations()
     bz1 = orch.integrations.blitzortung
     assert bz1 is not None
-    assert bz1.alarm_radius_km == 30
+    assert bz1.alarm_radius_km == 10  # 2026-09-07: Default 30 -> 10
     # Live-State markieren um Objekt-Identitaet zu beweisen.
     bz1.total_strikes_seen = 7
 
