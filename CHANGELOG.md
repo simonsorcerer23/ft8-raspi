@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.81.0 — 2026-09-08
+- feat: Stufe 3 — WSJT-X' jt9 als Unterprozess neben Stufe 2 (Korpus 88 % -> 98 % der WSJT-X-Decodes)
+- docs: README.de — versehentlich geloeschte Abschnitte (Architektur, Schnellstart, Inbetriebnahme) wiederhergestellt
+- docs: README auf Stand v0.80.0 — Pi 4B, 22 Picker-Stufen, Decoder/Antwortstrategie/Rig-Leitplanken, Gewitter- und Self-Update-Text; GitHub-Beschreibung und Topics gesetzt
+
 ## v0.80.0 — 2026-09-08
 - feat: adaptiver CQ-Fallback, eine Wiederholung statt zwei, Kontinent-Gate mit PSK-Ausnahme
 
