@@ -25,7 +25,10 @@ from .ft8_native import ShimDecode
 
 log = logging.getLogger(__name__)
 
-_LINE = re.compile(r"^\d{6}\s+(-?\d+)\s+(-?[\d.]+)\s+(\d+)\s+~\s+(.*?)\s*$")
+# FT8-Zeilen tragen "~", FT4-Zeilen "+" als Modus-Marker; hinter der Nachricht
+# kann eine AP-Kennung (a1..a6) oder ein Qualitaetswert stehen — die Nachricht
+# endet vor mindestens zwei Leerzeichen.
+_LINE = re.compile(r"^\d{6}\s+(-?\d+)\s+(-?[\d.]+)\s+(\d+)\s+[~+]\s+(.*?)(?:\s{2,}(.*))?\s*$")
 _SAMPLE_RATE = 12000
 
 
@@ -45,10 +48,13 @@ def work_dir() -> Path:
     return d
 
 
-def parse_jt9_output(text: str) -> list[ShimDecode]:
-    """WSJT-X-Zeilen ``HHMMSS  snr  dt  freq ~  message`` -> ShimDecode.
+def parse_jt9_output(text: str, *, drop_uncertain: bool = True) -> list[ShimDecode]:
+    """WSJT-X-Zeilen ``HHMMSS  snr  dt  freq ~  message   [a2|? a2]`` -> ShimDecode.
     dt ist die WSJT-X-Konvention (relativ zu 0,5 s nach der Slotgrenze) — seit
-    v0.70.0 dieselbe wie bei unserem Decoder."""
+    v0.70.0 dieselbe wie bei unserem Decoder. AP-Decodes tragen ``a1..a6``;
+    ``?`` davor heisst „unsicher" — die werden verworfen (gemessen 2026-09-08:
+    AP -X 1 holt an der Grenze 2 von 6 verrauschten Antworten an uns, davon
+    eine mit ``?``)."""
     out: list[ShimDecode] = []
     for line in text.splitlines():
         m = _LINE.match(line.rstrip())
@@ -56,6 +62,9 @@ def parse_jt9_output(text: str) -> list[ShimDecode]:
             continue
         msg = " ".join(m.group(4).split())
         if not msg:
+            continue
+        tail = (m.group(5) or "").strip()
+        if drop_uncertain and tail.startswith("?"):
             continue
         out.append(ShimDecode(message=msg, snr_db_est=int(m.group(1)), dt_s=float(m.group(2)),
                               freq_hz=float(m.group(3)), score=0))

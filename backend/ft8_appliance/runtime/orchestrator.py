@@ -857,8 +857,8 @@ class Orchestrator:
             setattr(self.decode_source, "jt9_depth",
                     int(getattr(self.config.operating, "decoder_jt9_depth", 2)))
             setattr(self.decode_source, "jt9_ft4", bool(getattr(self.config.operating, "decoder_jt9_ft4", True)))
-            setattr(self.decode_source, "jt9_ap", bool(getattr(self.config.operating, "decoder_jt9_ap", False)))
-            setattr(self.decode_source, "jt9_ap_flags", int(getattr(self.config.operating, "decoder_jt9_ap_flags", 0)))
+            setattr(self.decode_source, "jt9_ap", bool(getattr(self.config.operating, "decoder_jt9_ap", True)))
+            setattr(self.decode_source, "jt9_ap_flags", int(getattr(self.config.operating, "decoder_jt9_ap_flags", 1)))
         self._spawn(self.gps.run_forever(), name="gpsd")
         self._spawn(self._slot_loop(), name="slot-loop")
         self._spawn(self._rig_poll_loop(), name="rig-poll")
@@ -2820,8 +2820,8 @@ class Orchestrator:
             setattr(self.decode_source, "jt9_depth",
                     int(getattr(new_cfg.operating, "decoder_jt9_depth", 2)))
             setattr(self.decode_source, "jt9_ft4", bool(getattr(new_cfg.operating, "decoder_jt9_ft4", True)))
-            setattr(self.decode_source, "jt9_ap", bool(getattr(new_cfg.operating, "decoder_jt9_ap", False)))
-            setattr(self.decode_source, "jt9_ap_flags", int(getattr(new_cfg.operating, "decoder_jt9_ap_flags", 0)))
+            setattr(self.decode_source, "jt9_ap", bool(getattr(new_cfg.operating, "decoder_jt9_ap", True)))
+            setattr(self.decode_source, "jt9_ap_flags", int(getattr(new_cfg.operating, "decoder_jt9_ap_flags", 1)))
         # v0.7.0 Build 3: auto_notch_enabled live-toggle
         new_notch_enabled = getattr(new_cfg.operating, "auto_notch_enabled", True)
         has_notch_now = getattr(self.decode_source, "notch_detector", None) is not None

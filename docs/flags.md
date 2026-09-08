@@ -231,5 +231,5 @@ Stufe 3 des Decoders: WSJT-X' `jt9` (Paket `wsjtx`) decodiert den Slot parallel 
 ### jt9-Feinheiten (2026-09-08): `decoder_jt9_boost_in_qso`, `decoder_jt9_ft4`, `decoder_jt9_ap`, `decoder_jt9_ap_flags`
 
 - `decoder_jt9_boost_in_qso` (Default an): im QSO und beim CQ-Rufen senden wir jeden zweiten Slot, jt9 hat dann 30 s bis zur nächsten Entscheidung und läuft in Tiefe 3 (Korpus: +1,4 Punkte). Überläuft Tiefe 3 trotzdem, 10 Minuten zurück auf Tiefe 2.
-- `decoder_jt9_ft4` (Default aus, bis am Pi gemessen): jt9 mit `-5` auf dem 7,5-s-Slot.
-- `decoder_jt9_ap` / `decoder_jt9_ap_flags` (Default aus): eigener Call/Grid (`-c`/`-G`), Partner (`-x`/`-g`) und die „experience decoding flags“ (`-X`) an jt9, also WSJT-X' eigene AP-Decodierung. Erst nach Messung freigeben; das Memo gegen AP-Eigenbau bleibt.
+- `decoder_jt9_ft4` (Default an): jt9 mit `-5` auf dem 7,5-s-Slot; gemessen an synthetischen Slots 5/5 Decodes in 0,1 s (x86). jt9 will für FT4 genau 7,5 s Audio, 15 s liefern nichts.
+- `decoder_jt9_ap` / `decoder_jt9_ap_flags` (Default an, Flags 1): eigener Call/Grid (`-c`/`-G`) und im QSO der Partner (`-x`/`-g`) plus `-X 1` an jt9, also WSJT-X' eigene AP-Decodierung. Messung 8.9. (synthetisch, Antwort an uns unter der BP-Grenze): `-X 1` findet 2 von 6, `-X 2/3/7` nichts; unsichere AP-Decodes (`?`-Marke) werden verworfen. Das Memo gegen AP-Eigenbau bleibt: das hier ist K1JTs Implementierung, nicht unsere.
