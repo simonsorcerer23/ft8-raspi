@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.82.0 — 2026-09-08
+- feat: jt9 Tiefe 3 im Sendezyklus (QSO/CQ), FT4- und AP-Plumbing fuer jt9 (beides bis zur Messung aus)
+- feat: jt9 Tiefe 3 im Sendezyklus (QSO/CQ), FT4- und AP-Plumbing fuer jt9 (beides bis zur Messung aus)
+- docs: dritte Decoderstufe (jt9) in architecture.md/.de.md und README-Hardware
+
 ## v0.81.0 — 2026-09-08
 - feat: Stufe 3 — WSJT-X' jt9 als Unterprozess neben Stufe 2 (Korpus 88 % -> 98 % der WSJT-X-Decodes)
 - docs: README.de — versehentlich geloeschte Abschnitte (Architektur, Schnellstart, Inbetriebnahme) wiederhergestellt
