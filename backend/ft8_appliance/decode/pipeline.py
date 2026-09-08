@@ -201,6 +201,12 @@ class DecodePipelineMetrics:
     late_decodes_total: int = 0
     late_pass_last_duration_s: float = 0.0
     late_pass_skipped: int = 0
+    # Stufe 3 (jt9, 2026-09-08)
+    jt9_last_count: int = 0
+    jt9_total: int = 0
+    jt9_last_duration_s: float = 0.0
+    jt9_skipped: int = 0
+    jt9_failed: int = 0
 
     def note_late_pass(self, count: int, duration_s: float) -> None:
         self.late_pass_last_count = count
@@ -296,6 +302,20 @@ class DecodePipeline:
     late_pass_sink: Callable[[list[DecodedMsg], SlotTick], Awaitable[None]] | None = None
     # LDPC-Faktor (Prozent) fuer Stufe 2; Stufe 1 behaelt den adaptiven.
     late_ldpc_pct: int = 250
+    # Stufe 3 (2026-09-08): WSJT-X' jt9 als Unterprozess, siehe decode/jt9.py.
+    # Laeuft parallel zu Stufe 2 im eigenen Thread; Ergebnisse gehen ueber
+    # denselben late_pass_sink. Auto-aus, wenn kein jt9 installiert ist.
+    jt9_enabled: bool = True
+    jt9_depth: int = 2
+    jt9_timeout_s: float = 12.0
+    _jt9_task: asyncio.Task | None = field(default=None, init=False, repr=False)
+    _jt9_executor: ThreadPoolExecutor = field(
+        default_factory=lambda: ThreadPoolExecutor(max_workers=1, thread_name_prefix="jt9"),
+        init=False, repr=False,
+    )
+    # Pro Slot: Nachrichten, die schon ausgeliefert wurden (Stufe 1/2/3) —
+    # jt9 und Stufe 2 finden vieles doppelt, nur das Neue geht an den Sink.
+    _slot_seen: dict[int, set[str]] = field(default_factory=dict, init=False, repr=False)
     _late_task: asyncio.Task | None = field(default=None, init=False, repr=False)
     _late_overruns: int = field(default=0, init=False, repr=False)
     _late_executor: ThreadPoolExecutor = field(
@@ -412,6 +432,9 @@ class DecodePipeline:
             log.warning("%s decode_slot failed for tick %s: %s", self.mode, tick.index, exc)
             return []
         duration_s = _time.monotonic() - t0
+        self._slot_seen[tick.index] = {r.message for r in raw}
+        for old_idx in [i for i in self._slot_seen if i < tick.index - 3]:
+            self._slot_seen.pop(old_idx, None)
 
         self.metrics.record_slot(len(raw), duration_s=duration_s)
         # Late-Slot-Detection: wenn der Decoder >80% der Slot-Laenge
@@ -460,6 +483,15 @@ class DecodePipeline:
             self._schedule_late_pass(
                 late_decoder, pcm_for_decode, tick, band_for_decodes, raw, slot_seconds,
             )
+        # Stufe 3: jt9 (WSJT-X) parallel zu Stufe 2 — nur FT8, nur mit Sink.
+        if (
+            self.jt9_enabled
+            and self.late_pass_sink is not None
+            and self.mode != "FT4"
+        ):
+            from . import jt9 as _jt9
+            if _jt9.available():
+                self._schedule_jt9(pcm_for_decode, tick, band_for_decodes, raw, slot_seconds)
         return out
 
     # ------------------------------------------------------------ Stufe 2
@@ -481,6 +513,53 @@ class DecodePipeline:
             self._run_late_pass(late_decoder, pcm, tick, band, fast_raw, slot_seconds),
             name=f"decode-late-{tick.index}",
         )
+
+    def _schedule_jt9(
+        self, pcm: bytes, tick: SlotTick, band: str,
+        fast_raw: list[ShimDecode], slot_seconds: float,
+    ) -> None:
+        if self._jt9_task is not None and not self._jt9_task.done():
+            self.metrics.jt9_skipped += 1
+            return
+        self._jt9_task = asyncio.get_running_loop().create_task(
+            self._run_jt9(pcm, tick, band, fast_raw, slot_seconds),
+            name=f"decode-jt9-{tick.index}",
+        )
+
+    async def _run_jt9(
+        self, pcm: bytes, tick: SlotTick, band: str,
+        fast_raw: list[ShimDecode], slot_seconds: float,
+    ) -> None:
+        import time as _time
+
+        from . import jt9 as _jt9
+        loop = asyncio.get_running_loop()
+        t0 = _time.monotonic()
+        try:
+            raw = await loop.run_in_executor(
+                self._jt9_executor,
+                lambda: _jt9.run_jt9(pcm, depth=int(self.jt9_depth), timeout_s=float(self.jt9_timeout_s), mode=self.mode),
+            )
+        except Exception as exc:
+            self.metrics.jt9_failed += 1
+            log.warning("jt9 pass failed for tick %s: %s", tick.index, exc)
+            return
+        duration_s = _time.monotonic() - t0
+        seen = {r.message for r in fast_raw} | self._slot_seen.get(tick.index, set())
+        new = [r for r in raw if r.message not in seen]
+        self._slot_seen.setdefault(tick.index, set()).update(r.message for r in new)
+        self.metrics.jt9_last_count = len(new)
+        self.metrics.jt9_total += len(new)
+        self.metrics.jt9_last_duration_s = duration_s
+        if duration_s > slot_seconds:
+            log.warning("jt9 brauchte %.1f s (Slot %.0f s) — Tiefe %d zu teuer?", duration_s, slot_seconds, self.jt9_depth)
+        if not new or self.late_pass_sink is None:
+            return
+        msgs = [_to_decoded_msg(r, tick, band, late=True) for r in new]
+        try:
+            await self.late_pass_sink(msgs, tick)
+        except Exception as exc:
+            log.warning("jt9 sink failed for tick %s: %s", tick.index, exc)
 
     def _downgrade_mode(self, why: str) -> None:
         order = ["extreme", "multi", "deep", "standard"]
@@ -524,8 +603,9 @@ class DecodePipeline:
             return
         duration_s = _time.monotonic() - t0
         # Stufe 2 findet alles von Stufe 1 nochmal — nur das Neue zaehlt.
-        seen = {r.message for r in fast_raw}
+        seen = {r.message for r in fast_raw} | self._slot_seen.get(tick.index, set())
         new = [r for r in raw if r.message not in seen]
+        self._slot_seen.setdefault(tick.index, set()).update(r.message for r in new)
         self.metrics.note_late_pass(len(new), duration_s)
         if duration_s > slot_seconds:
             self._late_overruns += 1

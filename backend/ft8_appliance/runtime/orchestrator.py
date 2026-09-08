@@ -852,6 +852,10 @@ class Orchestrator:
                     bool(getattr(self.config.operating, "decoder_late_pass", True)))
             setattr(self.decode_source, "late_ldpc_pct",
                     int(getattr(self.config.operating, "decoder_late_ldpc_pct", 250)))
+            setattr(self.decode_source, "jt9_enabled",
+                    bool(getattr(self.config.operating, "decoder_jt9", True)))
+            setattr(self.decode_source, "jt9_depth",
+                    int(getattr(self.config.operating, "decoder_jt9_depth", 2)))
         self._spawn(self.gps.run_forever(), name="gpsd")
         self._spawn(self._slot_loop(), name="slot-loop")
         self._spawn(self._rig_poll_loop(), name="rig-poll")
@@ -1831,6 +1835,13 @@ class Orchestrator:
             "total": m.late_decodes_total,
             "duration_s": round(m.late_pass_last_duration_s, 2),
             "skipped": m.late_pass_skipped,
+            "jt9": {
+                "last": getattr(m, "jt9_last_count", 0),
+                "total": getattr(m, "jt9_total", 0),
+                "duration_s": round(getattr(m, "jt9_last_duration_s", 0.0), 2),
+                "skipped": getattr(m, "jt9_skipped", 0),
+                "failed": getattr(m, "jt9_failed", 0),
+            },
         }
 
     def is_worked_before(self, call: str | None) -> bool:
@@ -2800,6 +2811,10 @@ class Orchestrator:
                     bool(getattr(new_cfg.operating, "decoder_late_pass", True)))
             setattr(self.decode_source, "late_ldpc_pct",
                     int(getattr(new_cfg.operating, "decoder_late_ldpc_pct", 250)))
+            setattr(self.decode_source, "jt9_enabled",
+                    bool(getattr(new_cfg.operating, "decoder_jt9", True)))
+            setattr(self.decode_source, "jt9_depth",
+                    int(getattr(new_cfg.operating, "decoder_jt9_depth", 2)))
         # v0.7.0 Build 3: auto_notch_enabled live-toggle
         new_notch_enabled = getattr(new_cfg.operating, "auto_notch_enabled", True)
         has_notch_now = getattr(self.decode_source, "notch_detector", None) is not None

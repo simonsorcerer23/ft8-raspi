@@ -325,3 +325,25 @@ Jetzt rechnet das Shim den 22-Bit-Hash wie `save_callsign` in ft8_lib
 Stationen werden auch aufgelöst. `decoder_pass_stats.hint_table_calls`
 zeigt die Belegung. Korpus: Tabelle aus Referenz-Calls 311 vs. leer 304 —
 die Zufuhr wirkt jetzt messbar.
+
+### v0.81.0 — Stufe 3: WSJT-X' jt9 als Unterprozess
+Sebastians Frage vom 8.9.: „Warum können wir den WSJT-X-Decoder nicht
+nachbauen, ist er nicht Open Source?" Ist er (GPL, Fortran), und deshalb
+wird er nicht nachgebaut, sondern benutzt: `jt9` aus dem Debian-Paket
+`wsjtx` decodiert eine WAV-Datei des Slots; wir rufen es als getrenntes
+Programm auf (lizenzrechtlich sauber, MIT bleibt MIT). Gemessen am Pi 4B
+auf dem Referenzkorpus:
+
+| Decoder | Treffer | zusätzlich | Zeit/Slot Pi 4B |
+|---|---|---|---|
+| unser Stufe 1+2 (extreme) | 311 (88 %) | 17 | 0,4 s + ~4 s |
+| jt9 Tiefe 2 | 344 (97,5 %) | 46 | 6,0 s (max 9,1 s) |
+| jt9 Tiefe 3 | 349 (98,9 %) | 55 | 11,1 s (max 16,7 s) |
+| **Union unser + jt9 Tiefe 2** | **347 (98,3 %)** | **49** | parallel |
+| Union unser + jt9 Tiefe 3 | 352 (99,7 %) | 57 | zu langsam |
+
+FFT-Threads (`-m 3`) beschleunigen jt9 nicht. Tiefe 2 läuft parallel zu
+Stufe 2 in einem eigenen Thread, die Ergebnisse gehen über den Nachreich-
+Pfad (B4-Regel: kein Mid-Slot-TX). Unser Decoder findet weiterhin 10
+Decodes, die jt9 nicht hat — Stufe 2 bleibt. WAV liegt in `/dev/shm`.
+FT4 vorerst ohne Stufe 3 (jt9-Flag nicht verifiziert).

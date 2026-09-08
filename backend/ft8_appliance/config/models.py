@@ -371,6 +371,11 @@ class OperatingConfig(BaseModel):
     # rund 12 s Budget und braucht ~2 s — mehr Iterationen holen marginale
     # Decodes, ohne den Sendestart zu beruehren. 100 = wie Stufe 1.
     decoder_late_ldpc_pct: int = Field(default=150, ge=100, le=500)
+    # 2026-09-08 Stufe 3: WSJT-X' jt9 (Paket wsjtx) als Unterprozess neben
+    # Stufe 2. Tiefe 2 = 6 s am Pi 4B, 97,5 % der WSJT-X-Decodes; Tiefe 3 waere
+    # 11-17 s und passt nicht in den Slot. Auto-aus ohne installiertes jt9.
+    decoder_jt9: bool = True
+    decoder_jt9_depth: int = Field(default=2, ge=1, le=3)
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift
