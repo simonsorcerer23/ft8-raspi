@@ -81,7 +81,9 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
   entscheidet in ~0,4 s über TX, ein zweiter im Thread ergänzt kohärentes
   Subtract-and-Rerun, OSD, Analysefenster pro Pass und Feinsync-Demodulation).
   Auf den WSJT-X-Referenzaufnahmen aus ft8_lib findet er jetzt 88 % der
-  WSJT-X-Decodes (Stock: 73 %), gemessen mit `scripts/bench_decoder_corpus.py`.
+  WSJT-X-Decodes (Stock: 73 %), und mit WSJT-X' eigenem `jt9` als dritter
+  Stufe daneben 98 % plus rund 50 Decodes, die die Referenz nicht hat;
+  gemessen mit `scripts/bench_decoder_corpus.py`.
 - **Antwortstrategie aus der eigenen Telemetrie** — Ziele unter −13 dB nur
   mit PSK-Reporter-Bestätigung, Kontinente mit schlechter Vollendungsquote
   ebenso, ein adaptiver CQ-Fallback, wenn kein brauchbarer Rufer da ist, ein

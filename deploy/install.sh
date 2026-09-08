@@ -134,7 +134,10 @@ apt-get install -y --no-install-recommends \
     hostapd dnsmasq nftables \
     network-manager \
     avahi-daemon \
-    sqlite3 jq curl git
+    sqlite3 jq curl git \
+    wsjtx
+# wsjtx: liefert /usr/bin/jt9 — WSJT-X' Decoder als Stufe 3 (2026-09-08). Zieht Qt
+# mit (~150 MB), stoert headless nicht. Ohne das Paket bleibt Stufe 3 einfach aus.
 
 # ----------------------------------------------------------------------------
 section "2/8  Directories"

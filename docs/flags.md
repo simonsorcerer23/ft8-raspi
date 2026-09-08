@@ -221,3 +221,8 @@ Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne set
 - `hunt_cq_fallback_pause_max_min` (Default 60): jede Fallback-Runde ohne Antwort verdoppelt die Pause (10, 20, 40, 60 min); die erste Antwort auf ein Fallback-CQ setzt zurück. Anlass: nachts 83 Starts, 0 QSOs.
 - `qso_max_cq_resends` Default 2 → 1: Telemetrie 0 Wiederholungen 7 %, 1 → 10 %, 2+ → 5 % Vollendung; die zweite Wiederholung kostet nur einen Burst.
 - `hunt_continent_gate` / `hunt_continent_gate_pct` (Default an, 5 %): Rufer aus einem Kontinent, dessen Vollendungsquote in der eigenen Telemetrie (14 Tage, ≥ 20 Picks) unter der Schwelle liegt, werden nur angerufen, wenn PSK Reporter sie als „hört uns“ führt. Am 8.9.: EU 18 %, AS 7 %, NA 3 %. Nachteil bewusst in Kauf genommen: die seltenen NA-QSOs bei Nacht.
+
+
+### `decoder_jt9` / `decoder_jt9_depth` (2026-09-08, Default an / 2)
+
+Stufe 3 des Decoders: WSJT-X' `jt9` (Paket `wsjtx`) decodiert den Slot parallel zu Stufe 2. Tiefe 2 braucht am Pi 4B 6 s (max 9 s) und trifft 97,5 % der WSJT-X-Decodes; Tiefe 3 wäre 11 bis 17 s und passt nicht in den Slot. Ohne installiertes `jt9` bleibt die Stufe still. Status: `decoder_late_pass.jt9` (last/total/duration_s/skipped/failed).
