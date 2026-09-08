@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.83.0 — 2026-09-08
+- fix: TX bleibt gesperrt, wenn rigctld gar nicht erst hochkommt
+
 ## v0.82.3 — 2026-09-08
 - fix: decoded.txt war versehentlich eingecheckt; Self-Update raeumt Laufzeit-Artefakte weg
 
