@@ -856,6 +856,9 @@ class Orchestrator:
                     bool(getattr(self.config.operating, "decoder_jt9", True)))
             setattr(self.decode_source, "jt9_depth",
                     int(getattr(self.config.operating, "decoder_jt9_depth", 2)))
+            setattr(self.decode_source, "jt9_ft4", bool(getattr(self.config.operating, "decoder_jt9_ft4", True)))
+            setattr(self.decode_source, "jt9_ap", bool(getattr(self.config.operating, "decoder_jt9_ap", False)))
+            setattr(self.decode_source, "jt9_ap_flags", int(getattr(self.config.operating, "decoder_jt9_ap_flags", 0)))
         self._spawn(self.gps.run_forever(), name="gpsd")
         self._spawn(self._slot_loop(), name="slot-loop")
         self._spawn(self._rig_poll_loop(), name="rig-poll")
@@ -1841,6 +1844,7 @@ class Orchestrator:
                 "duration_s": round(getattr(m, "jt9_last_duration_s", 0.0), 2),
                 "skipped": getattr(m, "jt9_skipped", 0),
                 "failed": getattr(m, "jt9_failed", 0),
+                "depth": getattr(m, "jt9_last_depth", 0),
             },
         }
 
@@ -2815,6 +2819,9 @@ class Orchestrator:
                     bool(getattr(new_cfg.operating, "decoder_jt9", True)))
             setattr(self.decode_source, "jt9_depth",
                     int(getattr(new_cfg.operating, "decoder_jt9_depth", 2)))
+            setattr(self.decode_source, "jt9_ft4", bool(getattr(new_cfg.operating, "decoder_jt9_ft4", True)))
+            setattr(self.decode_source, "jt9_ap", bool(getattr(new_cfg.operating, "decoder_jt9_ap", False)))
+            setattr(self.decode_source, "jt9_ap_flags", int(getattr(new_cfg.operating, "decoder_jt9_ap_flags", 0)))
         # v0.7.0 Build 3: auto_notch_enabled live-toggle
         new_notch_enabled = getattr(new_cfg.operating, "auto_notch_enabled", True)
         has_notch_now = getattr(self.decode_source, "notch_detector", None) is not None
@@ -2967,6 +2974,19 @@ class Orchestrator:
     async def _on_slot_inner(self, tick: SlotTick) -> None:
         # 1. refresh hardware state for guards
         await self._refresh_hardware_state(tick)
+        # 2026-09-08 jt9-Kontext fuer diesen Slot: Tiefe 3, wenn wir im naechsten
+        # Slot senden (QSO oder CQ); eigener Call/Grid + Partner fuer AP.
+        try:
+            sm = self.state_machine
+            in_tx_cycle = sm.state.name in ("QSO_RESPOND", "QSO_REPORT", "CQ_CALLING")
+            setattr(self.decode_source, "jt9_depth_boost",
+                    bool(in_tx_cycle and getattr(self.config.operating, "decoder_jt9_boost_in_qso", True)))
+            setattr(self.decode_source, "jt9_my_call", sm.ctx.tx_callsign or sm.ctx.callsign)
+            setattr(self.decode_source, "jt9_my_grid", sm.ctx.my_grid)
+            setattr(self.decode_source, "jt9_his_call", getattr(sm.qso, "their_call", None) if sm.qso else None)
+            setattr(self.decode_source, "jt9_his_grid", getattr(sm.qso, "their_grid", None) if sm.qso else None)
+        except Exception:
+            pass
 
         # 2. ask decoder for this slot's decodes
         try:

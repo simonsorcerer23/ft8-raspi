@@ -81,3 +81,32 @@ def test_real_jt9_decodes_a_reference_wav() -> None:
     buf = np.zeros(SAMPLES_PER_SLOT, np.int16); buf[: len(x)] = x[:SAMPLES_PER_SLOT]
     d = _jt9.run_jt9(buf.tobytes(), depth=1, timeout_s=60)
     assert any("SP2EWQ" in r.message for r in d)
+
+
+def test_build_cmd_ft4_and_ap_options(tmp_path) -> None:
+    from pathlib import Path
+    cmd = _jt9.build_cmd("/usr/bin/jt9", Path("/dev/shm/x.wav"), Path("/dev/shm"), depth=2, mode="FT4")
+    assert cmd[1] == "-5" and "-d" in cmd and cmd[-1] == "/dev/shm/x.wav" and "-c" not in cmd
+    cmd = _jt9.build_cmd("/usr/bin/jt9", Path("/dev/shm/x.wav"), Path("/dev/shm"), depth=3, mode="FT8",
+                         my_call="DK9XR", my_grid="JN58td", his_call="W1AW", his_grid="FN31", ap_flags=3)
+    assert cmd[1] == "-8"
+    assert cmd[cmd.index("-c") + 1] == "DK9XR" and cmd[cmd.index("-G") + 1] == "JN58"
+    assert cmd[cmd.index("-x") + 1] == "W1AW" and cmd[cmd.index("-g") + 1] == "FN31" and cmd[cmd.index("-X") + 1] == "3"
+
+
+@pytest.mark.asyncio
+async def test_depth_boost_uses_depth_3_and_blocks_after_overrun(monkeypatch) -> None:
+    seen_depths = []
+    monkeypatch.setattr(_pipe, "decode_slot", lambda pcm: [])
+    monkeypatch.setattr(_pipe, "decode_slot_v2", lambda pcm, mode="standard": [])
+    monkeypatch.setattr(_jt9, "available", lambda: True)
+    monkeypatch.setattr(_jt9, "run_jt9", lambda pcm, **kw: seen_depths.append(kw["depth"]) or [])
+    buf = SlotBuffer(); buf.feed(b"\x00\x00" * SAMPLES_PER_SLOT, posix_start=SLOT0)
+    pl = DecodePipeline(slot_buffer=buf, band_hint="20m")
+    pl.decoder_mode = "extreme"; pl.extract_delay_s = 0.0; pl.late_pass_sink = AsyncMock()
+    pl.jt9_depth = 2; pl.jt9_depth_boost = True
+    await pl(_tick(0)); await pl._jt9_task
+    assert seen_depths == [3]
+    pl._jt9_boost_blocked_until = 10**12          # Sperre aktiv -> zurueck auf 2
+    await pl(_tick(1)); await pl._jt9_task
+    assert seen_depths == [3, 2]
