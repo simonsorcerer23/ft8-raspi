@@ -39,16 +39,20 @@ chmod 600 "${DEST}/ft8-backup.tgz"
 
 # Verifizieren statt hoffen: die drei Dateien, ohne die ein Neuaufbau weh tut.
 echo "== Pruefe Inhalt"
+# Liste einmal materialisieren: "tar | grep -q" beendet grep frueh, tar stirbt
+# an SIGPIPE und pipefail wertet die Pipeline als Fehler — die Pruefung meldete
+# dann "FEHLT" fuer Dateien, die im Archiv liegen.
+LIST="$(tar tzf "${DEST}/ft8-backup.tgz")"
 FAIL=0
 for f in etc/ft8-appliance/config.yaml var/lib/ft8-appliance/runtime_state.json var/lib/ft8-appliance/qso.sqlite; do
-    if tar tzf "${DEST}/ft8-backup.tgz" | grep -qx "$f"; then
+    if grep -qx "$f" <<<"$LIST"; then
         echo "   ok   $f"
     else
         echo "   FEHLT $f"
         FAIL=1
     fi
 done
-WLAN=$(tar tzf "${DEST}/ft8-backup.tgz" | grep -c "system-connections/.*\.nmconnection" || true)
+WLAN=$(grep -c "system-connections/.*\.nmconnection" <<<"$LIST" || true)
 echo "   WLAN-Profile: ${WLAN}"
 echo "== $(du -h "${DEST}/ft8-backup.tgz" | cut -f1) in ${DEST}/ft8-backup.tgz"
 [ "$FAIL" -eq 0 ] || { echo "!! Backup unvollstaendig"; exit 1; }

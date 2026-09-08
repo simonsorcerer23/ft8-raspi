@@ -112,7 +112,11 @@ def run_jt9(pcm: bytes, *, depth: int = 2, timeout_s: float = 12.0, mode: str = 
     cmd = build_cmd(exe, wav_path, d, depth=depth, mode=mode, my_call=my_call, my_grid=my_grid,
                     his_call=his_call, his_grid=his_grid, ap_flags=ap_flags)
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+        # cwd auf das Arbeitsverzeichnis: jt9 legt "decoded.txt" immer im
+        # AKTUELLEN Verzeichnis ab, nicht unter -a. Ohne cwd landet die Datei
+        # im Repo-Checkout und blockiert dort das naechste "git checkout" des
+        # Self-Update (live erlebt 2026-09-08: Pi blieb auf v0.81.0 haengen).
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s, cwd=str(d))
     except subprocess.TimeoutExpired:
         log.warning("jt9: Timeout nach %.0f s (Tiefe %d)", timeout_s, depth)
         return []
