@@ -552,14 +552,17 @@ class DecodePipeline:
         if self.jt9_depth_boost and t0 >= self._jt9_boost_blocked_until and self.mode != "FT4":
             depth = 3
         timeout_s = float(self.jt9_timeout_s) if depth < 3 else max(float(self.jt9_timeout_s), 2.0 * slot_seconds - 3.0)
-        ap = {}
-        if self.jt9_ap:
-            ap = dict(my_call=self.jt9_my_call, my_grid=self.jt9_my_grid,
-                      his_call=self.jt9_his_call, his_grid=self.jt9_his_grid, ap_flags=int(self.jt9_ap_flags))
+        my_call = self.jt9_my_call if self.jt9_ap else None
+        my_grid = self.jt9_my_grid if self.jt9_ap else None
+        his_call = self.jt9_his_call if self.jt9_ap else None
+        his_grid = self.jt9_his_grid if self.jt9_ap else None
+        ap_flags = int(self.jt9_ap_flags) if self.jt9_ap else 0
         try:
             raw = await loop.run_in_executor(
                 self._jt9_executor,
-                lambda: _jt9.run_jt9(pcm, depth=depth, timeout_s=timeout_s, mode=self.mode, **ap),
+                lambda: _jt9.run_jt9(pcm, depth=depth, timeout_s=timeout_s, mode=self.mode,
+                                     my_call=my_call, my_grid=my_grid, his_call=his_call,
+                                     his_grid=his_grid, ap_flags=ap_flags),
             )
         except Exception as exc:
             self.metrics.jt9_failed += 1
