@@ -226,3 +226,10 @@ Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne set
 ### `decoder_jt9` / `decoder_jt9_depth` (2026-09-08, Default an / 2)
 
 Stufe 3 des Decoders: WSJT-X' `jt9` (Paket `wsjtx`) decodiert den Slot parallel zu Stufe 2. Tiefe 2 braucht am Pi 4B 6 s (max 9 s) und trifft 97,5 % der WSJT-X-Decodes; Tiefe 3 wäre 11 bis 17 s und passt nicht in den Slot. Ohne installiertes `jt9` bleibt die Stufe still. Status: `decoder_late_pass.jt9` (last/total/duration_s/skipped/failed).
+
+
+### jt9-Feinheiten (2026-09-08): `decoder_jt9_boost_in_qso`, `decoder_jt9_ft4`, `decoder_jt9_ap`, `decoder_jt9_ap_flags`
+
+- `decoder_jt9_boost_in_qso` (Default an): im QSO und beim CQ-Rufen senden wir jeden zweiten Slot, jt9 hat dann 30 s bis zur nächsten Entscheidung und läuft in Tiefe 3 (Korpus: +1,4 Punkte). Überläuft Tiefe 3 trotzdem, 10 Minuten zurück auf Tiefe 2.
+- `decoder_jt9_ft4` (Default aus, bis am Pi gemessen): jt9 mit `-5` auf dem 7,5-s-Slot.
+- `decoder_jt9_ap` / `decoder_jt9_ap_flags` (Default aus): eigener Call/Grid (`-c`/`-G`), Partner (`-x`/`-g`) und die „experience decoding flags“ (`-X`) an jt9, also WSJT-X' eigene AP-Decodierung. Erst nach Messung freigeben; das Memo gegen AP-Eigenbau bleibt.
