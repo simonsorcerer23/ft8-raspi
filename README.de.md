@@ -146,6 +146,66 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 - **Self-Update** — der Pi holt sich getaggte Releases alle 10 min von GitHub,
   bringt vorher das laufende QSO zu Ende (keine neuen Picks oder CQs solange),
   Health-Check nach dem Neustart, automatischer Rollback bei Fehler.
+
+## Architektur
+
+Vollständige Spezifikation: [architecture.de.md](./architecture.de.md)
+
+```
+backend/         Python 3.12 + FastAPI-Controller, ft8_lib via cffi
+frontend/        Svelte 5 + Vite Single-Page-App (mobile-first)
+vendor/ft8_lib/  Kārlis Gobas FT8/FT4-Codec (git-Submodul, MIT)
+deploy/          systemd-Units, NetworkManager, hostapd, chrony, install.sh
+data/            cty.dat (offline DXCC), Map-Tiles, marinefunker, dxcc_rarity
+docs/            Diagramme, Notizen, Audit-Logs
+scripts/         release.sh, self-update.sh, pi-check.sh, dev_run.py
+```
+
+## Schnellstart — Workstation (kein Pi nötig)
+
+```bash
+git submodule update --init --recursive
+cd vendor/ft8_lib && make && cd ../..
+
+cd backend
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
+pytest
+
+cd ../frontend
+npm install
+npm run dev   # http://localhost:5173
+```
+
+## Erst-Inbetriebnahme auf einem Pi
+
+```bash
+ssh pi@<host>
+git clone https://github.com/simonsorcerer23/ft8-raspi.git ~/ft8-appliance
+cd ~/ft8-appliance
+sudo ./deploy/install.sh
+```
+
+`install.sh` nutzt standardmaessig den ausgecheckten Repo-Pfad und den
+aufrufenden sudo-User (Fallback: Repo-Owner). Fuer dedizierte Accounts oder
+abweichende Pfade: `sudo ./deploy/install.sh --user USER --dir APP_DIR`. Der
+Installer rendert systemd-Units und Self-Update-sudoers-Regeln fuer genau
+diese Installation und speichert die Werte in
+`/etc/ft8-appliance/install.env`.
+
+Folge-Releases werden automatisch über `ft8-self-update.timer` ausgerollt.
+Ein neues Release auf der Workstation schneidest du mit:
+
+```bash
+./scripts/release.sh vX.Y.Z
+```
+
+Das aktualisiert auch [CHANGELOG.md](./CHANGELOG.md) (aus dem Commit-Log
+generiert) und schreibt die Änderungsliste in die Tag-Annotation. Die volle
+Versionshistorie steht in [CHANGELOG.md](./CHANGELOG.md).
+
+## Hardware
+
 - **SBC:** Raspberry Pi 4B 8 GB (die Produktionsbox) oder Pi 5 (4 GB reichen, 8 GB schöner für größere Logs)
 - **Storage:** NVMe-SSD empfohlen für die QSO-Datenbank
 - **Funkgerät:** Icom IC-705 oder IC-7300 über ein einziges USB-Kabel
