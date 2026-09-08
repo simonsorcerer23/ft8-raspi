@@ -225,6 +225,11 @@ log "checkout ${LATEST_TAG}"
 # overwritten" (Pi 2026-09-06: "v0.67.0-dirty" direkt nach dem Update).
 # Generat zuruecksetzen, der Build nach dem Checkout erzeugt es ohnehin neu.
 git checkout --quiet -- backend/ft8_appliance/decode/_ft8_native.c 2>/dev/null || true
+# Laufzeit-Artefakte, die ein "git checkout" blockieren koennen. jt9 schrieb
+# decoded.txt frueher ins Arbeitsverzeichnis des Controllers (bis v0.82.2);
+# ein einzelnes verirrtes File darf kein Release aufhalten (live 2026-09-08:
+# Pi blieb zwei Timer-Laeufe lang auf v0.81.0).
+rm -f decoded.txt backend/decoded.txt 2>/dev/null || true
 if ! git checkout --quiet "${LATEST_TAG}"; then
     die "git checkout ${LATEST_TAG} failed — Pi bleibt auf ${CURRENT_DESC}"
 fi
