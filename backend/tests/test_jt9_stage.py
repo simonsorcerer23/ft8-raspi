@@ -125,3 +125,21 @@ def test_parser_drops_uncertain_ap_decodes() -> None:
     out = "000000 -22  0.3 1500 ~  DL8TG SP2EWQ -10     a2\n000000 -23  0.3 1500 ~  DL8TG SP2EWQ -12     ? a2\n"
     assert [x.message for x in _jt9.parse_jt9_output(out)] == ["DL8TG SP2EWQ -10"]
     assert len(_jt9.parse_jt9_output(out, drop_uncertain=False)) == 2
+
+
+def test_run_jt9_uses_workdir_as_cwd(monkeypatch, tmp_path) -> None:
+    """jt9 legt decoded.txt im aktuellen Verzeichnis ab. Ohne cwd landet die
+    Datei im Repo-Checkout und blockiert das naechste git checkout des
+    Self-Update (live 2026-09-08: Pi blieb auf v0.81.0)."""
+    seen = {}
+
+    class _Res:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(_jt9, "jt9_path", lambda: "/usr/bin/jt9")
+    monkeypatch.setattr(_jt9, "work_dir", lambda: tmp_path)
+    monkeypatch.setattr(_jt9.subprocess, "run", lambda cmd, **kw: seen.update(kw, cmd=cmd) or _Res())
+    _jt9.run_jt9(b"\x00\x00" * 100, depth=2)
+    assert seen["cwd"] == str(tmp_path)
