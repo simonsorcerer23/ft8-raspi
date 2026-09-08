@@ -214,3 +214,10 @@ Aus der Pick-Telemetrie des 6.9. (381 Picks, 7 % vollendet): Ziele unter −13 d
 Der Hunt-Autopilot (`autopilot_enabled`, `autopilot_allowed_bands`, Fenster `autopilot_window_min`, Sperre `autopilot_cooldown_min`) bewertet alle 15 Minuten die erlaubten Bänder nach Decodes, Anrufversuchen, Vollendungen, einer Tageszeit-Prior je Band und den hamqsl-Bandbedingungen und wechselt auf das beste Band/Modus-Paar. Neu: Die Antenne trägt `auto_band_switch` (Häkchen „Auto-Band" in der Antennenzeile). Ohne das Häkchen bleibt der Autopilot auf dem Band, auf dem das Rig steht (Dipol mit Tuner-Zwang, wie derzeit `spitzwegstrasse`), nur der Moduswechsel FT8/FT4 bleibt möglich. Mit Häkchen (Multiband-Antenne ohne Abstimmung) wechselt er innerhalb der Bänder, die die Antenne abdeckt und die in `autopilot_allowed_bands` stehen.
 
 Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne setzen, `autopilot_allowed_bands` prüfen, `autopilot_enabled: true`.
+
+
+### Nachtrag 2026-09-08: adaptiver Fallback, Wiederholungen, Kontinent-Gate
+
+- `hunt_cq_fallback_pause_max_min` (Default 60): jede Fallback-Runde ohne Antwort verdoppelt die Pause (10, 20, 40, 60 min); die erste Antwort auf ein Fallback-CQ setzt zurück. Anlass: nachts 83 Starts, 0 QSOs.
+- `qso_max_cq_resends` Default 2 → 1: Telemetrie 0 Wiederholungen 7 %, 1 → 10 %, 2+ → 5 % Vollendung; die zweite Wiederholung kostet nur einen Burst.
+- `hunt_continent_gate` / `hunt_continent_gate_pct` (Default an, 5 %): Rufer aus einem Kontinent, dessen Vollendungsquote in der eigenen Telemetrie (14 Tage, ≥ 20 Picks) unter der Schwelle liegt, werden nur angerufen, wenn PSK Reporter sie als „hört uns“ führt. Am 8.9.: EU 18 %, AS 7 %, NA 3 %. Nachteil bewusst in Kauf genommen: die seltenen NA-QSOs bei Nacht.

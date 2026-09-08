@@ -194,6 +194,7 @@
     s += `${ind(2)}alc_target_high: ${c.operating.alc_target_high}\n`;
     s += `${ind(2)}qso_cooldown_min: ${c.operating.qso_cooldown_min}\n`;
     s += `${ind(2)}qso_max_stale_slots: ${c.operating.qso_max_stale_slots}\n`;
+    if (c.operating.qso_max_cq_resends !== undefined) s += `${ind(2)}qso_max_cq_resends: ${c.operating.qso_max_cq_resends}\n`;
     s += `${ind(2)}hunt_skip_worked: ${c.operating.hunt_skip_worked}\n`;
     s += `${ind(2)}hunt_dxcc_only: ${c.operating.hunt_dxcc_only}\n`;
     // v0.10.0 Hunt-Priority-Tiers — als YAML-Liste schreiben
@@ -210,6 +211,11 @@
     s += `${ind(2)}hunt_cq_fallback: ${c.operating.hunt_cq_fallback !== false}\n`;
     if (c.operating.hunt_cq_fallback_after_slots !== undefined) s += `${ind(2)}hunt_cq_fallback_after_slots: ${c.operating.hunt_cq_fallback_after_slots}\n`;
     s += `${ind(2)}hunt_reply_ab_test: ${c.operating.hunt_reply_ab_test !== false}\n`;
+    s += `${ind(2)}hunt_continent_gate: ${c.operating.hunt_continent_gate !== false}\n`;
+    if (c.operating.hunt_continent_gate_pct !== undefined) s += `${ind(2)}hunt_continent_gate_pct: ${c.operating.hunt_continent_gate_pct}\n`;
+    if (c.operating.hunt_cq_fallback_max_cqs !== undefined) s += `${ind(2)}hunt_cq_fallback_max_cqs: ${c.operating.hunt_cq_fallback_max_cqs}\n`;
+    if (c.operating.hunt_cq_fallback_pause_min !== undefined) s += `${ind(2)}hunt_cq_fallback_pause_min: ${c.operating.hunt_cq_fallback_pause_min}\n`;
+    if (c.operating.hunt_cq_fallback_pause_max_min !== undefined) s += `${ind(2)}hunt_cq_fallback_pause_max_min: ${c.operating.hunt_cq_fallback_pause_max_min}\n`;
     s += `${ind(2)}rig_auto_restore: ${c.operating.rig_auto_restore === true}\n`;
     if (c.operating.dxped_ng3k_push_enabled !== undefined)
       s += `${ind(2)}dxped_ng3k_push_enabled: ${c.operating.dxped_ng3k_push_enabled === true}\n`;
@@ -704,6 +710,15 @@
                     class:on={cfg.operating.hunt_reply_ab_test}
                     onclick={() => cfg.operating.hunt_reply_ab_test = !cfg.operating.hunt_reply_ab_test}
                     aria-pressed={cfg.operating.hunt_reply_ab_test}>
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+          <label class="field toggle-field">
+            <span>{t('cfg.hunt_continent_gate')}</span>
+            <button type="button" class="toggle"
+                    class:on={cfg.operating.hunt_continent_gate}
+                    onclick={() => cfg.operating.hunt_continent_gate = !cfg.operating.hunt_continent_gate}
+                    aria-pressed={cfg.operating.hunt_continent_gate}>
               <span class="toggle-knob"></span>
             </button>
           </label>
