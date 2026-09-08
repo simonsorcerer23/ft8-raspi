@@ -30,6 +30,10 @@ vendor/ft8_lib/build/
 *.a
 # cffi generated sources / binaries
 backend/ft8_appliance/decode/_ft8_native.c
+# jt9 legt seine Decode-Liste im Arbeitsverzeichnis ab (2026-09-08 versehentlich
+# eingecheckt; blockierte auf dem Pi den git checkout des Self-Update)
+decoded.txt
+**/decoded.txt
 backend/ft8_appliance/decode/_ft8_native*.so
 
 # Data
