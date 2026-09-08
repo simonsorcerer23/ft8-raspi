@@ -207,6 +207,7 @@ class DecodePipelineMetrics:
     jt9_last_duration_s: float = 0.0
     jt9_skipped: int = 0
     jt9_failed: int = 0
+    jt9_last_depth: int = 0
 
     def note_late_pass(self, count: int, duration_s: float) -> None:
         self.late_pass_last_count = count
@@ -308,6 +309,18 @@ class DecodePipeline:
     jt9_enabled: bool = True
     jt9_depth: int = 2
     jt9_timeout_s: float = 12.0
+    # 2026-09-08: Tiefe 3, wenn wir im naechsten Slot ohnehin senden (QSO/CQ):
+    # dann hat jt9 30 statt 15 s bis zur naechsten Entscheidung. Setzt der
+    # Orchestrator pro Slot. Ueberlaeuft Tiefe 3 trotzdem, 10 min Sperre.
+    jt9_depth_boost: bool = False
+    jt9_ft4: bool = False          # erst nach Messung am Pi freigeben
+    jt9_ap: bool = False           # -c/-G/-x/-g/-X an jt9 (AP) — erst nach Messung
+    jt9_ap_flags: int = 0
+    jt9_my_call: str | None = None
+    jt9_my_grid: str | None = None
+    jt9_his_call: str | None = None
+    jt9_his_grid: str | None = None
+    _jt9_boost_blocked_until: float = field(default=0.0, init=False)
     _jt9_task: asyncio.Task | None = field(default=None, init=False, repr=False)
     _jt9_executor: ThreadPoolExecutor = field(
         default_factory=lambda: ThreadPoolExecutor(max_workers=1, thread_name_prefix="jt9"),
@@ -487,7 +500,7 @@ class DecodePipeline:
         if (
             self.jt9_enabled
             and self.late_pass_sink is not None
-            and self.mode != "FT4"
+            and (self.mode != "FT4" or self.jt9_ft4)
         ):
             from . import jt9 as _jt9
             if _jt9.available():
@@ -535,10 +548,18 @@ class DecodePipeline:
         from . import jt9 as _jt9
         loop = asyncio.get_running_loop()
         t0 = _time.monotonic()
+        depth = int(self.jt9_depth)
+        if self.jt9_depth_boost and t0 >= self._jt9_boost_blocked_until and self.mode != "FT4":
+            depth = 3
+        timeout_s = float(self.jt9_timeout_s) if depth < 3 else max(float(self.jt9_timeout_s), 2.0 * slot_seconds - 3.0)
+        ap = {}
+        if self.jt9_ap:
+            ap = dict(my_call=self.jt9_my_call, my_grid=self.jt9_my_grid,
+                      his_call=self.jt9_his_call, his_grid=self.jt9_his_grid, ap_flags=int(self.jt9_ap_flags))
         try:
             raw = await loop.run_in_executor(
                 self._jt9_executor,
-                lambda: _jt9.run_jt9(pcm, depth=int(self.jt9_depth), timeout_s=float(self.jt9_timeout_s), mode=self.mode),
+                lambda: _jt9.run_jt9(pcm, depth=depth, timeout_s=timeout_s, mode=self.mode, **ap),
             )
         except Exception as exc:
             self.metrics.jt9_failed += 1
@@ -551,8 +572,12 @@ class DecodePipeline:
         self.metrics.jt9_last_count = len(new)
         self.metrics.jt9_total += len(new)
         self.metrics.jt9_last_duration_s = duration_s
-        if duration_s > slot_seconds:
-            log.warning("jt9 brauchte %.1f s (Slot %.0f s) — Tiefe %d zu teuer?", duration_s, slot_seconds, self.jt9_depth)
+        self.metrics.jt9_last_depth = depth
+        if depth >= 3 and duration_s > 2.0 * slot_seconds - 3.0:
+            self._jt9_boost_blocked_until = _time.monotonic() + 600.0
+            log.warning("jt9 Tiefe 3 brauchte %.1f s — 10 min zurueck auf Tiefe %d", duration_s, self.jt9_depth)
+        elif depth < 3 and duration_s > slot_seconds:
+            log.warning("jt9 brauchte %.1f s (Slot %.0f s) — Tiefe %d zu teuer?", duration_s, slot_seconds, depth)
         if not new or self.late_pass_sink is None:
             return
         msgs = [_to_decoded_msg(r, tick, band, late=True) for r in new]

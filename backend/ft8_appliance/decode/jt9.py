@@ -62,21 +62,46 @@ def parse_jt9_output(text: str) -> list[ShimDecode]:
     return out
 
 
-def run_jt9(pcm: bytes, *, depth: int = 2, timeout_s: float = 12.0, mode: str = "FT8") -> list[ShimDecode]:
-    """Einen Slot (int16 mono 12 kHz) durch jt9 decodieren. Blockiert — im Thread aufrufen."""
+def build_cmd(exe: str, wav_path: Path, d: Path, *, depth: int, mode: str,
+              my_call: str | None = None, my_grid: str | None = None,
+              his_call: str | None = None, his_grid: str | None = None,
+              ap_flags: int = 0) -> list[str]:
+    """jt9-Kommandozeile (Optionen aus lib/jt9.f90 in WSJT-X): -8 FT8 / -5 FT4,
+    -d Tiefe, -c/-G eigener Call+Grid, -x/-g Partner, -X „experience based
+    decoding flags" (AP). Call/Grid nur, wenn gesetzt."""
+    cmd = [exe, "-5" if mode == "FT4" else "-8", "-d", str(int(depth)), "-a", str(d), "-e", os.path.dirname(exe)]
+    if my_call:
+        cmd += ["-c", my_call]
+    if my_grid:
+        cmd += ["-G", my_grid[:4]]
+    if his_call:
+        cmd += ["-x", his_call]
+    if his_grid:
+        cmd += ["-g", his_grid[:4]]
+    if ap_flags:
+        cmd += ["-X", str(int(ap_flags))]
+    cmd.append(str(wav_path))
+    return cmd
+
+
+def run_jt9(pcm: bytes, *, depth: int = 2, timeout_s: float = 12.0, mode: str = "FT8",
+            my_call: str | None = None, my_grid: str | None = None,
+            his_call: str | None = None, his_grid: str | None = None,
+            ap_flags: int = 0) -> list[ShimDecode]:
+    """Einen Slot (int16 mono 12 kHz; FT8 15 s, FT4 7,5 s) durch jt9 decodieren.
+    Blockiert — im Thread aufrufen."""
     exe = jt9_path()
     if exe is None:
         return []
-    if mode != "FT8":
-        return []   # FT4-Flag von jt9 nicht verifiziert — erst messen, dann freigeben
     d = work_dir()
-    wav_path = d / "slot.wav"
+    wav_path = d / ("slot_ft4.wav" if mode == "FT4" else "slot.wav")
     with wave.open(str(wav_path), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(_SAMPLE_RATE)
         w.writeframes(pcm)
-    cmd = [exe, "-8", "-d", str(int(depth)), "-a", str(d), "-e", os.path.dirname(exe), str(wav_path)]
+    cmd = build_cmd(exe, wav_path, d, depth=depth, mode=mode, my_call=my_call, my_grid=my_grid,
+                    his_call=his_call, his_grid=his_grid, ap_flags=ap_flags)
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
     except subprocess.TimeoutExpired:

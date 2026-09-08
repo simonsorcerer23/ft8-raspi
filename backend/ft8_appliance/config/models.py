@@ -376,6 +376,13 @@ class OperatingConfig(BaseModel):
     # 11-17 s und passt nicht in den Slot. Auto-aus ohne installiertes jt9.
     decoder_jt9: bool = True
     decoder_jt9_depth: int = Field(default=2, ge=1, le=3)
+    # Tiefe 3, wenn wir im naechsten Slot senden (QSO/CQ): 30 s Zeitfenster
+    decoder_jt9_boost_in_qso: bool = True
+    # FT4 ueber jt9 (-5) — Freigabe nach Messung am Pi
+    decoder_jt9_ft4: bool = False   # bis zur Messung am Pi (7,5-s-Slot!) aus
+    # AP (a-priori: eigener Call/Grid, Partner) an jt9 durchreichen; -X-Flags
+    decoder_jt9_ap: bool = False
+    decoder_jt9_ap_flags: int = Field(default=0, ge=0, le=63)
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift
