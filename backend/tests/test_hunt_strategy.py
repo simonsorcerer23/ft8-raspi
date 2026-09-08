@@ -210,3 +210,41 @@ def test_update_safe_reflects_drain() -> None:
     assert o.status().update_safe is True
     o._tx_burst_active = True
     assert o.status().update_safe is False        # nie mitten im Burst
+
+
+def test_fallback_pause_doubles_per_unanswered_round_and_resets_on_answer() -> None:
+    sm = _sm(hunt_cq_fallback=True, hunt_cq_fallback_after_slots=1, hunt_cq_fallback_max_cqs=2,
+             hunt_cq_fallback_pause_min=10, hunt_cq_fallback_pause_max_min=60, cq_tx_slot_parity="any")
+    hw = HardwareState()
+    pauses = []
+    t = 0
+    for _round in range(4):
+        # bis Fallback startet und wieder pausiert
+        sm.ctx.cq_fallback_paused_until = 0.0
+        while sm.state is not State.CQ_CALLING:
+            sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(t)); t += 1
+        start = _tick(t).posix
+        while sm.state is State.CQ_CALLING:
+            sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(t)); t += 1
+        pauses.append(round((sm.ctx.cq_fallback_paused_until - _tick(t - 1).posix) / 60))
+    assert pauses == [10, 20, 40, 60]
+    # Antwort auf ein Fallback-CQ setzt zurueck
+    sm.ctx.cq_fallback_paused_until = 0.0
+    while sm.state is not State.CQ_CALLING:
+        sm.on_decodes(hw, []); sm.on_slot_tick(hw, _tick(t)); t += 1
+    sm.on_decodes(hw, [DecodedMsg(ts=_dt.datetime.now(_dt.UTC), call_from="W1AW", call_to="DK9XR", grid="FN31",
+                                  message="DK9XR W1AW FN31", snr_db=-8, dt_s=0.1, freq_offset_hz=1500, band="20m")])
+    assert sm.state is State.QSO_RESPOND and sm.ctx.cq_fallback_unanswered_rounds == 0
+
+
+def test_continent_gate_needs_psk_for_low_rate_continents() -> None:
+    sm = _sm(hunt_continent_gate=True, hunt_continent_gate_pct=5.0)
+    sm.ctx.call_to_continent = {"W1AW": "NA", "DL1AAA": "EU"}
+    sm.ctx.continent_success = {"NA": 0.03, "EU": 0.18}; sm.ctx.continent_success_overall = 0.10
+    assert sm._pick_hunt_target([_d("CQ W1AW FN31", "W1AW", snr=-5)]) is None
+    assert sm._pick_hunt_target([_d("CQ DL1AAA JN58", "DL1AAA", snr=-5)]) is not None
+    sm.ctx.psk_heard_us = {"W1AW"}
+    assert sm._pick_hunt_target([_d("CQ W1AW FN31", "W1AW", snr=-5)]) is not None
+    sm2 = _sm(hunt_continent_gate=False)
+    sm2.ctx.call_to_continent = {"W1AW": "NA"}; sm2.ctx.continent_success = {"NA": 0.03}
+    assert sm2._pick_hunt_target([_d("CQ W1AW FN31", "W1AW", snr=-5)]) is not None

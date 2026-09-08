@@ -429,6 +429,7 @@ export const en = {
   'cfg.hunt_cq_fallback': 'Call CQ ourselves when no usable caller is around',
   'cfg.hunt_reply_ab': 'A/B test reply frequency (quiet bin / caller frequency)',
   'cfg.rig_auto_restore': 'Restore rig to PKTUSB / 2700 Hz automatically',
+  'cfg.hunt_continent_gate': 'Continents below 5 % completion only with PSK confirmation',
   'cfg.dxped_pushes': '📡 DXpedition pushes (NG3K auto-watchlist)',
   'cfg.qrz_com': 'QRZ.com',
   'cfg.hamqsl_solar': 'hamqsl solar',

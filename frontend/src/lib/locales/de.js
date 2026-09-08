@@ -429,6 +429,7 @@ export const de = {
   'cfg.hunt_cq_fallback': 'Selbst CQ rufen, wenn kein brauchbarer Rufer da ist',
   'cfg.hunt_reply_ab': 'A/B-Test Antwortfrequenz (ruhiger Bin / Rufer-Frequenz)',
   'cfg.rig_auto_restore': 'Rig automatisch auf PKTUSB / 2700 Hz zurücksetzen',
+  'cfg.hunt_continent_gate': 'Kontinente unter 5 % Erfolgsquote nur mit PSK-Bestätigung',
   'cfg.dxped_pushes': '📡 DXpedition-Pushes (NG3K-Auto-Watchlist)',
   'cfg.qrz_com': 'QRZ.com',
   'cfg.hamqsl_solar': 'hamqsl Solar',

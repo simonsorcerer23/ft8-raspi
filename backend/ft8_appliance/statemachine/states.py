@@ -149,6 +149,10 @@ class MachineContext:
     hunt_cq_fallback_max_cqs: int = 20
     hunt_cq_fallback_pause_min: int = 10
     cq_fallback_paused_until: float = 0.0   # POSIX
+    hunt_cq_fallback_pause_max_min: int = 60
+    cq_fallback_unanswered_rounds: int = 0
+    hunt_continent_gate: bool = False        # Config-Default True; Orchestrator spiegelt
+    hunt_continent_gate_pct: float = 5.0
     # 2026-09-07: Self-Update wartet nur das laufende QSO ab, keine neuen
     # Picks/CQs/Antworten mehr ("Ping-Pong abwarten, dann Update").
     drain_for_update: bool = False

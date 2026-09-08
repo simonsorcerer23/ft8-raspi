@@ -465,7 +465,9 @@ class OperatingConfig(BaseModel):
     # max_cq_resends und setzen den Call in den Failed-Cooldown.
     # Sebastian sah 2026-05-22: SV9TLU ignorierte uns 12x in 2h, jeder
     # Versuch verschwendete 15s Sendezeit (= 3 min Total).
-    qso_max_cq_resends: int = Field(default=2, ge=0, le=10)
+    # 2026-09-08 aus der Pick-Telemetrie: 0 Wiederholungen 7 %, 1 -> 10 %, 2+ -> 5 %
+    # Vollendung. Die zweite Wiederholung bringt nichts, kostet einen Burst.
+    qso_max_cq_resends: int = Field(default=1, ge=0, le=10)
     # Wie oft duerfen wir unsere R-Report wiederholen wenn der Partner
     # statt RR73 nochmal seinen Report schickt (= er hat unsere R-Report
     # nicht decodiert). WSJT-X-Verhalten: 1× resend ist Default.
@@ -565,6 +567,14 @@ class OperatingConfig(BaseModel):
     # damit ein totes Band nicht endlos angerufen wird.
     hunt_cq_fallback_max_cqs: int = Field(default=20, ge=2, le=200)
     hunt_cq_fallback_pause_min: int = Field(default=10, ge=1, le=120)
+    # 2026-09-08: Pause verdoppelt sich je Runde ohne Antwort (nachts 83 Starts,
+    # 0 QSOs), Deckel; jede Antwort setzt zurueck.
+    hunt_cq_fallback_pause_max_min: int = Field(default=60, ge=1, le=600)
+    # 2026-09-08: Kontinent-Gate — Ziele aus Kontinenten mit Vollendungsquote
+    # unter hunt_continent_gate_pct (eigene Telemetrie, >= 20 Picks) nur mit
+    # PSK-Bestaetigung. Am 8.9.: EU 18 %, AS 7 %, NA 3 %.
+    hunt_continent_gate: bool = True
+    hunt_continent_gate_pct: float = Field(default=5.0, ge=0.0, le=100.0)
     # A/B: Antwort abwechselnd auf ruhigem Bin / auf der Rufer-Frequenz;
     # pick_attempt.reply_kind haelt fest, was gewonnen hat.
     hunt_reply_ab_test: bool = True

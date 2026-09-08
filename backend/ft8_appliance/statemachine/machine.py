@@ -848,6 +848,8 @@ class StateMachine:
                     from_cq_fallback=was_fallback,
                 )
                 self.ctx.cq_fallback_active = False
+                if was_fallback:
+                    self.ctx.cq_fallback_unanswered_rounds = 0   # Antwort: Backoff zurueck
                 self.state = State.QSO_REPORT
                 self._emit_send_r_report()
                 return
@@ -868,6 +870,8 @@ class StateMachine:
                     from_cq_fallback=was_fallback,
                 )
                 self.ctx.cq_fallback_active = False
+                if was_fallback:
+                    self.ctx.cq_fallback_unanswered_rounds = 0   # Antwort: Backoff zurueck
                 self.state = State.QSO_RESPOND
                 self._emit_respond_with_report()
             # 2026-09-07 CQ-Fallback: taucht ein brauchbarer Rufer auf, hat
@@ -1129,10 +1133,14 @@ class StateMachine:
             # ein totes Band wird nicht endlos angerufen.
             if (self.ctx.cq_fallback_active
                     and self.ctx.cq_count >= self.ctx.hunt_cq_fallback_max_cqs):
-                pause_s = self.ctx.hunt_cq_fallback_pause_min * 60.0
+                # 2026-09-08: adaptiv — jede Runde ohne Antwort verdoppelt die Pause
+                pause_min = min(self.ctx.hunt_cq_fallback_pause_min * (2 ** self.ctx.cq_fallback_unanswered_rounds),
+                                self.ctx.hunt_cq_fallback_pause_max_min)
+                self.ctx.cq_fallback_unanswered_rounds += 1
+                pause_s = pause_min * 60.0
                 self.ctx.cq_fallback_paused_until = (tick.posix if tick is not None else 0.0) + pause_s
-                log.info("CQ-Fallback: %d CQs ohne Antwort → Pause %d min, zurueck ins Hunting",
-                         self.ctx.cq_count, self.ctx.hunt_cq_fallback_pause_min)
+                log.info("CQ-Fallback: %d CQs ohne Antwort → Pause %d min (Runde %d), zurueck ins Hunting",
+                         self.ctx.cq_count, pause_min, self.ctx.cq_fallback_unanswered_rounds)
                 self.ctx.cq_fallback_active = False
                 self.ctx.idle_slots_without_pick = 0
                 self.ctx.cq_count = 0
@@ -1832,6 +1840,18 @@ class StateMachine:
                 d for d in cqs
                 if d.snr_db is None or d.snr_db >= self.ctx.hunt_snr_floor_db
             ]
+        # 2026-09-08: Kontinent-Gate — aus Kontinenten mit Vollendungsquote
+        # unter hunt_continent_gate_pct nur mit PSK-Bestaetigung (NA 3 %).
+        if self.ctx.hunt_continent_gate and self.ctx.continent_success:
+            thr = self.ctx.hunt_continent_gate_pct / 100.0
+            def _cont_ok(d: DecodedMsg) -> bool:
+                cu = (d.call_from or "").upper()
+                cont = self.ctx.call_to_continent.get(cu)
+                rate = self.ctx.continent_success.get(cont) if cont else None
+                if rate is None or rate >= thr:
+                    return True
+                return cu in self.ctx.psk_heard_us or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
+            cqs = [d for d in cqs if _cont_ok(d)]
         # 2026-09-07: schwache Ziele nur mit PSK-Bestaetigung (Telemetrie:
         # unter -13 dB kamen 3 % zurueck, darueber 12 %).
         if self.ctx.hunt_weak_requires_psk:

@@ -5987,6 +5987,9 @@ class Orchestrator:
         self.state_machine.ctx.hunt_cq_fallback_after_slots = int(getattr(_op, "hunt_cq_fallback_after_slots", 2))
         self.state_machine.ctx.hunt_cq_fallback_max_cqs = int(getattr(_op, "hunt_cq_fallback_max_cqs", 20))
         self.state_machine.ctx.hunt_cq_fallback_pause_min = int(getattr(_op, "hunt_cq_fallback_pause_min", 10))
+        self.state_machine.ctx.hunt_cq_fallback_pause_max_min = int(getattr(_op, "hunt_cq_fallback_pause_max_min", 60))
+        self.state_machine.ctx.hunt_continent_gate = bool(getattr(_op, "hunt_continent_gate", True))
+        self.state_machine.ctx.hunt_continent_gate_pct = float(getattr(_op, "hunt_continent_gate_pct", 5.0))
         self.state_machine.ctx.hunt_reply_ab_test = bool(getattr(_op, "hunt_reply_ab_test", True))
         # Unser Kontinent fuer den Directed-CQ-Filter (aus cty.dat, per Slot
         # billig — Lookup ist ein Dict).
