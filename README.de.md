@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Headless FT8/FT4-Stationssteuerung auf einem Raspberry Pi 5. Sitzt zwischen
+Headless FT8/FT4-Stationssteuerung auf einem Raspberry Pi 4B (oder Pi 5). Sitzt zwischen
 einem Icom IC-705 / IC-7300 und der Welt, komplett über den Handy-Browser
 bedient. **Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb — mit
 Funktionen, die WSJT-X out of the box nicht bietet.
@@ -59,7 +59,7 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 ### Statistik &amp; Steuerung — SWR-Trend, beste Zeiten, Pi-Status, TX-Controls
 ![Statistik](docs/screenshots/stats.png)
 
-### Hunt-Priorität — die 20 frei sortierbaren Picker-Stufen
+### Hunt-Priorität — die 22 frei sortierbaren Picker-Stufen
 ![Hunt-Priorität](docs/screenshots/config_3.png)
 
 ### Operatoren &amp; Logbücher — Multi-Op, QRZ/ClubLog, Demo-Schalter
@@ -77,7 +77,22 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 
 ## Highlights
 
-- **20-stufiger konfigurierbarer Picker** (Priorität per Drag-and-drop):
+- **Decoder über das Stock-ft8_lib hinaus** — zweistufig (ein schneller Pass
+  entscheidet in ~0,4 s über TX, ein zweiter im Thread ergänzt kohärentes
+  Subtract-and-Rerun, OSD, Analysefenster pro Pass und Feinsync-Demodulation).
+  Auf den WSJT-X-Referenzaufnahmen aus ft8_lib findet er jetzt 88 % der
+  WSJT-X-Decodes (Stock: 73 %), gemessen mit `scripts/bench_decoder_corpus.py`.
+- **Antwortstrategie aus der eigenen Telemetrie** — Ziele unter −13 dB nur
+  mit PSK-Reporter-Bestätigung, Kontinente mit schlechter Vollendungsquote
+  ebenso, ein adaptiver CQ-Fallback, wenn kein brauchbarer Rufer da ist, ein
+  A/B-Test der Antwortfrequenz (ruhiger Bin vs. Rufer-Frequenz) und eine
+  lernende Kontinent-Prior. Jeder Regler ist ein Config-Toggle, die Zahlen
+  dahinter stehen in `docs/flags.md`.
+- **Rig-Leitplanken** — Ein-Klick-Reset auf PKTUSB / 2700 Hz / Dial (optional
+  automatisch, wenn jemand am Rig dreht), ALC- und SWR-Wächter, die nur während
+  eigener Bursts messen, eine Antennen-Freigabe, die dem Autopilot sagt, ob
+  Bandwechsel ohne Abstimmung erlaubt sind.
+- **22-stufiger konfigurierbarer Picker** (Priorität per Drag-and-drop):
   Pile-Up-Vermeidung, Tail-End-Pickup, Grayline-Boost, Soft-Blacklist die aus
   der eigenen QSO-Historie lernt, Band-Conditions-Bewusstsein, Buddy-Seen
   (auf anderem Band gearbeitet), gradueller `psk_snr`, DXCC-Seltenheit, 5BWAS,
@@ -110,8 +125,10 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
   bleibt die Quelle der Wahrheit.
 - **Watchlist + ntfy-Push** für DXpeditionen / Wunsch-DX, automatisch aus dem
   **NG3K-ADXO**-Kalender importiert.
-- **Blitzortung-Gewitterwarnung** — Live-WS-Stream, ntfy-Push wenn ein
-  Einschlag innerhalb eines konfigurierbaren Radius landet.
+- **Blitzortung-Gewitterwarnung** — Live-WS-Stream; ein ntfy-Push, wenn ein
+  Gewitter in den konfigurierbaren Radius (Default 10 km) eintritt, und noch
+  einer, wenn es weiter näher rückt. Eine Front, die steht oder abzieht, bleibt
+  still.
 - **Lizenzabhängige Sicherheit** — Leistungs-Cap, Band-Sperre, SWR-Watchdog
   mit Live-PTT-Abschaltung, ALC-PI-Regelschleife statt Bang-Bang.
 - **CEPT / Auslandsbetrieb** — GPS-Länder-Erkennung über echte Grenz-Polygone
@@ -127,68 +144,9 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
   fehlschlägt (ein abgeschlossenes QSO geht nie still verloren), tägliches
   DB-Backup, Telemetrie-Retention, Secrets aus den API-Antworten redactet.
 - **Self-Update** — der Pi holt sich getaggte Releases alle 10 min von GitHub,
-  Health-Check nach Neustart, Auto-Rollback bei Fehler.
-
-## Architektur
-
-Vollständige Spezifikation: [architecture.de.md](./architecture.de.md)
-
-```
-backend/         Python 3.12 + FastAPI-Controller, ft8_lib via cffi
-frontend/        Svelte 5 + Vite Single-Page-App (mobile-first)
-vendor/ft8_lib/  Kārlis Gobas FT8/FT4-Codec (git-Submodul, MIT)
-deploy/          systemd-Units, NetworkManager, hostapd, chrony, install.sh
-data/            cty.dat (offline DXCC), Map-Tiles, marinefunker, dxcc_rarity
-docs/            Diagramme, Notizen, Audit-Logs
-scripts/         release.sh, self-update.sh, pi-check.sh, dev_run.py
-```
-
-## Schnellstart — Workstation (kein Pi nötig)
-
-```bash
-git submodule update --init --recursive
-cd vendor/ft8_lib && make && cd ../..
-
-cd backend
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
-pytest
-
-cd ../frontend
-npm install
-npm run dev   # http://localhost:5173
-```
-
-## Erst-Inbetriebnahme auf einem Pi
-
-```bash
-ssh pi@<host>
-git clone https://github.com/simonsorcerer23/ft8-raspi.git ~/ft8-appliance
-cd ~/ft8-appliance
-sudo ./deploy/install.sh
-```
-
-`install.sh` nutzt standardmaessig den ausgecheckten Repo-Pfad und den
-aufrufenden sudo-User (Fallback: Repo-Owner). Fuer dedizierte Accounts oder
-abweichende Pfade: `sudo ./deploy/install.sh --user USER --dir APP_DIR`. Der
-Installer rendert systemd-Units und Self-Update-sudoers-Regeln fuer genau
-diese Installation und speichert die Werte in
-`/etc/ft8-appliance/install.env`.
-
-Folge-Releases werden automatisch über `ft8-self-update.timer` ausgerollt.
-Ein neues Release auf der Workstation schneidest du mit:
-
-```bash
-./scripts/release.sh vX.Y.Z
-```
-
-Das aktualisiert auch [CHANGELOG.md](./CHANGELOG.md) (aus dem Commit-Log
-generiert) und schreibt die Änderungsliste in die Tag-Annotation. Die volle
-Versionshistorie steht in [CHANGELOG.md](./CHANGELOG.md).
-
-## Hardware
-
-- **SBC:** Raspberry Pi 5 (4 GB reichen, 8 GB schöner für größere Logs)
+  bringt vorher das laufende QSO zu Ende (keine neuen Picks oder CQs solange),
+  Health-Check nach dem Neustart, automatischer Rollback bei Fehler.
+- **SBC:** Raspberry Pi 4B 8 GB (die Produktionsbox) oder Pi 5 (4 GB reichen, 8 GB schöner für größere Logs)
 - **Storage:** NVMe-SSD empfohlen für die QSO-Datenbank
 - **Funkgerät:** Icom IC-705 oder IC-7300 über ein einziges USB-Kabel
   (CAT + Audio) via `rigctld`. QMX/QMX+ experimentell unterstützt.

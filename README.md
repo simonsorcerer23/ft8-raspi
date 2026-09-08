@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Headless FT8/FT4 station controller running on a Raspberry Pi 5. Sits between
+Headless FT8/FT4 station controller running on a Raspberry Pi 4B (or Pi 5). Sits between
 an Icom IC-705 / IC-7300 and the world, controlled entirely from a phone
 browser. **Replaces WSJT-X** for portable / unattended-overseer use, with
 features WSJT-X does not provide out of the box.
@@ -59,7 +59,7 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 ### Stats &amp; controls — SWR trend, best times, Pi status, TX controls
 ![Stats](docs/screenshots/stats.png)
 
-### Hunt priority — the 20 freely sortable picker tiers
+### Hunt priority — the 22 freely sortable picker tiers
 ![Hunt priority](docs/screenshots/config_3.png)
 
 ### Operators &amp; logbooks — multi-op, QRZ/ClubLog, demo toggle
@@ -77,7 +77,22 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 
 ## Highlights
 
-- **20-tier configurable picker** (drag-and-drop priority): pile-up
+- **Decoder beyond stock ft8_lib** — two-stage decoding (a fast pass decides
+  TX within ~0.4 s, a second pass in a thread adds coherent subtract-and-rerun,
+  OSD, per-pass analysis windows and fine-sync demodulation). On the WSJT-X
+  reference recordings shipped with ft8_lib it now finds 88 % of WSJT-X's
+  decodes (stock: 73 %), measured with `scripts/bench_decoder_corpus.py`.
+- **Reply strategy from own telemetry** — targets below −13 dB only with PSK
+  Reporter confirmation, continents with a poor completion rate likewise, an
+  adaptive CQ fallback when no usable caller is around, an A/B test of the
+  reply frequency (quiet bin vs. caller's frequency) and a learning continent
+  prior. Every knob is a config toggle with the numbers that motivated it in
+  `docs/flags.md`.
+- **Rig guardrails** — one-click restore to PKTUSB / 2700 Hz / dial (optional
+  auto-restore when somebody fiddles with the rig), ALC and SWR watchdogs that
+  only act during our own bursts, an antenna flag that tells the autopilot
+  whether band changes are allowed without retuning.
+- **22-tier configurable picker** (drag-and-drop priority): pile-up
   avoidance, tail-end pickup, grayline boost, soft-blacklist learning from
   own QSO history, band-conditions awareness, buddy-seen
   (worked-on-other-band), graded `psk_snr`, DXCC rarity, 5BWAS, VUCC grid
@@ -111,8 +126,9 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
   the manual web import.
 - **Watchlist + ntfy push** for DXpeditions / wanted DX, auto-imported from
   the **NG3K ADXO** schedule.
-- **Blitzortung lightning warning** — live WS stream, ntfy push when a
-  strike lands inside a configurable radius.
+- **Blitzortung lightning warning** — live WS stream; one ntfy push when a
+  storm enters the configurable radius (default 10 km) and one more if it
+  keeps closing in. A front that sits or retreats stays silent.
 - **License-aware safety** — Power cap, band lockout, SWR watchdog with
   live PTT-cut, ALC PI-loop instead of bang-bang.
 - **CEPT / overseas operation** — GPS country detection via real border
@@ -128,7 +144,8 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
   ever fails (a completed contact is never silently lost), daily DB backup,
   telemetry retention, and secrets redacted from the API responses.
 - **Self-update** — Pi pulls tagged releases from GitHub every 10 min,
-  health-checks after restart, auto-rollback on failure.
+  finishes the running QSO first (no new picks or CQs meanwhile), health-checks
+  after restart, auto-rollback on failure.
 
 ## Architecture
 
@@ -188,7 +205,7 @@ history lives in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Hardware
 
-- **SBC:** Raspberry Pi 5 (4 GB sufficient, 8 GB nicer for bigger logs)
+- **SBC:** Raspberry Pi 4B 8 GB (the production box) or Pi 5 (4 GB sufficient, 8 GB nicer for bigger logs)
 - **Storage:** NVMe SSD recommended for the QSO database
 - **Radio:** Icom IC-705 or IC-7300 via single USB cable (CAT + audio)
   through `rigctld`. QMX/QMX+ has experimental support.
@@ -222,7 +239,7 @@ team of amateur radio operators in Germany.
 
 # Deutsch (Kurzfassung)
 
-Headless FT8/FT4-Steuerung auf Raspberry Pi 5 für IC-705 / IC-7300. Sitzt
+Headless FT8/FT4-Steuerung auf Raspberry Pi 4B (oder Pi 5) für IC-705 / IC-7300. Sitzt
 zwischen Rig und Welt, Bedienung komplett übers Handy (passwortgeschützt).
 **Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb mit Features,
 die WSJT-X nicht out of the box hat — 20-Tier-Picker mit Pile-Up-Avoidance,
