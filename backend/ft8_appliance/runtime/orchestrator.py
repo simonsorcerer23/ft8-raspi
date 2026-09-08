@@ -2945,6 +2945,10 @@ class Orchestrator:
     # Monotonic-Zeitstempel des letzten BRAUCHBAREN Snapshots (siehe
     # rig_link_guard). None = seit dem Start noch keiner angekommen.
     _last_rig_at: float | None = field(default=None, init=False)
+    # 2026-09-08: Zeitpunkt des Starts. Ohne ihn blieb rig_link_age_s fuer immer
+    # None, wenn rigctld gar nicht erst hochkam — der Guard liess das durch und
+    # die Box rief CQ ohne PTT-Steuerung (live erlebt: ft8-rigctld war disabled).
+    _rig_watch_since: float = field(default_factory=time.monotonic, init=False)
     # Einmal pro Prozess: beim ersten brauchbaren Snapshot pruefen, ob PTT
     # noch von einem Vorgaenger-Prozess ansteht (siehe start()).
     _boot_ptt_checked: bool = field(default=False, init=False)
@@ -6217,7 +6221,11 @@ class Orchestrator:
             # urteilen swr/battery/antenna/license-Guard bei totem rigctld
             # ueber lauter None und gehen dabei alle auf gruen.
             rig_link_age_s=(
-                None if self._last_rig_at is None
+                # Nie ein Snapshot angekommen: Alter seit Start. In der Bootphase
+                # ist das klein (Guard bleibt gruen), bei totem rigctld waechst es
+                # ueber rig_link_max_age_s und sperrt — genau die Absicht.
+                time.monotonic() - self._rig_watch_since
+                if self._last_rig_at is None
                 else time.monotonic() - self._last_rig_at
             ),
         )

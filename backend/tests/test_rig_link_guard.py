@@ -15,6 +15,7 @@ jede rig-seitige Pruefung durchwinken.
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 from unittest.mock import AsyncMock
 
 import pytest
@@ -220,7 +221,10 @@ async def test_the_age_reaches_the_hardware_state(monkeypatch) -> None:
     tick = SlotTick(index=0, posix=now.timestamp(), utc_start=now)
 
     await orch._refresh_hardware_state(tick)
-    assert orch._hardware_state.rig_link_age_s is None  # noch nie gepollt
+    # 2026-09-08: "noch nie gepollt" ist nicht mehr None, sondern das Alter seit
+    # Start — sonst bleibt der Guard gruen, wenn rigctld gar nicht erst hochkommt.
+    age = orch._hardware_state.rig_link_age_s
+    assert age is not None and age < 5.0  # frisch gestartet -> Guard noch gruen
 
     orch._last_rig_at = _time.monotonic() - 300.0  # Rig seit 5 min weg
     await orch._refresh_hardware_state(tick)
@@ -228,3 +232,48 @@ async def test_the_age_reaches_the_hardware_state(monkeypatch) -> None:
     assert age is not None
     assert age == pytest.approx(300.0, abs=5.0)
     assert rig_link_guard(orch._hardware_state, GuardLimits()).ok is False
+
+
+def test_never_connected_locks_after_the_grace_period() -> None:
+    """2026-09-08: rigctld war nach einem Stromreset disabled und kam nie hoch.
+    rig_link_age_s blieb None, der Guard liess durch, und die Box rief CQ ohne
+    PTT-Steuerung. Jetzt meldet der Orchestrator "Alter seit Start"."""
+    from ft8_appliance.statemachine.guards import GuardLimits, HardwareState, rig_link_guard
+
+    lim = GuardLimits(rig_link_max_age_s=60.0)
+    # Bootphase: erst wenige Sekunden ohne Rig -> noch gruen
+    assert rig_link_guard(HardwareState(rig_link_age_s=5.0), lim).ok is True
+    # rigctld kommt nicht hoch -> nach der Schwelle gesperrt
+    assert rig_link_guard(HardwareState(rig_link_age_s=1800.0), lim).ok is False
+    # Demo/Tests ohne Rig setzen das Feld nicht
+    assert rig_link_guard(HardwareState(rig_link_age_s=None), lim).ok is True
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_reports_age_since_start_when_rig_never_answered() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from ft8_appliance.config import AntennaConfig, AppConfig, BandConfig, OperatingConfig, OperatorConfig
+    from ft8_appliance.runtime import FakeSlotClock, Orchestrator
+    from ft8_appliance.runtime.slot_clock import SlotTick
+
+    cfg = AppConfig(
+        operator=OperatorConfig(callsign="DK9XR", default_locator="JN58td"),
+        bands=[BandConfig(name="20m", freq_khz=14074, antenna="w")],
+        antennas=[AntennaConfig(name="w", bands=["20m"])],
+        operating=OperatingConfig(),
+    )
+    rig = AsyncMock(); rig.snapshot = AsyncMock(side_effect=OSError("rigctld down")); rig.close = AsyncMock()
+    gps = AsyncMock(); gps.snapshot = SimpleNamespace(mode=3, lat=0, lon=0, ts=None, lock_for_min=None, satellites_used=None); gps.close = AsyncMock()
+
+    async def nd(tick):
+        return []
+
+    o = Orchestrator(config=cfg, rig=rig, gps=gps, decode_source=nd, slot_clock=FakeSlotClock(count=0))
+    o._rig_watch_since -= 3600.0            # eine Stunde ohne je eine Rig-Antwort
+    posix = 1_700_000_015.0
+    await o._refresh_hardware_state(SlotTick(index=1, posix=posix,
+                                             utc_start=_dt.datetime.fromtimestamp(posix, tz=_dt.UTC)))
+    assert o._hardware_state.rig_link_age_s is not None
+    assert o._hardware_state.rig_link_age_s > 3000
