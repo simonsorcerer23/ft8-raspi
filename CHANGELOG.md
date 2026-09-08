@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.82.2 — 2026-09-08
+- fix: jt9 schreibt decoded.txt nicht mehr ins Repo (blockierte das Self-Update)
+- docs+scripts: Backup und Restore der Appliance, Runbook fuer den Umzug auf den Pi 5
+
 ## v0.82.1 — 2026-09-08
 - feat: jt9 fuer FT4 (-5) und WSJT-X-AP (-X 1 mit Call/Partner) freigegeben — gemessen, unsichere AP-Decodes verworfen
 
