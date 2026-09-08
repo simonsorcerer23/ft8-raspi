@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.82.3 — 2026-09-08
+- fix: decoded.txt war versehentlich eingecheckt; Self-Update raeumt Laufzeit-Artefakte weg
+
 ## v0.82.2 — 2026-09-08
 - fix: jt9 schreibt decoded.txt nicht mehr ins Repo (blockierte das Self-Update)
 - docs+scripts: Backup und Restore der Appliance, Runbook fuer den Umzug auf den Pi 5
