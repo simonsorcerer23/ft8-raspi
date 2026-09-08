@@ -213,6 +213,7 @@ Versionshistorie steht in [CHANGELOG.md](./CHANGELOG.md).
 - **Funkgerät:** Icom IC-705 oder IC-7300 über ein einziges USB-Kabel
   (CAT + Audio) via `rigctld`. QMX/QMX+ experimentell unterstützt.
 - **Audio:** Onboard-USB-CODEC des Rigs (keine extra Soundkarte)
+- **Software auf dem Pi:** Debian-Paket `wsjtx` für die `jt9`-Decoderstufe (installiert `install.sh`; ohne das Paket bleibt die dritte Stufe einfach aus)
 - **GPS:** Optional, hilft bei Zeit + Locator im portablen Betrieb
 
 ## Zugänge & Datenschutz
