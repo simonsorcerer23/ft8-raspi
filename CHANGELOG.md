@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.80.0 — 2026-09-08
+- feat: adaptiver CQ-Fallback, eine Wiederholung statt zwei, Kontinent-Gate mit PSK-Ausnahme
+
 ## v0.79.1 — 2026-09-07
 - fix: Gewitterwarnung nur bei Eintritt in 10 km und bei deutlicher Annaeherung
 
