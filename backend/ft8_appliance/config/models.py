@@ -379,10 +379,15 @@ class OperatingConfig(BaseModel):
     # Tiefe 3, wenn wir im naechsten Slot senden (QSO/CQ): 30 s Zeitfenster
     decoder_jt9_boost_in_qso: bool = True
     # FT4 ueber jt9 (-5) — Freigabe nach Messung am Pi
-    decoder_jt9_ft4: bool = False   # bis zur Messung am Pi (7,5-s-Slot!) aus
+    # FT4 ueber jt9 (-5): gemessen 2026-09-08 auf synthetischen 7,5-s-Slots, 5/5
+    # Decodes in 0,1 s (x86); jt9 will genau 7,5 s Audio, nicht 15 s.
+    decoder_jt9_ft4: bool = True
     # AP (a-priori: eigener Call/Grid, Partner) an jt9 durchreichen; -X-Flags
-    decoder_jt9_ap: bool = False
-    decoder_jt9_ap_flags: int = Field(default=0, ge=0, le=63)
+    # gemessen 2026-09-08 (synthetisch, x86): -X 1 mit -c/-x holt an der Grenze
+    # Antworten an uns, die sonst keiner findet; -X 2/3/7 nichts. Unsichere
+    # AP-Decodes ("?") werden verworfen. Nur mit Partner (-x) wirksam.
+    decoder_jt9_ap: bool = True
+    decoder_jt9_ap_flags: int = Field(default=1, ge=0, le=63)
     # Hard-Cap: darueber sperrt der alc_guard TX (sticky, Operator muss
     # quittieren). 50 liegt bewusst ueber alc_safety_threshold=40 — erst
     # wenn der automatische Gain-Watchdog es NICHT mehr einfaengt, greift

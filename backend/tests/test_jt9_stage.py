@@ -54,7 +54,10 @@ async def test_jt9_stage_delivers_only_new_messages(monkeypatch) -> None:
     await pl._jt9_task
     delivered = sorted(m for batch in late for m in batch)
     assert delivered == ["CQ JA1XYZ PM95", "CQ W1AW FN31"]   # jeder nur einmal, egal wer ihn fand
-    assert pl.metrics.jt9_total == 1 and pl.metrics.late_decodes_total == 1
+    # Stufe 2 und jt9 laufen parallel — wer zuerst fertig ist, bekommt den
+    # gemeinsamen Fund gutgeschrieben; die Summe ist entscheidend.
+    assert pl.metrics.jt9_total + pl.metrics.late_decodes_total == 2
+    assert pl.metrics.jt9_total >= 1
 
 
 @pytest.mark.asyncio
@@ -110,3 +113,15 @@ async def test_depth_boost_uses_depth_3_and_blocks_after_overrun(monkeypatch) ->
     pl._jt9_boost_blocked_until = 10**12          # Sperre aktiv -> zurueck auf 2
     await pl(_tick(1)); await pl._jt9_task
     assert seen_depths == [3, 2]
+
+
+def test_parser_reads_ft4_lines_and_ap_suffix() -> None:
+    out = "000000 -10 -0.2 1500 +  DK9XR JA1XYZ PM95                       \n000000  -3  0.1  987 ~  DK9XR W1AW R-05     a2\n<DecodeFinished>   0   2        0\n"
+    d = _jt9.parse_jt9_output(out)
+    assert [x.message for x in d] == ["DK9XR JA1XYZ PM95", "DK9XR W1AW R-05"]
+
+
+def test_parser_drops_uncertain_ap_decodes() -> None:
+    out = "000000 -22  0.3 1500 ~  DL8TG SP2EWQ -10     a2\n000000 -23  0.3 1500 ~  DL8TG SP2EWQ -12     ? a2\n"
+    assert [x.message for x in _jt9.parse_jt9_output(out)] == ["DL8TG SP2EWQ -10"]
+    assert len(_jt9.parse_jt9_output(out, drop_uncertain=False)) == 2
