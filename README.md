@@ -212,6 +212,7 @@ history lives in [CHANGELOG.md](./CHANGELOG.md).
 - **Radio:** Icom IC-705 or IC-7300 via single USB cable (CAT + audio)
   through `rigctld`. QMX/QMX+ has experimental support.
 - **Audio:** Onboard USB CODEC of the rig (no extra sound card)
+- **Software on the Pi:** Debian package `wsjtx` for the `jt9` decoder stage (installed by `install.sh`; without it the third stage simply stays off)
 - **GPS:** Optional, helps with time + grid locator when portable
 
 ## Credentials & privacy
