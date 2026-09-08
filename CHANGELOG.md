@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.82.1 — 2026-09-08
+- feat: jt9 fuer FT4 (-5) und WSJT-X-AP (-X 1 mit Call/Partner) freigegeben — gemessen, unsichere AP-Decodes verworfen
+
 ## v0.82.0 — 2026-09-08
 - feat: jt9 Tiefe 3 im Sendezyklus (QSO/CQ), FT4- und AP-Plumbing fuer jt9 (beides bis zur Messung aus)
 - feat: jt9 Tiefe 3 im Sendezyklus (QSO/CQ), FT4- und AP-Plumbing fuer jt9 (beides bis zur Messung aus)
