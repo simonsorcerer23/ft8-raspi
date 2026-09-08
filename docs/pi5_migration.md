@@ -21,7 +21,34 @@ Argon NEO 5 M.2 mit NVMe-SSD, offiziellem 27-W-Netzteil und RTC-Batterie.
 Nicht übernommen: `install.env` (erzeugt `install.sh` neu), `config.txt`
 (Pi-5-spezifisch), Tailscale-State (Neuanmeldung ist sauberer).
 
-## Ablauf
+## Aufbau an einem anderen Ort (Firma), Rig kommt später
+
+Der neue Pi muss nicht am Rig stehen, um eingerichtet zu werden — das Backup
+liegt auf dem PC, nicht auf dem alten Pi. Arbeitsteilung:
+
+**Sebastian am neuen Pi (10 Minuten):**
+1. Zusammenbauen: NVMe aufs Argon-Board, RTC-Batterie an den Pi 5.
+2. microSD am PC mit dem Raspberry Pi Imager bespielen: **Raspberry Pi OS
+   Lite 64-bit**, Hostname `ft8`, Benutzer `sebastian`, SSH mit dem
+   öffentlichen Schlüssel aus `~/.ssh/id_ed25519.pub`, WLAN `Altec`
+   (das Firmennetz; `reisprivat` kommt später aus dem Backup dazu).
+3. Pi mit der microSD starten, `curl -fsSL https://tailscale.com/install.sh | sh`
+   und `sudo tailscale up`, den Link im Browser bestätigen. Der Knoten
+   erscheint als **`ft8-1`**, solange der alte Pi `ft8` noch online ist.
+
+**Danach alles Weitere per SSH, ohne Sebastian:** NVMe bespielen und
+Bootreihenfolge umstellen, `install.sh`, Backup einspielen, prüfen.
+
+**Beim Aufstellen am Rig:** Pi anstecken, IC-7300 an eine schwarze
+USB-2.0-Buchse, GPS daneben. Das WLAN `reisprivat` ist dann aus dem Backup
+bekannt; kommt er trotzdem nicht ins Netz, öffnet er nach 60 s den Hotspot
+`ft8-hotspot`. Zum Schluss den alten Tailscale-Knoten `ft8` löschen und
+`ft8-1` umbenennen.
+
+Ohne angeschlossenes Rig sperrt der `rig_link_guard` den Sendebetrieb — das
+ist beabsichtigt (seit v0.83.0) und kein Fehler.
+
+## Ablauf (wenn Pi und Rig am selben Ort sind)
 
 1. **Zusammenbau.** NVMe ins Argon-Board, RTC-Batterie an den Pi-5-Anschluss
    (der Pi 5 hat eine echte Uhr — der 4B hatte keine, deshalb bootete er mit
