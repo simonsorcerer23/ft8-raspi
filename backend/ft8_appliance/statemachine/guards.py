@@ -146,10 +146,16 @@ def rig_link_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
     Darum die Alterspruefung an einer Stelle statt None-Checks in fuenf
     Guards: nur wer frische Messwerte hat, darf ueber sie urteilen.
 
-    ``None`` sperrt bewusst nicht. Das heisst "seit dem Start nie ein
-    Snapshot angekommen" — Bootphase, Demo-Betrieb, Testpfade ohne Rig.
-    Ein Verlust laesst sich daraus nicht ableiten, und ein Lock waere
-    sticky.
+    ``None`` sperrt bewusst nicht — Demo-Betrieb und Testpfade ohne Rig
+    setzen das Feld gar nicht erst.
+
+    Der Fall "seit dem Start nie ein Snapshot angekommen" ist dagegen KEIN
+    None mehr: der Orchestrator meldet dafuer das Alter seit Start (2026-09-08).
+    In der Bootphase ist das klein und der Guard bleibt gruen; kommt rigctld
+    gar nicht hoch, waechst es ueber die Schwelle und sperrt. Vorher rief die
+    Box in dem Fall stundenlang CQ, ohne PTT setzen zu koennen — live erlebt,
+    nachdem ``ft8-rigctld`` nach einem Stromreset nicht startete (der Dienst
+    war ``disabled``).
     """
     if hw.rig_link_age_s is None:
         return GuardResult(True, "rig_link_guard")
