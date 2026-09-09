@@ -26,6 +26,61 @@
 #include "ft8/text.h"
 #include "ft8/constants.h"
 
+/* 2026-09-09: Multicore. Die Kandidatenschleifen jedes Passes laufen mit
+ * OpenMP parallel — aber nur der teure, rein lesende Teil (LLR-Extraktion,
+ * Belief Propagation, OSD, Feinsync). Alles, was gemeinsamen Zustand
+ * beruehrt — Hashtabelle, Dedupe, Known-Call-Gate, Refine-Budget,
+ * Statistik, Ausgabe — bleibt seriell und laeuft in Kandidatenreihenfolge.
+ * Jeder Thread schreibt sein Ergebnis an den Platz seines Kandidatenindex;
+ * die serielle Phase liest die Plaetze der Reihe nach. Dadurch ist die
+ * Ausgabe bit-identisch zur seriellen Abarbeitung, unabhaengig von der
+ * Thread-Zahl (Nachweis: scripts/decoder_golden.py).
+ *
+ * Ohne -fopenmp kompiliert derselbe Code seriell (die Pragmas fallen weg). */
+/* ThreadSanitizer-Nachweis: TSan kennt die Barrieren von libgomp nicht und
+ * meldet darum die Zugriffe zweier aufeinanderfolgender Regionen auf
+ * dieselbe Stack-Adresse als Wettlauf (Scheinmeldung). Im TSan-Build machen
+ * wir genau Fork und Join sichtbar — NICHT die Iterationen untereinander —
+ * damit echte Wettlaeufe innerhalb einer Region sichtbar bleiben. Ausserhalb
+ * von -fsanitize=thread sind das leere Makros. */
+#if defined(__SANITIZE_THREAD__) && defined(_OPENMP)
+void AnnotateHappensBefore(const char* f, int l, const volatile void* addr);
+void AnnotateHappensAfter(const char* f, int l, const volatile void* addr);
+static char s_tsan_fence;
+#  define SHIM_TSAN_RELEASE() AnnotateHappensBefore(__FILE__, __LINE__, &s_tsan_fence)
+#  define SHIM_TSAN_ACQUIRE() AnnotateHappensAfter(__FILE__, __LINE__, &s_tsan_fence)
+/* Fork: GCC legt die geteilten Variablen (res, candidates, mon, ...) in eine
+ * Struktur auf dem Stack des Hauptthreads und befuellt sie unmittelbar vor
+ * dem Regionsstart — nach allem, was vor der Region steht. Darum gibt der
+ * Master erst INNERHALB der Region frei; die Barriere sorgt dafuer, dass
+ * jeder Thread sein Uebernehmen danach ausfuehrt. Nur im TSan-Build. */
+#  define SHIM_TSAN_FORK()    _Pragma("omp master") { SHIM_TSAN_RELEASE(); } \
+                              _Pragma("omp barrier") SHIM_TSAN_ACQUIRE()
+#else
+#  define SHIM_TSAN_RELEASE() ((void)0)
+#  define SHIM_TSAN_ACQUIRE() ((void)0)
+#  define SHIM_TSAN_FORK()    ((void)0)
+#endif
+
+/* Verwendung:
+ *     SHIM_PARALLEL_BEGIN
+ *     SHIM_FOR
+ *     for (int idx = 0; idx < n; ++idx) { ... res[idx] ... }
+ *     SHIM_PARALLEL_END
+ * Fork: der Master gibt in der Region frei, jeder Thread des Teams uebernimmt.
+ * Join: jeder Thread gibt frei, der Hauptthread uebernimmt nach der Region.
+ * (Beides nur im TSan-Build wirksam, s. SHIM_TSAN_*.) */
+#ifdef _OPENMP
+#  include <omp.h>
+#  define SHIM_PARALLEL_BEGIN _Pragma("omp parallel num_threads(_shim_threads())") { SHIM_TSAN_FORK();
+#  define SHIM_FOR            _Pragma("omp for schedule(dynamic, 2)")
+#  define SHIM_PARALLEL_END   SHIM_TSAN_RELEASE(); } SHIM_TSAN_ACQUIRE();
+#else
+#  define SHIM_PARALLEL_BEGIN {
+#  define SHIM_FOR
+#  define SHIM_PARALLEL_END   }
+#endif
+
 /* ===================================================================
  * Callsign Hash-Tabelle (Sebastian-Request 2026-05-24, v0.5.0)
  * ===================================================================
@@ -45,9 +100,10 @@
  * aufgeloest, sofern wir den Call vorher mal mit-vollem-Namen
  * gesehen haben.
  *
- * KEINE Synchronisation — decode_slot() laeuft sequenziell (Python-
- * Pool-Worker single-threaded fuer diese Funktion). Bei zukuenftiger
- * Parallelisierung muesste das ein mutex bekommen.
+ * KEINE Synchronisation noetig: Innerhalb eines Slots wird die Tabelle
+ * nur aus der seriellen Sammelphase beschrieben (s. Multicore-Kommentar
+ * oben); die parallelen Phasen lesen sie nicht einmal. Zwischen Slots
+ * ruft der Orchestrator die Decoder nacheinander auf.
  */
 #define HASH_TABLE_SIZE 1024  /* 2026-09-06: war 256; Hint-Pass validiert gegen bekannte Calls, mehr Kandidaten = mehr Treffer */
 
@@ -209,8 +265,27 @@ static int s_knob_refine_tstep  = 60; /* Zeitschritt in Samples */
 static int s_knob_refine_fstep  = 20; /* Frequenzschritt in 0,01 Hz */
 static int s_knob_refine_nogate = 1;  /* 1: Feinsync-Decodes per BP+CRC (ohne OSD) brauchen keinen bekannten Call — so vertrauenswuerdig wie der std-Pass */
 static int s_knob_llr_scales  = 1;    /* 1 = nur BP mit Original-LLR; 2..4 = zusaetzliche Skalierungen (WSJT-X: llra..llrd) */
+static int s_knob_threads     = 0;    /* 2026-09-09: Threads je Kandidatenschleife; 0 = alle Kerne (omp_get_max_threads), 1 = seriell */
+
+/* Threads fuer die naechste parallele Kandidatenschleife. Wird in der
+ * num_threads()-Klausel ausgewertet, also bei jedem Eintritt neu. */
+static int _shim_threads(void) {
+#ifdef _OPENMP
+    if (s_knob_threads > 0) return s_knob_threads;
+    int n = omp_get_max_threads();
+    return n > 0 ? n : 1;
+#else
+    return 1;
+#endif
+}
+
+/* Fuer Diagnose aus Python: wie viele Threads eine Kandidatenschleife
+ * bekommt. 1 heisst entweder "ohne OpenMP gebaut" oder Knopf threads=1. */
+int ft8_shim_omp_max_threads(void) { return _shim_threads(); }
+
 int ft8_shim_set_knob(const char* name, int value) {
     if (strcmp(name, "sub_score") == 0) s_knob_sub_score = value;
+    else if (strcmp(name, "threads") == 0) s_knob_threads = value < 0 ? 0 : value;
     else if (strcmp(name, "hint_osr") == 0) s_knob_hint_osr = value;
     else if (strcmp(name, "sub_rounds") == 0) s_knob_sub_rounds = value;
     else if (strcmp(name, "min_score") == 0) s_knob_min_score = value;
@@ -243,6 +318,18 @@ typedef struct {
     float freq_hz;        /* audio-band offset */
     int   score;          /* raw Costas sync score */
 } ft8_shim_result_t;
+
+/* 2026-09-09: Ergebnis der parallelen Rechenphase, ein Eintrag je
+ * Kandidat (Index = Kandidatenindex). Genau ein Thread schreibt einen
+ * Eintrag; gelesen wird erst nach der Schleife, seriell, der Reihe nach. */
+typedef struct {
+    uint8_t       ok;          /* Codewort mit gueltiger CRC gefunden */
+    uint8_t       via_osd;     /* erst OSD hat es geliefert */
+    uint8_t       via_refine;  /* erst die Feinsync-Demodulation hat es geliefert */
+    int           nhard;       /* OSD-Diagnose: Hamming-Abstand zur harten Entscheidung */
+    float         metric;      /* OSD-Diagnose: Metrik des Codeworts */
+    ftx_message_t message;
+} shim_cand_res_t;
 
 
 /* Decode one 15-second slot of audio.
@@ -326,25 +413,34 @@ int ft8_shim_decode_slot(
     int      num_seen = 0;
     int      num_out  = 0;
 
+    /* Phase 1 (parallel, nur lesend): BP + CRC je Kandidat. */
+    shim_cand_res_t res[FT8_SHIM_MAX_CANDIDATES];
+    SHIM_PARALLEL_BEGIN
+    SHIM_FOR
+    for (int idx = 0; idx < num_cand; ++idx) {
+        ftx_decode_status_t status;
+        res[idx].ok = ftx_decode_candidate(&mon.wf, &candidates[idx], s_knob_std_ldpc,
+                                           &res[idx].message, &status) ? 1 : 0;
+    }
+    SHIM_PARALLEL_END
+
+    /* Phase 2 (seriell, Kandidatenreihenfolge): Dedupe, Entpacken mit
+     * Hashtabelle, Ausgabe — exakt die Reihenfolge der alten Schleife. */
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
         const ftx_candidate_t* cand = &candidates[idx];
-
-        ftx_message_t       message;
-        ftx_decode_status_t status;
-        if (!ftx_decode_candidate(&mon.wf, cand, s_knob_std_ldpc, &message, &status)) {
-            continue;  /* LDPC fail or CRC mismatch */
-        }
+        if (!res[idx].ok) continue;  /* LDPC fail or CRC mismatch */
+        const ftx_message_t* message = &res[idx].message;
 
         int dup = 0;
         for (int j = 0; j < num_seen; ++j) {
-            if (memcmp(seen[j], message.payload, 10) == 0) {
+            if (memcmp(seen[j], message->payload, 10) == 0) {
                 dup = 1;
                 break;
             }
         }
         if (dup) continue;
         if (num_seen < (int)(sizeof(seen) / sizeof(seen[0]))) {
-            memcpy(seen[num_seen++], message.payload, 10);
+            memcpy(seen[num_seen++], message->payload, 10);
         }
 
         /* Unpack the 77-bit payload to human-readable text. We do not pass
@@ -353,7 +449,7 @@ int ft8_shim_decode_slot(
          * for the MVP. */
         char                   text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t  offsets;
-        ftx_message_rc_t       rc = ftx_message_decode(&message, &s_hash_if, text, &offsets);
+        ftx_message_rc_t       rc = ftx_message_decode(message, &s_hash_if, text, &offsets);
         if (rc != FTX_MESSAGE_RC_OK) {
             continue;
         }
@@ -621,25 +717,34 @@ static int _ft8_decode_one_pass(
     int eff_ldpc_iters = (ldpc_iters * s_ldpc_factor_pct) / 100;
     if (eff_ldpc_iters < 5) eff_ldpc_iters = 5;
     int num_out = num_out_initial;
+
+    /* Phase 1 (parallel, nur lesend): BP (ggf. mit LLR-Skalierungen) je Kandidat. */
+    shim_cand_res_t res[FT8_SHIM_MAX_CANDIDATES];
+    SHIM_PARALLEL_BEGIN
+    SHIM_FOR
+    for (int idx = 0; idx < num_cand; ++idx) {
+        ftx_decode_status_t status;
+        res[idx].ok = _ft8_decode_candidate_scaled(&mon.wf, &candidates[idx], eff_ldpc_iters,
+                                                   &res[idx].message, &status) ? 1 : 0;
+    }
+    SHIM_PARALLEL_END
+
+    /* Phase 2 (seriell, Kandidatenreihenfolge). */
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
         const ftx_candidate_t* cand = &candidates[idx];
-
-        ftx_message_t       message;
-        ftx_decode_status_t status;
-        if (!_ft8_decode_candidate_scaled(&mon.wf, cand, eff_ldpc_iters, &message, &status)) {
-            continue;
-        }
+        if (!res[idx].ok) continue;
+        const ftx_message_t* message = &res[idx].message;
 
         int dup = 0;
         for (int j = 0; j < *num_seen; ++j) {
-            if (memcmp(seen[j], message.payload, 10) == 0) { dup = 1; break; }
+            if (memcmp(seen[j], message->payload, 10) == 0) { dup = 1; break; }
         }
         if (dup) continue;
-        if (*num_seen < 200) memcpy(seen[(*num_seen)++], message.payload, 10);
+        if (*num_seen < 200) memcpy(seen[(*num_seen)++], message->payload, 10);
 
         char                   text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t  offsets;
-        ftx_message_rc_t       rc = ftx_message_decode(&message, &s_hash_if, text, &offsets);
+        ftx_message_rc_t       rc = ftx_message_decode(message, &s_hash_if, text, &offsets);
         if (rc != FTX_MESSAGE_RC_OK) continue;
 
         ft8_shim_result_t* r = &out[num_out];
@@ -796,8 +901,9 @@ static int s_osd_depth = 2;           /* 0 aus, 1 Ordnung 1, 2 Ordnung 1+2 (teil
 static int s_osd_order2_tail = 60;    /* Ordnung 2 nur ueber die unsichersten N Infobits */
 static int s_osd_crc_tries = 16;      /* beste Kandidaten nach Metrik, die eine CRC-Pruefung bekommen */
 #define OSD_CRC_TRIES_MAX 32
-static int s_osd_last_nhard = 0;      /* Diagnose: Hamming-Abstand harte Entscheidung <-> Codewort */
-static float s_osd_last_metric = 0.0f;
+/* 2026-09-09: die OSD-Diagnosewerte (nhard, metric) waren globale
+ * Variablen, die der Hint-Pass nach dem Aufruf las. Mit parallelen
+ * Kandidaten waere das ein Wettlauf — sie sind jetzt Ausgabeparameter. */
 void ft8_shim_set_osd_params(int order2_tail, int crc_tries) {
     s_osd_order2_tail = order2_tail < 0 ? 0 : (order2_tail > FTX_LDPC_K ? FTX_LDPC_K : order2_tail);
     s_osd_crc_tries = crc_tries < 1 ? 1 : (crc_tries > OSD_CRC_TRIES_MAX ? OSD_CRC_TRIES_MAX : crc_tries);
@@ -830,11 +936,25 @@ static int _osd_crc_ok(const uint8_t plain174[FTX_LDPC_N]) {
 
 typedef struct { float metric; int i, j; } osd_cand_t;
 
-/* Liefert 1 und plain174, wenn ein Codewort mit gueltiger CRC gefunden wurde. */
-static int _osd_decode(const float* llr, int depth, uint8_t plain174[FTX_LDPC_N]) {
-    static bits91_t gen[FTX_LDPC_N];
-    static int gen_ready = 0;
-    if (!gen_ready) { for (int n = 0; n < FTX_LDPC_N; ++n) _osd_gen_row(n, &gen[n]); gen_ready = 1; }
+/* Generatorzeilen fuer OSD, einmal berechnet, danach nur gelesen.
+ * 2026-09-09: die Initialisierung war "lazy" im ersten _osd_decode-Aufruf —
+ * mit parallelen Kandidaten ein Wettlauf beim allerersten Slot. Jetzt ruft
+ * die serielle Phase vor jeder parallelen Schleife _osd_gen_ensure(); die
+ * Pruefung in _osd_decode bleibt nur als Netz fuer andere Aufrufer. */
+static bits91_t s_osd_gen[FTX_LDPC_N];
+static int      s_osd_gen_ready = 0;
+static void _osd_gen_ensure(void) {
+    if (s_osd_gen_ready) return;
+    for (int n = 0; n < FTX_LDPC_N; ++n) _osd_gen_row(n, &s_osd_gen[n]);
+    s_osd_gen_ready = 1;
+}
+
+/* Liefert 1 und plain174, wenn ein Codewort mit gueltiger CRC gefunden wurde.
+ * out_nhard/out_metric: Diagnose des gefundenen Codeworts (duerfen NULL sein). */
+static int _osd_decode(const float* llr, int depth, uint8_t plain174[FTX_LDPC_N],
+                       int* out_nhard, float* out_metric) {
+    _osd_gen_ensure();
+    const bits91_t* gen = s_osd_gen;
 
     uint8_t hard[FTX_LDPC_N]; float rel[FTX_LDPC_N]; int order[FTX_LDPC_N];
     for (int n = 0; n < FTX_LDPC_N; ++n) { hard[n] = llr[n] > 0.0f; rel[n] = fabsf(llr[n]); order[n] = n; }
@@ -881,8 +1001,11 @@ static int _osd_decode(const float* llr, int depth, uint8_t plain174[FTX_LDPC_N]
     uint8_t c0[FTX_LDPC_N]; float d0 = 0.0f;
     for (int n = 0; n < FTX_LDPC_N; ++n) { c0[n] = (uint8_t)_b91_parity_and(&gen[n], &m0); if (c0[n] != hard[n]) d0 += rel[n]; }
 
-    /* Flip-Codewoerter f_i = G * (R^-1 e_i) */
-    static uint8_t f[FTX_LDPC_K][FTX_LDPC_N];
+    /* Flip-Codewoerter f_i = G * (R^-1 e_i).
+     * 2026-09-09: war ein static-Arbeitspuffer (16 KB) — mit parallelen
+     * Kandidaten haetten sich die Threads gegenseitig die Codewoerter
+     * ueberschrieben. Jetzt auf dem Stack; jeder Thread hat seinen eigenen. */
+    uint8_t f[FTX_LDPC_K][FTX_LDPC_N];
     for (int i = 0; i < FTX_LDPC_K; ++i) {
         bits91_t d; d.w[0] = d.w[1] = 0;
         for (int p = 0; p < FTX_LDPC_K; ++p) if (_b91_get(&rw[p], i)) _b91_set(&d, p);
@@ -890,7 +1013,7 @@ static int _osd_decode(const float* llr, int depth, uint8_t plain174[FTX_LDPC_N]
     }
     osd_cand_t best[OSD_CRC_TRIES_MAX]; int nbest = 0; const int OSD_CRC_TRIES = s_osd_crc_tries;
     #define OSD_PUSH(M, I, J) do { \
-        if (nbest < OSD_CRC_TRIES || (M) < best[nbest - 1].metric) { \
+        if (nbest < OSD_CRC_TRIES || (nbest > 0 && (M) < best[nbest - 1].metric)) { \
             int _k = (nbest < OSD_CRC_TRIES) ? nbest++ : nbest - 1; \
             best[_k].metric = (M); best[_k].i = (I); best[_k].j = (J); \
             while (_k > 0 && best[_k].metric < best[_k - 1].metric) { osd_cand_t _t = best[_k]; best[_k] = best[_k - 1]; best[_k - 1] = _t; --_k; } \
@@ -925,16 +1048,18 @@ static int _osd_decode(const float* llr, int depth, uint8_t plain174[FTX_LDPC_N]
         }
         if (_osd_crc_ok(plain174)) {
             int nh = 0; for (int n = 0; n < FTX_LDPC_N; ++n) nh += (plain174[n] != hard[n]);
-            s_osd_last_nhard = nh; s_osd_last_metric = best[k].metric;
+            if (out_nhard) *out_nhard = nh;
+            if (out_metric) *out_metric = best[k].metric;
             return 1;
         }
     }
     return 0;
 }
 
-/* Wie ftx_decode_candidate (FT8), aber mit OSD-Fallback nach BP-Fehlschlag. */
+/* Wie ftx_decode_candidate (FT8), aber mit OSD-Fallback nach BP-Fehlschlag.
+ * nhard/metric: OSD-Diagnose, nur gesetzt wenn *via_osd. */
 static bool _ft8_decode_candidate_osd(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, int max_iterations,
-                                      ftx_message_t* message, int* via_osd) {
+                                      ftx_message_t* message, int* via_osd, int* nhard, float* metric) {
     float log174[FTX_LDPC_N];
     uint8_t plain174[FTX_LDPC_N];
     int ldpc_errors = 0;
@@ -942,7 +1067,7 @@ static bool _ft8_decode_candidate_osd(const ftx_waterfall_t* wf, const ftx_candi
     ftx_extract_llr(wf, cand, log174);
     bp_decode(log174, max_iterations, plain174, &ldpc_errors);
     if (ldpc_errors > 0) {
-        if (s_osd_depth <= 0 || !_osd_decode(log174, s_osd_depth, plain174)) return false;
+        if (s_osd_depth <= 0 || !_osd_decode(log174, s_osd_depth, plain174, nhard, metric)) return false;
         *via_osd = 1;
     }
     if (!_osd_crc_ok(plain174)) return false;
@@ -1014,9 +1139,10 @@ static void _refine_normalize(float* log174) {
     for (int i = 0; i < FTX_LDPC_N; ++i) log174[i] *= norm;
 }
 
-/* Liefert true + message, wenn nach Feinsync ein Codewort gefunden wurde. */
+/* Liefert true + message, wenn nach Feinsync ein Codewort gefunden wurde.
+ * nhard/metric: OSD-Diagnose, nur gesetzt wenn *via_osd. */
 static bool _ft8_refine_decode(const float* signal, float dt_s, float freq_hz, int max_iterations,
-                               ftx_message_t* message, int* via_osd) {
+                               ftx_message_t* message, int* via_osd, int* nhard, float* metric) {
     int t0 = (int)lrintf((dt_s + FT8_DT_ORIGIN_S) * (float)FT8_SAMPLE_RATE_HZ);
     int best_dt = 0; float best_df = 0.0f; double best_e = -1.0;
     const int span = s_knob_refine_span, ts = s_knob_refine_tstep; const float fs = (float)s_knob_refine_fstep * 0.01f;
@@ -1043,7 +1169,7 @@ static bool _ft8_refine_decode(const float* signal, float dt_s, float freq_hz, i
     *via_osd = 0;
     bp_decode(log174, max_iterations, plain174, &ldpc_errors);
     if (ldpc_errors > 0) {
-        if (s_osd_depth <= 0 || !_osd_decode(log174, s_osd_depth, plain174)) return false;
+        if (s_osd_depth <= 0 || !_osd_decode(log174, s_osd_depth, plain174, nhard, metric)) return false;
         *via_osd = 1;
     }
     if (!_osd_crc_ok(plain174)) return false;
@@ -1055,6 +1181,18 @@ static bool _ft8_refine_decode(const float* signal, float dt_s, float freq_hz, i
     return true;
 }
 
+/* 2026-09-09: Der Hint-Pass hat zwei Abhaengigkeiten zwischen den
+ * Kandidaten, die eine naive Parallelisierung zerstoeren wuerde:
+ *   1. das Refine-Budget (nur die ersten refine_max Kandidaten, bei denen
+ *      BP+OSD scheitert, bekommen die teure Feinsync-Demodulation), und
+ *   2. das Known-Call-Gate, das die Hashtabelle liest, waehrend jeder
+ *      akzeptierte Kandidat seine Rufzeichen dort eintraegt — ob Kandidat
+ *      7 durchkommt, kann davon abhaengen, dass Kandidat 3 akzeptiert wurde.
+ * Darum drei Phasen: (1) parallel BP+OSD fuer alle, (2) seriell das
+ * Refine-Budget in Kandidatenreihenfolge vergeben und parallel die
+ * Feinsync fuer genau diese Kandidaten, (3) seriell in Reihenfolge Dedupe,
+ * Gate, Hashtabelle, Statistik, Ausgabe. Ergebnis identisch zur alten
+ * Einzelschleife; nur die Rechenarbeit ist verteilt. */
 static int _ft8_hint_pass(
     monitor_t*         mon,
     const float*       signal,   /* fuer die Feinsync-Demodulation (NULL = aus) */
@@ -1070,49 +1208,87 @@ static int _ft8_hint_pass(
         &mon->wf, s_knob_max_cand, candidates, 5
     );
     int num_out = num_out_initial;
+    _osd_gen_ensure();   /* seriell, bevor Threads die Tabelle lesen */
+
+    /* Phase 1 (parallel): BP + OSD. LDPC=120 (vs 25 Standard): mehr
+     * Iterationen fuer marginale Signale. */
+    shim_cand_res_t res[FT8_SHIM_MAX_CANDIDATES];
+    SHIM_PARALLEL_BEGIN
+    SHIM_FOR
+    for (int idx = 0; idx < num_cand; ++idx) {
+        int via_osd = 0;
+        res[idx].via_refine = 0;
+        res[idx].nhard = 0; res[idx].metric = 0.0f;
+        res[idx].ok = _ft8_decode_candidate_osd(&mon->wf, &candidates[idx], 120, &res[idx].message,
+                                                &via_osd, &res[idx].nhard, &res[idx].metric) ? 1 : 0;
+        res[idx].via_osd = (uint8_t)via_osd;
+    }
+    SHIM_PARALLEL_END
+
+    /* Phase 2: Refine-Budget seriell in Reihenfolge vergeben (wie die alte
+     * Schleife: jeder BP/OSD-Fehlschlag zaehlt, ob er spaeter dedupliziert
+     * wuerde oder nicht), dann Feinsync parallel fuer die Ausgewaehlten. */
+    uint8_t do_refine[FT8_SHIM_MAX_CANDIDATES];
     int n_refined = 0;
-    for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
-        const ftx_candidate_t* cand = &candidates[idx];
-        ftx_message_t       message;
-        ftx_decode_status_t status;
-        /* LDPC=120 (vs 25 Standard): mehr Iterationen für marginale Signale */
-        int via_osd = 0, via_refine = 0;
-        (void)status;
-        if (!_ft8_decode_candidate_osd(&mon->wf, cand, 120, &message, &via_osd)) {
-            if (signal == NULL || s_knob_refine <= 0 || n_refined >= s_knob_refine_max) continue;
-            ++n_refined;
+    for (int idx = 0; idx < num_cand; ++idx) {
+        do_refine[idx] = 0;
+        if (res[idx].ok) continue;
+        if (signal == NULL || s_knob_refine <= 0 || n_refined >= s_knob_refine_max) continue;
+        ++n_refined;
+        do_refine[idx] = 1;
+    }
+    if (n_refined > 0) {
+        SHIM_PARALLEL_BEGIN
+        SHIM_FOR
+        for (int idx = 0; idx < num_cand; ++idx) {
+            if (!do_refine[idx]) continue;
+            const ftx_candidate_t* cand = &candidates[idx];
             float c_dt = (cand->time_offset + (float)cand->time_sub / mon->wf.time_osr) * mon->symbol_period
                          - _dt_window_corr_s(mon) - FT8_DT_ORIGIN_S;
             float c_f = (mon->min_bin + cand->freq_offset + (float)cand->freq_sub / mon->wf.freq_osr) / mon->symbol_period;
-            if (!_ft8_refine_decode(signal, c_dt, c_f, 120, &message, &via_osd)) continue;
-            via_refine = 1;
+            int via_osd = 0;
+            res[idx].nhard = 0; res[idx].metric = 0.0f;
+            res[idx].ok = _ft8_refine_decode(signal, c_dt, c_f, 120, &res[idx].message,
+                                             &via_osd, &res[idx].nhard, &res[idx].metric) ? 1 : 0;
+            res[idx].via_osd = (uint8_t)via_osd;
+            res[idx].via_refine = 1;
         }
+        SHIM_PARALLEL_END
+    }
+
+    /* Phase 3 (seriell, Kandidatenreihenfolge): alles, was gemeinsamen
+     * Zustand liest oder schreibt. */
+    for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
+        const ftx_candidate_t* cand = &candidates[idx];
+        if (!res[idx].ok) continue;
+        const ftx_message_t* message = &res[idx].message;
+        const int via_osd = res[idx].via_osd, via_refine = res[idx].via_refine;
 
         int dup = 0;
         for (int j = 0; j < *num_seen; ++j) {
-            if (memcmp(seen[j], message.payload, 10) == 0) { dup = 1; break; }
+            if (memcmp(seen[j], message->payload, 10) == 0) { dup = 1; break; }
         }
         if (dup) continue;
 
         char text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t offsets;
-        if (ftx_message_decode(&message, &s_hash_if_readonly, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
+        if (ftx_message_decode(message, &s_hash_if_readonly, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
 
         /* Hint-Gate: nur akzeptieren wenn ein VORHER bekannter Call drin ist */
         if (!_ft8_text_has_known_call(text) && !(s_knob_refine_nogate && via_refine && !via_osd)) continue;
         /* OSD-Ergebnisse sind immer gueltige Codewoerter; zusaetzlich zur CRC
          * verlangen wir Naehe zur harten Entscheidung (Phantom: nhard 37 / 80). */
-        if (via_osd && (s_osd_last_nhard > 32 || s_osd_last_metric > 60.0f)) continue;
+        if (via_osd && (res[idx].nhard > 32 || res[idx].metric > 60.0f)) continue;
         /* jetzt regulaer entpacken, damit die Calls in die Tabelle kommen */
-        ftx_message_decode(&message, &s_hash_if, text, &offsets);
+        ftx_message_decode(message, &s_hash_if, text, &offsets);
         if (via_refine) s_pass_stats.pass_refine++;
         if (via_osd) {
             s_pass_stats.pass_osd++;
             if (getenv("FT8_SHIM_OSD_DEBUG") != NULL)
-                fprintf(stderr, "OSD-DEBUG %s | nhard=%d metric=%.1f score=%d\n", text, s_osd_last_nhard, s_osd_last_metric, cand->score);
+                fprintf(stderr, "OSD-DEBUG %s | nhard=%d metric=%.1f score=%d\n", text, res[idx].nhard, res[idx].metric, cand->score);
         }
 
-        if (*num_seen < 200) memcpy(seen[(*num_seen)++], message.payload, 10);
+        if (*num_seen < 200) memcpy(seen[(*num_seen)++], message->payload, 10);
 
         ft8_shim_result_t* r = &out[num_out];
         strncpy(r->message, text, FT8_SHIM_MSG_LEN - 1);
@@ -1469,17 +1645,27 @@ static int _ft4_decode_one_pass_signal(
 
     uint8_t seen[200][10];   /* 2026-09-06: volle 77-Bit-Nutzlast statt CRC-14 (Kollision 1:16384 -> pro Slot ~3 %) */
     int num_seen = 0, num_out = 0;
+
+    /* Phase 1 (parallel, nur lesend), Phase 2 seriell — s. FT8-Paesse. */
+    shim_cand_res_t res[FT8_SHIM_MAX_CANDIDATES];
+    SHIM_PARALLEL_BEGIN
+    SHIM_FOR
+    for (int idx = 0; idx < num_cand; ++idx) {
+        ftx_decode_status_t status;
+        res[idx].ok = ftx_decode_candidate(&mon.wf, &candidates[idx], eff_ldpc, &res[idx].message, &status) ? 1 : 0;
+    }
+    SHIM_PARALLEL_END
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
         const ftx_candidate_t* cand = &candidates[idx];
-        ftx_message_t message; ftx_decode_status_t status;
-        if (!ftx_decode_candidate(&mon.wf, cand, eff_ldpc, &message, &status)) continue;
+        if (!res[idx].ok) continue;
+        const ftx_message_t* message = &res[idx].message;
         int dup = 0;
-        for (int j = 0; j < num_seen; ++j) if (memcmp(seen[j], message.payload, 10) == 0) { dup = 1; break; }
+        for (int j = 0; j < num_seen; ++j) if (memcmp(seen[j], message->payload, 10) == 0) { dup = 1; break; }
         if (dup) continue;
-        if (num_seen < 200) memcpy(seen[num_seen++], message.payload, 10);
+        if (num_seen < 200) memcpy(seen[num_seen++], message->payload, 10);
         char text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t offsets;
-        if (ftx_message_decode(&message, &s_hash_if, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
+        if (ftx_message_decode(message, &s_hash_if, text, &offsets) != FTX_MESSAGE_RC_OK) continue;
         int prev_dup = 0;
         for (int q = 0; q < n_prev; ++q) if (strncmp(out_prev[q].message, text, FT8_SHIM_MSG_LEN) == 0) { prev_dup = 1; break; }
         if (prev_dup) continue;
@@ -1697,27 +1883,33 @@ int ft4_shim_decode_slot(
     int      num_seen = 0;
     int      num_out  = 0;
 
+    /* Phase 1 (parallel, nur lesend), Phase 2 seriell — s. FT8-Paesse. */
+    shim_cand_res_t res[FT8_SHIM_MAX_CANDIDATES];
+    SHIM_PARALLEL_BEGIN
+    SHIM_FOR
+    for (int idx = 0; idx < num_cand; ++idx) {
+        ftx_decode_status_t status;
+        res[idx].ok = ftx_decode_candidate(&mon.wf, &candidates[idx], FT8_SHIM_LDPC_ITERS,
+                                           &res[idx].message, &status) ? 1 : 0;
+    }
+    SHIM_PARALLEL_END
     for (int idx = 0; idx < num_cand && num_out < max_out; ++idx) {
         const ftx_candidate_t* cand = &candidates[idx];
-
-        ftx_message_t       message;
-        ftx_decode_status_t status;
-        if (!ftx_decode_candidate(&mon.wf, cand, FT8_SHIM_LDPC_ITERS, &message, &status)) {
-            continue;
-        }
+        if (!res[idx].ok) continue;
+        const ftx_message_t* message = &res[idx].message;
 
         int dup = 0;
         for (int j = 0; j < num_seen; ++j) {
-            if (memcmp(seen[j], message.payload, 10) == 0) { dup = 1; break; }
+            if (memcmp(seen[j], message->payload, 10) == 0) { dup = 1; break; }
         }
         if (dup) continue;
         if (num_seen < (int)(sizeof(seen) / sizeof(seen[0]))) {
-            memcpy(seen[num_seen++], message.payload, 10);
+            memcpy(seen[num_seen++], message->payload, 10);
         }
 
         char                   text[FTX_MAX_MESSAGE_LENGTH];
         ftx_message_offsets_t  offsets;
-        ftx_message_rc_t       rc = ftx_message_decode(&message, &s_hash_if, text, &offsets);
+        ftx_message_rc_t       rc = ftx_message_decode(message, &s_hash_if, text, &offsets);
         if (rc != FTX_MESSAGE_RC_OK) continue;
 
         ft8_shim_result_t* r = &out[num_out];

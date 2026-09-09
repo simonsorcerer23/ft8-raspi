@@ -396,82 +396,110 @@ Station teurer als ein verpasster Decode.
 **Damit sind die Parameter ausgereizt.** Die verbleibenden knapp 12 % zu
 WSJT-X sind algorithmisch, nicht per Knopf erreichbar.
 
-## Der Multicore-Umbau (analysiert, noch nicht umgesetzt)
+## Der Multicore-Umbau (umgesetzt 2026-09-09, v0.84.0)
 
-### Warum er der einzig verbliebene große Hebel ist
+### Ergebnis
 
-Der wertvollste Decode ist der, den **Stufe 1** findet — nur er kann im
-selben Slot beantwortet werden. Im Betrieb liefert Stufe 1 rund 150 Decodes
-je 59 Slots, die späteren Stufen zusammen weitere 120: **gut 45 % aller
-Decodes kommen zu spät für die Sendeentscheidung.** Liefe `extreme` als
-Stufe 1, wären die 43 zusätzlichen Decodes beantwortbar. Dafür muss es unter
-etwa zwei Sekunden bleiben; es braucht 2,2.
+`extreme` je Slot, Trefferzahl in jeder Stufe identisch (312 von 353):
 
-### Wieviel Parallelisierung bringt
+| | 1 Thread | 2 | 3 | 4 | 8 |
+|---|---|---|---|---|---|
+| Pi 5 (Cortex-A76, im laufenden Betrieb) | 2213 ms | 1395 ms | — | **1034 ms** | — |
+| Entwicklungsrechner (x86-64) | 814 ms | 512 ms | 409 ms | 358 ms | 289 ms |
 
-Die Laufzeit skaliert linear mit der Kandidatenzahl:
+Faktor 2,1 auf dem Pi 5, besser als die Amdahl-Schätzung (1,7), weil die
+Grundlast anteilig kleiner ist als aus der `max_cand`-Reihe abgeleitet.
+Der Standard-Pass geht von 72 auf 41 ms.
 
-| max_cand | 75 | 150 | 300 | 600 |
-|---|---|---|---|---|
-| Zeit | 1244 ms | 1620 ms | 2204 ms | 3182 ms |
+### Was tatsächlich umgebaut wurde
 
-Daraus: **≈3,7 ms je Kandidat, ≈970 ms Grundlast** (Wasserfall/FFT und die
-Subtraktion selbst). Bei 300 Kandidaten sind also rund 56 % der Zeit
-kandidatenweise Arbeit — unabhängig und damit parallelisierbar. Nach Amdahl
-mit vier Kernen: 970 + 1235/4 ≈ **1280 ms, Faktor 1,7.** Nicht Faktor 4, die
-Grundlast deckelt. Aber es reicht, um unter die Zwei-Sekunden-Marke zu
-kommen.
+Der Zuschnitt aus der Analyse hat gehalten: Parallel läuft **nur** der
+teure, rein lesende Teil — LLR-Extraktion, Belief Propagation, OSD,
+Feinsync — und schreibt sein Ergebnis an den Platz des Kandidatenindex
+(`shim_cand_res_t res[idx]`). Alles, was gemeinsamen Zustand berührt,
+bleibt seriell in Kandidatenreihenfolge. Die Analyse vom Vortag war aber
+in einem Punkt unvollständig: Der Grep nach „veränderlichen Globalen"
+hatte alle `static int`/`static float`-Zeilen weggefiltert. Beim Lesen
+des Codes kamen **vier weitere Stellen** dazu, die die Doku nicht nannte:
 
-Gegengeprüft: `resource.getrusage` über einen kompletten Korpuslauf ergibt
-verbrauchte Rechenzeit / verstrichene Zeit = **1,00** — ein Kern von vier.
-(Im Live-Betrieb laufen Stufe 1, Stufe 2 und jt9 nebeneinander, dort werden
-also durchaus mehrere Kerne benutzt; single-threaded ist der einzelne
-Decoderlauf.)
+1. `_osd_decode` hatte einen **statischen Arbeitspuffer**
+   `static uint8_t f[91][174]` — zwei Threads hätten sich gegenseitig die
+   Flip-Codewörter überschrieben. Jetzt auf dem Stack (16 KB je Aufruf).
+2. Die OSD-Generatorzeilen wurden **lazy** beim ersten Aufruf gebaut
+   (`gen_ready`) — beim allerersten parallelen Slot ein Wettlauf. Jetzt
+   `_osd_gen_ensure()`, seriell vor jeder parallelen Schleife.
+3. `s_osd_last_nhard` / `s_osd_last_metric` — OSD-Diagnose als **globale
+   Rückgabe**, vom Hint-Pass nach dem Aufruf gelesen. Jetzt
+   Ausgabeparameter, mitgeführt in `res[idx]`.
+4. Der Hint-Pass hat **zwei Abhängigkeiten zwischen Iterationen**: das
+   Refine-Budget (`n_refined < refine_max`, gezählt für jeden BP/OSD-
+   Fehlschlag, auch wenn der Kandidat später dedupliziert würde) und das
+   Known-Call-Gate, das die Hashtabelle liest, während jeder akzeptierte
+   Kandidat seine Rufzeichen dort einträgt. Darum **drei Phasen**: parallel
+   BP+OSD für alle → seriell das Refine-Budget in Reihenfolge vergeben →
+   parallel Feinsync für genau diese → seriell Dedupe, Gate, Hashtabelle,
+   Statistik, Ausgabe. Die Reihenfolge, in der `seen[]` gefüllt wird (im
+   Hint-Pass erst *nach* dem Gate, in den anderen Pässen *vor* dem
+   Entpacken), ist Pass für Pass exakt beibehalten.
 
-### Warum die Rennbedingungen vermeidbar sind
+Die Schleifenkörper laufen über `SHIM_PARALLEL_BEGIN` / `SHIM_FOR` /
+`SHIM_PARALLEL_END` (`omp parallel` + `omp for schedule(dynamic, 2)`),
+Thread-Zahl per Knopf `threads` (0 = alle Kerne). Ohne `-fopenmp` baut
+derselbe Code seriell. `libft8.a` ist unangetastet.
 
-`ft8_lib` hat **keinen veränderlichen globalen Zustand** in den Decode-Pfaden
-(geprüft: decode.c, ldpc.c, message.c, crc.c, text.c, monitor.c). Die
-Bibliothek arbeitet ausschließlich auf übergebenen Daten. Der gesamte
-gemeinsame Zustand ist unserer und besteht aus drei Dingen:
+### Nachweis
 
-1. **`s_hash_table` / `s_hash_head`** — der einzige echte Knackpunkt, weil
-   `ftx_message_decode` über den `save_hash`-Callback selbst hineinschreibt.
-   Lösung liegt bereits im Code: **`s_hash_if_readonly`** (im Mai gegen das
-   zirkuläre Known-Call-Gate gebaut). In der parallelen Phase nur lesen, neu
-   entpackte Rufzeichen thread-lokal sammeln, danach seriell eintragen.
-2. **Dedupe-Feld und Ergebnisliste** — thread-lokal führen, danach
-   zusammenlegen.
-3. **Pass-Statistikzähler** — thread-lokal zählen, per OpenMP-Reduktion
-   summieren.
+Nicht „312 Treffer", sondern **jede Nachricht, jeder Wert, jede
+Reihenfolge**: `scripts/decoder_golden.py` friert die komplette Ausgabe
+aller fünf Modi über den Korpus ein (mit dem alten Build erzeugt) und
+vergleicht Feld für Feld — Text, SNR, dt, Frequenz, Score, Pass-Statistik,
+Füllstand der Hashtabelle.
 
-Die Knöpfe (`s_knob_*`) werden zwischen Slots gesetzt und während des
-Decodierens nur gelesen — unkritisch.
+* Entwicklungsrechner: neuer Build identisch zur Referenz bei **1, 3 und
+  32 Threads**.
+* Pi 5: eigene Referenz (die Gleitkommawerte unterscheiden sich zwischen
+  x86-64 und ARM in letzten Stellen, die Nachrichtenlisten nicht), neuer
+  Build identisch bei **1 und 4 Threads**.
+* `shim_harness.c` (Decoder ohne Python, für Sanitizer):
+  **AddressSanitizer** null Meldungen; Ausgabe bei 1/2/4/8 Threads
+  identisch.
+* **ThreadSanitizer**, ehrlich: GCC/libgomp trägt keine TSan-Annotationen,
+  die Barrieren der Runtime sind für TSan unsichtbar. Roh meldet er 40
+  Stellen — alle „stack of main thread", d. h. `res[]`, `candidates[]`,
+  lokale Puffer, die Worker per Design innerhalb einer Region beschreiben
+  und die TSan über Regionsgrenzen hinweg als gleichzeitig ansieht. Mit
+  sichtbar gemachtem Fork und Join (`SHIM_TSAN_FORK` / `SHIM_TSAN_RELEASE`
+  / `SHIM_TSAN_ACQUIRE`, nur im `-fsanitize=thread`-Build aktiv, und
+  bewusst **nicht** zwischen den Iterationen, damit echte Wettläufe
+  innerhalb einer Region sichtbar bleiben) bleiben **sechs** Meldungen:
+  ausschließlich 4- und 8-Byte-Lesezugriffe an den
+  `SHIM_PARALLEL_BEGIN`-Zeilen mit libgomp als direktem Aufrufer — der
+  Prolog der Worker-Funktion liest die von GCC erzeugte Datenumgebung
+  (`num_cand`, Iterationsgrenzen, Basiszeiger), die der Hauptthread
+  unmittelbar vor dem Regionsstart befüllt und die libgomp beim Teamstart
+  synchronisiert. **Kein Zugriff auf Ergebnisplätze, Puffer oder
+  Tabellen, keiner zwischen zwei Workern.** Weiter kommt man mit dieser
+  Werkzeugkette nicht; die TSan-fähige LLVM-Runtime (libomp/Archer) ist
+  hier nicht installiert.
 
-**Determinismus ist der Schlüssel zur Prüfbarkeit:** Schreibt jeder Thread
-sein Ergebnis an den Platz seines Kandidatenindex statt es anzuhängen, ist
-die Ergebnisliste identisch zur seriellen Abarbeitung, unabhängig von der
-Thread-Zahl und der Reihenfolge des Fertigwerdens. Damit ist der Nachweis
-einfach: Der Korpus muss weiterhin **exakt 312 Treffer mit denselben
-Nachrichten** liefern.
+Reproduzieren:
 
-### Vorgeschlagene Reihenfolge
+    cd backend
+    .venv/bin/python ../scripts/decoder_golden.py --write ref.json   # alter Build
+    .venv/bin/python ../scripts/decoder_golden.py --check ref.json   # neuer Build
+    .venv/bin/python ../scripts/decoder_golden.py --check ref.json --knob threads=1
 
-1. Umbau **ohne** Parallelität: thread-lokale Puffer, indexbasierte
-   Ergebnisablage, Nur-Lese-Hashinterface in den Kandidatenschleifen,
-   serielles Nachtragen. Korpus muss unverändert 312 liefern.
-2. OpenMP-Direktiven über die fünf Kandidatenschleifen (ft8_shim.c: 322,
-   617, 1067, 1465, 1693), `-fopenmp` in `_build_ft8.py` und im
-   ft8_lib-Makefile ergänzen.
-3. **ThreadSanitizer-Lauf** über den Korpus — dasselbe Werkzeugprinzip, mit
-   dem der Stack-Überlauf in `shim_lookup_hash` gefunden wurde.
-4. Korpus erneut: 312 Treffer, gleiche Nachrichten, Zeit gegen 1280 ms.
-5. Erst danach auf die Station, und dort `decoder_late_slot_count`
-   beobachten.
+    cd ft8_appliance/decode   # Sanitizer, Bauanleitung im Kopf von shim_harness.c
+    SHIM_THREADS=4 setarch x86_64 -R /tmp/shim_tsan 3 /tmp/slots/*.raw
+
+(`setarch -R`: TSan verträgt die Adressraum-Randomisierung neuer Kernel
+nicht — „unexpected memory mapping".)
 
 ### Nutzen ehrlich eingeordnet
 
 Die Station führt pro Slot ohnehin nur ein QSO. Mehr Decodes in Stufe 1
 bedeuten also keine zusätzlichen Verbindungen, sondern eine **bessere
 Auswahl** unter den Anrufern — etwa ein seltenes Land statt des starken
-Nachbarn. Das ist real, aber begrenzt.
+Nachbarn. Das ist real, aber begrenzt. Was der Umbau unabhängig davon
+sofort bringt: Stufe 2 ist in gut der Hälfte der Zeit fertig, das Budget
+für jt9 wächst, und die Slot-Reserve gegen `skipped` wird größer.
