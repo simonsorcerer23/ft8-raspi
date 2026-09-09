@@ -223,9 +223,13 @@ Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne set
 - `hunt_continent_gate` / `hunt_continent_gate_pct` (Default an, 5 %): Rufer aus einem Kontinent, dessen Vollendungsquote in der eigenen Telemetrie (14 Tage, ≥ 20 Picks) unter der Schwelle liegt, werden nur angerufen, wenn PSK Reporter sie als „hört uns“ führt. Am 8.9.: EU 18 %, AS 7 %, NA 3 %. Nachteil bewusst in Kauf genommen: die seltenen NA-QSOs bei Nacht.
 
 
+### `decoder_late_pass` (2026-09-06, Default an — Pi 5 seit 2026-09-09: aus)
+
+Zweistufiger Decoder: Stufe 1 ist der schnelle Standard-Pass und entscheidet über den Sendestart; der Rest des gewählten `decoder_mode` (Deep, Subtraktion, Hint-Pass, OSD, Feinsync) läuft als Stufe 2 nebenher und reicht nach, was er zusätzlich findet — zu spät für eine Antwort im selben Slot. Auf dem Pi 4B nötig, weil `extreme` dort 2,8 s vor der Sendeentscheidung kostete. Seit die Kandidatenschleifen parallel laufen (v0.84.0), braucht `extreme` am Pi 5 live 0,2–0,7 s; die Station fährt darum `decoder_late_pass: false` — der volle Modus in Stufe 1, jt9 bleibt Stufe 3. Reißt ein dichter Slot dreimal in Folge `tx_latency_max_s`, stellt der Orchestrator zuerst die Zweiteilung wieder her und fällt erst danach auf `standard`. Status: `decoder_late_pass.stage1_last_s` / `stage1_avg_s` / `two_stage`, `decoder_pass_stats.threads`. Messung: `docs/decoder_evolution.md`.
+
 ### `decoder_jt9` / `decoder_jt9_depth` (2026-09-08, Default an / 2)
 
-Stufe 3 des Decoders: WSJT-X' `jt9` (Paket `wsjtx`) decodiert den Slot parallel zu Stufe 2. Tiefe 2 braucht am Pi 4B 6 s (max 9 s) und trifft 97,5 % der WSJT-X-Decodes; Tiefe 3 wäre 11 bis 17 s und passt nicht in den Slot. Ohne installiertes `jt9` bleibt die Stufe still. Status: `decoder_late_pass.jt9` (last/total/duration_s/skipped/failed).
+Stufe 3 des Decoders: WSJT-X' `jt9` (Paket `wsjtx`) decodiert den Slot parallel zu Stufe 2. Tiefe 2 braucht am Pi 4B 6 s (max 9 s) und trifft 97,5 % der WSJT-X-Decodes; Tiefe 3 wäre am 4B 11 bis 17 s und passt dort nicht in den Slot; am Pi 5 braucht sie 4,3 s im Korpus und 5,8 s live und ist seit 2026-09-09 dauerhaft aktiv. Ohne installiertes `jt9` bleibt die Stufe still. Status: `decoder_late_pass.jt9` (last/total/duration_s/skipped/failed).
 
 
 ### jt9-Feinheiten (2026-09-08): `decoder_jt9_boost_in_qso`, `decoder_jt9_ft4`, `decoder_jt9_ap`, `decoder_jt9_ap_flags`

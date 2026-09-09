@@ -291,7 +291,10 @@ class DecodePipeline:
     # nutzt immer Standard-Decoder (FT4-Decoder hat keine Deep-Variante).
     decoder_mode: str = "standard"  # "standard" | "deep" | "multi"
     _consecutive_late_slots: int = 0  # CPU-adaptive Fallback-Trigger
-    _threads_logged: bool = False     # 2026-09-09: Thread-Zahl einmal ins Log
+    # 2026-09-09: (Threads, Stufe-1-Modus) zuletzt geloggt — neu loggen, sobald
+    # sich die Konstellation aendert (decoder_mode und two_stage kommen aus der
+    # Konfiguration teils erst nach dem ersten Slot an).
+    _stage_logged: tuple | None = None
     # Zweistufiger Decoder (2026-09-06). Gemessen am Pi 4B: der Sendestart
     # lag im extreme-Modus 2,8 s nach der Slot-Grenze, weil der ganze
     # Decoder VOR der TX-Entscheidung laeuft — ausserhalb des ±2,5-s-
@@ -454,17 +457,19 @@ class DecodePipeline:
             log.warning("%s decode_slot failed for tick %s: %s", self.mode, tick.index, exc)
             return []
         duration_s = _time.monotonic() - t0
-        if not self._threads_logged:
-            self._threads_logged = True
-            try:
-                from .ft8_native import decoder_threads
+        try:
+            from .ft8_native import decoder_threads
+            stage1 = "standard" if late_decoder is not None else self.decoder_mode
+            konst = (decoder_threads(), stage1, late_decoder is not None)
+            if konst != self._stage_logged:
+                self._stage_logged = konst
                 log.info(
-                    "Decoder: %d Threads je Kandidatenschleife, Stufe 1 = %s (%.0f ms)",
-                    decoder_threads(), "standard" if late_decoder is not None else self.decoder_mode,
-                    duration_s * 1000,
+                    "Decoder: %d Threads je Kandidatenschleife, Stufe 1 = %s (%.0f ms), Stufe 2 %s",
+                    konst[0], stage1, duration_s * 1000,
+                    f"= {self.decoder_mode}" if late_decoder is not None else "aus",
                 )
-            except Exception:  # noqa: BLE001 — Diagnose darf nie den Slot kosten
-                pass
+        except Exception:  # noqa: BLE001 — Diagnose darf nie den Slot kosten
+            pass
         self._slot_seen[tick.index] = {r.message for r in raw}
         for old_idx in [i for i in self._slot_seen if i < tick.index - 3]:
             self._slot_seen.pop(old_idx, None)

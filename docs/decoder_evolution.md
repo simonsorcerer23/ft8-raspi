@@ -503,3 +503,40 @@ Auswahl** unter den Anrufern — etwa ein seltenes Land statt des starken
 Nachbarn. Das ist real, aber begrenzt. Was der Umbau unabhängig davon
 sofort bringt: Stufe 2 ist in gut der Hälfte der Zeit fertig, das Budget
 für jt9 wächst, und die Slot-Reserve gegen `skipped` wird größer.
+
+## extreme in Stufe 1 (live seit 2026-09-09 20:35, Pi 5)
+
+Mit dem Multicore-Umbau passt der volle Modus in das Fenster vor der
+Sendeentscheidung. Auf der Station steht darum `decoder_late_pass: false`:
+Stufe 1 = `extreme`, keine Stufe 2 mehr, jt9 bleibt Stufe 3. Messreihe
+über sechs Minuten direkt nach dem Umschalten (CQ-Betrieb, ein QSO
+dazwischen):
+
+| | Wert |
+|---|---|
+| Stufe-1-Dauer (extreme) | 0,21 – 0,73 s, Mittel 0,46 s |
+| Sendeversatz zur Slotgrenze, slotgetrieben | 0,83 – 1,03 s (Limit `tx_latency_max_s` 1,5 s) |
+| verspätete Slots, Rückzüge | 0 |
+| Systemlast / Temperatur | 0,30 / 51 °C |
+
+Live liegt `extreme` deutlich unter dem Korpuswert (1,03 s), weil echte
+Slots weniger Kandidaten tragen als die dichten Referenzaufnahmen. Die
+Pass-Statistik der ersten 27 Slots zeigt, worum es ging: 42 Decodes aus
+dem Standard-Pass, dazu 14 Hint, 12 OSD, 7 Feinsync, 3 Deep, 1 Subtraktion —
+**37 % der Decodes kamen bisher zu spät für eine Antwort und liegen jetzt
+in der Sendeentscheidung.**
+
+Absicherung, falls ein dichter Slot das Limit reißt: Der Rückzug bei drei
+zu späten Sendestarts in Folge stellt zuerst die Zweiteilung wieder her
+(`extreme` wandert nach Stufe 2, Stufe 1 = `standard`) und wirft den Modus
+erst im zweiten Schritt auf `standard`. Der adaptive LDPC-Faktor ist in
+Stufe 1 auf `decoder_late_ldpc_pct` (150 %) gedeckelt, sonst würde die
+niedrige Last ihn auf 200 % treiben und genau den Pass verlangsamen, der
+den Sendestart bestimmt.
+
+Für den Pi 4B bleibt die Vorgabe `decoder_late_pass: true` — dort braucht
+`extreme` auch mit vier Threads noch rund 1,3 s im Korpus, und der 4B hat
+kein Reservepolster.
+
+Im Status: `decoder_late_pass.stage1_last_s` / `stage1_avg_s` /
+`two_stage`, `decoder_pass_stats.threads`.

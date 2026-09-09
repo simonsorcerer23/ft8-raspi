@@ -194,6 +194,12 @@ Abstand — der Wert des GPS liegt im Ausfall des Netzes.
   `decoder_late_slot_count` bleibt 0, `skipped`/`failed` ebenfalls. Das
   Abbruchkriterium (über 9 s zurück auf Tiefe 2) ist damit klar eingehalten.
   Der Zugewinn ist mit gut 3 % moderat, kostet aber nichts, was wir brauchen.
+- **Decoder auf vier Kernen (v0.84.0) und `extreme` in Stufe 1
+  (`decoder_late_pass: false`, seit 2026-09-09 20:35).** Der volle Modus
+  braucht live 0,2–0,7 s und entscheidet damit selbst über den Sendestart
+  (Versatz 0,8–1,0 s, Limit 1,5 s). Rund 37 % der Decodes, die bisher zu
+  spät kamen, sind jetzt beantwortbar. Messung und Nachweis in
+  `docs/decoder_evolution.md`. Auf dem 4B bleibt die Zweiteilung.
 - **Stromversorgung:** Der Pi 5 verlangt das 27-W-Netzteil, sonst drosselt er
   die USB-Ports. Nach einer Woche `vcgencmd get_throttled` prüfen — `0x0`
   heißt sauber.
