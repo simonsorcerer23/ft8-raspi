@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.83.1 — 2026-09-09
+- fix: CQ-Idle-Warnung abschaltbar machen und ntfy-Ablehnungen diagnostizierbar
+- docs: Runbook um den tatsaechlichen Pi-5-Umzug ergaenzt (Trixie ohne custom.toml, NVMe-Klon, WLAN, SSH-Bremse)
+- docs: RTC-Batterie im Runbook — BAT-Anschluss identifizieren, Ladeschaltung bei CR2032 aus lassen
+- docs: Runbook um den getrennten Aufbau ergaenzt (Pi 5 in der Firma, Rig kommt spaeter)
+
 ## v0.83.0 — 2026-09-08
 - fix: TX bleibt gesperrt, wenn rigctld gar nicht erst hochkommt
 
