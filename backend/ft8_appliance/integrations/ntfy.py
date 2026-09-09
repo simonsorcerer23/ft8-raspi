@@ -11,11 +11,25 @@ ntfy.sh docs: https://docs.ntfy.sh/publish/#publish-as-json
 from __future__ import annotations
 
 import json
+import logging
+import re
 
 from .base import Integration
 
 
 # Priority-Mapping ntfy-Strings → JSON-Integer (1=min … 5=urgent).
+def _redact(body: dict) -> str:
+    """JSON-Rumpf fuers Log aufbereiten und Token unkenntlich machen."""
+    import copy
+    b = copy.deepcopy(body)
+    for a in b.get("actions") or []:
+        if isinstance(a.get("url"), str):
+            a["url"] = re.sub(r"([?&]token=)[^&]*", r"\1<maskiert>", a["url"])
+    return json.dumps(b, ensure_ascii=False)[:800]
+
+
+log = logging.getLogger(__name__)
+
 _PRIO_MAP = {"min": 1, "low": 2, "default": 3, "high": 4, "urgent": 5}
 
 
@@ -112,6 +126,15 @@ class NtfyClient(Integration):
                 content=json.dumps(body).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — ein Push darf nie den Betrieb stoppen
+            # 2026-09-09: ein "400 Bad Request" von ntfy war nicht
+            # nachvollziehbar, weil nur der Statuscode im Log stand. Ohne den
+            # abgelehnten Rumpf ist so ein Fehler nicht diagnostizierbar.
+            # Token werden dabei maskiert — das Log ist nicht der Ort dafuer.
+            try:
+                log.warning("ntfy: Push abgelehnt (%s); Rumpf: %s",
+                            type(exc).__name__, _redact(body))
+            except Exception:  # noqa: BLE001 — Logging darf nie werfen
+                pass
             return False
         return True

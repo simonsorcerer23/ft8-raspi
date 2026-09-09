@@ -334,7 +334,13 @@ class OperatingConfig(BaseModel):
     auto_notch_enabled: bool = True
     auto_cq_interval_s: int = Field(default=30, ge=15, le=300)
     max_ptt_s: int = Field(default=18, ge=15, le=60)
-    cq_idle_timeout_min: int = Field(default=10, ge=1)
+    # 0 = aus. Sebastian 2026-09-09: "das nervt doch besonders wenns
+    # Absicht ist" — wer CQ ruft, weiss dass er CQ ruft; dass niemand
+    # antwortet ist Funkbetrieb, kein Defekt. Der echte Defektfall
+    # (gar keine Decodes mehr) hat mit dem Funkstille-Watchdog einen
+    # eigenen Alarm. Frueher ge=1 — dadurch liess sich der Wert gar
+    # nicht auf 0 setzen, obwohl der Orchestrator 0 als "aus" prueft.
+    cq_idle_timeout_min: int = Field(default=0, ge=0)
     swr_max: float = Field(default=2.0, ge=1.0, le=5.0)
     # Ab wann gilt die CAT-Verbindung als weg und TX wird gesperrt
     # (rig_link_guard). Der Poll laeuft jede Sekunde, 60 s sind also rund
