@@ -609,6 +609,7 @@ class DecodePipeline:
         if not new or self.late_pass_sink is None:
             return
         msgs = [_to_decoded_msg(r, tick, band, late=True) for r in new]
+        log.info("decoder Stufe 3 (jt9, Tiefe %d): +%d Decodes fuer Slot %d", depth, len(msgs), tick.index)
         try:
             await self.late_pass_sink(msgs, tick)
         except Exception as exc:
@@ -670,6 +671,12 @@ class DecodePipeline:
         if not new or self.late_pass_sink is None:
             return
         msgs = [_to_decoded_msg(r, tick, band, late=True) for r in new]
+        # 2026-09-09: Stufe hier protokollieren, nicht im Sink. Stufe 2 und
+        # jt9 laufen beide ueber late_pass_sink; die Meldung dort sagte
+        # darum immer "Stufe 2" — auch fuer jt9-Funde, auch wenn Stufe 2
+        # abgeschaltet ist (decoder_late_pass: false). Das hat bei der
+        # Diagnose am 9.9. eine Fehlspur gelegt.
+        log.info("decoder Stufe 2: +%d Decodes fuer Slot %d", len(msgs), tick.index)
         try:
             await self.late_pass_sink(msgs, tick)
         except Exception as exc:
