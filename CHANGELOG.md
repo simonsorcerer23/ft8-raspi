@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.84.0 — 2026-09-09
+- decoder: Kandidatenschleifen mit OpenMP parallel — extreme auf dem Pi 5 von 2,2 auf 1,0 s
+- docs: Pi-5-Messreihen und Multicore-Umbauplan fuer den Decoder
+
 ## v0.83.1 — 2026-09-09
 - fix: CQ-Idle-Warnung abschaltbar machen und ntfy-Ablehnungen diagnostizierbar
 - docs: Runbook um den tatsaechlichen Pi-5-Umzug ergaenzt (Trixie ohne custom.toml, NVMe-Klon, WLAN, SSH-Bremse)
