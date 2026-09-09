@@ -560,10 +560,19 @@ class OperatingConfig(BaseModel):
     # greifen bevor gain einen problematischen Wert erreicht.
     pwr_regime_max_delta: float = Field(default=0.03, ge=0.01, le=0.2)
     # Welcher Modus nach Service-Restart aktiv ist. "off" = beide aus,
-    # "hunt" = Antworten/Hunting, "cq" = aktiv CQ rufen. Wird vom
-    # Orchestrator beim toggle automatisch aktualisiert damit der Pi
+    # "hunt" = Antworten/Hunting, "cq" = aktiv CQ rufen, "cq+hunt" = beides.
+    # Wird vom Orchestrator beim toggle automatisch aktualisiert damit der Pi
     # nach einem Strom-Wackler weitermacht wo er aufgehört hat.
-    boot_mode: Literal["off", "cq", "hunt"] = "off"
+    #
+    # 2026-09-09: "cq+hunt" ergaenzt. auto_cq und auto_answer sind zwei
+    # unabhaengige Schalter, teilten sich aber dieses eine Feld — wer erst
+    # CQ startete und dann Hunting einschaltete, hatte am Ende "hunt"
+    # stehen und verlor das CQ beim naechsten Start (und umgekehrt).
+    # Aufgefallen nach dem Multicore-Update: die Station kam in CQ hoch,
+    # aber ohne Hunting, also ohne Picker, Tail-Ending und CQ-Fallback.
+    # Der Wert wird jetzt aus dem tatsaechlichen Zustand beider Schalter
+    # abgeleitet (Orchestrator._boot_mode_from_state).
+    boot_mode: Literal["off", "cq", "hunt", "cq+hunt"] = "off"
     # Hunting-Filter (greifen wenn auto_answer aktiv ist):
     # * skip_worked: ignoriere alle Calls die schon je in der QSO-Tabelle stehen
     # * dxcc_only: ignoriere alle CQ-Rufer aus Ländern die wir schon haben

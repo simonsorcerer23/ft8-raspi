@@ -782,16 +782,20 @@ class Orchestrator:
         # nur in-memory und gingen bei jedem Service-Restart verloren.
         # Sebastians Beobachtung: "Hunting plötzlich aus".
         bm = self.config.operating.boot_mode
-        if bm == "hunt":
+        if bm in ("hunt", "cq+hunt"):
             self.state_machine.set_auto_answer(True)
-        elif bm == "cq":
+        if bm in ("cq", "cq+hunt"):
             # Im CQ-Modus zünden wir den Run NICHT automatisch beim Boot
             # — der State-Machine braucht einen Hardware-Guard-Check, der
             # erst nach dem ersten Slot-Tick zuverlässig läuft. Wir
             # setzen nur das auto_cq-Flag; der nächste Slot kümmert
             # sich um den ersten TX.
             self.state_machine.ctx.auto_cq = True
-            log.info("boot_mode=cq → auto_cq flag set, CQ resumes on next slot")
+        if bm != "off":
+            log.info(
+                "boot_mode=%s wiederhergestellt: auto_cq=%s, auto_answer=%s",
+                bm, self.state_machine.ctx.auto_cq, self.state_machine.ctx.auto_answer,
+            )
         # FT4 mode needs a 7.5-s slot clock. The default-constructed
         # SlotClock is 15-s (FT8); recreate it for FT4. Tests inject a
         # FakeSlotClock with its own slot_seconds, so only swap when
@@ -1943,13 +1947,16 @@ class Orchestrator:
         await self._refresh_hw_for_control()
         self.state_machine.on_user_start_cq(self._hardware_state)
         await self._drain_actions()
-        self._persist_boot_mode("cq")
+        # Aus dem Zustand ableiten: laeuft Hunting weiter, wird "cq+hunt"
+        # gemerkt. Scheiterten die Guards in on_user_start_cq, steht auto_cq
+        # gar nicht an — dann schreiben wir auch kein "cq" mehr.
+        self._persist_boot_mode_from_state()
 
     async def handle_stop(self) -> None:
         self.state_machine.on_user_stop()
         await self._drain_actions()
-        # Stop schaltet auch hunting aus → boot_mode = off
-        self._persist_boot_mode("off")
+        # Stop schaltet beide Schalter aus → ergibt "off"
+        self._persist_boot_mode_from_state()
 
     async def handle_panic(self) -> None:
         # Panic = same as stop + force PTT off + lock to prevent retries
@@ -2041,9 +2048,10 @@ class Orchestrator:
         """Toggle hunting / auto-answer mode."""
         self.state_machine.set_auto_answer(enabled)
         # boot_mode aktualisieren damit der Modus einen Restart überlebt.
-        # "hunt" wenn enabled, sonst "off" — auto_cq wird hier explizit
-        # NICHT mit reingerechnet, das ist eigene Aktion.
-        self._persist_boot_mode("hunt" if enabled else "off")
+        # 2026-09-09: auch hier aus dem Zustand ableiten. Vorher schrieb
+        # diese Stelle "hunt" bzw. "off" und loeschte damit ein laufendes
+        # auto_cq aus der Erinnerung.
+        self._persist_boot_mode_from_state()
 
     async def persist_config(self) -> None:
         """Schreibe self.config zurück nach YAML (atomic).
@@ -2094,6 +2102,30 @@ class Orchestrator:
             )
         except Exception as exc:
             log.warning("persist_config failed: %s", exc)
+
+    def _boot_mode_from_state(self) -> str:
+        """boot_mode aus den beiden Schaltern ableiten, statt ihn zu raten.
+
+        2026-09-09: Vorher schrieb jede Bedienhandlung einen festen Wert —
+        CQ-Start "cq", der Hunting-Schalter "hunt", Stop "off". Zwei
+        unabhaengige Schalter in einem Feld: die letzte Handlung loeschte
+        die Erinnerung an die andere. Nach dem Multicore-Update kam die
+        Station darum in CQ hoch, aber ohne Hunting — also ohne Picker,
+        Tail-Ending und CQ-Fallback. Jetzt zaehlt, was tatsaechlich an ist.
+        """
+        ctx = self.state_machine.ctx
+        cq = bool(getattr(ctx, "auto_cq", False))
+        hunt = bool(getattr(ctx, "auto_answer", False))
+        if cq and hunt:
+            return "cq+hunt"
+        if cq:
+            return "cq"
+        if hunt:
+            return "hunt"
+        return "off"
+
+    def _persist_boot_mode_from_state(self) -> None:
+        self._persist_boot_mode(self._boot_mode_from_state())
 
     def _persist_boot_mode(self, mode: str) -> None:
         """Wrapper über persist_config: setzt nur boot_mode + speichert."""
@@ -3205,7 +3237,9 @@ class Orchestrator:
                     seen_in_slot.add(norm)
                     asyncio.create_task(self._fire_watchlist_alert(norm, d))
         await self._publish_decodes(decodes)
-        log.info("decoder Stufe 2: +%d Decodes fuer Slot %d", len(decodes), tick.index)
+        # Welche Stufe die Decodes gefunden hat, protokolliert die Pipeline —
+        # hier kommen Stufe 2 und jt9 durch dieselbe Tuer.
+        log.debug("spaeter Pass eingespeist: %d Decodes fuer Slot %d", len(decodes), tick.index)
         self.state_machine.on_decodes(self._hardware_state, decodes)
         # on_decodes ersetzt last_decodes durch die Charge — fuer den
         # CQ-Frequenz-Picker soll der ganze Slot sichtbar bleiben.

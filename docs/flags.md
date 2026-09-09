@@ -223,6 +223,14 @@ Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne set
 - `hunt_continent_gate` / `hunt_continent_gate_pct` (Default an, 5 %): Rufer aus einem Kontinent, dessen Vollendungsquote in der eigenen Telemetrie (14 Tage, ≥ 20 Picks) unter der Schwelle liegt, werden nur angerufen, wenn PSK Reporter sie als „hört uns“ führt. Am 8.9.: EU 18 %, AS 7 %, NA 3 %. Nachteil bewusst in Kauf genommen: die seltenen NA-QSOs bei Nacht.
 
 
+### `boot_mode` (Default `off`, seit 2026-09-09 auch `cq+hunt`)
+
+Welche Modi nach einem Neustart wieder anlaufen. Der Wert wird nicht von Hand gepflegt, sondern vom Orchestrator aus dem tatsächlichen Zustand beider Schalter fortgeschrieben: `auto_cq` (selbst CQ rufen) und `auto_answer` (Hunting — aktiv nach Anrufern suchen, Tail-Ending, Vorrang des Antwortens im CQ-Fallback).
+
+Bis v0.84.2 schrieb jede Bedienhandlung einen festen Wert: CQ-Start `cq`, der Hunting-Schalter `hunt`, Stop `off`. Zwei unabhängige Schalter in einem Feld — die letzte Handlung löschte die Erinnerung an die andere. Wer erst CQ startete und dann Hunting einschaltete, kam nach dem nächsten Neustart in CQ hoch, aber ohne Hunting. Aufgefallen ist das nach dem Multicore-Update: Die Station rief weiter CQ und bediente auch, wer ihr antwortete (dieser Pfad hängt nicht an `auto_answer`) — aber sie suchte nicht mehr selbst nach Anrufern. Seit v0.84.3 wird der Wert abgeleitet, `cq+hunt` deckt beides ab.
+
+Kein Eingabefeld in der Oberfläche; der Wert steht in der `config.yaml` und wird automatisch gepflegt.
+
 ### `decoder_late_pass` (2026-09-06, Default an — Pi 5 seit 2026-09-09: aus)
 
 Zweistufiger Decoder: Stufe 1 ist der schnelle Standard-Pass und entscheidet über den Sendestart; der Rest des gewählten `decoder_mode` (Deep, Subtraktion, Hint-Pass, OSD, Feinsync) läuft als Stufe 2 nebenher und reicht nach, was er zusätzlich findet — zu spät für eine Antwort im selben Slot. Auf dem Pi 4B nötig, weil `extreme` dort 2,8 s vor der Sendeentscheidung kostete. Seit die Kandidatenschleifen parallel laufen (v0.84.0), braucht `extreme` am Pi 5 live 0,2–0,7 s; die Station fährt darum `decoder_late_pass: false` — der volle Modus in Stufe 1, jt9 bleibt Stufe 3. Reißt ein dichter Slot dreimal in Folge `tx_latency_max_s`, stellt der Orchestrator zuerst die Zweiteilung wieder her und fällt erst danach auf `standard`. Status: `decoder_late_pass.stage1_last_s` / `stage1_avg_s` / `two_stage`, `decoder_pass_stats.threads`. Messung: `docs/decoder_evolution.md`.

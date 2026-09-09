@@ -143,3 +143,26 @@ def test_run_jt9_uses_workdir_as_cwd(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(_jt9.subprocess, "run", lambda cmd, **kw: seen.update(kw, cmd=cmd) or _Res())
     _jt9.run_jt9(b"\x00\x00" * 100, depth=2)
     assert seen["cwd"] == str(tmp_path)
+
+
+def test_stufe_2_und_jt9_werden_getrennt_protokolliert():
+    """Beide Stufen liefern ueber denselben Sink (late_pass_sink).
+
+    Bis 2026-09-09 protokollierte der Sink im Orchestrator jeden Fund als
+    "decoder Stufe 2" — auch die von jt9, auch bei abgeschalteter Stufe 2
+    (decoder_late_pass: false). Bei der Diagnose des Multicore-Umbaus sah es
+    dadurch so aus, als liefe Stufe 2 trotz Abschaltung weiter. Die Stufe
+    gehoert dorthin protokolliert, wo sie bekannt ist: in die Pipeline.
+    """
+    import pathlib as _pl_path
+
+    pipeline_src = _pl_path.Path(_pipe.__file__).read_text()
+    assert 'log.info("decoder Stufe 2: +%d Decodes fuer Slot %d"' in pipeline_src
+    assert 'log.info("decoder Stufe 3 (jt9, Tiefe %d): +%d Decodes fuer Slot %d"' in pipeline_src
+
+    orch_src = _pl_path.Path(
+        _pipe.__file__.replace("decode/pipeline.py", "runtime/orchestrator.py")
+    ).read_text()
+    assert "decoder Stufe 2: +" not in orch_src, (
+        "der gemeinsame Sink darf keine Stufe mehr behaupten"
+    )
