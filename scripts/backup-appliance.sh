@@ -27,12 +27,20 @@ PATHS=(
     /boot/firmware/config.txt
 )
 
+# Zusaetzlich: <APP_DIR>/data/cty.dat — die DXCC-Laenderdatenbank. Sie ist per
+# .gitignore vom Repo ausgeschlossen, ein frischer Klon hat sie also nicht.
+# Ohne sie faellt die komplette Laenderzuordnung aus: keine Flaggen in den
+# Pushes, "0 DXCCs" in der QRZ-Statistik, und die Antwortstrategie kann
+# Laender-Neuheit nicht mehr bewerten. Beim Umzug auf den Pi 5 am 2026-09-09
+# fiel das erst im Betrieb auf. Der Pfad kommt aus install.env, weil das
+# App-Verzeichnis nicht ueberall gleich heisst.
+
 umask 077
 mkdir -p "$DEST"
 echo "== Backup von ${HOST} nach ${DEST}"
 
 ssh -o ConnectTimeout=20 "sebastian@${HOST}" \
-    "sudo tar czf /tmp/ft8-backup.tgz --ignore-failed-read ${PATHS[*]} 2>/dev/null; sudo chown \$(id -un) /tmp/ft8-backup.tgz"
+    ". /etc/ft8-appliance/install.env 2>/dev/null; sudo tar czf /tmp/ft8-backup.tgz --ignore-failed-read ${PATHS[*]} \"\${APP_DIR}/data/cty.dat\" 2>/dev/null; sudo chown \$(id -un) /tmp/ft8-backup.tgz"
 scp -q "sebastian@${HOST}:/tmp/ft8-backup.tgz" "${DEST}/"
 ssh "sebastian@${HOST}" 'rm -f /tmp/ft8-backup.tgz'
 chmod 600 "${DEST}/ft8-backup.tgz"
@@ -43,6 +51,10 @@ echo "== Pruefe Inhalt"
 # an SIGPIPE und pipefail wertet die Pipeline als Fehler — die Pruefung meldete
 # dann "FEHLT" fuer Dateien, die im Archiv liegen.
 LIST="$(tar tzf "${DEST}/ft8-backup.tgz")"
+case "$LIST" in
+    *data/cty.dat*) echo "   ok   data/cty.dat (DXCC-Laenderdatenbank)" ;;
+    *) echo "   FEHLT data/cty.dat — ohne sie keine Laenderzuordnung auf dem Zielsystem" ;;
+esac
 FAIL=0
 for f in etc/ft8-appliance/config.yaml var/lib/ft8-appliance/runtime_state.json var/lib/ft8-appliance/qso.sqlite; do
     if grep -qx "$f" <<<"$LIST"; then
