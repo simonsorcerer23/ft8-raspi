@@ -390,7 +390,7 @@ tut — Subtraktion (+28), Hint-Pass (+18), OSD (+12), Feinabstimmung (+12).
 
 `sub_score` 20 → 15: 312 statt 311 Treffer bei 15 statt 17 unbestätigten
 Decodes, gleiche Laufzeit. Unter 15 ändert sich nichts mehr. Klein, aber die
-richtige Richtung: ein Phantom ist bei einer unbeaufsichtigt sendenden
+richtige Richtung: ein Phantom ist bei einer selbsttaetig sendenden
 Station teurer als ein verpasster Decode.
 
 **Damit sind die Parameter ausgereizt.** Die verbleibenden knapp 12 % zu
