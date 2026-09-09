@@ -165,6 +165,20 @@ def reset_pass_stats() -> None:
     lib.ft8_shim_pass_stats_reset()
 
 
+def decoder_threads() -> int:
+    """2026-09-09 Multicore: Threads je Kandidatenschleife im Shim.
+
+    1 bedeutet entweder "ohne OpenMP gebaut" oder Knopf ``threads=1``.
+    """
+    return int(lib.ft8_shim_omp_max_threads())
+
+
+def set_decoder_threads(n: int) -> None:
+    """Threads je Kandidatenschleife setzen; 0 = alle Kerne."""
+    if lib.ft8_shim_set_knob(b"threads", int(n)) != 0:
+        raise RuntimeError("ft8_shim_set_knob(threads) failed")
+
+
 def decode_slot_v2(pcm_s16le: bytes, mode: str = "standard") -> list[ShimDecode]:
     """v0.6.0 Anti-WSJT-X-Audit Phase B: tunable FT8 decoder.
 

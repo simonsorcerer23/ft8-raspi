@@ -671,6 +671,10 @@ static void (*_cffi_call_python_org)(struct _cffi_externpy_s *, char *);
 
     int ft8_shim_hash_table_save(const char* callsign, uint32_t n22);
     int ft8_shim_hash_table_count(void);
+
+    /* 2026-09-09 Multicore: Threads je Kandidatenschleife (Knopf "threads"
+     * ueber ft8_shim_set_knob; 0 = alle Kerne). 1 = ohne OpenMP gebaut. */
+    int ft8_shim_omp_max_threads(void);
     
 
 /************************************************************/
@@ -1587,6 +1591,32 @@ _cffi_f_ft8_shim_hash_table_save(PyObject *self, PyObject *args)
 #  define _cffi_f_ft8_shim_hash_table_save _cffi_d_ft8_shim_hash_table_save
 #endif
 
+static int _cffi_d_ft8_shim_omp_max_threads(void)
+{
+  return ft8_shim_omp_max_threads();
+}
+#ifndef PYPY_VERSION
+static PyObject *
+_cffi_f_ft8_shim_omp_max_threads(PyObject *self, PyObject *noarg)
+{
+  int result;
+  PyObject *pyresult;
+
+  Py_BEGIN_ALLOW_THREADS
+  _cffi_restore_errno();
+  { result = ft8_shim_omp_max_threads(); }
+  _cffi_save_errno();
+  Py_END_ALLOW_THREADS
+
+  (void)self; /* unused */
+  (void)noarg; /* unused */
+  pyresult = _cffi_from_c_int(result, int);
+  return pyresult;
+}
+#else
+#  define _cffi_f_ft8_shim_omp_max_threads _cffi_d_ft8_shim_omp_max_threads
+#endif
+
 static void _cffi_d_ft8_shim_pass_stats_get(ft8_shim_pass_stats_t * x0)
 {
   ft8_shim_pass_stats_get(x0);
@@ -2126,6 +2156,7 @@ static const struct _cffi_global_s _cffi_globals[] = {
   { "ft8_shim_get_osd_depth", (void *)_cffi_f_ft8_shim_get_osd_depth, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 54), (void *)_cffi_d_ft8_shim_get_osd_depth },
   { "ft8_shim_hash_table_count", (void *)_cffi_f_ft8_shim_hash_table_count, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 54), (void *)_cffi_d_ft8_shim_hash_table_count },
   { "ft8_shim_hash_table_save", (void *)_cffi_f_ft8_shim_hash_table_save, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 22), (void *)_cffi_d_ft8_shim_hash_table_save },
+  { "ft8_shim_omp_max_threads", (void *)_cffi_f_ft8_shim_omp_max_threads, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 54), (void *)_cffi_d_ft8_shim_omp_max_threads },
   { "ft8_shim_pass_stats_get", (void *)_cffi_f_ft8_shim_pass_stats_get, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_O, 56), (void *)_cffi_d_ft8_shim_pass_stats_get },
   { "ft8_shim_pass_stats_reset", (void *)_cffi_f_ft8_shim_pass_stats_reset, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_N, 73), (void *)_cffi_d_ft8_shim_pass_stats_reset },
   { "ft8_shim_set_knob", (void *)_cffi_f_ft8_shim_set_knob, _CFFI_OP(_CFFI_OP_CPYTHON_BLTN_V, 18), (void *)_cffi_d_ft8_shim_set_knob },
@@ -2225,7 +2256,7 @@ static const struct _cffi_type_context_s _cffi_type_context = {
   _cffi_struct_unions,
   _cffi_enums,
   _cffi_typenames,
-  30,  /* num_globals */
+  31,  /* num_globals */
   4,  /* num_struct_unions */
   1,  /* num_enums */
   6,  /* num_typenames */

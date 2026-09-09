@@ -180,6 +180,10 @@ ffi.cdef(
      * <...>-Aufloesung sofort funktioniert. */
     int ft8_shim_hash_table_save(const char* callsign, uint32_t n22);
     int ft8_shim_hash_table_count(void);
+
+    /* 2026-09-09 Multicore: Threads je Kandidatenschleife (Knopf "threads"
+     * ueber ft8_shim_set_knob; 0 = alle Kerne). 1 = ohne OpenMP gebaut. */
+    int ft8_shim_omp_max_threads(void);
     """
 )
 
@@ -295,6 +299,10 @@ ffi.set_source(
 
     int ft8_shim_hash_table_save(const char* callsign, uint32_t n22);
     int ft8_shim_hash_table_count(void);
+
+    /* 2026-09-09 Multicore: Threads je Kandidatenschleife (Knopf "threads"
+     * ueber ft8_shim_set_knob; 0 = alle Kerne). 1 = ohne OpenMP gebaut. */
+    int ft8_shim_omp_max_threads(void);
     """,
     sources=[SHIM_C],
     include_dirs=[str(FT8_LIB_DIR)],
@@ -308,7 +316,14 @@ ffi.set_source(
     # the real header is an enum, which the compiler treats as a distinct
     # type. The values are still int-compatible at runtime — downgrade to
     # warning so the build proceeds.
-    extra_compile_args=["-Wno-error=incompatible-pointer-types"],
+    #
+    # 2026-09-09 Multicore: -fopenmp fuer die Kandidatenschleifen im Shim
+    # (ft8_shim.c, SHIM_PARALLEL_FOR). Nur das Shim — libft8.a bleibt wie
+    # sie ist, ihre Funktionen sind zustandsfrei und werden aus den
+    # parallelen Schleifen nur aufgerufen. Ohne diese beiden Flags baut
+    # derselbe Code seriell.
+    extra_compile_args=["-Wno-error=incompatible-pointer-types", "-fopenmp"],
+    extra_link_args=["-fopenmp"],
 )
 
 

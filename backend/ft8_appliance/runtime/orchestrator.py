@@ -208,6 +208,8 @@ def _safe_get_pass_stats() -> dict | None:
         # 2026-09-06: Belegung der Known-Call-Tabelle (Gate fuer Hint/OSD).
         # Vorher kollabierten alle Python-Eintraege auf einen Slot (n22=0).
         stats["hint_table_calls"] = int(lib.ft8_shim_hash_table_count())
+        # 2026-09-09 Multicore: Threads je Kandidatenschleife (1 = ohne OpenMP gebaut)
+        stats["threads"] = int(lib.ft8_shim_omp_max_threads())
         return stats
     except Exception:
         return None
@@ -1833,11 +1835,20 @@ class Orchestrator:
         m = getattr(self.decode_source, "metrics", None)
         if m is None or not hasattr(m, "late_pass_last_count"):
             return None
+        avg1 = getattr(m, "avg_decode_duration_s", 0.0)
+        if callable(avg1):
+            avg1 = avg1()
         return {
             "last": m.late_pass_last_count,
             "total": m.late_decodes_total,
             "duration_s": round(m.late_pass_last_duration_s, 2),
             "skipped": m.late_pass_skipped,
+            # 2026-09-09: Stufe 1 sichtbar machen — sie entscheidet ueber den
+            # Sendestart (tx_latency_max_s). two_stage=False heisst: der
+            # gewaehlte Modus laeuft komplett in Stufe 1, keine Stufe 2.
+            "stage1_last_s": round(float(getattr(m, "last_decode_duration_s", 0.0)), 3),
+            "stage1_avg_s": round(float(avg1 or 0.0), 3),
+            "two_stage": bool(getattr(self.decode_source, "two_stage", True)),
             "jt9": {
                 "last": getattr(m, "jt9_last_count", 0),
                 "total": getattr(m, "jt9_total", 0),
@@ -6496,7 +6507,22 @@ class Orchestrator:
         if self._consecutive_late_tx < 3:
             return True
         mode = getattr(self.decode_source, "decoder_mode", "standard")
-        if mode in ("deep", "multi", "extreme"):
+        if mode in ("deep", "multi", "extreme") and not getattr(self.decode_source, "two_stage", True):
+            # 2026-09-09 Multicore: Laeuft der volle Modus in Stufe 1
+            # (decoder_late_pass: false) und macht den Sendestart zu spaet,
+            # ist der erste Rueckzug die Zweiteilung — Stufe 1 = standard,
+            # der Modus wandert in Stufe 2 und geht nicht verloren. Erst
+            # wenn auch das nicht reicht, faellt der Modus selbst.
+            log.warning(
+                "decoder auto-fallback (TX zu spaet): %s zurueck in Stufe 2, Stufe 1 = standard", mode,
+            )
+            try:
+                setattr(self.decode_source, "two_stage", True)
+                setattr(self.decode_source, "_consecutive_late_slots", 0)
+            except Exception:
+                pass
+            self._consecutive_late_tx = 0
+        elif mode in ("deep", "multi", "extreme"):
             log.warning("decoder auto-fallback (TX zu spaet): %s -> standard", mode)
             # decode_source ist typisiert als Callable; die echte Pipeline
             # hat die Attribute, Test-Closures nicht — gleicher Schutz wie
