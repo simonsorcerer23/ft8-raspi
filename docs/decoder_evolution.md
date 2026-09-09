@@ -347,3 +347,131 @@ Stufe 2 in einem eigenen Thread, die Ergebnisse gehen über den Nachreich-
 Pfad (B4-Regel: kein Mid-Slot-TX). Unser Decoder findet weiterhin 10
 Decodes, die jt9 nicht hat — Stufe 2 bleibt. WAV liegt in `/dev/shm`.
 FT4 vorerst ohne Stufe 3 (jt9-Flag nicht verifiziert).
+
+## Pi 5: was noch geht und was nicht (Messungen 2026-09-09)
+
+Alle Zahlen gegen die 22 Referenzaufnahmen in `vendor/ft8_lib/test/wav`
+(353 WSJT-X-Decodes), gemessen **auf dem Pi 5 im laufenden Betrieb**.
+Reproduzieren mit `scripts/bench_decoder_corpus.py`.
+
+### Ausgangslage
+
+| Modus | Zeit/Slot | Treffer | Anteil |
+|---|---|---|---|
+| standard | 75 ms | 268 | 75,9 % |
+| deep | 160 ms | 270 | 76,5 % |
+| multi | 252 ms | 271 | 76,8 % |
+| extreme | 2204 ms | 311 | 88,1 % |
+
+`deep` und `multi` lohnen nicht: zwei bis drei Decodes für die doppelte bis
+dreifache Zeit. Der gesamte Gewinn steckt in dem, was `extreme` zusätzlich
+tut — Subtraktion (+28), Hint-Pass (+18), OSD (+12), Feinabstimmung (+12).
+
+### Was nichts bringt (alles einzeln gemessen)
+
+* **Stufe 1 aufbohren:** `llr_scales=4`, `std_ldpc=100`, `min_score=5`,
+  `max_cand=600` — jeweils exakt 268 Treffer, teils bei dreifacher Zeit.
+  Der schnelle Pass ist nicht durch Rechenaufwand begrenzt, sondern findet
+  die schwachen Signale gar nicht erst; genau das löst erst die Subtraktion.
+* **Stufe 2 aufbohren:** `llr_scales=4` (3743 ms), `sub_rounds=3`,
+  `refine_max=100` (3140 ms), `deep_ldpc=100`, `hint_osr=8`, `refine_span=8`,
+  `--ldpc 200/250` — kein einziger zusätzlicher Treffer, mehrere sogar
+  schlechter (309). Stufe 2 hat reichlich Zeitbudget frei, kann es aber
+  nicht in Decodes umsetzen.
+* **Compiler:** `-O3 -mcpu=native` für ft8_lib **und** Shim (statt `-O3`
+  generisch bzw. `-O2` fürs Shim): `standard` 75 → 70 ms, `extreme`
+  2206 → 2209 ms, Trefferzahl identisch. Der Code ist nicht durch den
+  Befehlssatz limitiert. Nicht übernommen — `-mcpu=native` würde den Build
+  außerdem maschinenabhängig machen.
+* **`max_cand`:** 300 ist gut gewählt. 600 kostet eine Sekunde und bringt
+  null; 75 spart die Hälfte der Zeit und kostet neun Decodes.
+
+### Was etwas bringt — übernommen in v0.83.3
+
+`sub_score` 20 → 15: 312 statt 311 Treffer bei 15 statt 17 unbestätigten
+Decodes, gleiche Laufzeit. Unter 15 ändert sich nichts mehr. Klein, aber die
+richtige Richtung: ein Phantom ist bei einer unbeaufsichtigt sendenden
+Station teurer als ein verpasster Decode.
+
+**Damit sind die Parameter ausgereizt.** Die verbleibenden knapp 12 % zu
+WSJT-X sind algorithmisch, nicht per Knopf erreichbar.
+
+## Der Multicore-Umbau (analysiert, noch nicht umgesetzt)
+
+### Warum er der einzig verbliebene große Hebel ist
+
+Der wertvollste Decode ist der, den **Stufe 1** findet — nur er kann im
+selben Slot beantwortet werden. Im Betrieb liefert Stufe 1 rund 150 Decodes
+je 59 Slots, die späteren Stufen zusammen weitere 120: **gut 45 % aller
+Decodes kommen zu spät für die Sendeentscheidung.** Liefe `extreme` als
+Stufe 1, wären die 43 zusätzlichen Decodes beantwortbar. Dafür muss es unter
+etwa zwei Sekunden bleiben; es braucht 2,2.
+
+### Wieviel Parallelisierung bringt
+
+Die Laufzeit skaliert linear mit der Kandidatenzahl:
+
+| max_cand | 75 | 150 | 300 | 600 |
+|---|---|---|---|---|
+| Zeit | 1244 ms | 1620 ms | 2204 ms | 3182 ms |
+
+Daraus: **≈3,7 ms je Kandidat, ≈970 ms Grundlast** (Wasserfall/FFT und die
+Subtraktion selbst). Bei 300 Kandidaten sind also rund 56 % der Zeit
+kandidatenweise Arbeit — unabhängig und damit parallelisierbar. Nach Amdahl
+mit vier Kernen: 970 + 1235/4 ≈ **1280 ms, Faktor 1,7.** Nicht Faktor 4, die
+Grundlast deckelt. Aber es reicht, um unter die Zwei-Sekunden-Marke zu
+kommen.
+
+Gegengeprüft: `resource.getrusage` über einen kompletten Korpuslauf ergibt
+verbrauchte Rechenzeit / verstrichene Zeit = **1,00** — ein Kern von vier.
+(Im Live-Betrieb laufen Stufe 1, Stufe 2 und jt9 nebeneinander, dort werden
+also durchaus mehrere Kerne benutzt; single-threaded ist der einzelne
+Decoderlauf.)
+
+### Warum die Rennbedingungen vermeidbar sind
+
+`ft8_lib` hat **keinen veränderlichen globalen Zustand** in den Decode-Pfaden
+(geprüft: decode.c, ldpc.c, message.c, crc.c, text.c, monitor.c). Die
+Bibliothek arbeitet ausschließlich auf übergebenen Daten. Der gesamte
+gemeinsame Zustand ist unserer und besteht aus drei Dingen:
+
+1. **`s_hash_table` / `s_hash_head`** — der einzige echte Knackpunkt, weil
+   `ftx_message_decode` über den `save_hash`-Callback selbst hineinschreibt.
+   Lösung liegt bereits im Code: **`s_hash_if_readonly`** (im Mai gegen das
+   zirkuläre Known-Call-Gate gebaut). In der parallelen Phase nur lesen, neu
+   entpackte Rufzeichen thread-lokal sammeln, danach seriell eintragen.
+2. **Dedupe-Feld und Ergebnisliste** — thread-lokal führen, danach
+   zusammenlegen.
+3. **Pass-Statistikzähler** — thread-lokal zählen, per OpenMP-Reduktion
+   summieren.
+
+Die Knöpfe (`s_knob_*`) werden zwischen Slots gesetzt und während des
+Decodierens nur gelesen — unkritisch.
+
+**Determinismus ist der Schlüssel zur Prüfbarkeit:** Schreibt jeder Thread
+sein Ergebnis an den Platz seines Kandidatenindex statt es anzuhängen, ist
+die Ergebnisliste identisch zur seriellen Abarbeitung, unabhängig von der
+Thread-Zahl und der Reihenfolge des Fertigwerdens. Damit ist der Nachweis
+einfach: Der Korpus muss weiterhin **exakt 312 Treffer mit denselben
+Nachrichten** liefern.
+
+### Vorgeschlagene Reihenfolge
+
+1. Umbau **ohne** Parallelität: thread-lokale Puffer, indexbasierte
+   Ergebnisablage, Nur-Lese-Hashinterface in den Kandidatenschleifen,
+   serielles Nachtragen. Korpus muss unverändert 312 liefern.
+2. OpenMP-Direktiven über die fünf Kandidatenschleifen (ft8_shim.c: 322,
+   617, 1067, 1465, 1693), `-fopenmp` in `_build_ft8.py` und im
+   ft8_lib-Makefile ergänzen.
+3. **ThreadSanitizer-Lauf** über den Korpus — dasselbe Werkzeugprinzip, mit
+   dem der Stack-Überlauf in `shim_lookup_hash` gefunden wurde.
+4. Korpus erneut: 312 Treffer, gleiche Nachrichten, Zeit gegen 1280 ms.
+5. Erst danach auf die Station, und dort `decoder_late_slot_count`
+   beobachten.
+
+### Nutzen ehrlich eingeordnet
+
+Die Station führt pro Slot ohnehin nur ein QSO. Mehr Decodes in Stufe 1
+bedeuten also keine zusätzlichen Verbindungen, sondern eine **bessere
+Auswahl** unter den Anrufern — etwa ein seltenes Land statt des starken
+Nachbarn. Das ist real, aber begrenzt.
