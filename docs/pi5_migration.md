@@ -155,6 +155,28 @@ stehen), Installation über das signierte APT-Repository statt `curl | sh`.
 Im Admin-Panel **key expiry deaktivieren**, sonst fliegt die Appliance nach
 Ablauf des Schlüssels aus dem Tailnet.
 
+**7. Am Zielort `install.sh` erneut laufen lassen.** Mehrere Schritte des
+Installers hängen an tatsächlich angeschlossener Hardware und werden ohne sie
+stillschweigend übersprungen:
+
+* `/etc/default/ft8-rigctld` (Hamlib-Modell, Schnittstelle, Baudrate) — ohne
+  die Datei startet `ft8-rigctld` nicht, die Appliance bleibt in `TX_LOCKED`
+* `/etc/default/gpsd` (`DEVICES`, `GPSD_OPTIONS="-n -G"`) — ohne das schreibt
+  gpsd nichts in die Shared-Memory-Schnittstelle, aus der chrony die
+  Satellitenzeit liest; die Uhr läuft dann rein über Netzwerk-NTP
+
+Beim Aufbau in der Firma ohne Rig und GPS blieben beide aus. Wer die
+Appliance an einem Ort vorbereitet und an einem anderen aufbaut, führt daher
+nach dem Anschließen der Hardware einmal `sudo ./deploy/install.sh` aus
+(idempotent) — oder rendert die beiden Dateien gezielt nach. Ohne
+`--enable-services`, sonst bricht der Lauf am Start von `ft8-rigctld` ab,
+falls das Rig noch nicht antwortet.
+
+Zur Einordnung: Die Satellitenzeit über USB streut rund 200 ms und wird von
+chrony darum nur als Rückfallebene gehalten; die Netzquellen liegen bei
+Mikrosekunden. Für FT8 mit seinem 15-s-Raster reicht beides mit weitem
+Abstand — der Wert des GPS liegt im Ausfall des Netzes.
+
 ## Was auf dem Pi 5 anders sein wird
 
 - **jt9 Tiefe 3** wurde am 4B nur im Sendezyklus riskiert (11–17 s pro Slot).
