@@ -182,7 +182,14 @@ int ft8_shim_hash_table_count(void)
 
 /* 2026-09-06: Experimentier-Knoepfe (Laufzeit, fuer Benchmarks auf dem
  * WSJT-X-Korpus). Defaults = produktives Verhalten. */
-static int s_knob_sub_score   = 20;   /* Subtraktion nur fuer Decodes mit score >= */
+static int s_knob_sub_score   = 15;   /* Subtraktion nur fuer Decodes mit score >= .
+                                       * 2026-09-09 am Pi 5 gemessen (22 Referenz-
+                                       * aufnahmen): 20 -> 311 Treffer / 17 unbestaetigte,
+                                       * 15 -> 312 / 15, bei gleicher Laufzeit. Unter 15
+                                       * aendert sich nichts mehr. Wir tauschen also zwei
+                                       * ungepruefte Decodes gegen einen von WSJT-X
+                                       * bestaetigten — bei der Phantom-Empfindlichkeit
+                                       * der Station die bessere Seite. */
 static int s_knob_hint_osr    = 4;    /* time/freq-OSR des Hint-Passes (2026-09-06: 4, mit 2-Symbol-Fenster) */
 static int s_knob_sub_rounds  = 2;    /* Subtract-Runden */
 static int s_knob_min_score   = 10;   /* Kandidaten-Mindestscore std/deep */
