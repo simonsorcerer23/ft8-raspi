@@ -244,3 +244,73 @@ async def test_same_rig_in_on_config_changed_no_clamp() -> None:
     # ob nicht clamp auf 50W passierte)
     assert orch._tx_power_w != 50 or orch.config.operator.default_power_w == 50, \
         "Ohne Rig-Wechsel kein Safety-Floor"
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-09: gemerkte Leistung ueberlebt den Neustart
+#
+# Sebastian: "bitte merken und auf den letzten Wert setzen also 70W". Bis
+# v0.84.3 kam die Station nach jedem Self-Update mit der halben Leistung hoch
+# (70 -> 50 W): beim Boot ist das Band unbekannt, der Floor griff auf
+# effective_max/2, und der erste Bandaufschlag warf denselben Floor gleich
+# nochmal. Der gemerkte Wert wird jetzt nur noch von der Grenze der
+# Lizenzklasse begrenzt, nicht mehr vom halbierten Vorsichtswert.
+
+
+@pytest.mark.asyncio
+async def test_gemerkte_leistung_ueberlebt_boot_und_ersten_bandaufschlag() -> None:
+    orch = _build_orch(_cfg())
+    orch._tx_power_w = 70          # aus runtime_state geladen
+    orch._tx_power_from_state = True
+    orch._last_active_band = "15m"
+
+    await orch._apply_tx_power_safety_floor("boot")
+    assert orch._tx_power_w == 70, "Boot darf den gemerkten Wert nicht halbieren"
+
+    await orch._apply_tx_power_safety_floor("band_change", band="15m")
+    assert orch._tx_power_w == 70, "der erste Bandaufschlag ist kein echter Wechsel"
+    assert orch._tx_power_from_state is False, "danach gilt wieder der normale Floor"
+
+    # Echter Bandwechsel danach klemmt wie bisher.
+    await orch._apply_tx_power_safety_floor("band_change", band="10m")
+    assert orch._tx_power_w == 50
+
+
+@pytest.mark.asyncio
+async def test_gemerkte_leistung_wird_auf_das_klassenlimit_geklemmt() -> None:
+    """Der Schutz bleibt: ueber die Grenze der Klasse kommt nichts durch."""
+    orch = _build_orch(_cfg())
+    orch._tx_power_w = 70
+    orch._tx_power_from_state = True
+    orch._last_active_band = "15m"
+    orch._compute_band_max_power_w = lambda band=None: 40  # type: ignore[method-assign]
+
+    await orch._apply_tx_power_safety_floor("boot")
+
+    assert orch._tx_power_w == 40
+
+
+@pytest.mark.asyncio
+async def test_ohne_gemerkten_wert_klemmt_der_boot_floor_weiter() -> None:
+    orch = _build_orch(_cfg())
+    orch._tx_power_w = 70
+    orch._tx_power_from_state = False   # z.B. erster Start, kein runtime_state
+    orch._last_active_band = "15m"
+
+    await orch._apply_tx_power_safety_floor("boot")
+
+    assert orch._tx_power_w == 50
+
+
+@pytest.mark.asyncio
+async def test_operator_und_rig_wechsel_klemmen_unveraendert() -> None:
+    """Nur Boot und erster Bandaufschlag sind ausgenommen."""
+    for grund in ("operator_switch", "rig_change"):
+        orch = _build_orch(_cfg())
+        orch._tx_power_w = 70
+        orch._tx_power_from_state = True
+        orch._last_active_band = "15m"
+
+        await orch._apply_tx_power_safety_floor(grund)
+
+        assert orch._tx_power_w == 50, f"{grund} muss weiter klemmen"

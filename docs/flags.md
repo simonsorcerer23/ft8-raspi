@@ -223,6 +223,12 @@ Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne set
 - `hunt_continent_gate` / `hunt_continent_gate_pct` (Default an, 5 %): Rufer aus einem Kontinent, dessen Vollendungsquote in der eigenen Telemetrie (14 Tage, ≥ 20 Picks) unter der Schwelle liegt, werden nur angerufen, wenn PSK Reporter sie als „hört uns“ führt. Am 8.9.: EU 18 %, AS 7 %, NA 3 %. Nachteil bewusst in Kauf genommen: die seltenen NA-QSOs bei Nacht.
 
 
+### Sendeleistung nach einem Neustart (geändert 2026-09-09)
+
+Die zuletzt eingestellte Leistung liegt in `runtime_state.json` und überlebt jetzt einen Neustart. Bis v0.84.3 kam die Station mit der halben Leistung hoch — beim Start ist das Band noch unbekannt, der Sicherheits-Floor griff auf `effective_max/2`, und der erste Bandaufschlag warf denselben Floor gleich nochmal (bei Raymonds IC-7300: 70 → 50 W nach jedem Self-Update).
+
+Was bleibt: Der gemerkte Wert wird weiterhin begrenzt, aber auf das, was **Lizenzklasse und Rig auf diesem Band zulassen**, statt auf die Hälfte davon. Echte Bandwechsel danach, Operator- und Rig-Wechsel klemmen unverändert auf den Vorsichtswert; gesendet wird bis zum ersten Rig-Kontakt ohnehin nicht (`rig_link_guard`). Ohne gemerkten Wert — erster Start, gelöschter Zustand — greift der Vorsichtswert wie bisher.
+
 ### `boot_mode` (Default `off`, seit 2026-09-09 auch `cq+hunt`)
 
 Welche Modi nach einem Neustart wieder anlaufen. Der Wert wird nicht von Hand gepflegt, sondern vom Orchestrator aus dem tatsächlichen Zustand beider Schalter fortgeschrieben: `auto_cq` (selbst CQ rufen) und `auto_answer` (Hunting — aktiv nach Anrufern suchen, Tail-Ending, Vorrang des Antwortens im CQ-Fallback).

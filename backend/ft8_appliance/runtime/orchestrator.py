@@ -596,6 +596,10 @@ class Orchestrator:
     _rig_restore_last_at: float = field(default=0.0, init=False)
     _consecutive_late_tx: int = field(default=0, init=False)
     _last_tx_late_alert_at: float = field(default=0.0, init=False)
+    # 2026-09-09: Leistung stammt aus runtime_state (bewusst gesetzt) und
+    # ueberlebt Boot + ersten Bandaufschlag ungeklemmt, s.
+    # _apply_tx_power_safety_floor.
+    _tx_power_from_state: bool = field(default=False, init=False)
     # Burst-Peak-basiertes ALC-Adjustment: Samples werden waehrend
     # eines TX-Bursts gesammelt und am Burst-Ende (PTT-Abfallflanke)
     # ausgewertet — verhindert Per-Tick-Oszillation zwischen Bursts.
@@ -2702,6 +2706,18 @@ class Orchestrator:
         wir auf ``rig.effective_max_power_w`` zurueck (das ist der Hard-
         Cap des Rigs unabhaengig vom Band — niemals None).
         """
+        eff_max = self._compute_band_max_power_w(band)
+        if eff_max is None:
+            # Band nicht erlaubt fuer die Klasse → kein Floor anwenden
+            return None
+        return max(1, eff_max // 2)
+
+    def _compute_band_max_power_w(self, band: str | None = None) -> int | None:
+        """Was Lizenzklasse und Rig auf diesem Band ueberhaupt zulassen.
+
+        Die harte Obergrenze, nicht der halbierte Vorsichtswert. None, wenn
+        das Band fuer die Klasse gar nicht freigegeben ist.
+        """
         eff_max: int | None = None
         if band is not None:
             try:
@@ -2710,10 +2726,7 @@ class Orchestrator:
                 eff_max = None
         if eff_max is None:
             eff_max = self.config.rig.effective_max_power_w
-        if eff_max <= 0:
-            # Band nicht erlaubt fuer die Klasse → kein Floor anwenden
-            return None
-        return max(1, eff_max // 2)
+        return None if eff_max <= 0 else eff_max
 
     async def _apply_tx_power_safety_floor(
         self, reason: str, band: str | None = None
@@ -2739,6 +2752,36 @@ class Orchestrator:
                 reason, active_band or "?",
             )
             return
+        # 2026-09-09 (Sebastian): Der aus runtime_state geladene Wert ist eine
+        # bewusst gesetzte Leistung und soll einen Neustart ueberleben. Bisher
+        # kam die Station nach jedem Self-Update mit der halbierten Leistung
+        # hoch (70 -> 50 W), weil beim Boot das Band noch unbekannt ist und
+        # gleich danach der erste Bandaufschlag denselben Floor nochmal warf.
+        # Begrenzt wird der Wert weiterhin — aber auf das, was Lizenzklasse
+        # und Rig auf diesem Band zulassen, statt auf die Haelfte davon.
+        # Echte Bandwechsel danach, Operator- und Rig-Wechsel klemmen
+        # unveraendert auf den Vorsichtswert; gesendet wird bis zum ersten
+        # Rig-Kontakt ohnehin nicht (rig_link_guard).
+        if self._tx_power_from_state and reason in ("boot", "band_change"):
+            if reason == "band_change":
+                self._tx_power_from_state = False
+            hard = self._compute_band_max_power_w(active_band)
+            if hard is None or self._tx_power_w <= hard:
+                if self._tx_power_w > safe:
+                    log.info(
+                        "tx-power safety-floor (%s): %dW aus runtime_state bleiben stehen "
+                        "(Grenze der Klasse auf %s: %sW); Vorsichtswert %dW greift ab dem "
+                        "naechsten Bandwechsel",
+                        reason, self._tx_power_w, active_band or "?",
+                        hard if hard is not None else "?", safe,
+                    )
+                return
+            log.info(
+                "tx-power safety-floor (%s): %dW aus runtime_state ueber der Grenze "
+                "der Klasse auf %s — klemme auf %dW",
+                reason, self._tx_power_w, active_band or "?", hard,
+            )
+            safe = hard
         if self._tx_power_w <= safe:
             log.info(
                 "tx-power safety-floor (%s): aktuell %dW <= safe %dW — keine Aenderung",
@@ -5847,6 +5890,10 @@ class Orchestrator:
                                  "(config-default was %dW)",
                                  pw, self._tx_power_w)
                         self._tx_power_w = pw
+                        # 2026-09-09: merken, dass die Leistung vom Benutzer
+                        # kommt — der Boot-Floor klemmt sie dann nicht auf die
+                        # Haelfte, sondern hoechstens auf das Klassenlimit.
+                        self._tx_power_from_state = True
                 except (TypeError, ValueError):
                     pass
         except FileNotFoundError:
