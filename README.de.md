@@ -6,8 +6,9 @@
 
 Headless FT8/FT4-Stationssteuerung auf einem Raspberry Pi 5 (oder 4B). Sitzt zwischen
 einem Icom IC-705 / IC-7300 und der Welt, komplett über den Handy-Browser
-bedient. **Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb — mit
-Funktionen, die WSJT-X out of the box nicht bietet.
+bedient. **Ersetzt WSJT-X** für portablen Betrieb — mit Funktionen, die WSJT-X
+out of the box nicht bietet. Der Operator beaufsichtigt die Station, er klickt
+nur nicht mehr jeden Anruf einzeln an.
 
 Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 

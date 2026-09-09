@@ -6,7 +6,7 @@
 
 Headless FT8/FT4 station controller running on a Raspberry Pi 5 (or 4B). Sits between
 an Icom IC-705 / IC-7300 and the world, controlled entirely from a phone
-browser. **Replaces WSJT-X** for portable / unattended-overseer use, with
+browser. **Replaces WSJT-X** for portable operation, with
 features WSJT-X does not provide out of the box.
 
 Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
@@ -259,7 +259,7 @@ team of amateur radio operators in Germany.
 
 Headless FT8/FT4-Steuerung auf Raspberry Pi 5 (oder 4B) für IC-705 / IC-7300. Sitzt
 zwischen Rig und Welt, Bedienung komplett übers Handy (passwortgeschützt).
-**Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb mit Features,
+**Ersetzt WSJT-X** für portablen Betrieb mit Features,
 die WSJT-X nicht out of the box hat — 20-Tier-Picker mit Pile-Up-Avoidance,
 konservativen Hunt-Gates, datengetriebenem Tuning aus Pick-Telemetrie,
 Watchlist, Auto-Upload zu QRZ +
