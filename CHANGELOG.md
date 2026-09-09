@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.84.1 — 2026-09-09
+- decoder: LDPC-Faktor in Stufe 1 auf late_ldpc_pct deckeln, wenn der volle Modus dort laeuft
+
 ## v0.84.0 — 2026-09-09
 - decoder: Kandidatenschleifen mit OpenMP parallel — extreme auf dem Pi 5 von 2,2 auf 1,0 s
 - docs: Pi-5-Messreihen und Multicore-Umbauplan fuer den Decoder
