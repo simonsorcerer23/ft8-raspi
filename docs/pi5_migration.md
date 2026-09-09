@@ -27,7 +27,17 @@ Der neue Pi muss nicht am Rig stehen, um eingerichtet zu werden — das Backup
 liegt auf dem PC, nicht auf dem alten Pi. Arbeitsteilung:
 
 **Sebastian am neuen Pi (10 Minuten):**
-1. Zusammenbauen: NVMe aufs Argon-Board, RTC-Batterie an den Pi 5.
+1. Zusammenbauen: NVMe aufs Argon-Board, RTC-Batterie an den Pi 5. Der
+   Batterieanschluss ist der **zweipolige** JST-SH zwischen HDMI0 und dem
+   USB-C-Stromanschluss, auf der Platine mit `BAT` beschriftet (nicht der
+   vierpolige `FAN` und nicht der dreipolige `UART`); rotes Kabel ist Plus.
+   **Wichtig bei der verbauten CR2032:** Das ist eine nicht wiederaufladbare
+   Primaerzelle. Die Ladeschaltung des Pi 5 ist ab Werk aus und muss es
+   bleiben — `dtparam=rtc_bbat_vchg=...` gehoert **nicht** in die
+   `config.txt`. Raspberry Pi dazu: "it has a trickle charge circuit which is
+   disabled by default. If enabled, this will kill the cell quickly." Die
+   CR2032 haelt mit ~220 mAh ohnehin laenger als die offizielle ML2020 (~45 mAh),
+   nur eben ohne Nachladen.
 2. microSD am PC mit dem Raspberry Pi Imager bespielen: **Raspberry Pi OS
    Lite 64-bit**, Hostname `ft8`, Benutzer `sebastian`, SSH mit dem
    öffentlichen Schlüssel aus `~/.ssh/id_ed25519.pub`, WLAN `Altec`
