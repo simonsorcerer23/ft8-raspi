@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Headless FT8/FT4-Stationssteuerung auf einem Raspberry Pi 4B (oder Pi 5). Sitzt zwischen
+Headless FT8/FT4-Stationssteuerung auf einem Raspberry Pi 5 (oder 4B). Sitzt zwischen
 einem Icom IC-705 / IC-7300 und der Welt, komplett über den Handy-Browser
 bedient. **Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb — mit
 Funktionen, die WSJT-X out of the box nicht bietet.
@@ -77,13 +77,27 @@ Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 
 ## Highlights
 
-- **Decoder über das Stock-ft8_lib hinaus** — zweistufig (ein schneller Pass
-  entscheidet in ~0,4 s über TX, ein zweiter im Thread ergänzt kohärentes
-  Subtract-and-Rerun, OSD, Analysefenster pro Pass und Feinsync-Demodulation).
-  Auf den WSJT-X-Referenzaufnahmen aus ft8_lib findet er jetzt 88 % der
-  WSJT-X-Decodes (Stock: 73 %), und mit WSJT-X' eigenem `jt9` als dritter
-  Stufe daneben 98 % plus rund 50 Decodes, die die Referenz nicht hat;
-  gemessen mit `scripts/bench_decoder_corpus.py`.
+- **Decoder über das Stock-ft8_lib hinaus** — kohärentes Subtract-and-Rerun,
+  OSD, eigenes Analysefenster pro Pass und Feinsync-Demodulation. Auf den
+  WSJT-X-Referenzaufnahmen aus ft8_lib findet er 88 % der WSJT-X-Decodes
+  (Stock: 73 %), mit WSJT-X' eigenem `jt9` als dritter Stufe daneben 98 %
+  plus rund 50 Decodes, die die Referenz nicht hat; gemessen mit
+  `scripts/bench_decoder_corpus.py`.
+- **Alle Kerne für den Decoder** — die Kandidatenschleifen jedes Passes laufen
+  parallel, aber nur ihr rein lesender Teil; alles, was gemeinsamen Zustand
+  berührt, bleibt seriell in Kandidatenreihenfolge. Die Ausgabe ist dadurch
+  bit-identisch zur seriellen Abarbeitung, unabhängig von der Thread-Zahl —
+  nachgewiesen mit `scripts/decoder_golden.py`, das jede Nachricht, jeden Wert
+  und jede Reihenfolge einfriert und Feld für Feld vergleicht. Auf dem Pi 5
+  fällt der volle Modus damit von 2,2 s auf 1,0 s je Slot.
+- **Der volle Decoder entscheidet über den Sendestart** — bisher musste ein
+  schneller Vorab-Pass die TX-Entscheidung treffen, während der teure Rest
+  nebenherlief und nur noch fürs Logbuch nachreichte: rund 37 % aller Decodes
+  kamen zu spät, um beantwortet zu werden. Auf dem Pi 5 passt der volle Modus
+  jetzt in das Fenster vor dem Sendestart (0,2–0,7 s live, Versatz zur
+  Slotgrenze unter 1,2 s). Reißt ein dichter Slot das Limit dreimal in Folge,
+  fällt die Box selbsttätig auf die alte Zweiteilung zurück, dann erst auf den
+  Standard-Pass.
 - **Antwortstrategie aus der eigenen Telemetrie** — Ziele unter −13 dB nur
   mit PSK-Reporter-Bestätigung, Kontinente mit schlechter Vollendungsquote
   ebenso, ein adaptiver CQ-Fallback, wenn kein brauchbarer Rufer da ist, ein
@@ -208,8 +222,10 @@ Versionshistorie steht in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Hardware
 
-- **SBC:** Raspberry Pi 4B 8 GB (die Produktionsbox) oder Pi 5 (4 GB reichen, 8 GB schöner für größere Logs)
-- **Storage:** NVMe-SSD empfohlen für die QSO-Datenbank
+- **SBC:** Raspberry Pi 5 8 GB (die Produktionsbox seit 09/2026) oder Pi 4B 8 GB.
+  Der Pi 5 fährt den vollen Decoder vor der Sendeentscheidung; auf dem 4B
+  bleibt die Zweiteilung (`decoder_late_pass: true`).
+- **Storage:** NVMe-SSD, direkt davon gebootet (Argon NEO 5 M.2), keine SD-Karte im Betrieb
 - **Funkgerät:** Icom IC-705 oder IC-7300 über ein einziges USB-Kabel
   (CAT + Audio) via `rigctld`. QMX/QMX+ experimentell unterstützt.
 - **Audio:** Onboard-USB-CODEC des Rigs (keine extra Soundkarte)
@@ -232,7 +248,7 @@ MIT — siehe [LICENSE](./LICENSE). Drittkomponenten sind in
 
 ## Status
 
-Aktive Entwicklung. Läuft auf einem einzelnen Raspberry Pi 4B 8 GB (`ft8`) im
+Aktive Entwicklung. Läuft auf einem einzelnen Raspberry Pi 5 8 GB (`ft8`) im
 Feldbetrieb, Multi-Operator (DK9XR + DO3XR auf dem einen Pi). Gebaut und
 genutzt von einem Vater-Sohn-Team von Funkamateuren in Deutschland.
 
