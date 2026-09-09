@@ -7,6 +7,12 @@ git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 - decoder: Kandidatenschleifen mit OpenMP parallel — extreme auf dem Pi 5 von 2,2 auf 1,0 s
 - docs: Pi-5-Messreihen und Multicore-Umbauplan fuer den Decoder
 
+## v0.83.3 — 2026-09-09
+- decoder: Subtraktionsschwelle von 20 auf 15 (Messung am Pi 5: 312 statt 311 Referenz-Decodes bei 15 statt 17 unbestaetigten, gleiche Laufzeit)
+
+## v0.83.2 — 2026-09-09
+- fix: cty.dat geht bei Umzug und Neuinstallation verloren (Backup/Restore/Installer)
+
 ## v0.83.1 — 2026-09-09
 - fix: CQ-Idle-Warnung abschaltbar machen und ntfy-Ablehnungen diagnostizierbar
 - docs: Runbook um den tatsaechlichen Pi-5-Umzug ergaenzt (Trixie ohne custom.toml, NVMe-Klon, WLAN, SSH-Bremse)

@@ -419,6 +419,14 @@ class DecodePipeline:
                 factor = 100
             else:                  # >60% → CPU-Druck
                 factor = 60
+            # 2026-09-09 Multicore: Laeuft der volle Modus in Stufe 1
+            # (decoder_late_pass: false), bekommt er denselben Faktor wie
+            # bisher in Stufe 2 (late_ldpc_pct, gemessen 150 %). Sonst
+            # regelt die niedrige Last auf 200 % hoch und macht genau den
+            # Pass langsamer, der den Sendestart bestimmt — die Messreihe
+            # zeigt fuer mehr LDPC-Iterationen ohnehin null Zugewinn.
+            if not self.two_stage and self.decoder_mode in ("deep", "multi", "extreme"):
+                factor = min(factor, int(self.late_ldpc_pct))
             try:
                 from .ft8_native import lib as _ft8_lib
                 _ft8_lib.ft8_shim_set_ldpc_factor(factor)
