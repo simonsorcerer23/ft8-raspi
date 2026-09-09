@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Headless FT8/FT4 station controller running on a Raspberry Pi 4B (or Pi 5). Sits between
+Headless FT8/FT4 station controller running on a Raspberry Pi 5 (or 4B). Sits between
 an Icom IC-705 / IC-7300 and the world, controlled entirely from a phone
 browser. **Replaces WSJT-X** for portable / unattended-overseer use, with
 features WSJT-X does not provide out of the box.
@@ -77,13 +77,26 @@ Operators: **DK9XR** (primary), **DO3XR** (secondary, multi-op).
 
 ## Highlights
 
-- **Decoder beyond stock ft8_lib** — two-stage decoding (a fast pass decides
-  TX within ~0.4 s, a second pass in a thread adds coherent subtract-and-rerun,
-  OSD, per-pass analysis windows and fine-sync demodulation). On the WSJT-X
-  reference recordings shipped with ft8_lib it now finds 88 % of WSJT-X's
-  decodes (stock: 73 %), and with WSJT-X's own `jt9` running as a third stage
-  alongside it 98 % plus ~50 decodes the reference does not have; measured with
+- **Decoder beyond stock ft8_lib** — coherent subtract-and-rerun, OSD, a
+  per-pass analysis window and fine-sync demodulation. On the WSJT-X reference
+  recordings shipped with ft8_lib it finds 88 % of WSJT-X's decodes (stock:
+  73 %), and with WSJT-X's own `jt9` running as a third stage alongside it 98 %
+  plus ~50 decodes the reference does not have; measured with
   `scripts/bench_decoder_corpus.py`.
+- **All cores for the decoder** — each pass runs its candidate loop in
+  parallel, but only the read-only part of it; everything touching shared
+  state stays serial and in candidate order. The output is therefore
+  bit-identical to serial execution regardless of thread count — proven by
+  `scripts/decoder_golden.py`, which freezes every message, every value and
+  every ordering and compares them field by field. On the Pi 5 the full mode
+  drops from 2.2 s to 1.0 s per slot.
+- **The full decoder decides when to transmit** — previously a fast pre-pass
+  had to make the TX decision while the expensive rest ran alongside and could
+  only add to the log: around 37 % of all decodes arrived too late to be
+  answered. On the Pi 5 the full mode now fits inside the window before
+  transmit (0.2–0.7 s live, offset from the slot boundary below 1.2 s). If a
+  dense slot blows the limit three times running, the box falls back to the
+  old two-stage split by itself, and only then to the standard pass.
 - **Reply strategy from own telemetry** — targets below −13 dB only with PSK
   Reporter confirmation, continents with a poor completion rate likewise, an
   adaptive CQ fallback when no usable caller is around, an A/B test of the
@@ -207,8 +220,10 @@ history lives in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Hardware
 
-- **SBC:** Raspberry Pi 4B 8 GB (the production box) or Pi 5 (4 GB sufficient, 8 GB nicer for bigger logs)
-- **Storage:** NVMe SSD recommended for the QSO database
+- **SBC:** Raspberry Pi 5 8 GB (the production box since 09/2026) or Pi 4B 8 GB.
+  The Pi 5 runs the full decoder ahead of the transmit decision; on the 4B the
+  two-stage split stays (`decoder_late_pass: true`).
+- **Storage:** NVMe SSD, booted from directly (Argon NEO 5 M.2), no SD card in service
 - **Radio:** Icom IC-705 or IC-7300 via single USB cable (CAT + audio)
   through `rigctld`. QMX/QMX+ has experimental support.
 - **Audio:** Onboard USB CODEC of the rig (no extra sound card)
@@ -231,7 +246,7 @@ MIT — see [LICENSE](./LICENSE). Third-party components are credited in
 
 ## Status
 
-Active development. Runs on a single Raspberry Pi 4B 8 GB (`ft8`) in field use,
+Active development. Runs on a single Raspberry Pi 5 8 GB (`ft8`) in field use,
 multi-operator (DK9XR + DO3XR on the one Pi). Built and used by a father-son
 team of amateur radio operators in Germany.
 
@@ -242,7 +257,7 @@ team of amateur radio operators in Germany.
 
 # Deutsch (Kurzfassung)
 
-Headless FT8/FT4-Steuerung auf Raspberry Pi 4B (oder Pi 5) für IC-705 / IC-7300. Sitzt
+Headless FT8/FT4-Steuerung auf Raspberry Pi 5 (oder 4B) für IC-705 / IC-7300. Sitzt
 zwischen Rig und Welt, Bedienung komplett übers Handy (passwortgeschützt).
 **Ersetzt WSJT-X** für portablen / unbeaufsichtigten Betrieb mit Features,
 die WSJT-X nicht out of the box hat — 20-Tier-Picker mit Pile-Up-Avoidance,
