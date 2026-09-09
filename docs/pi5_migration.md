@@ -94,6 +94,67 @@ ist beabsichtigt (seit v0.83.0) und kein Fehler.
    ersten Start auf den gewünschten Wert setzen (der Safety-Floor beginnt
    bei 50 W).
 
+## Wie der Umzug am 9.9.2026 tatsächlich lief (Korrekturen zum Plan oben)
+
+Der Plan oben ging von der Erstkonfiguration über den Raspberry Pi Imager aus.
+Das schlug fehl; hier steht, was wirklich funktioniert hat.
+
+**1. `custom.toml` wirkt unter Trixie nicht mehr.** Das aus Bookworm bekannte
+Format wird nicht mehr ausgewertet — `raspberrypi-sys-mods/init_config` gibt es
+nicht mehr, Trixie nutzt cloud-init. Der Pi bootete darum als `raspberrypi`
+ohne SSH. Was greift, sind zwei Wege parallel auf der Boot-Partition:
+
+* `ssh` (leere Datei) und `userconf.txt` (`benutzer:<yescrypt-Hash>`) —
+  ausgewertet von `sshswitch.service` und `userconfig.service`
+* `user-data` + `meta-data` für cloud-init (Datenquelle `NoCloud`); darüber
+  lassen sich Hostname, SSH-Public-Key, `NOPASSWD`-sudo und die Gruppen
+  (`dialout` fürs Rig, `audio` für ALSA) gleich mitgeben
+
+`meta-data` muss existieren, sonst erkennt cloud-init die Quelle nicht.
+**Nach dem ersten Start die Dateien von der Boot-Partition löschen** — der
+Passwort-Hash hat auf einer offenen FAT-Partition nichts verloren.
+
+**2. NVMe: von der SD aus klonen, nicht neu installieren.** Ablauf:
+`parted` (msdos, 512 MiB fat32 + Rest ext4) → `mkfs` → `rsync -aHAXx` für `/`
+und getrennt `/boot/firmware` → in `cmdline.txt` und `fstab` die neuen
+PARTUUIDs eintragen (`blkid -s PARTUUID`). Danach `BOOT_ORDER=0xf416`
+(NVMe zuerst, SD als Rückfallebene) per `rpi-eeprom-config --apply`.
+Vorher `rpi-eeprom-update -a` und neu starten.
+
+**Der Test, ob die NVMe wirklich bootet, geht mit noch steckender SD-Karte:**
+Bootreihenfolge umstellen, neu starten, `findmnt -no SOURCE /` muss
+`/dev/nvme0n1p2` zeigen. Erst dann die Karte ziehen.
+
+Die NVMe läuft im Argon NEO 5 mit PCIe Gen 2 x1 (~500 MB/s). Das reicht;
+`dtparam=pciex1_gen=3` bleibt aus, Stabilität geht bei einem Dauerläufer vor.
+
+**3. WLAN muss vor dem Kabelziehen eingerichtet sein.** Das frische Image
+kennt nur `eth0`. Erst `raspi-config nonint do_wifi_country DE` (ohne
+Funkland bleibt `wlan0` auf `unavailable`), dann die Profile aus dem Backup
+nach `/etc/NetworkManager/system-connections/` (root:root, 0600) und
+`nmcli connection reload`.
+
+**4. `install.sh --enable-services` bricht ohne Rig ab**, weil `ft8-rigctld`
+nicht starten kann. Der Autostart lässt sich trotzdem setzen:
+`sudo systemctl enable ft8-rigctld ft8-controller ft8-self-update.timer`
+(ohne `--now`). Beim nächsten Start mit Rig kommt alles hoch; ohne Rig steht
+die Appliance sauber in `TX_LOCKED`.
+
+**5. Falle bei der Fehlersuche: OpenSSHs Missbrauchsbremse.** Wiederholte
+Verbindungsversuche im Sekundentakt, `ssh-keyscan` und Portscans lassen sshd
+die Quelladresse sperren: die Verbindung wird angenommen und **ohne Banner
+sofort geschlossen** (`kex_exchange_identification: Connection reset by peer`),
+jeder weitere Versuch verlängert die Sperre. Das sieht aus wie ein Netzwerk-
+oder Firewall-Problem, ist aber keines. Unterscheidungsmerkmal: ein Port ohne
+Dienst wird sauber mit *Connection refused* abgelehnt und ICMP läuft
+verlustfrei — dann arbeitet der TCP-Stack normal. Abhilfe: einige Minuten
+nichts tun oder neu starten, danach **einzeln** anklopfen.
+
+**6. Tailscale:** Knoten heißt `ft8-pi5` (der alte `ft8` bleibt zunächst
+stehen), Installation über das signierte APT-Repository statt `curl | sh`.
+Im Admin-Panel **key expiry deaktivieren**, sonst fliegt die Appliance nach
+Ablauf des Schlüssels aus dem Tailnet.
+
 ## Was auf dem Pi 5 anders sein wird
 
 - **jt9 Tiefe 3** wurde am 4B nur im Sendezyklus riskiert (11–17 s pro Slot).
