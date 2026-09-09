@@ -40,6 +40,18 @@ tar czf "${WORK}/payload.tgz" -C "$WORK" \
     $([ -d "${WORK}/etc/NetworkManager/system-connections" ] && echo etc/NetworkManager/system-connections)
 scp -q "${WORK}/payload.tgz" "sebastian@${HOST}:/tmp/ft8-restore.tgz"
 
+# cty.dat separat: im Archiv liegt sie unter dem App-Verzeichnis des
+# Quellsystems, auf dem Ziel kann das anders heissen. Darum suchen,
+# einzeln uebertragen und drueben aus install.env platzieren.
+CTY_SRC="$(find "$WORK" -path '*/data/cty.dat' -type f 2>/dev/null | head -1)"
+if [ -n "$CTY_SRC" ]; then
+    scp -q "$CTY_SRC" "sebastian@${HOST}:/tmp/cty.dat"
+else
+    echo "== HINWEIS: keine cty.dat im Backup — auf dem Ziel gibt es dann keine"
+    echo "   Laenderzuordnung (keine Flaggen, 0 DXCCs). Datei nachtragen unter"
+    echo "   <APP_DIR>/data/cty.dat."
+fi
+
 ssh -o ConnectTimeout=20 "sebastian@${HOST}" 'bash -s' <<'REMOTE'
 set -euo pipefail
 sudo tar xzf /tmp/ft8-restore.tgz -C / --no-same-owner
@@ -52,6 +64,15 @@ sudo chown -R "${APP_USER}:${APP_USER}" /var/lib/ft8-appliance /etc/ft8-applianc
 sudo chown root:root /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
 sudo chmod 600 /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
 sudo nmcli connection reload 2>/dev/null || true
+
+# cty.dat an den Platz legen, den der Orchestrator beim Start liest.
+if [ -f /tmp/cty.dat ]; then
+    APP_DIR="$(. /etc/ft8-appliance/install.env 2>/dev/null && echo "${APP_DIR:-/home/sebastian/ft8-raspi}")"
+    sudo install -d -o "${APP_USER}" -g "${APP_USER}" "${APP_DIR}/data"
+    sudo install -m 644 -o "${APP_USER}" -g "${APP_USER}" /tmp/cty.dat "${APP_DIR}/data/cty.dat"
+    rm -f /tmp/cty.dat
+    echo "cty.dat nach ${APP_DIR}/data/ eingespielt"
+fi
 
 sudo systemctl start ft8-controller
 REMOTE

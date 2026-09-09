@@ -268,6 +268,24 @@ install -d /etc/nftables.d
 install -m 644 "${APP_DIR}/deploy/nftables/captive-redirect.nft"  /etc/nftables.d/ft8-captive.nft
 
 # ----------------------------------------------------------------------------
+# data/cty.dat — DXCC-Laenderdatenbank. Per .gitignore vom Repo
+# ausgeschlossen, ein frischer Klon hat sie also nicht. Ohne sie faellt die
+# Laenderzuordnung komplett aus: keine Flaggen in den ntfy-Pushes, "0 DXCCs"
+# in der QRZ-Statistik, und die Antwortstrategie kann Laender-Neuheit nicht
+# bewerten. Der Betrieb laeuft trotzdem — deshalb faellt es sonst erst spaet
+# auf (Pi-5-Umzug 2026-09-09). Kein Download hier: die Datei kommt aus dem
+# Backup (backup-/restore-appliance.sh nehmen sie mit) oder von Hand.
+if [ ! -f "${APP_DIR}/data/cty.dat" ]; then
+    echo ""
+    echo "!! ${APP_DIR}/data/cty.dat fehlt — keine DXCC-Zuordnung:"
+    echo "   keine Laenderflaggen, 0 DXCCs in der Statistik, Laender-Neuheit"
+    echo "   fliesst nicht in die Antwortstrategie ein."
+    echo "   Aus dem Backup einspielen oder von Hand dorthin kopieren."
+    echo ""
+else
+    echo "cty.dat vorhanden ($(wc -l < "${APP_DIR}/data/cty.dat") Zeilen)"
+fi
+
 section "7/8  gpsd configuration"
 # Point gpsd at the u-blox VK-162. Prefer the /dev/serial/by-id/ symlink over
 # the bare /dev/ttyACM0: the kernel name shifts as soon as a second ACM device
