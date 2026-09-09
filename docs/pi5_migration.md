@@ -179,10 +179,21 @@ Abstand — der Wert des GPS liegt im Ausfall des Netzes.
 
 ## Was auf dem Pi 5 anders sein wird
 
-- **jt9 Tiefe 3** wurde am 4B nur im Sendezyklus riskiert (11–17 s pro Slot).
-  Auf dem Pi 5 ist zu messen, ob Tiefe 3 dauerhaft ins 15-s-Budget passt:
-  `decoder_jt9_depth: 3` setzen und `decoder_late_pass.jt9.duration_s`
-  beobachten; bei über 9 s zurück auf 2.
+- **jt9 Tiefe 3 — gemessen am 2026-09-09, seither dauerhaft aktiv.**
+  Am 4B wurde Tiefe 3 nur im Sendezyklus riskiert (11–17 s pro Slot). Auf dem
+  Pi 5, im laufenden Betrieb über 12 Referenzaufnahmen gemessen:
+
+  | Tiefe | pro Slot | Decodes (12 Aufnahmen) |
+  |---|---|---|
+  | 1 | 0,60 s | 129 |
+  | 2 | 2,07 s | 154 |
+  | 3 | 4,30 s | 159 |
+
+  Im Betrieb meldet die Appliance `decoder_late_pass.jt9.duration_s` = 5,78 s
+  bei `depth: 3`, der späte Pass selbst 1,59 s — zusammen gut 7 s von 15.
+  `decoder_late_slot_count` bleibt 0, `skipped`/`failed` ebenfalls. Das
+  Abbruchkriterium (über 9 s zurück auf Tiefe 2) ist damit klar eingehalten.
+  Der Zugewinn ist mit gut 3 % moderat, kostet aber nichts, was wir brauchen.
 - **Stromversorgung:** Der Pi 5 verlangt das 27-W-Netzteil, sonst drosselt er
   die USB-Ports. Nach einer Woche `vcgencmd get_throttled` prüfen — `0x0`
   heißt sauber.
