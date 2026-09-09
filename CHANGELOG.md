@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.84.2 — 2026-09-09
+- docs: extreme in Stufe 1 auf dem Pi 5 dokumentiert; Decoder-Log meldet Stufenwechsel
+
 ## v0.84.1 — 2026-09-09
 - decoder: LDPC-Faktor in Stufe 1 auf late_ldpc_pct deckeln, wenn der volle Modus dort laeuft
 
