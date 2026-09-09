@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.84.4 — 2026-09-09
+- fix: gemerkte Sendeleistung ueberlebt den Neustart
+
 ## v0.84.3 — 2026-09-09
 - fix: boot_mode merkt sich beide Schalter; Decoder-Stufen getrennt protokolliert
 
