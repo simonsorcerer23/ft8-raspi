@@ -4287,8 +4287,16 @@ class Orchestrator:
     def _psk_reciprocity_pause_reason(self) -> str | None:
         if not self.state_machine.ctx.auto_answer:
             return "hunt inactive"
-        if self.state_machine.ctx.auto_cq:
-            return "auto-cq active"
+        # 2026-09-10: "auto_cq aktiv" war frueher ein Pausengrund, weil CQ
+        # und Hunting sich ausschlossen — wer CQ ruft, pickt niemanden und
+        # braucht die Empfangsdaten nicht. Seit boot_mode "cq+hunt" laufen
+        # beide gleichzeitig (das ist der Normalbetrieb der Station), und
+        # damit pausierte die Abfrage dauerhaft: der Picker sah nie, wer uns
+        # hoert, und das Schwach-Gate liess schwache Ziele grundsaetzlich
+        # durchfallen, weil ihm die Bestaetigung fehlte. Auch der Rueckfall
+        # der Empfaenger-Ansicht bei 503 lief ins Leere, weil der Cache leer
+        # blieb. Der Schutz vor zu haeufigen Abfragen steckt im Intervall
+        # (900 s), nicht in dieser Bedingung.
         if self._last_rig.freq_hz is None:
             return "rig not ready"
         if getattr(getattr(self, "decode_source", None), "metrics", None) is None:
