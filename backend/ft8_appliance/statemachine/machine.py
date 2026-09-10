@@ -346,24 +346,53 @@ def _tier_not_bad_reputation(d: DecodedMsg, ctx: MachineContext) -> int:
     return 0 if base_call(d.call_from) in ctx.soft_blacklist else 1
 
 
-def _tier_not_his_tx_slot(d: DecodedMsg, ctx: MachineContext) -> int:
-    """v0.15.0 — Slot-Parity-Awareness: 0 wenn der Op gerade in SEINEM
-    eigenen TX-Slot ist (= er sendet, er hoert uns nicht), sonst 1.
+def _unser_tx_slot(ctx: MachineContext) -> str | None:
+    """Die Slot-Paritaet, in der WIR als Naechstes senden.
 
-    Wir tracken pro Call welche Slot-Parity er typischerweise zum
-    Senden nutzt (siehe Orchestrator). Wenn unser aktueller Slot SEIN
-    TX-Slot ist und wir antworten wollen, ist das verschwendete TX-
-    Energie. Wir warten lieber einen Slot.
+    ``ctx.current_slot_parity`` ist die Paritaet des Slots, dessen Decodes
+    gerade verarbeitet werden. Gesendet wird im *folgenden* Slot — also in
+    der Gegenparitaet. Wer das verwechselt, dreht jede Paritaets-Pruefung um.
     """
-    if not d.call_from or not ctx.current_slot_parity:
-        return 1
-    his_parity = ctx.op_slot_parity.get(d.call_from.upper())
-    if his_parity is None or his_parity == "":
-        return 1  # unknown → kein Filter
-    # Wenn unser aktueller Slot SEIN TX-Slot ist → er sendet jetzt,
-    # er hoert uns nicht. Picker soll ihn nicht jetzt picken — wir
-    # wuerden in den naechsten Slot antworten waehrend er noch sendet.
-    return 0 if his_parity == ctx.current_slot_parity else 1
+    cur = ctx.current_slot_parity
+    if cur == "even":
+        return "odd"
+    if cur == "odd":
+        return "even"
+    return None
+
+
+def _sendet_wenn_wir_senden(d: DecodedMsg, ctx: MachineContext) -> bool:
+    """Sendet diese Station in dem Slot, in dem wir antworten wuerden?
+
+    Dann hoert sie uns nicht, und der Anruf ist verschenkte Sendezeit.
+
+    Die Umkehrung war bis v0.89.0 falsch herum: geprueft wurde gegen den
+    gerade dekodierten Slot statt gegen unseren Sende-Slot. Damit fielen
+    genau die Stationen heraus, die uns haetten hoeren koennen — wer in
+    Slot N sendet, hoert in Slot N+1, und genau dort antworten wir. Je
+    laenger die Box lief, desto mehr Rufzeichen hatten eine gelernte
+    Paritaet und desto mehr Kandidaten verschwanden: MI0JZZ rief am
+    2026-09-10 71-mal CQ, ohne je angerufen zu werden.
+    """
+    if not d.call_from:
+        return False
+    tx = _unser_tx_slot(ctx)
+    if tx is None:
+        return False
+    seine = ctx.op_slot_parity.get(d.call_from.upper())
+    if not seine:
+        return False          # noch nicht gelernt -> kein Urteil
+    return seine == tx
+
+
+def _tier_not_his_tx_slot(d: DecodedMsg, ctx: MachineContext) -> int:
+    """0 wenn er in UNSEREM Sende-Slot sendet (dann hoert er uns nicht), sonst 1.
+
+    Siehe :func:`_sendet_wenn_wir_senden` — die Paritaet, gegen die geprueft
+    werden muss, ist die des *folgenden* Slots, nicht die des gerade
+    dekodierten.
+    """
+    return 0 if _sendet_wenn_wir_senden(d, ctx) else 1
 
 
 def _tier_snr(d: DecodedMsg, ctx: MachineContext) -> int:
@@ -2171,16 +2200,12 @@ class StateMachine:
                 if (d.call_from or "").upper() not in self.ctx.pile_up_calls
                 or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
             ]
-        # Slot-Parity: meide Calls deren TX-Parity == aktueller Slot —
-        # sie senden gerade selbst und hoeren uns nicht.
+        # Slot-Parity: meide Calls, die in UNSEREM Sende-Slot senden — die
+        # hoeren uns nicht. Gegen den gerade dekodierten Slot zu pruefen
+        # waere genau verkehrt: wer darin sendet, hoert im naechsten, und
+        # genau dann antworten wir (siehe _sendet_wenn_wir_senden).
         if self.ctx.current_slot_parity and self.ctx.op_slot_parity:
-            cur = self.ctx.current_slot_parity
-            cqs = [
-                d for d in cqs
-                if self.ctx.op_slot_parity.get(
-                    (d.call_from or "").upper()
-                ) != cur
-            ]
+            cqs = [d for d in cqs if not _sendet_wenn_wir_senden(d, self.ctx)]
         # Conservative Hunt Gates:
         # - Ein einziger CQ im Slot ("sole") ist live auffaellig oft ein
         #   Fehlversuch. Ohne Award-/Kontextsignal rufen wir ihn nur an,

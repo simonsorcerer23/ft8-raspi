@@ -109,21 +109,23 @@ def test_pile_up_filters_one_of_many():
 # ---------------------------------------------------------------------------
 
 
+# Seit v0.89.0 gegen den Sende-Slot geprueft (= Gegenparitaet des
+# Decode-Slots), siehe tests/test_slot_paritaet.py.
 def test_slot_parity_filters_call_in_own_tx_slot():
-    """DL5ABC sendet even, aktueller Slot ist even → er hoert uns nicht."""
+    """DL5ABC sendet even; Decode-Slot odd → wir senden in even, er auch."""
     ctx = _ctx(
         op_slot_parity={"DL5ABC": "even"},
-        current_slot_parity="even",
+        current_slot_parity="odd",
     )
     sm = StateMachine(ctx=ctx)
     assert sm._pick_hunt_target([_cq("DL5ABC")]) is None
 
 
 def test_slot_parity_allows_other_parity():
-    """DL5ABC sendet even, aktueller Slot ist odd → erreichbar."""
+    """DL5ABC sendet even und wird gerade gehoert → unsere Antwort in odd."""
     ctx = _ctx(
         op_slot_parity={"DL5ABC": "even"},
-        current_slot_parity="odd",
+        current_slot_parity="even",
     )
     sm = StateMachine(ctx=ctx)
     winner = sm._pick_hunt_target([_cq("DL5ABC")])
@@ -165,7 +167,7 @@ def test_all_three_filters_combined():
         soft_blacklist={"BAD1"},
         pile_up_calls={"DX1"},
         op_slot_parity={"OWN1": "even"},
-        current_slot_parity="even",
+        current_slot_parity="odd",   # -> wir senden in even, OWN1 auch
     )
     sm = StateMachine(ctx=ctx)
     decodes = [
@@ -184,7 +186,7 @@ def test_all_three_filtered_returns_none():
         soft_blacklist={"BAD1"},
         pile_up_calls={"DX1"},
         op_slot_parity={"OWN1": "even"},
-        current_slot_parity="even",
+        current_slot_parity="odd",   # -> wir senden in even, OWN1 auch
     )
     sm = StateMachine(ctx=ctx)
     decodes = [
