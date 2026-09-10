@@ -756,6 +756,10 @@ class StateMachine:
             # auch fuer Direct-Reply-Pickup, damit nach Bail derselbe
             # Tail-Ender nicht sofort wieder triggert.
             now_ts = datetime.now(UTC).timestamp()
+            # Vorrang vor allem anderen: ein abgebrochenes QSO, das sich
+            # doch noch meldet, gehoert zu Ende gebracht (Loch A/C).
+            if self._try_resume_recent_qso(hw, decodes):
+                return
             te = _find_answer_with_report_to_us(decodes, self.ctx.tx_callsign)
             if te is not None:
                 their_snr, decoded = te
@@ -828,6 +832,10 @@ class StateMachine:
             self.ctx.idle_slots_without_pick += 1
             return
         if self.state is State.CQ_CALLING:
+            # Auch waehrend wir CQ rufen: ein abgebrochenes QSO, das sich
+            # nachtraeglich meldet, zuerst zu Ende bringen (Loch A/C).
+            if self._try_resume_recent_qso(hw, decodes):
+                return
             was_fallback = self.ctx.cq_fallback_active
             # Tail-Ender first: someone answered our CQ with a direct
             # signal report (skipping the grid stage). When that happens
@@ -898,6 +906,15 @@ class StateMachine:
             )
             if r_rep is not None:
                 self.qso.our_snr_received = r_rep
+                self.qso.stale_slots = 0
+                self.state = State.QSO_LOG
+                self._emit_log_qso(hw)
+                return
+            # Loch B (2026-09-10): Manche Partner ueberspringen den R-Report
+            # und schliessen direkt ab. Fuer sie ist das QSO damit fertig —
+            # wir warteten auf einen Report, der nie mehr kommt, und liefen
+            # in den Timeout.
+            if _find_closing(decodes, self.qso.their_call, self.ctx.tx_callsign):
                 self.qso.stale_slots = 0
                 self.state = State.QSO_LOG
                 self._emit_log_qso(hw)
@@ -1008,79 +1025,93 @@ class StateMachine:
                 self.qso.stale_slots = 0
                 self.state = State.QSO_LOG
                 self._emit_log_qso(hw)
-            else:
-                # Kein RR73 — zwei Symptome dass sie unseren R-Report nicht
-                # decoded haben, und in beiden Fällen wollen wir nochmal
-                # senden (gleicher Cap qso_max_report_resends):
-                #
-                #  (a) Partner schickt nochmal seinen Report ohne R-Prefix
-                #      → er hat unser Grid decoded und gibt uns Report,
-                #      aber unser R-Report kam bei ihm nicht an.
-                #      Sebastian 2026-05-24 nach UN7JO-Verlust.
-                #
-                #  (b) Partner ruft wieder CQ → er ist gar nicht in den
-                #      QSO-Modus eingestiegen (Decode bei ihm war zu
-                #      schwach für unsere TX-Sequence). Auf seiner Seite
-                #      existiert das QSO nicht. Wir versuchen einen
-                #      R-Report-Resend; klappt's nicht, läuft Timeout.
-                #      Sebastian 2026-05-24 nach DO1BJF-Verlust.
-                their_call = self.qso.their_call
-                # (c) Partner hat einen anderen Caller gepickt nach unserem
-                #     R-Report (z.B. weil eine staerkere Station gleichzeitig
-                #     geantwortet hat). Spiegelt die picked_another-Detection
-                #     aus QSO_RESPOND. Sebastian 2026-05-24 nach M7CCZ-Case:
-                #     M7CCZ gab uns +06, wir sendeten R-06, dann startete er
-                #     QSO mit EA1DUS statt RR73 zu uns. Wir warteten 3 Slots
-                #     vergeblich. Ohne diesen Check laufen wir in Timeout
-                #     + verschwenden TX-Slots, mit Check bail sofort +
-                #     Cooldown (Partner ist sowieso weg).
-                heard_them_with_other = any(
-                    d.call_from == their_call
-                    and d.call_to is not None
-                    and d.call_to != self.ctx.tx_callsign
-                    for d in decodes
+                return
+            # Loch D (2026-09-10): Er wiederholt seinen R-Report, weil er
+            # unseren nicht gehoert hat. Beide Seiten haben damit bestaetigt
+            # — das QSO ist komplett, einer muss abschliessen. Bisher fiel
+            # das durch, weil _find_report_from_them R-Reports ausfiltert:
+            # kein Fortschritt erkannt, Timeout nach drei Slots.
+            r_rep_again = _find_r_report_from_them(
+                decodes, self.qso.their_call, self.ctx.tx_callsign
+            )
+            if r_rep_again is not None:
+                self.qso.our_snr_received = r_rep_again
+                self.qso.stale_slots = 0
+                self.state = State.QSO_LOG
+                self._emit_log_qso(hw)
+                return
+            # Kein RR73 — zwei Symptome dass sie unseren R-Report nicht
+            # decoded haben, und in beiden Fällen wollen wir nochmal
+            # senden (gleicher Cap qso_max_report_resends):
+            #
+            #  (a) Partner schickt nochmal seinen Report ohne R-Prefix
+            #      → er hat unser Grid decoded und gibt uns Report,
+            #      aber unser R-Report kam bei ihm nicht an.
+            #      Sebastian 2026-05-24 nach UN7JO-Verlust.
+            #
+            #  (b) Partner ruft wieder CQ → er ist gar nicht in den
+            #      QSO-Modus eingestiegen (Decode bei ihm war zu
+            #      schwach für unsere TX-Sequence). Auf seiner Seite
+            #      existiert das QSO nicht. Wir versuchen einen
+            #      R-Report-Resend; klappt's nicht, läuft Timeout.
+            #      Sebastian 2026-05-24 nach DO1BJF-Verlust.
+            their_call = self.qso.their_call
+            # (c) Partner hat einen anderen Caller gepickt nach unserem
+            #     R-Report (z.B. weil eine staerkere Station gleichzeitig
+            #     geantwortet hat). Spiegelt die picked_another-Detection
+            #     aus QSO_RESPOND. Sebastian 2026-05-24 nach M7CCZ-Case:
+            #     M7CCZ gab uns +06, wir sendeten R-06, dann startete er
+            #     QSO mit EA1DUS statt RR73 zu uns. Wir warteten 3 Slots
+            #     vergeblich. Ohne diesen Check laufen wir in Timeout
+            #     + verschwenden TX-Slots, mit Check bail sofort +
+            #     Cooldown (Partner ist sowieso weg).
+            heard_them_with_other = any(
+                d.call_from == their_call
+                and d.call_to is not None
+                and d.call_to != self.ctx.tx_callsign
+                for d in decodes
+            )
+            if heard_them_with_other:
+                log.info(
+                    "QSO_REPORT: %s picked another caller — bailing",
+                    their_call,
                 )
-                if heard_them_with_other:
+                self._bail_qso_with_cooldown(their_call, "picked_another")
+                return
+            rep_again = _find_report_from_them(
+                decodes, their_call, self.ctx.tx_callsign
+            )
+            them_cq_again = any(
+                d.call_from == their_call
+                and (d.message or "").startswith("CQ")
+                for d in decodes
+            )
+            if rep_again is not None or them_cq_again:
+                reason = "repeated report" if rep_again is not None else "repeated CQ"
+                report_limit = self._effective_report_resend_limit()
+                if self.qso.report_resends >= report_limit:
+                    # Schon resent — sie hoeren uns einfach nicht.
+                    # In Timeout laufen lassen.
                     log.info(
-                        "QSO_REPORT: %s picked another caller — bailing",
+                        "QSO_REPORT: %s %s %d× (max %d) — kein R-Resend mehr",
                         their_call,
+                        reason,
+                        self.qso.report_resends,
+                        report_limit,
                     )
-                    self._bail_qso_with_cooldown(their_call, "picked_another")
-                    return
-                rep_again = _find_report_from_them(
-                    decodes, their_call, self.ctx.tx_callsign
-                )
-                them_cq_again = any(
-                    d.call_from == their_call
-                    and (d.message or "").startswith("CQ")
-                    for d in decodes
-                )
-                if rep_again is not None or them_cq_again:
-                    reason = "repeated report" if rep_again is not None else "repeated CQ"
-                    report_limit = self._effective_report_resend_limit()
-                    if self.qso.report_resends >= report_limit:
-                        # Schon resent — sie hoeren uns einfach nicht.
-                        # In Timeout laufen lassen.
-                        log.info(
-                            "QSO_REPORT: %s %s %d× (max %d) — kein R-Resend mehr",
-                            their_call,
-                            reason,
-                            self.qso.report_resends,
-                            report_limit,
-                        )
-                    else:
-                        if not self._check_guards(hw):
-                            return
-                        self.qso.report_resends += 1
-                        log.info(
-                            "QSO_REPORT: %s %s → R-Report Resend (%d/%d)",
-                            their_call,
-                            reason,
-                            self.qso.report_resends,
-                            report_limit,
-                        )
-                        self.qso.stale_slots = 0
-                        self._emit_send_r_report()
+                else:
+                    if not self._check_guards(hw):
+                        return
+                    self.qso.report_resends += 1
+                    log.info(
+                        "QSO_REPORT: %s %s → R-Report Resend (%d/%d)",
+                        their_call,
+                        reason,
+                        self.qso.report_resends,
+                        report_limit,
+                    )
+                    self.qso.stale_slots = 0
+                    self._emit_send_r_report()
 
     def on_slot_tick(self, hw: HardwareState, tick: SlotTick | None = None) -> None:
         # v0.11.0 — Tail-End-Candidates altert: jeder Slot pruefen ob
@@ -1419,6 +1450,7 @@ class StateMachine:
         """
         self._stamp_outcome_meta()
         self._record_hunt_outcome(their_call, completed=False)
+        self._remember_unfinished_qso()
         if self.qso_failed_cooldown_s > 0 and their_call:
             key = base_call(their_call) or their_call.upper()
             repeats = self.ctx.failed_attempt_counts.get(key, 0) + 1
@@ -1452,6 +1484,75 @@ class StateMachine:
                 "QSO_BAIL",
                 {"call": their_call, "reason": reason},
             ))
+
+    # Wie lange ein abgebrochenes QSO abrufbar bleibt. Deckt die typischen
+    # Wiederholungen ab (Partner sendet alle 15 s); danach ist die Station
+    # weitergezogen und ein nachtraeglicher Abschluss waere geraten.
+    RECENT_QSO_TTL_S = 600
+
+    def _remember_unfinished_qso(self) -> None:
+        """QSO-Daten fuer eine verspaetete Fortsetzung aufbewahren.
+
+        Nur wenn wir dem Partner schon einen Report gesendet haben — sonst
+        fehlt dem Logeintrag der Rapport und es waere kein gueltiges QSO.
+        """
+        q = self.qso
+        if q is None or q.their_snr is None or not q.their_call:
+            return
+        self.ctx.recent_qso_ctx[q.their_call] = (
+            datetime.now(UTC).timestamp() + self.RECENT_QSO_TTL_S,
+            {
+                "their_call": q.their_call,
+                "their_grid": q.their_grid,
+                "their_snr": q.their_snr,
+                "our_snr_received": q.our_snr_received,
+                "their_snr_at_us": q.their_snr_at_us,
+                "band": q.band,
+                "freq_offset_hz": q.freq_offset_hz,
+                "started": q.started,
+                "from_cq_fallback": q.from_cq_fallback,
+            },
+        )
+
+    def _try_resume_recent_qso(
+        self, hw: HardwareState, decodes: list[DecodedMsg]
+    ) -> bool:
+        """Loch A und C (2026-09-10): verspaetete Fortsetzung abschliessen.
+
+        Nach einem Timeout stehen wir in IDLE oder CQ_CALLING. Meldet sich
+        der Partner dann doch noch — weil er unser RR73 nicht gehoert hat
+        und seinen R-Report wiederholt (A), oder weil sein Abschluss erst
+        jetzt bei uns ankommt (C) —, wurde das bisher ignoriert: Das QSO
+        stand in seinem Log und fehlte in unserem. Gemessen ueber sieben
+        Tage: 16 Stationen, davon EA3GXK mit 186 Wiederholungen.
+
+        Liefert True, wenn ein QSO abgeschlossen wurde.
+        """
+        if not self.ctx.recent_qso_ctx:
+            return False
+        jetzt = datetime.now(UTC).timestamp()
+        for call, (ablauf, daten) in list(self.ctx.recent_qso_ctx.items()):
+            if ablauf < jetzt:
+                del self.ctx.recent_qso_ctx[call]
+                continue
+            r_rep = _find_r_report_from_them(decodes, call, self.ctx.tx_callsign)
+            schluss = _find_closing(decodes, call, self.ctx.tx_callsign)
+            if r_rep is None and not schluss:
+                continue
+            if not self._check_guards(hw):
+                return False
+            del self.ctx.recent_qso_ctx[call]
+            self.qso = QsoContext(**daten)
+            if r_rep is not None:
+                self.qso.our_snr_received = r_rep
+            log.info(
+                "%s meldet sich nach dem Abbruch nochmal (%s) → QSO abschliessen",
+                call, "R-Report" if r_rep is not None else "Abschluss",
+            )
+            self.state = State.QSO_LOG
+            self._emit_log_qso(hw)
+            return True
+        return False
 
     def _emit_cq(self) -> None:
         # Directed-CQ (Audit F7, v0.3.4): "CQ DX/EU/POTA/TEST" prefix

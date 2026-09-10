@@ -108,7 +108,11 @@ mid-QSO-Station via Doppelklick) bei uns nicht entstehen.
 | Partner geht silent | Watchdog (6 min) | `qso_max_stale_slots=6` → bail + Cooldown (~90 s) | ⚠️ Wir geben deutlich schneller auf |
 | Failed-Cooldown danach | Nicht vorhanden | 15 min Default `qso_failed_cooldown_min` | 📋 Unattended-Optimierung |
 
-**Lücken:** Keine kritischen.
+**Lücken:** Keine kritischen. — **Widerlegt am 2026-09-10, siehe §4:**
+Hier saßen zwei der teuersten Löcher (eingehender R-Report und
+eingehender Abschluss). Die Zeile oben prüfte nur, ob die *erwartete*
+Nachricht einen Pfad hat, nicht was `_find_report_from_them` sonst noch
+verwirft.
 
 ---
 
@@ -352,6 +356,93 @@ Action 2 = Nice-to-have, nicht dringend.
       werden gar nicht erst angerufen. Siehe §1.1.
 - [ ] Sweep B (AP-Decoding) re-evaluieren wenn echte Timeout-Stats
       vorliegen?
+
+---
+
+## 5 — Nachtrag 2026-09-10: fünf übersehene Löcher
+
+Dieses Audit hat im Mai fünf Fälle nicht gefunden, obwohl es dieselbe
+Methodik benutzte. Vier davon haben monatelang QSOs gekostet. Der Nachtrag
+steht hier, weil die Fehlersuche selbst die Lehre ist.
+
+### Was übersehen wurde
+
+Alle fünf Fälle haben denselben Nenner: **Eine Nachricht, die eine
+Verbindung fortsetzt, wurde nur in genau einem Zustand erwartet.** Traf sie
+einen Schritt zu früh oder zu spät ein, fiel sie durch — und tarnte sich als
+„Gegenstation verstummt", weil in Wahrheit *wir* geschwiegen haben.
+
+| | Zustand | Eingehend | Folge |
+|---|---|---|---|
+| **Tx4 in RESPOND** | QSO_RESPOND | R-Report (Tx4) | Timeout statt Abschluss — **der teuerste** |
+| **A** | IDLE / CQ_CALLING | R-Report (Tx4) | verspätete Fortsetzung ignoriert |
+| **B** | QSO_RESPOND | RR73 (Tx5) | Partner überspringt Tx4, wir warten ewig |
+| **C** | IDLE / CQ_CALLING | RR73 (Tx5) | sein Abschluss nach unserem Timeout — QSO nur in *seinem* Log |
+| **D** | QSO_REPORT | R-Report (Tx4) | er wiederholt, beide haben bestätigt, kein Fortschritt erkannt |
+
+Dazu: `QSO_CLOSING` war ein toter Zustand — im Enum definiert, nie erreicht,
+nie ausgewertet. Entfernt.
+
+### Warum das Mai-Audit sie nicht fand
+
+§1.3 hakte QSO_RESPOND ab mit „Erwartung: `Tx3` von Partner (Report) →
+`_find_report_from_them` → ✅ Match" und schloss mit „**Lücken:** Keine
+kritischen."
+
+Der Fehler steckt zwischen den Zeilen: Geprüft wurde, ob es *für die
+erwartete Nachricht* einen Pfad gibt — nicht, **was die Erkennungsfunktion
+sonst noch verwirft**. `_find_report_from_them` filtert R-Reports
+ausdrücklich heraus:
+
+```python
+if m and not d.message.startswith(f"{d.call_to} {d.call_from} R"):
+```
+
+und `_find_answer_with_report_to_us` ebenso, dort sogar mit dem Kommentar
+„Must NOT be an R-report (those belong to QSO_RESPOND state)". Die
+Zuständigkeit war also erkannt, weitergereicht — und nirgends angenommen.
+In QSO_RESPOND gab es keinen Zweig dafür.
+
+Dazu kommt: Das Audit ging die Sequenz **in einer Richtung** durch (wir
+rufen an, Partner antwortet). Der Fall „*sie* rufen *uns* an" durchläuft
+dieselben Zustände mit **anderen** eingehenden Nachrichten — dort ist Tx4
+die Antwort auf unser Tx3, nicht umgekehrt. Genau dieser Zweig war leer.
+
+### Was es gekostet hat
+
+Sieben Tage Telemetrie, Decodes an uns gerichtet:
+
+| Absender | R-Report-Wiederholungen | QSO im Log |
+|---|---|---|
+| EA3GXK | **186** | nein |
+| CT1BFP | 55 | nein |
+| EA5W | 7 | nein |
+| … 13 weitere | 1–4 | nein |
+| **Summe vor dem Fix** | **16 Stationen** | **0** |
+| RV6F, TF1FT, EA4EQC, EA5DE (nach dem Fix) | 1–7 | **4 von 4** |
+
+EA3GXK hat drei Stunden lang wiederholt. Die Station hat uns mit hoher
+Wahrscheinlichkeit im Log; bei uns fehlt sie.
+
+### Methodische Lehre für das nächste Audit
+
+1. Nicht fragen „wird die erwartete Nachricht behandelt?", sondern **„welche
+   Nachricht kann in diesem Zustand eintreffen, und was passiert dann?"** —
+   eine Matrix Zustand × Nachrichtenart, jede Zelle beantwortet.
+2. **Beide Richtungen** durchspielen: wir rufen an *und* sie rufen uns an.
+3. Erkennungsfunktionen auf ihre **Ausschlüsse** prüfen, nicht nur auf ihre
+   Treffer. Jedes `not …` in einem Filter ist ein potenzielles Loch.
+4. Ein Kommentar der Form „gehört woanders hin" ist ein **Prüfauftrag**, kein
+   Beleg. Beim einzigen Fall, wo er hier stand, war das Woanders leer.
+5. Verhalten gegen **echte Decode-Telemetrie** gegenprüfen: Nachrichten an
+   uns, zu denen kein QSO existiert, zeigen Löcher, die kein Code-Lesen
+   findet.
+
+Umgesetzt in v0.85.0 (Tx4 in RESPOND) und v0.86.0 (A–D + toter Zustand),
+abgesichert durch `tests/test_r_report_abschluss.py` und
+`tests/test_sequenz_luecken.py`. Für A und C hält die State-Machine
+abgebrochene QSOs jetzt zehn Minuten in `ctx.recent_qso_ctx` vor, sonst
+fehlten die getauschten Rapporte für einen gültigen Logeintrag.
 
 ---
 
