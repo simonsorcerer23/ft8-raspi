@@ -17,7 +17,6 @@ class State(Enum):
     CQ_CALLING = auto()
     QSO_RESPOND = auto()  # we received a call, replying with grid
     QSO_REPORT = auto()  # we sent grid, sending signal report
-    QSO_CLOSING = auto()  # waiting to send RR73 / 73
     QSO_LOG = auto()  # write to DB, move to IDLE
     # 1-Slot-Wartefenster nach RR73 + LOG_QSO: falls Partner sein RR73
     # wiederholt (= er hat unser RR73 nicht decodiert), senden wir noch
@@ -191,6 +190,16 @@ class MachineContext:
     # dieselbe Station nicht für einen NEUEN Band-Slot blockt (5BWAS/
     # Band-Füllen): W1AW auf 20m gearbeitet → 15m bleibt frei wählbar.
     worked_until: dict[tuple[str, str], float] = field(default_factory=dict)
+    # 2026-09-10 — Nachklang abgebrochener QSOs: Rufzeichen → (Ablauf,
+    # QSO-Daten). Bricht ein QSO im Timeout ab, nachdem wir schon einen
+    # Report gesendet haben, bleibt es hier ein paar Minuten abrufbar.
+    # Meldet sich die Station danach doch noch — mit einem R-Report, weil
+    # sie unser RR73 nicht gehoert hat, oder mit ihrem Abschluss — koennen
+    # wir es sauber zu Ende bringen und loggen, statt es zu ignorieren.
+    # Ohne diesen Speicher fehlten die getauschten Rapporte fuer einen
+    # gueltigen Logeintrag. Am 2026-09-09 gemessen: EA3GXK wiederholte
+    # seinen R-Report 186-mal ins Leere, CT1BFP 55-mal.
+    recent_qso_ctx: dict[str, tuple[float, dict]] = field(default_factory=dict)
     # Set neuer DXCC-Calls (vom Orchestrator pro Slot aktualisiert).
     # Hunting-Picker priorisiert diese vor SNR — wenn drei Stationen
     # CQ rufen und nur eine ist aus einem neuen Land, wählen wir die
