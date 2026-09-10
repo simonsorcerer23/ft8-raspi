@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.88.0 — 2026-09-10
+- fix: Randfrequenzen weichen auf den ruhigen Bin aus statt gefiltert zu werden
+- docs: veralteten Kommentar zur Telemetrie korrigiert, Negativbefunde festgehalten
+
 ## v0.87.1 — 2026-09-10
 - fix: Empfangsabfrage pausierte dauerhaft, seit CQ und Hunting zusammen laufen
 - tools: qso_bilanz.py — Abschlussquoten nach Weg, Kennzahl der Sequenz-Loecher
