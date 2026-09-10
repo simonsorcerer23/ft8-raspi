@@ -33,6 +33,33 @@ log = logging.getLogger(__name__)
 _PRIO_MAP = {"min": 1, "low": 2, "default": 3, "high": 4, "urgent": 5}
 
 
+def _action_value(k: str, v: str):
+    """Zusatzparameter eines Aktions-Knopfes in den richtigen JSON-Typ bringen.
+
+    2026-09-10: ``clear=true`` landete als **Zeichenkette** "true" im JSON.
+    ntfy erwartet dort einen Wahrheitswert und weist die komplette Nachricht
+    mit "400 Bad Request" zurueck — samt Titel und Text. Betroffen war jeder
+    Push mit einem "Sperre loesen"-Knopf, also ausgerechnet die dringenden:
+    TX gesperrt, Rig verstellt, Waechter ausgeloest. Sie kamen auf dem Handy
+    nie an, und im Log stand nur der Statuscode. Aufgefallen ist es erst, als
+    Raymond am 2026-09-09 das Rig verstellte, der dial_guard sperrte und der
+    zugehoerige Push wieder abgelehnt wurde — diesmal mit protokolliertem
+    Rumpf.
+
+    ``body`` bleibt bewusst immer Text: ntfy schickt ihn unveraendert an die
+    Ziel-URL, und unsere Steuer-Endpunkte erwarten dort JSON *als Zeichenkette*.
+    """
+    if k == "body":
+        return v
+    low = v.strip().lower()
+    if low in ("true", "false"):
+        return low == "true"
+    try:
+        return int(v)
+    except ValueError:
+        return v
+
+
 def _parse_action(s: str) -> dict | None:
     """Parse einen ntfy-Action-String in das JSON-Action-Object.
 
@@ -55,9 +82,9 @@ def _parse_action(s: str) -> dict | None:
         k = k.strip()
         v = v.strip()
         if k.startswith("headers."):
-            headers[k[len("headers."):]] = v
+            headers[k[len("headers."):]] = v   # Header sind immer Text
         else:
-            obj[k] = v
+            obj[k] = _action_value(k, v)
     if headers:
         obj["headers"] = headers
     return obj
