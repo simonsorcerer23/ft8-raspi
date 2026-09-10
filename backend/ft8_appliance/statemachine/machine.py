@@ -887,6 +887,21 @@ class StateMachine:
             # WSJT-X-Konformanz fuer R-Report). Nutzt den SNR den WIR
             # gemessen haben, nicht den den er uns gemeldet hat.
             self._track_partner_snr(decodes)
+            # Haben sie unseren Report mit R-Report bestaetigt (Tx3)? Dann
+            # ist das QSO auf ihrer Seite komplett und ihnen fehlt nur noch
+            # unser RR73 — genau wie ein eingehendes RR73 in QSO_REPORT.
+            # Ohne diesen Zweig wartete die Box auf einen Report ohne R,
+            # der nach einem R-Report nie mehr kommt, und lief in den
+            # Timeout (s. _find_r_report_from_them).
+            r_rep = _find_r_report_from_them(
+                decodes, self.qso.their_call, self.ctx.tx_callsign
+            )
+            if r_rep is not None:
+                self.qso.our_snr_received = r_rep
+                self.qso.stale_slots = 0
+                self.state = State.QSO_LOG
+                self._emit_log_qso(hw)
+                return
             # did they send us a report?
             rep = _find_report_from_them(decodes, self.qso.their_call, self.ctx.tx_callsign)
             if rep is not None:
@@ -2361,6 +2376,39 @@ def _iter_closings(decodes: Iterable[DecodedMsg]) -> Iterable[DecodedMsg]:
         tail = d.message.split()[-1].upper() if d.message.split() else ""
         if tail in {"RR73", "RRR", "73"}:
             yield d
+
+
+def _find_r_report_from_them(
+    decodes: Iterable[DecodedMsg], their_call: str, my_call: str
+) -> int | None:
+    """Decode wie ``DK9XR R7OV R-11`` — sie bestaetigen unseren Report.
+
+    Das ist Tx3 der Standardsequenz: Der Partner hat unseren Report
+    empfangen (das ``R``) und gibt uns seinen. Damit ist das QSO auf
+    seiner Seite komplett; ihm fehlt nur noch unser RR73.
+
+    2026-09-10: Bis v0.84.5 fiel dieser Fall zwischen die Zustaende.
+    ``_find_report_from_them`` schliesst R-Reports ausdruecklich aus, und
+    ``_find_answer_with_report_to_us`` ebenso — mit dem Kommentar "those
+    belong to QSO_RESPOND state". In QSO_RESPOND behandelte sie aber
+    niemand: Die Box wartete auf einen Report ohne R, der nie kam, und
+    lief nach 90 s in den Timeout ("went silent"). Betroffen war der
+    Normalfall einer CQ-rufenden Station — jemand ruft uns, wir geben den
+    Report, er bestaetigt mit R-Report. Sichtbar wurde es am 2026-09-09:
+    15 gesendete Reports, ein einziges RR73; R7OV wiederholte sein R-11
+    sogar, bevor er aufgab. Hashed-Call-tolerant wie die Schwesterfunktionen.
+    """
+    for d in decodes:
+        to_ok = _hashed_match(d.call_to, my_call)
+        from_ok = _hashed_match(d.call_from, their_call)
+        if not (to_ok and from_ok):
+            continue
+        if d.call_to == "<...>" and d.call_from == "<...>":
+            continue
+        m = _R_SNR_RE.search(" " + (d.message or ""))
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def _find_closing(
