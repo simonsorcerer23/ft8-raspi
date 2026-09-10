@@ -645,13 +645,23 @@ class StateMachine:
                 # pick_attempt.reply_kind entscheidet spaeter mit Zahlen.
                 self.ctx.reply_ab_counter += 1
                 use_quiet = (self.ctx.reply_ab_counter % 2 == 0)
+            # Randfrequenz: das A/B ist hier ausgesetzt. Auf seiner Frequenz
+            # zu antworten hiesse in den Rig-Bandpass zu senden — genau der
+            # Fall, gegen den der alte Picker-Filter gebaut war.
+            am_rand = self._freq_outside_tx_window(best)
+            if am_rand:
+                use_quiet = True
             if use_quiet:
                 quiet = self._next_cq_freq_hz()
                 if quiet:
                     log.info("hunt reply on quiet bin %d Hz (CQ at %d Hz)",
                              quiet, reply_hz)
                     reply_hz = quiet
-                    reply_kind = "quiet"
+                    reply_kind = "quiet_edge" if am_rand else "quiet"
+                elif am_rand:
+                    # Ohne ruhigen Bin lieber Bandmitte als der Rand.
+                    reply_hz = 1500
+                    reply_kind = "quiet_edge"
             self.qso = QsoContext(
                 their_call=best.call_from or "?",
                 their_grid=best.grid,
@@ -1275,6 +1285,24 @@ class StateMachine:
     CQ_AUDIO_MIN_HZ = 300
     CQ_AUDIO_MAX_HZ = 2400
     CQ_BIN_HZ = 100
+
+    def _can_dodge_to_quiet_bin(self) -> bool:
+        """Duerfen wir dem Sende-Randbereich per ruhigem Bin ausweichen?
+
+        Nur dann darf der Picker Ziele ausserhalb des Audio-Fensters
+        behalten. Steht die Station fest auf der Frequenz des Rufers
+        (beide Schalter aus), bleibt der alte Filter die einzige Bremse.
+        """
+        return bool(self.ctx.hunt_reply_quiet_freq or self.ctx.hunt_reply_ab_test)
+
+    def _freq_outside_tx_window(self, d: DecodedMsg) -> bool:
+        """Laege unsere Antwort auf *seiner* Frequenz im gedaempften Rand?"""
+        hz = getattr(d, "freq_offset_hz", None)
+        if hz is None:
+            return False
+        fmin = self.ctx.hunt_audio_freq_min_hz
+        fmax = self.ctx.hunt_audio_freq_max_hz
+        return bool((fmin is not None and hz < fmin) or (fmax is not None and hz > fmax))
 
     def _next_cq_freq_hz(self) -> int:
         """Smart-Picker: wähle die aktuell ruhigste Audio-Frequenz.
@@ -2056,17 +2084,29 @@ class StateMachine:
         # dem IC-7300-Bandpass von ~300 Hz) den PI in einen PWR-Spike
         # mit Watchdog-Cut trieb. Mit Filter wird die Station gar nicht
         # erst angerufen.
-        fmin = self.ctx.hunt_audio_freq_min_hz
-        fmax = self.ctx.hunt_audio_freq_max_hz
-        if fmin is not None or fmax is not None:
-            cqs = [
-                d for d in cqs
-                if d.freq_offset_hz is None
-                or (
-                    (fmin is None or d.freq_offset_hz >= fmin)
-                    and (fmax is None or d.freq_offset_hz <= fmax)
-                )
-            ]
+        # 2026-09-10: Der Filter verwirft nur noch, wenn wir dem Rand nicht
+        # ausweichen koennen. Sein Grund war immer das *Senden* — ein Reply
+        # auf 262 Hz lief 2026-05-22 in den Rig-Bandpass und riss den Pi in
+        # einen PWR-Spike. Seit 2026-09-06 antworten wir aber ohnehin auf dem
+        # ruhigsten Bin (300-2400 Hz, immer innerhalb des Fensters), und der
+        # Rufer dekodiert das ganze Passband. Damit hielt der Filter
+        # Stationen zurueck, deren Frequenz fuer unsere Sendung keine Rolle
+        # mehr spielt: ueber fuenf Tage 1018 CQ-Rufe von 161 Stationen,
+        # darunter J38DX (Grenada, 51-mal), AA3B, 4L7T, SV8/F6BLP — alle nie
+        # angerufen. Statt zu verwerfen erzwingt _do_hunt_pick fuer diese
+        # Ziele jetzt den ruhigen Bin.
+        if not self._can_dodge_to_quiet_bin():
+            fmin = self.ctx.hunt_audio_freq_min_hz
+            fmax = self.ctx.hunt_audio_freq_max_hz
+            if fmin is not None or fmax is not None:
+                cqs = [
+                    d for d in cqs
+                    if d.freq_offset_hz is None
+                    or (
+                        (fmin is None or d.freq_offset_hz >= fmin)
+                        and (fmax is None or d.freq_offset_hz <= fmax)
+                    )
+                ]
         if self.ctx.skip_worked:
             cqs = [d for d in cqs if d.call_from not in self.ctx.worked]
         # DXCC-Only-Modus (Award-Hunter): wir picken nur Calls aus

@@ -22,6 +22,19 @@ Worauf zu achten ist:
   Sollte gegen null gehen; bleibt sie hoch, steckt noch ein Fall drin.
 * **Wunschliste** — seit v0.87.0 uebersteuert sie Pile-Up- und SNR-Gates.
   Tauchen dort Anrufversuche auf, greift die Aenderung.
+
+Zwei Fallen, in die eine Auswertung sonst laeuft:
+
+* **psk_heard_us ist nicht immer aussagekraeftig.** Solange Auto-CQ lief,
+  pausierte der PSK-Abruf (bis v0.87.1) — die Liste war leer, und *jede*
+  Zeile bekam ``psk_heard_us = 0`` gestempelt. Das sieht aus wie "die
+  Station hat uns nicht gehoert", heisst aber nur "wir haben nicht
+  nachgesehen". Der Block "PSK-Datenlage" unten zeigt pro Tag, ob die Liste
+  stand; Tage mit 0 % gehoeren aus jeder PSK-Rechnung heraus.
+* **Der Picker hat meistens gar keine Wahl.** Ueber den 6.-10.9. lag bei
+  91 % der Anrufe genau *ein* Kandidat vor. Die Tier-Reihenfolge entscheidet
+  damit fast nie etwas — wer an ihr dreht, dreht an einer Schraube ohne
+  Wirkung. Die Gates dagegen (ja/nein statt wer) wirken auf jeden Slot.
 """
 
 from __future__ import annotations
@@ -102,6 +115,38 @@ def main() -> int:
         "  and d.message glob '* R[-+]*' and d.ts > datetime('now',?) "
         "group by d.call_from order by 3, 2 desc limit 15", (seit,)
     ).fetchall(), ("Station", "Wiederholungen", "Status"))
+
+    print("\n=== PSK-Datenlage: an welchen Tagen stand die Liste? ===")
+    tabelle(con.execute(
+        "select date(ts,'localtime'), count(*), sum(psk_heard_us=1), "
+        "  round(100.0*sum(psk_heard_us=1)/count(*),1)||' %' "
+        "from pick_attempt where ts > datetime('now',?) group by 1 order by 1", (seit,)
+    ).fetchall(), ("Tag", "Versuche", "psk=1", "Anteil"))
+    print("    0 % heisst: Liste leer, nicht 'niemand hat uns gehoert'.")
+
+    print("\n=== Hatte der Picker eine Wahl? (entscheidet, ob Tiers ueberhaupt wirken) ===")
+    tabelle(con.execute(
+        "select case when n_candidates is null then '(nicht erfasst)' "
+        "            when n_candidates <= 1 then '1 Kandidat — keine Wahl' "
+        "            when n_candidates <= 3 then '2-3 Kandidaten' "
+        "            else '4+ Kandidaten' end, "
+        "  count(*), sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %' "
+        "from pick_attempt where pick_kind='cq' and ts > datetime('now',?) "
+        "group by 1 order by 1", (seit,)
+    ).fetchall(), ("Lage", "Versuche", "fertig", "Quote"))
+
+    print("\n=== Abschluss nach Signalstaerke — traegt das Schwach-Gate? ===")
+    tabelle(con.execute(
+        "select case when snr_db >= -10 then '1 stark   >= -10' "
+        "            when snr_db >= -15 then '2 mittel  -11..-15' "
+        "            when snr_db >= -20 then '3 schwach -16..-20' "
+        "            else '4 sehr schwach' end, "
+        "  count(*), sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %' "
+        "from pick_attempt where snr_db is not null and ts > datetime('now',?) "
+        "group by 1 order by 1", (seit,)
+    ).fetchall(), ("Klasse", "Versuche", "fertig", "Quote"))
 
     print("\n=== Wunschliste: gesehen und versucht? ===")
     tabelle(con.execute(

@@ -461,6 +461,53 @@ laufenden Beobachtungsfenster angefasst): `swr_log` und `config_history` —
 beide Tabellen werden angelegt und in der Aufräum-Logik berücksichtigt, aber
 nirgends beschrieben. Wie `QSO_CLOSING` vor seiner Entfernung.
 
+### Loch 6 (2026-09-10): der Frequenzfilter überlebte seinen Grund
+
+Gefunden nicht in der Zustandsmaschine, sondern beim Nachrechnen der
+Wunschliste: **Z68PX** (Kosovo) stand auf der Liste, wurde 74-mal dekodiert
+und **kein einziges Mal angerufen** — obwohl die Wunschliste seit v0.87.0
+Pile-Up- und SNR-Gates übersteuert.
+
+Die Ursache war keines dieser Gates, sondern `hunt_audio_freq_min_hz` /
+`_max_hz` (400–2600 Hz). Z68PX sendet auf 273–294 Hz. Der Filter kam
+2026-05-22, weil ein Reply auf 262 Hz in den Rig-Bandpass lief und den Pi in
+einen PWR-Spike riss — der Grund war also immer das **Senden**.
+
+Seit 2026-09-06 antwortet die Station aber auf dem ruhigsten Bin. Der liegt
+per Konstruktion zwischen 300 und 2400 Hz, also immer im sicheren Bereich,
+und der Rufer dekodiert ohnehin das ganze Passband. Damit hielt der Filter
+seit vier Tagen Stationen zurück, deren Frequenz für unsere Sendung keine
+Rolle mehr spielt.
+
+Größe des blinden Flecks über fünf Tage:
+
+| Lage | CQ-Rufe | Stationen |
+|---|---|---|
+| über dem Fenster | 773 | 117 |
+| unter dem Fenster | 245 | 44 |
+
+Darunter J38DX (Grenada, 51 Rufe auf 2921 Hz), AA3B (69), SV8/F6BLP (35),
+4L7T (26), 4X5JK (18) — durchweg erreichbare Signale zwischen −9 und −16 dB.
+
+**Seit v0.88.0** verwirft der Picker diese Ziele nicht mehr, sondern erzwingt
+für sie den ruhigen Bin (`reply_kind = "quiet_edge"`, in der Telemetrie vom
+laufenden A/B getrennt). Der alte Filter bleibt genau dann die Bremse, wenn
+beide Ausweichschalter aus sind — dann antwortet die Station fest auf der
+Frequenz des Rufers und der Rand wäre wieder gefährlich.
+
+Die A/B-Zahlen stützen den Umbau: `on_freq` 16,5 % (121 Versuche), `quiet`
+14,2 % (113). Der ruhige Bin kostet also kaum etwas — und ist für Randziele
+die einzige Möglichkeit überhaupt.
+
+### Zwei Fallen für jede spätere Auswertung
+
+| Falle | Warum |
+|---|---|
+| `psk_heard_us = 0` heißt nicht "hat uns nicht gehört" | Solange Auto-CQ lief, pausierte der PSK-Abruf (bis v0.87.1); die Liste war leer und *jede* Zeile bekam 0. Betroffen: 9. und 10.9. bis 14:45 |
+| Die Tier-Reihenfolge entscheidet fast nie etwas | Über den 6.–10.9. lag bei **91 %** der Anrufe (569 von 625) genau *ein* Kandidat vor. Wer an den Tiers dreht, dreht an einer Schraube ohne Wirkung — die Gates dagegen wirken auf jeden Slot |
+
+Beides prüft `./scripts/qso_bilanz.py` inzwischen selbst mit aus.
+
 ---
 
 ## Anhang A — Methodik
