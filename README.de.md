@@ -4,181 +4,222 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Headless FT8/FT4-Stationssteuerung auf einem Raspberry Pi 5 (oder 4B). Sitzt zwischen
-einem Icom IC-705 / IC-7300 und der Welt, komplett über den Handy-Browser
-bedient. **Ersetzt WSJT-X** für portablen Betrieb — mit Funktionen, die WSJT-X
-out of the box nicht bietet. Der Operator beaufsichtigt die Station, er klickt
-nur nicht mehr jeden Anruf einzeln an.
+Headless FT8/FT4-Stationssteuerung für einen Raspberry Pi 5, zwischen einem
+Icom IC-705 / IC-7300 und der Welt, komplett über den Handy-Browser bedient.
+**Ersetzt WSJT-X** für portablen Betrieb: gleiche Decoder-Güte, dazu die
+Betriebsentscheidungen, die ein Mensch zwischen den Decodes trifft — wen
+anrufen, auf welcher NF-Frequenz antworten, wann aufgeben, und wie man ein QSO
+zu Ende bringt, dessen Partner sich nicht ans Protokoll hält.
+
+Jede dieser Entscheidungen wird mit ihrem Ausgang protokolliert, und die Regeln
+werden aus diesen Zahlen abgeleitet statt aus dem Bauch. Diese Rückkopplung ist
+das eigentliche Thema dieses Repositorys.
 
 Operatoren: **DK9XR** (primär), **DO3XR** (sekundär, Multi-Op).
 
----
-
-## 📸 Screenshots
-
-> Aufgenommen im eingebauten **Demo-Modus** — alle Rufzeichen/Daten sind rein
-> fiktiv (Simulator), keine echten Dritt-Stationen.
-> *(Die Oberfläche ist komplett zweisprachig — Live-Umschalter 🇩🇪/🇬🇧 im
-> Header; die Screenshots zeigen die deutsche Voreinstellung.)*
-
 ![Funk-Ansicht: Rig-Status, Decode-Liste, Tagesstatistik](docs/screenshots/funk.png)
 
-<details>
-<summary><b>Karte &amp; Logbuch</b></summary>
-
-### Weltkarte — Decodes, Coverage-Envelope, Gray-Line, Locator-Raster
-![Karte](docs/screenshots/map.png)
-
-### Logbuch — mit DXCC-/Kontinent-/Marinefunker-Filter
-![Logbuch](docs/screenshots/log.png)
-
-</details>
-
-<details>
-<summary><b>DX-Jagd</b> — Watchlist · Reputation · DXpedition · Blacklist · Empfänger</summary>
-
-### Watchlist — Wunsch-DX/DXpeditionen mit ntfy-Alarm
-![Watchlist](docs/screenshots/watchlist.png)
-
-### Reputation — Soft-Blacklist nach Stationsverhalten
-![Reputation](docs/screenshots/reputation.png)
-
-### DXpedition — NG3K-Kalender-Integration
-![DXpedition](docs/screenshots/DXpedition.png)
-
-### Blacklist — manuell gesperrte Rufzeichen
-![Blacklist](docs/screenshots/blacklist.png)
-
-### Empfänger — wer hat uns gehört (PSK-Reporter)
-![Empfänger](docs/screenshots/psk.png)
-
-</details>
-
-<details>
-<summary><b>Statistik &amp; Konfiguration</b></summary>
-
-### Statistik &amp; Steuerung — SWR-Trend, beste Zeiten, Pi-Status, TX-Controls
-![Statistik](docs/screenshots/stats.png)
-
-### Hunt-Priorität — die 22 frei sortierbaren Picker-Stufen
-![Hunt-Priorität](docs/screenshots/config_3.png)
-
-### Operatoren &amp; Logbücher — Multi-Op, QRZ/ClubLog, Demo-Schalter
-![Konfiguration: Operatoren](docs/screenshots/config_1.png)
-
-### Bänder &amp; Antennen
-![Konfiguration: Bänder](docs/screenshots/config_2.png)
-
-### Integrationen — QRZ/ClubLog/PSK/Blitzortung, ALC, ntfy
-![Konfiguration: Integrationen](docs/screenshots/config_4.png)
-
-</details>
-
 ---
 
-## Highlights
+## Die 15-Sekunden-Schleife
 
-- **Decoder über das Stock-ft8_lib hinaus** — kohärentes Subtract-and-Rerun,
-  OSD, eigenes Analysefenster pro Pass und Feinsync-Demodulation. Auf den
-  WSJT-X-Referenzaufnahmen aus ft8_lib findet er 88 % der WSJT-X-Decodes
-  (Stock: 73 %), mit WSJT-X' eigenem `jt9` als dritter Stufe daneben 98 %
-  plus rund 50 Decodes, die die Referenz nicht hat; gemessen mit
-  `scripts/bench_decoder_corpus.py`.
-- **Alle Kerne für den Decoder** — die Kandidatenschleifen jedes Passes laufen
-  parallel, aber nur ihr rein lesender Teil; alles, was gemeinsamen Zustand
-  berührt, bleibt seriell in Kandidatenreihenfolge. Die Ausgabe ist dadurch
-  bit-identisch zur seriellen Abarbeitung, unabhängig von der Thread-Zahl —
-  nachgewiesen mit `scripts/decoder_golden.py`, das jede Nachricht, jeden Wert
-  und jede Reihenfolge einfriert und Feld für Feld vergleicht. Auf dem Pi 5
-  fällt der volle Modus damit von 2,2 s auf 1,0 s je Slot.
-- **Der volle Decoder entscheidet über den Sendestart** — bisher musste ein
-  schneller Vorab-Pass die TX-Entscheidung treffen, während der teure Rest
-  nebenherlief und nur noch fürs Logbuch nachreichte: rund 37 % aller Decodes
-  kamen zu spät, um beantwortet zu werden. Auf dem Pi 5 passt der volle Modus
-  jetzt in das Fenster vor dem Sendestart (0,2–0,7 s live, Versatz zur
-  Slotgrenze unter 1,2 s). Reißt ein dichter Slot das Limit dreimal in Folge,
-  fällt die Box selbsttätig auf die alte Zweiteilung zurück, dann erst auf den
-  Standard-Pass.
-- **Antwortstrategie aus der eigenen Telemetrie** — Ziele unter −13 dB nur
-  mit PSK-Reporter-Bestätigung, Kontinente mit schlechter Vollendungsquote
-  ebenso, ein adaptiver CQ-Fallback, wenn kein brauchbarer Rufer da ist, ein
-  A/B-Test der Antwortfrequenz (ruhiger Bin vs. Rufer-Frequenz) und eine
-  lernende Kontinent-Prior. Jeder Regler ist ein Config-Toggle, die Zahlen
-  dahinter stehen in `docs/flags.md`.
-- **Rig-Leitplanken** — Ein-Klick-Reset auf PKTUSB / 2700 Hz / Dial (optional
-  automatisch, wenn jemand am Rig dreht), ALC- und SWR-Wächter, die nur während
-  eigener Bursts messen, eine Antennen-Freigabe, die dem Autopilot sagt, ob
-  Bandwechsel ohne Abstimmung erlaubt sind.
-- **22-stufiger konfigurierbarer Picker** (Priorität per Drag-and-drop):
-  Pile-Up-Vermeidung, Tail-End-Pickup, Grayline-Boost, Soft-Blacklist die aus
-  der eigenen QSO-Historie lernt, Band-Conditions-Bewusstsein, Buddy-Seen
-  (auf anderem Band gearbeitet), gradueller `psk_snr`, DXCC-Seltenheit, 5BWAS,
-  VUCC-Grid-Awards, …
-- **Konservative Hunt-Gates** — schwache einzelne CQ-Rufer ("sole") werden
-  nur bei Award-/Kontextwert oder gutem Decode-/PSK-SNR angerufen. Nach einer
-  schlechten Serie verlangt ein temporärer Strict Mode dieselbe Evidenz für
-  Routine-Ziele. FT4 nutzt im Balanced-Modus das Rate-Profil; FT8 bleibt
-  breiter.
-- **Datengetriebenes Picker-Tuning** — jeder Hunt-Pick wird mit Ausgang
-  (completed / went-silent / bailed) und Kontext geloggt: entscheidende Stufe,
-  wie laut *wir* bei der DX-Station ankommen (laut PSK-Reporter), SNR, Distanz,
-  Band-Belegung, … Ein Stats-Endpoint macht das A/B, sodass die Stufen-
-  Reihenfolge aus echten Completion-Raten statt aus dem Bauch getunt wird.
-- **Tail-End-Hunter** — erkennt `RR73`/`73`-Abschlüsse automatisch und greift
-  eine freiwerdende Station ab (kann WSJT-X nicht). Seine Picker-Priorität ist
-  datengetrieben: die Telemetrie zeigte Unter-Performance, daher steht er jetzt
-  unter dem SNR-Tie-Breaker — erhalten, aber bewusst niedrig priorisiert.
-- **Pile-Up-Vermeidung** — bei ≥5 verschiedenen Anrufern auf ±50 Hz wird die
-  Station übersprungen. Besser fürs Band, besser für die QSO-Rate.
-- **Multi-Operator** — zwei Profile (z.B. du + Familie), jeweils mit eigenen
-  QRZ-/Club-Log-Zugängen, getrennten Log-Ansichten, lizenzabhängigen
-  Leistungs-Caps.
-- **Komplett zweisprachige Oberfläche** — jeder Screen *und* die Backend-/
-  ntfy-Push-Meldungen schalten live zwischen 🇩🇪 Deutsch und 🇬🇧 Englisch um
-  (Header-Umschalter); auch die Doku ist zweisprachig. Drei CI-Gates halten
-  die DE/EN-Kataloge synchron und blocken hartcodierte Strings.
-- **Auto-Logbuch** — QSOs werden im Hintergrund automatisch zu **QRZ.com** +
-  **Club Log** hochgeladen, offline-tolerant, idempotent. Lokales SQLite
-  bleibt die Quelle der Wahrheit.
-- **Watchlist + ntfy-Push** für DXpeditionen / Wunsch-DX, automatisch aus dem
-  **NG3K-ADXO**-Kalender importiert.
-- **Blitzortung-Gewitterwarnung** — Live-WS-Stream; ein ntfy-Push, wenn ein
-  Gewitter in den konfigurierbaren Radius (Default 10 km) eintritt, und noch
-  einer, wenn es weiter näher rückt. Eine Front, die steht oder abzieht, bleibt
-  still.
-- **Lizenzabhängige Sicherheit** — Leistungs-Cap, Band-Sperre, SWR-Watchdog
-  mit Live-PTT-Abschaltung, ALC-PI-Regelschleife statt Bang-Bang.
-- **CEPT / Auslandsbetrieb** — GPS-Länder-Erkennung über echte Grenz-Polygone
-  (Point-in-Polygon, keine groben Rechtecke), schlägt das korrekte
-  CEPT-Präfix vor und weiß, wo deutsche **Klasse A vs. Klasse E** ohne
-  Gastlizenz funken dürfen (DARC-Primärquellen-Länderliste).
-- **Passwortgeschützte API** — Token-Auth auf jedem Endpoint (merkbares
-  Login-Passwort auf der Konfig-Seite setzbar); localhost ist vertraut, damit
-  On-Pi-Tooling / Self-Update weiterlaufen. Die ntfy-Sperrbildschirm-Buttons
-  nutzen ein separates, eng begrenztes Token.
-- **Bruchsichere Daten** — atomare Config-Writes mit `.bak` + fsync, WAL-SQLite
-  mit Busy-Timeout, **QSO-Log-Spill-to-File + Alarm** falls ein DB-Write je
-  fehlschlägt (ein abgeschlossenes QSO geht nie still verloren), tägliches
-  DB-Backup, Telemetrie-Retention, Secrets aus den API-Antworten redactet.
-- **Self-Update** — der Pi holt sich getaggte Releases alle 10 min von GitHub,
-  bringt vorher das laufende QSO zu Ende (keine neuen Picks oder CQs solange),
-  Health-Check nach dem Neustart, automatischer Rollback bei Fehler.
+FT8 läuft in harten 15-s-Slots. Alles Folgende muss in einen davon passen, und
+zwar jedes Mal — auf einem Pi 5, der nebenbei eine Web-Oberfläche ausliefert
+und mit dem Rig spricht.
 
-## Architektur
+```mermaid
+flowchart LR
+    A["ALSA-Ringpuffer<br/>12 kHz, freilaufend"] --> B["Slot-Schnitt<br/>180 000 Samples<br/>an chrony-Zeit verankert"]
+    B --> C["Decode<br/>ft8_lib + eigene Pässe"]
+    C --> D["Picker<br/>22 sortierte Stufen<br/>+ harte Gates"]
+    D --> E["Zustandsmaschine<br/>7 Zustände"]
+    E --> F["Pre-Flight-Wächter<br/>Zeit · Dial · SWR · ALC · Band"]
+    F --> G["Encode + PTT<br/>rigctld"]
+    C --> H[("SQLite<br/>Decodes · QSOs<br/>Pick-Telemetrie")]
+    E --> H
+    D --> H
+```
 
-Vollständige Spezifikation: [architecture.de.md](./architecture.de.md)
+Eng wird es zwischen Decode und PTT: Die Sendeentscheidung muss vor der
+nächsten Slot-Grenze stehen. Den *vollen* Decoder statt eines billigen
+Vorab-Durchgangs in dieses Fenster zu bekommen, war die mit Abstand größte
+Verbesserung bei der Zahl beantwortbarer Stationen.
+
+## Decoder-Kette
+
+Drei Stufen, alle gegen die WSJT-X-Referenzaufnahmen aus `ft8_lib` gemessen
+(`scripts/bench_decoder_corpus.py`):
+
+| Stufe | Was es ist | Anteil der WSJT-X-Decodes |
+|---|---|---|
+| `ft8_lib` original | Kārlis Gobas Codec, unverändert | 73 % |
+| + eigene Pässe | kohärentes Subtract-and-rerun, OSD, Analysefenster je Pass, Fein-Sync-Demodulation | 88 % |
+| + `jt9`-Stufe | WSJT-X' eigener Decoder als dritte Stufe auf demselben Audio | 98 % + ~50 Decodes, die der Referenz selbst fehlen |
+
+Auf dem Pi 5 kostet der volle Modus **1,0 s** je Slot (2,2 s vor dem
+Parallel-Umbau; 0,2–0,7 s im Echtbetrieb, der dünner ist als die dichten
+Testaufnahmen). Genau das erlaubt es, ihn *vor* der Sendeentscheidung laufen zu
+lassen. Sprengt ein dichter Slot das Budget dreimal hintereinander, fällt die
+Box von selbst auf die alte Zweiteilung zurück.
+
+## Was an der Umsetzung interessant ist
+
+### Deterministische Parallelisierung
+
+Die Kandidatenschleife des Decoders läuft auf allen vier Kernen, aber nur ihr
+rein lesender Teil — LLR-Berechnung, Belief Propagation, OSD, Fein-Sync. Jeder
+Thread schreibt ausschließlich nach `res[Kandidatenindex]`; alles, was
+gemeinsamen Zustand berührt (Subtraktionspuffer, Decode-Liste, Hash-Tabellen),
+bleibt seriell und in Kandidatenreihenfolge.
+
+Die Ausgabe ist deshalb **bit-identisch, unabhängig von der Threadzahl** — das
+ist keine Behauptung, sondern ein Test: `scripts/decoder_golden.py` friert
+jede Nachricht, jede Metrik, jedes `via_osd`/`via_refine`-Flag und die
+Reihenfolge über alle fünf Decoder-Modi ein und vergleicht Feld für Feld. Ein
+paralleler Decoder, der „ungefähr dieselben Nachrichten“ findet, wäre hier
+wertlos: Die Stufenreihenfolge des Pickers hängt an der Decode-Reihenfolge,
+Nichtdeterminismus würde jede A/B-Messung entwerten.
+
+### Die Zustandsmaschine muss ein Protokoll aushalten, an das sich niemand hält
+
+Der FT8-Ablauf besteht aus sechs Durchgängen. In der Praxis überspringen
+Partner Schritte, wiederholen sich und melden sich wieder, nachdem man
+aufgegeben hat. Eine Zustandsmaschine, die nur die eine erwartete Nachricht
+annimmt, lässt das QSO stillschweigend fallen — und sieht hinterher nicht
+einmal falsch aus: Im Protokoll steht *Gegenstation verstummt*, dabei haben
+wir aufgehört zu antworten.
+
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> CQ_CALLING: auto_cq
+    CQ_CALLING --> QSO_RESPOND: jemand antwortet
+    IDLE --> QSO_RESPOND: gepickt / wir werden gerufen
+    QSO_RESPOND --> QSO_REPORT: sein Report
+    QSO_REPORT --> QSO_LOG: RR73
+    QSO_LOG --> QSO_GRACE
+    QSO_GRACE --> IDLE
+
+    state "tolerierte Abweichungen" as tol
+    QSO_RESPOND --> tol: er überspringt den R-Report
+    QSO_REPORT --> tol: er wiederholt seinen R-Report
+    IDLE --> tol: verspätete Fortsetzung (10-min-Gedächtnis)
+    tol --> QSO_LOG
+
+    QSO_RESPOND --> IDLE: Timeout
+    QSO_REPORT --> IDLE: Timeout
+    IDLE --> TX_LOCKED: Wächter verletzt / Panik-Stopp
+    TX_LOCKED --> IDLE: Reset
+```
+
+Die Kanten in *tolerierte Abweichungen* kamen erst nach dem Abgleich der
+Maschine gegen das WSJT-X-QEX-Zustandsdiagramm hinzu — fünf Lücken insgesamt,
+weil die *verspätete Fortsetzung* sowohl einen späten R-Report als auch ein
+spätes RR73 abdeckt, jeweils aus IDLE und aus CQ_CALLING. Getragen werden sie
+von `ctx.recent_qso_ctx`, einem 10-Minuten-Gedächtnis abgebrochener QSOs:
+Meldet sich der Partner nach unserem Timeout doch noch, wird der Faden mit dem
+ursprünglichen Rapport wieder aufgenommen statt neu begonnen.
+
+Was ihr Fehlen gekostet hat, über sieben Tage gemessen: 16 Stationen schickten
+uns eine Bestätigung, aus der nie ein QSO wurde, eine davon 186-mal
+wiederholt. Für die Gegenstelle war das jeweils eine fertige Verbindung, bei
+uns eine fehlende.
+
+Einzelheiten und Prüfprotokoll: [docs/wsjtx_qso_state_audit.md](docs/wsjtx_qso_state_audit.md).
+
+### Jede Regel trägt eine Zahl
+
+Jede Sendeentscheidung schreibt eine `pick_attempt`-Zeile: die entscheidende
+Stufe, den Ausgang (`completed` / `went_silent` / `picked_another` / …), unsere
+Signalstärke beim DX laut PSK Reporter, Entfernung, Bandbelegung und welchen
+Arm der Antwortfrequenz-A/B-Test gezogen hat. `scripts/qso_bilanz.py` liest das
+zurück.
+
+Das hält die Funktionsliste ehrlich. Messergebnisse, die den Code geändert
+haben:
+
+- Ziele unter −13 dB kommen zu 4,4 % zum Abschluss, über −10 dB zu 24,8 % →
+  schwache Ziele nur noch mit Empfangsbeleg aus dem PSK Reporter.
+- Der Tail-End-Hunter blieb hinter seinem Rang zurück → unter den
+  SNR-Stichentscheid herabgestuft statt gelöscht.
+- Die Wunschliste erreichte den Picker nie: Seltenes DX ist per Definition
+  schwach *und* umlagert, also griffen alle Sparregeln gleichzeitig bei genau
+  den Stationen, für die man die Liste anlegt. Z68PX: 74 Decodes, null
+  Versuche.
+- Ein NF-Frequenzfilter wies Rufer am Bandrand ab, obwohl sein Grund (dort zu
+  senden) entfallen war, als die Antwortfrequenz frei wählbar wurde. 1018
+  CQ-Rufe von 161 Stationen in fünf Tagen, darunter J38DX auf 2921 Hz.
+- Und das unbequeme Ergebnis: In **91 % aller Picks stand genau ein zulässiger
+  Kandidat zur Wahl.** Die aufwendige 22-stufige Sortierung entscheidet etwa
+  jeden zehnten Anruf; die binären Gates entscheiden jeden einzelnen.
+
+Jedes Gate ist ein Konfigurationsschalter, und [docs/flags.md](docs/flags.md)
+hält zu jedem die Zahlen fest, die ihn begründet haben.
+
+### Wächter
+
+Pre-Flight vor jedem PTT: chrony synchron mit |Offset| < 0,5 s (ein GPS-Fix
+allein zählt nicht), Rig-Snapshot jünger als 60 s, Dial innerhalb ±500 Hz
+einer konfigurierten FT8/FT4-Frequenz, Antenne deckt das Band, Leistung unter
+der bandbezogenen Grenze der Lizenzklasse des Operators, SWR- und ALC-Wächter,
+die nur während eigener Sendungen messen. Eine Verletzung verweigert die
+Sendung und setzt ein Alarmzeichen; der Panik-Stopp kappt PTT und sperrt den
+Sender bis zum Reset.
+
+Datensicherheit: atomare Konfigurationsschreibvorgänge mit `.bak` + fsync,
+WAL-SQLite mit Busy-Timeout, QSO-Log-Spill in eine Datei samt Alarm, falls ein
+DB-Schreibvorgang je fehlschlägt, tägliches Backup, Geheimnisse aus den
+API-Antworten entfernt.
+
+## Alles Weitere, in Kürze
+
+**Picker** — 22 per Drag-and-drop sortierbare Stufen (Pile-Up-Vermeidung,
+Tail-End, Grayline, aus der eigenen QSO-Historie gelernte Soft-Blacklist,
+Bandbedingungen, Buddy-seen, abgestuftes `psk_snr`, DXCC-Rarity, 5BWAS, VUCC)
+plus harte Gates für Slot-Parität, DT-Fenster und NF-Bandränder.
+**Antwortstrategie** — Antwort im ruhigsten Bin mit laufendem A/B gegen die
+Rufer-Frequenz, adaptiver CQ-Rückfall, lernender Kontinent-Prior, Sperrfristen
+je Rufzeichen.
+
+**Multi-Operator** — zwei Profile mit getrennten QRZ-/Club-Log-Zugängen,
+Logbuch-Ansichten und lizenzabhängigen Leistungsgrenzen. **Logbuch** —
+offline-toleranter, idempotenter Upload zu QRZ.com und Club Log, lokale SQLite
+als führende Quelle, ADIF-Stapelexport für Operatoren ohne ClubLog-Schlüssel.
+
+**CEPT / Ausland** — GPS-Landeserkennung an echten Grenzpolygonen,
+Präfix-Vorschlag, und wo deutsche Klasse A bzw. Klasse E ohne Gastlizenz
+arbeiten darf. **Alarmierung** — ntfy-Push für Wunsch-DX (automatisch aus dem
+NG3K-ADXO-Kalender) und für Gewitter innerhalb eines einstellbaren Radius.
+**Durchgehend zweisprachig** — Oberfläche, Backend-Meldungen und Push-Texte,
+drei CI-Prüfungen halten die Kataloge synchron. **Selbst-Update** — holt
+getaggte Releases alle 10 min, beendet erst das laufende QSO, prüft nach dem
+Neustart die Gesundheit und rollt bei Fehlern zurück.
+
+## Repo-Aufbau
+
+Vollständige Spezifikation: [architecture.md](./architecture.md)
 
 ```
-backend/         Python 3.12 + FastAPI-Controller, ft8_lib via cffi
+backend/         Python 3.12 + FastAPI-Controller, ft8_lib über cffi
 frontend/        Svelte 5 + Vite Single-Page-App (mobile-first)
-vendor/ft8_lib/  Kārlis Gobas FT8/FT4-Codec (git-Submodul, MIT)
+vendor/ft8_lib/  Kārlis Gobas FT8/FT4-Codec (Git-Submodul, MIT)
 deploy/          systemd-Units, NetworkManager, hostapd, chrony, install.sh
-data/            cty.dat (offline DXCC), Map-Tiles, marinefunker, dxcc_rarity
-docs/            Diagramme, Notizen, Audit-Logs
-scripts/         release.sh, self-update.sh, pi-check.sh, dev_run.py
+data/            cty.dat (Offline-DXCC), Kartenkacheln, Marinefunker, dxcc_rarity
+docs/            Audits, Decoder-Entwicklung, Flag-Begründungen, Betrieb
+scripts/         Release, Selbst-Update, Messungen, Golden-Test, Telemetrie
 ```
 
-## Schnellstart — Workstation (kein Pi nötig)
+Mess- und Wartungswerkzeuge, die man kennen sollte:
+
+| Skript | Zweck |
+|---|---|
+| `bench_decoder_corpus.py` | Decoder-Ausbeute gegen den WSJT-X-Referenzkorpus |
+| `decoder_golden.py` | Bit-Identitäts-Prüfung für jede Decoder-Änderung |
+| `qso_bilanz.py` | Abschlussquoten nach Weg, PSK-Datenlage, Kandidatenzahl |
+| `doc_screenshots.py` | erzeugt die Oberflächen-Screenshots neu |
+| `dev_run.py` | voller Stack gegen Mock-Rig/GPS, ohne Pi |
+
+## Schnellstart — Workstation, kein Pi nötig
 
 ```bash
 git submodule update --init --recursive
@@ -187,12 +228,16 @@ cd vendor/ft8_lib && make && cd ../..
 cd backend
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-pytest
+pytest                      # 1001 Tests
 
 cd ../frontend
 npm install
-npm run dev   # http://localhost:5173
+npm run dev                 # http://localhost:5173
 ```
+
+`scripts/dev_run.py` startet den ganzen Controller gegen Mock-Hardware mit
+gefülltem Logbuch — praktisch zum Durchklicken der Oberfläche. Alle nach außen
+wirkenden Integrationen sind darin bewusst abgeschaltet.
 
 ## Erst-Inbetriebnahme auf einem Pi
 
@@ -203,57 +248,79 @@ cd ~/ft8-appliance
 sudo ./deploy/install.sh
 ```
 
-`install.sh` nutzt standardmaessig den ausgecheckten Repo-Pfad und den
-aufrufenden sudo-User (Fallback: Repo-Owner). Fuer dedizierte Accounts oder
-abweichende Pfade: `sudo ./deploy/install.sh --user USER --dir APP_DIR`. Der
-Installer rendert systemd-Units und Self-Update-sudoers-Regeln fuer genau
-diese Installation und speichert die Werte in
-`/etc/ft8-appliance/install.env`.
-
-Folge-Releases werden automatisch über `ft8-self-update.timer` ausgerollt.
-Ein neues Release auf der Workstation schneidest du mit:
-
-```bash
-./scripts/release.sh vX.Y.Z
-```
-
-Das aktualisiert auch [CHANGELOG.md](./CHANGELOG.md) (aus dem Commit-Log
-generiert) und schreibt die Änderungsliste in die Tag-Annotation. Die volle
-Versionshistorie steht in [CHANGELOG.md](./CHANGELOG.md).
+`install.sh` nimmt standardmäßig den ausgecheckten Repo-Pfad und den
+aufrufenden sudo-Benutzer (ersatzweise den Repo-Eigentümer). Für ein eigenes
+Konto oder einen abweichenden Pfad `--user USER --dir APP_DIR` mitgeben; das
+Installationsskript erzeugt systemd-Units und sudoers-Regeln für genau diese
+Installation und legt die Werte in `/etc/ft8-appliance/install.env` ab. Weitere
+Releases kommen über `ft8-self-update.timer`. Einen davon schneidet man mit
+`./scripts/release.sh vX.Y.Z`, was auch [CHANGELOG.md](./CHANGELOG.md) aus dem
+Commit-Log erzeugt.
 
 ## Hardware
 
-- **SBC:** Raspberry Pi 5 8 GB (die Produktionsbox seit 09/2026) oder Pi 4B 8 GB.
+- **SBC:** Raspberry Pi 5 8 GB (Produktivbetrieb seit 09/2026) oder Pi 4B 8 GB.
   Der Pi 5 fährt den vollen Decoder vor der Sendeentscheidung; auf dem 4B
   bleibt die Zweiteilung (`decoder_late_pass: true`).
-- **Storage:** NVMe-SSD, direkt davon gebootet (Argon NEO 5 M.2), keine SD-Karte im Betrieb
+- **Speicher:** NVMe-SSD, direkt davon gebootet (Argon NEO 5 M.2), keine
+  SD-Karte im Betrieb.
 - **Funkgerät:** Icom IC-705 oder IC-7300 über ein einziges USB-Kabel
-  (CAT + Audio) via `rigctld`. QMX/QMX+ experimentell unterstützt.
-- **Audio:** Onboard-USB-CODEC des Rigs (keine extra Soundkarte)
-- **Software auf dem Pi:** Debian-Paket `wsjtx` für die `jt9`-Decoderstufe (installiert `install.sh`; ohne das Paket bleibt die dritte Stufe einfach aus)
-- **GPS:** Optional, hilft bei Zeit + Locator im portablen Betrieb
+  (CAT + Audio) via `rigctld`. QMX/QMX+ experimentell.
+- **Audio:** der USB-Codec im Rig, keine zusätzliche Soundkarte.
+- **Auf dem Pi:** Debian-Paket `wsjtx` für die `jt9`-Stufe (installiert
+  `install.sh`; ohne es bleibt die dritte Stufe schlicht aus).
+- **GPS:** optional, hilft portabel bei Zeit und Locator.
 
 ## Zugänge & Datenschutz
 
-Externe Dienste (QRZ, Club Log, ntfy, HamQTH, …) brauchen pro-Operator-
-Zugänge. **Zugangsdaten liegen ausschließlich in
-`/etc/ft8-appliance/config.yaml` auf dem Pi** (`0600`), nie in diesem Repo
-oder in der Versionskontrolle. Die API redactet alle Secrets aus ihren
-Antworten, und das Web-UI ist per Login-Passwort geschützt. Die vollständige
-Liste der integrierten Dienste steht in [CREDITS.md](./CREDITS.md).
+Externe Dienste (QRZ, Club Log, ntfy, HamQTH, …) brauchen Zugangsdaten je
+Operator. **Sie liegen ausschließlich in `/etc/ft8-appliance/config.yaml` auf
+dem Pi** (`0600`), nie in diesem Repository. Die API entfernt alle Geheimnisse
+aus ihren Antworten, die Oberfläche ist durch ein Login-Passwort geschützt.
+Dienstliste: [CREDITS.md](./CREDITS.md).
+
+## Screenshots
+
+Aufgenommen im eingebauten Demo-Modus — alle Rufzeichen sind fiktiv
+(Simulator), keine echten Dritt-Stationen. Die Oberfläche ist zweisprachig,
+hier in der deutschen Voreinstellung. Die übrigen Ansichten (Logbuch,
+Watchlist, Reputation, DXpedition, Blacklist, Empfänger, Band- und
+Integrationskonfiguration) liegen in
+[docs/screenshots/](docs/screenshots/); `scripts/doc_screenshots.py` erzeugt
+den ganzen Satz neu.
+
+<details>
+<summary>Karte · Hunt-Priorität · Statistik</summary>
+
+### Weltkarte — Decodes, Coverage-Envelope, Gray-Line, Locator-Raster
+![Karte](docs/screenshots/map.png)
+
+### Hunt-Priorität — die 22 frei sortierbaren Picker-Stufen
+![Hunt-Priorität](docs/screenshots/config_3.png)
+
+### Statistik & Steuerung — SWR-Trend, beste Zeiten, Pi-Status, TX-Controls
+![Statistik](docs/screenshots/stats.png)
+
+</details>
+
+## Rechtlicher Hinweis
+
+Die Station wird **besetzt** betrieben — ein Funkamateur ist da und kann sie
+vom Handy anhalten. Der unbesetzte, fernbediente Betrieb (§ 13a AFuV) ist
+Inhabern der Klasse A vorbehalten und an eigene Auflagen gebunden;
+automatisch arbeitende Amateurfunkstellen wie Baken oder Relais brauchen eine
+eigene Rufzeichenzuteilung (§§ 2, 13 AFuV). Wer das hier nachbaut, sollte sich
+über die eigene Betriebsart klar sein. Keine Rechtsberatung.
 
 ## Lizenz
 
-MIT — siehe [LICENSE](./LICENSE). Drittkomponenten sind in
+MIT — siehe [LICENSE](./LICENSE). Fremdkomponenten sind in
 [CREDITS.md](./CREDITS.md) genannt.
 
 ## Status
 
-Aktive Entwicklung. Läuft auf einem einzelnen Raspberry Pi 5 8 GB (`ft8`) im
-Feldbetrieb, Multi-Operator (DK9XR + DO3XR auf dem einen Pi). Gebaut und
-genutzt von einem Vater-Sohn-Team von Funkamateuren in Deutschland.
-
-> Ein zweites Gerät (`ft8-2`) wurde beim Bring-up erprobt, dann aber
-> anderweitig verwendet (2026-06) — die Appliance ist bewusst Ein-Pi.
+Aktive Entwicklung, im Feldeinsatz auf einem einzelnen Raspberry Pi 5 8 GB,
+Multi-Op (DK9XR + DO3XR auf demselben Pi). Gebaut und benutzt von einem
+Vater-Sohn-Gespann aus Deutschland.
 
 73 de DK9XR & DO3XR
