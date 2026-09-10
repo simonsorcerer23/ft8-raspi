@@ -369,10 +369,16 @@ def _sendet_wenn_wir_senden(d: DecodedMsg, ctx: MachineContext) -> bool:
     Die Umkehrung war bis v0.89.0 falsch herum: geprueft wurde gegen den
     gerade dekodierten Slot statt gegen unseren Sende-Slot. Damit fielen
     genau die Stationen heraus, die uns haetten hoeren koennen — wer in
-    Slot N sendet, hoert in Slot N+1, und genau dort antworten wir. Je
-    laenger die Box lief, desto mehr Rufzeichen hatten eine gelernte
-    Paritaet und desto mehr Kandidaten verschwanden: MI0JZZ rief am
-    2026-09-10 71-mal CQ, ohne je angerufen zu werden.
+    Slot N sendet, hoert in Slot N+1, und genau dort antworten wir. Wirksam
+    wird das erst, wenn eine Paritaet gelernt ist (ab drei Decodes je
+    Station, nach jedem Neustart wieder leer).
+
+    Anlass war die Beobachtung, dass Vielrufer wie MI0JZZ (71 CQs am
+    2026-09-10) nie angerufen wurden. Die Hauptursache dafuer war eine
+    andere — im Auto-CQ-Betrieb jagt die Maschine ueberhaupt nicht, siehe
+    on_decodes/CQ_CALLING. Die hier korrigierte Umkehrung ist unabhaengig
+    davon belegt (tests/test_slot_paritaet.py), wirkt aber nur in den
+    Hunting-Phasen.
     """
     if not d.call_from:
         return False

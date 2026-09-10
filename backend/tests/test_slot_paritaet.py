@@ -10,11 +10,14 @@ dessen fiel er heraus, waehrend Stationen, die wir zufaellig ausserhalb
 ihrer Standard-Paritaet hoerten (typisch: sie stecken gerade in einem QSO),
 als Kandidaten stehen blieben.
 
-Der Effekt wuchs mit der Laufzeit, weil ``op_slot_parity`` erst nach drei
-Decodes einer Station greift und bei jedem Neustart leer beginnt. Live
-gemessen am 2026-09-10: MI0JZZ rief 71-mal CQ auf 20 m, gut lesbar zwischen
--11 und -16 dB — kein einziger Anrufversuch. Insgesamt 19 solcher Stationen
-an diesem Nachmittag.
+Der Effekt waechst mit der Laufzeit, weil ``op_slot_parity`` erst nach drei
+Decodes einer Station greift und bei jedem Neustart leer beginnt.
+
+Zur Ehrlichkeit: Aufgefallen ist die Sache bei der Suche nach dem Grund,
+warum Vielrufer wie MI0JZZ (71 CQs am 2026-09-10) nie angerufen wurden.
+Dieser Grund war ein anderer — im Auto-CQ-Betrieb pickt die Maschine gar
+nicht. Die Umkehrung hier ist davon unabhaengig falsch und wird unten
+Fall fuer Fall geprueft; ihre Wirkung entfaltet sie in den Hunting-Phasen.
 """
 
 from __future__ import annotations
