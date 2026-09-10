@@ -193,6 +193,17 @@ async def main() -> None:
             AntennaConfig(name="doublet_8040", bands=["80m", "40m"]),
         ],
         operating=OperatingConfig(),
+        # 2026-09-10: Nach aussen wirkende Dienste sind hier HART AUS.
+        # PskReporterConfig hat enabled=True/upload_decodes=True als Default
+        # — richtig fuer die echte Station, fatal fuer diesen Stack: die
+        # Decodes stammen aus dem Simulator, und sie gingen als echte
+        # Empfangsberichte unter dem Rufzeichen des Betreibers an
+        # pskreporter.info. Einmal passiert, 45 erfundene Spots. Wer hier
+        # etwas ergaenzt, prueft zuerst, ob es nach draussen schreibt.
+        integrations={
+            "psk_reporter": {"enabled": False, "upload_decodes": False},
+            "blitzortung": {"enabled": False},
+        },
     )
     set_config_for_tests(cfg)  # so /api/config GET works
 
