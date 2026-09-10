@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.86.0 — 2026-09-10
+- fix: vier weitere Sequenz-Loecher geschlossen, toten Zustand entfernt
+
 ## v0.85.0 — 2026-09-10
 - fix: R-Report des Partners schliesst das QSO ab statt in den Timeout zu laufen
 
