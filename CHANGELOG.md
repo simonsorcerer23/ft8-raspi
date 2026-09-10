@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.89.0 — 2026-09-10
+- fix: Slot-Paritaets-Pruefung war gegen den falschen Slot gerichtet
+- docs: README auf Entwicklerperspektive umgestellt
+- fix: dev_run.py lud Simulator-Decodes zu pskreporter.info hoch
+
 ## v0.88.0 — 2026-09-10
 - fix: Randfrequenzen weichen auf den ruhigen Bin aus statt gefiltert zu werden
 - docs: veralteten Kommentar zur Telemetrie korrigiert, Negativbefunde festgehalten
