@@ -81,17 +81,22 @@ def test_slot_parity_tier_no_info_returns_1():
     assert _tier_not_his_tx_slot(_d("UNKNOWN"), ctx) == 1
 
 
-def test_slot_parity_tier_opposite_slot_returns_1():
-    """Op sendet even, wir sind in odd → er hoert uns (RX)."""
+# Seit v0.89.0 wird gegen UNSEREN Sende-Slot geprueft, nicht gegen den
+# gerade dekodierten. current_slot_parity ist die Paritaet des Decode-Slots
+# (so braucht sie der Orchestrator fuer das Paritaets-Lernen); gesendet wird
+# im folgenden Slot. Details in tests/test_slot_paritaet.py.
+def test_slot_parity_tier_dekodiert_und_sendet_gleich_returns_0():
+    """Op sendet even; wir dekodieren in odd, senden also in even →
+    er sendet dann selbst und hoert uns nicht."""
     ctx = _ctx(op_slot_parity={"DL5ABC": "even"}, current_slot_parity="odd")
-    assert _tier_not_his_tx_slot(_d("DL5ABC"), ctx) == 1
-
-
-def test_slot_parity_tier_same_slot_returns_0():
-    """Op sendet even, wir sind auch in even → er sendet jetzt, picken
-    macht keinen Sinn."""
-    ctx = _ctx(op_slot_parity={"DL5ABC": "even"}, current_slot_parity="even")
     assert _tier_not_his_tx_slot(_d("DL5ABC"), ctx) == 0
+
+
+def test_slot_parity_tier_wir_hoeren_ihn_gerade_returns_1():
+    """Op sendet even und wir hoeren ihn gerade (Decode-Slot even) →
+    unsere Antwort geht in odd, genau dann ist er auf Empfang."""
+    ctx = _ctx(op_slot_parity={"DL5ABC": "even"}, current_slot_parity="even")
+    assert _tier_not_his_tx_slot(_d("DL5ABC"), ctx) == 1
 
 
 def test_slot_parity_tier_no_current_slot_returns_1():
