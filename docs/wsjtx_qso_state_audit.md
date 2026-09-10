@@ -444,6 +444,23 @@ abgesichert durch `tests/test_r_report_abschluss.py` und
 abgebrochene QSOs jetzt zehn Minuten in `ctx.recent_qso_ctx` vor, sonst
 fehlten die getauschten Rapporte für einen gültigen Logeintrag.
 
+### Nachtrag: was am 2026-09-10 geprüft und *nicht* als Loch bestätigt wurde
+
+Damit der nächste Durchgang nicht dieselben Wege zweimal läuft:
+
+| Bereich | Befund |
+|---|---|
+| Upload zu QRZ / Club Log | sauber — 77 QSOs, alle angekommen, keine offenen Versuche |
+| QSO-Spill-Datei | existiert nicht — kein QSO ging beim Schreiben verloren |
+| `swr_avg` je QSO | vollständig gefüllt (83/83), Mittel 1,37 — der SWR-Verlauf in der Oberfläche speist sich daraus |
+| Rufzeichen-Reputation | stimmig. **Achtung bei der Leserichtung:** ein *höherer* Wert ist schlechter (`score >= _SOFT_BLACKLIST_THRESHOLD` sperrt). `attempts=0, successes=1` ist ebenfalls korrekt — `attempts` zählt nur Abbrüche und eigene Anrufe, ein QSO aus einem eingehenden Anruf erhöht es nicht |
+| `PskReporterIn`-Tabelle | bleibt im Normalbetrieb leer, **das ist Absicht** — die Empfänger-Ansicht fragt live bei pskreporter.info ab, die Tabelle dient nur dem Demo-Modus |
+
+**Toter Ballast, kein Funktionsverlust** (Aufräumkandidaten, bewusst nicht im
+laufenden Beobachtungsfenster angefasst): `swr_log` und `config_history` —
+beide Tabellen werden angelegt und in der Aufräum-Logik berücksichtigt, aber
+nirgends beschrieben. Wie `QSO_CLOSING` vor seiner Entfernung.
+
 ---
 
 ## Anhang A — Methodik
