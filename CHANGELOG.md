@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.84.5 — 2026-09-10
+- fix: ntfy verwarf jede Push-Nachricht mit Sperre-loesen-Knopf
+- docs: Sprache auf besetzten Betrieb ziehen
+- docs: architecture — Multicore-Decoder und einstufiger Betrieb auf dem Pi 5
+- docs: README auf den Stand vom 9.9. — Multicore-Decoder, voller Modus vor der Sendeentscheidung, Pi 5
+
 ## v0.84.4 — 2026-09-09
 - fix: gemerkte Sendeleistung ueberlebt den Neustart
 
