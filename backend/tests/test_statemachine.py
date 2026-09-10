@@ -1163,9 +1163,16 @@ def test_dt_filter_boundary_2_5s_accepted(sm: StateMachine, good_hw: HardwareSta
 # Loop dachte Underdrive, kurbelte hoch, knallte beim 4. Burst bei 54 %
 # ALC ein. Filter im Picker verhindert dass solche Stationen ueberhaupt
 # angerufen werden.
+# Seit v0.88.0 ist der Filter die *zweite* Verteidigungslinie: solange die
+# Station dem Rand per ruhigem Bin ausweichen kann, bleiben Randstationen
+# Kandidaten (siehe test_randfrequenz_ausweichen.py). Wer fest auf der
+# Rufer-Frequenz antwortet, braucht den Filter unveraendert — das pruefen
+# die beiden folgenden Tests.
 def test_audio_freq_filter_skips_below_min(sm: StateMachine, good_hw: HardwareState) -> None:
     sm.ctx.hunt_audio_freq_min_hz = 400
     sm.ctx.hunt_audio_freq_max_hz = 2600
+    sm.ctx.hunt_reply_quiet_freq = False
+    sm.ctx.hunt_reply_ab_test = False
     too_low = _decode("R1CCX", None, "CQ R1CCX LO12", snr=-10, freq=262)
     ok = _decode("EU1OK", None, "CQ EU1OK JO20", snr=-15, freq=1500)
     pick = sm._pick_hunt_target([too_low, ok])
@@ -1176,6 +1183,8 @@ def test_audio_freq_filter_skips_below_min(sm: StateMachine, good_hw: HardwareSt
 def test_audio_freq_filter_skips_above_max(sm: StateMachine, good_hw: HardwareState) -> None:
     sm.ctx.hunt_audio_freq_min_hz = 400
     sm.ctx.hunt_audio_freq_max_hz = 2600
+    sm.ctx.hunt_reply_quiet_freq = False
+    sm.ctx.hunt_reply_ab_test = False
     too_high = _decode("HIGH", None, "CQ HIGH AA00", snr=-5, freq=2800)
     ok = _decode("OK1", None, "CQ OK1 JN78", snr=-15, freq=1800)
     pick = sm._pick_hunt_target([too_high, ok])
