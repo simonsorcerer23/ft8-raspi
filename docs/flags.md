@@ -223,6 +223,25 @@ Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne set
 - `hunt_continent_gate` / `hunt_continent_gate_pct` (Default an, 5 %): Rufer aus einem Kontinent, dessen Vollendungsquote in der eigenen Telemetrie (14 Tage, ≥ 20 Picks) unter der Schwelle liegt, werden nur angerufen, wenn PSK Reporter sie als „hört uns“ führt. Am 8.9.: EU 18 %, AS 7 %, NA 3 %. Nachteil bewusst in Kauf genommen: die seltenen NA-QSOs bei Nacht.
 
 
+### Wunschliste im Picker (2026-09-10)
+
+Die Watchlist tat bis v0.86.0 zwei Dinge — Push aufs Handy und Rufzeichen an den Hint-Decoder —, kam in der Auswahl aber nicht vor: `ctx.watchlist_calls` wurde befüllt und von niemandem gelesen. Zugleich fliegen Pile-Up-Stationen **hart** aus der Kandidatenliste, bevor die Priorisierung anläuft. Seltenes DX hat per Definition Pile-Up, die Liste war damit für genau die Stationen wirkungslos, für die man sie anlegt. Gemessen über sieben Tage: Z68PX (Kosovo) rief 16-mal CQ, kein einziger Anrufversuch; V51WH (Namibia) 13 Decodes, nie versucht.
+
+Seit v0.87.0 gilt eine Trennlinie. Übersteuert werden für Stationen der Wunschliste die Gates, die fragen **„lohnt sich das?"** — Pile-Up-Filter, SNR-Floor (`hunt_snr_floor_db`), Kontinent-Quote (`hunt_continent_gate`) und Schwach-Gate (`hunt_weak_requires_psk`). Wer eine Station einträgt, hat diese Abwägung schon getroffen, und seltenes DX ist praktisch immer schwach *und* umlagert. Bestehen bleiben die Gates, die sagen **„geht technisch nicht"** — DT außerhalb des Empfangsfensters, gleiche Slot-Parität — sowie die ausdrückliche Sperre der Soft-Blacklist, die schwerer wiegt als der Wunsch.
+
+Die Liste erkennt volle Rufzeichen (`Z68PX`) und Präfixe (`KH8`, `VP5`), weil beim Import aus dem NG3K-Kalender oft nur das Präfix feststeht.
+
+### Telemetrie eingehender Anrufe (2026-09-10)
+
+`pick_attempt` erfasste bis v0.86.0 ausschließlich Stationen, die der Picker selbst angerufen hat — `hunt_attempt_meta` füllt nur er. Antwortete jemand auf unser CQ, lief das QSO ohne jede Messung durch: ausgerechnet der Fall, in dem die Sequenz-Löcher steckten. Seit v0.87.0 wird auch dieser Weg erfasst, erkennbar an `pick_kind`:
+
+* `inbound_grid` — sie riefen uns mit ihrem Locator
+* `inbound_report` — sie riefen uns direkt mit Report (Tail-Ender)
+* `inbound_resume` — verspätete Fortsetzung aus dem Nachklang-Speicher
+* `cq` / `to_us` / `to_other` — wie bisher, vom Picker gewählt
+
+Damit lassen sich Abschlussquoten getrennt auswerten: eingehend gegen selbst gerufen.
+
 ### Sendeleistung nach einem Neustart (geändert 2026-09-09)
 
 Die zuletzt eingestellte Leistung liegt in `runtime_state.json` und überlebt jetzt einen Neustart. Bis v0.84.3 kam die Station mit der halben Leistung hoch — beim Start ist das Band noch unbekannt, der Sicherheits-Floor griff auf `effective_max/2`, und der erste Bandaufschlag warf denselben Floor gleich nochmal (bei Raymonds IC-7300: 70 → 50 W nach jedem Self-Update).

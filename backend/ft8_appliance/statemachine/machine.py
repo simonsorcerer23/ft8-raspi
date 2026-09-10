@@ -780,6 +780,7 @@ class StateMachine:
                         "IDLE→QSO_REPORT: %s ruft uns direkt mit Report %d → R-Report",
                         their_call, their_snr,
                     )
+                    self._note_inbound_attempt(decoded, decodes, "inbound_report")
                     self.qso = QsoContext(
                         their_call=their_call or "?",
                         their_grid=None,
@@ -814,6 +815,7 @@ class StateMachine:
                     # our_snr_received bleibt None bis sie uns spaeter
                     # einen echten Report schicken. their_snr_at_us nimmt
                     # ans.snr_db (unsere Messung ihrer Grid-Message).
+                    self._note_inbound_attempt(ans, decodes, "inbound_grid")
                     self.qso = QsoContext(
                         their_call=their_call or "?",
                         their_grid=ans.grid,
@@ -846,6 +848,7 @@ class StateMachine:
                 if not self._check_guards(hw):
                     return
                 their_snr, decoded = te
+                self._note_inbound_attempt(decoded, decodes, "inbound_report")
                 self.qso = QsoContext(
                     their_call=decoded.call_from or "?",
                     their_grid=None,
@@ -869,6 +872,7 @@ class StateMachine:
                     return
                 # Grid-Antwort = noch kein Report von ihnen, our_snr_received
                 # bleibt None. their_snr_at_us aus unserer Decode-Messung.
+                self._note_inbound_attempt(ans, decodes, "inbound_grid")
                 self.qso = QsoContext(
                     their_call=ans.call_from or "?",
                     their_grid=ans.grid,
@@ -1357,6 +1361,53 @@ class StateMachine:
         new = max(self.CQ_AUDIO_MIN_HZ + 50, min(self.CQ_AUDIO_MAX_HZ - 50, new))
         return new
 
+    def _note_inbound_attempt(
+        self, d: DecodedMsg, decodes: list[DecodedMsg], art: str
+    ) -> None:
+        """Telemetrie fuer QSOs, die aus einem eingehenden Anruf entstehen.
+
+        2026-09-10: ``pick_attempt`` erfasste bis dahin ausschliesslich
+        Stationen, die der Picker selbst angerufen hat — ``hunt_attempt_meta``
+        wird nur dort gefuellt, und ``_record_hunt_outcome`` steigt bei
+        unbekannten Rufzeichen sofort aus. Antwortete jemand auf unser CQ,
+        lief das QSO voellig ohne Messung durch. Das war ausgerechnet der
+        Fall, in dem die Sequenz-Loecher steckten (v0.85.0/v0.86.0): Weder
+        war zu sehen, wie oft er vorkommt, noch ob die Reparaturen wirken.
+
+        ``art`` landet als ``pick_kind`` in der Zeile:
+          * ``inbound_grid``   — sie riefen uns mit ihrem Locator
+          * ``inbound_report`` — sie riefen uns direkt mit Report (Tail-Ender)
+          * ``inbound_resume`` — verspaetete Fortsetzung aus dem Nachklang
+        Damit lassen sich Abschlussquoten getrennt auswerten: eingehend
+        gegen selbst gerufen.
+        """
+        call_u = (d.call_from or "").upper()
+        key = base_call(call_u)
+        if not key:
+            return
+        if len(self.ctx.hunt_attempt_meta) > 100:
+            self.ctx.hunt_attempt_meta.clear()
+        self.ctx.hunt_attempt_meta[key] = {
+            "psk_heard_us": key in self.ctx.psk_heard_us or call_u in self.ctx.psk_heard_us,
+            "was_worked": call_u in self.ctx.worked or key in self.ctx.worked,
+            "was_new_dxcc": (d.call_from or "") in self.ctx.new_dxcc_calls,
+            "n_decodes": len(decodes),
+            "snr_db": d.snr_db,
+            "dt_s": d.dt_s,
+            "band": d.band,
+            "ts": datetime.now(UTC),
+            "pick_age_s": None,          # nicht gepickt — sie kamen zu uns
+            "pick_kind": art,
+            "reply_kind": None,
+            "freq_offset_hz": d.freq_offset_hz,
+            "target_grid": d.grid,
+            "winning_tier": None,        # kein Picker-Durchlauf beteiligt
+            "n_candidates": None,
+            "was_tailend": art == "inbound_report",
+            "hunt_priority": None,
+            "psk_snr": self.ctx.psk_snr.get(call_u) or self.ctx.psk_snr.get(key),
+        }
+
     def _stamp_outcome_meta(self) -> None:
         """v0.62.0 — finale QSO-Zaehler in die pick_attempt-Meta stempeln,
         BEVOR self.qso geleert wird. So tragen completed/bailed-Zeilen wie oft
@@ -1542,6 +1593,11 @@ class StateMachine:
             if not self._check_guards(hw):
                 return False
             del self.ctx.recent_qso_ctx[call]
+            treffer = next(
+                (d for d in decodes if _hashed_match(d.call_from, call)), None
+            )
+            if treffer is not None:
+                self._note_inbound_attempt(treffer, decodes, "inbound_resume")
             self.qso = QsoContext(**daten)
             if r_rep is not None:
                 self.qso.our_snr_received = r_rep
@@ -1955,6 +2011,7 @@ class StateMachine:
             cqs = [
                 d for d in cqs
                 if d.snr_db is None or d.snr_db >= self.ctx.hunt_snr_floor_db
+                or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
             ]
         # 2026-09-08: Kontinent-Gate — aus Kontinenten mit Vollendungsquote
         # unter hunt_continent_gate_pct nur mit PSK-Bestaetigung (NA 3 %).
@@ -1965,6 +2022,8 @@ class StateMachine:
                 cont = self.ctx.call_to_continent.get(cu)
                 rate = self.ctx.continent_success.get(cont) if cont else None
                 if rate is None or rate >= thr:
+                    return True
+                if _in_watchlist(d.call_from, self.ctx.watchlist_calls):
                     return True
                 return cu in self.ctx.psk_heard_us or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
             cqs = [d for d in cqs if _cont_ok(d)]
@@ -1977,6 +2036,7 @@ class StateMachine:
                 if d.snr_db is None or d.snr_db >= weak
                 or (d.call_from or "").upper() in self.ctx.psk_heard_us
                 or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
+                or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
             ]
         # DT-Filter (Sebastian v0.5.4, Audit-Lücke 1 vs WSJT-X):
         # Stationen mit |dt_s| > 2.5s sind zwar decodebar (FT8-Decoder
@@ -2049,10 +2109,27 @@ class StateMachine:
                 d for d in cqs
                 if (d.call_from or "").upper() not in self.ctx.soft_blacklist
             ]
+        # 2026-09-10 — Trennlinie bei den Filtern: Gates, die fragen "lohnt
+        # sich das?" (Pile-Up, SNR-Floor, Kontinent-Quote, Schwach-Gate),
+        # werden fuer Stationen von der Wunschliste uebersteuert. Wer eine
+        # Station dort eintraegt, hat die Abwaegung schon getroffen — und
+        # seltenes DX ist praktisch immer schwach UND umlagert. Gates, die
+        # sagen "geht technisch nicht" (DT ausserhalb des Empfangsfensters,
+        # gleiche Slot-Paritaet) und die ausdrueckliche Sperre der
+        # Soft-Blacklist bleiben fuer alle bestehen.
         if self.ctx.pile_up_calls:
+            # 2026-09-10: Stationen von der Wunschliste sind vom Pile-Up-
+            # Filter ausgenommen. Seltenes DX hat per Definition Pile-Up —
+            # der harte Filter machte die Liste damit genau fuer die
+            # Stationen wirkungslos, fuer die man sie anlegt. Gemessen:
+            # Z68PX (Kosovo) rief 16-mal CQ, kein einziger Anrufversuch;
+            # V51WH (Namibia) ebenso. Wer eine Station auf die Liste setzt,
+            # nimmt das Gedraenge bewusst in Kauf. Alle anderen bleiben
+            # gefiltert.
             cqs = [
                 d for d in cqs
                 if (d.call_from or "").upper() not in self.ctx.pile_up_calls
+                or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
             ]
         # Slot-Parity: meide Calls deren TX-Parity == aktueller Slot —
         # sie senden gerade selbst und hoeren uns nicht.
@@ -2477,6 +2554,26 @@ def _iter_closings(decodes: Iterable[DecodedMsg]) -> Iterable[DecodedMsg]:
         tail = d.message.split()[-1].upper() if d.message.split() else ""
         if tail in {"RR73", "RRR", "73"}:
             yield d
+
+
+def _in_watchlist(call: str | None, watchlist: set[str]) -> bool:
+    """Steht dieses Rufzeichen auf der Wunschliste?
+
+    Die Liste enthaelt sowohl volle Rufzeichen (``Z68PX``) als auch
+    Praefixe fuer angekuendigte DXpeditionen (``KH8``, ``VP5``) — beim
+    Import aus dem NG3K-Kalender steht oft nur das Praefix fest. Beides
+    muss greifen, sonst laeuft die Ausnahme fuer genau die Faelle ins
+    Leere, fuer die die Liste gedacht ist.
+    """
+    if not call or not watchlist:
+        return False
+    c = call.upper()
+    if c in watchlist:
+        return True
+    basis = base_call(c) or c
+    if basis in watchlist:
+        return True
+    return any(len(w) >= 2 and basis.startswith(w) for w in watchlist)
 
 
 def _find_r_report_from_them(
