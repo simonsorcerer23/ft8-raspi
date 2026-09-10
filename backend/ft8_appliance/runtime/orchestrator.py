@@ -7270,8 +7270,14 @@ class Orchestrator:
         """v0.30.0 — schreibt beim QSO-Ausgang eine pick_attempt-Telemetrie-
         Zeile, sofern der Pick Hunt-Metadaten hinterlegt hat. Pop nach
         base_call (passend zu LOG_QSO/QSO_BAIL). Reine Messung, fail-soft.
-        Antworten auf unseren CQ haben keine Meta → werden NICHT gemessen
-        (kein Picker-Entscheid)."""
+
+        2026-09-10: Bis v0.86.0 stand hier "Antworten auf unseren CQ haben
+        keine Meta → werden NICHT gemessen". Genau das war die Luecke — die
+        Sequenz-Fehler steckten in diesem Weg, und ohne Zahlen war weder zu
+        sehen, wie oft er vorkommt, noch ob die Reparaturen wirken. Seit
+        v0.87.0 legt die State-Machine auch fuer eingehende Anrufe Meta an
+        (_note_inbound_attempt), erkennbar am pick_kind: inbound_grid,
+        inbound_report, inbound_resume."""
         key = base_call(call)
         if not key:
             return
