@@ -625,6 +625,9 @@ class Orchestrator:
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
+    # Gewuerfelter A/B-Arm des Fernziel-Gates, je Slot einmal gezogen.
+    _fern_arm_slot: int = field(default=-1, init=False)
+    _fern_arm: bool = field(default=False, init=False)
     # (Slot-Index, Nachrichten) des letzten Vorab-Durchgangs — der
     # regulaere Durchgang ueberspringt sie, s. _vorab_neue_decodes.
     _vorab_verarbeitet: tuple[int, set[str]] | None = field(
@@ -3389,6 +3392,7 @@ class Orchestrator:
                         index, {d.message for d in decodes if d.message}
                     )
                     await self._refresh_decode_context(decodes)
+                    self._setze_fern_gate_arm(index)
                     self.state_machine.ctx.vorab_decode_aktiv = True
                     try:
                         self.state_machine.on_decodes(self._hardware_state, decodes)
@@ -3410,6 +3414,31 @@ class Orchestrator:
                     await asyncio.sleep(1.0)
                 except asyncio.CancelledError:
                     raise
+
+    def _setze_fern_gate_arm(self, index: int) -> None:
+        """Den A/B-Arm des Fernziel-Gates fuer diesen Slot festlegen.
+
+        Einmal je Slot gezogen und gemerkt: Der Vorab-Durchgang und der
+        regulaere Durchgang entscheiden beide im selben Slot, und sie
+        muessen denselben Arm sehen — sonst misst das Experiment sich
+        selbst kaputt. Wer zuerst fragt, wuerfelt; der zweite bekommt das
+        Ergebnis.
+
+        Gewuerfelt und nicht im festen Takt, aus demselben Grund wie beim
+        Vorab-Decode: Der Sende-Rhythmus ist zwei Slots lang, ein
+        2-Slot-Takt haette sich damit verkoppelt.
+        """
+        op = self.config.operating
+        if not getattr(op, "hunt_sole_dx_gate", False):
+            self.state_machine.ctx.hunt_sole_dx_arm = False
+            return
+        if index != self._fern_arm_slot:
+            self._fern_arm_slot = index
+            self._fern_arm = (
+                random.random() < 0.5
+                if getattr(op, "hunt_sole_dx_ab", False) else True
+            )
+        self.state_machine.ctx.hunt_sole_dx_arm = self._fern_arm
 
     def _vorab_neue_decodes(self, tick: SlotTick, decodes: list) -> list:
         """Die Decodes dieses Slots, die der Vorab-Durchgang noch nicht hatte.
@@ -3566,6 +3595,7 @@ class Orchestrator:
 
         # 4. drive the state machine — ohne die, die der Vorab-Durchgang
         #    fuer diesen Slot bereits verarbeitet hat.
+        self._setze_fern_gate_arm(tick.index)
         self.state_machine.on_decodes(
             self._hardware_state, self._vorab_neue_decodes(tick, decodes),
         )
@@ -6678,6 +6708,12 @@ class Orchestrator:
         self.state_machine.ctx.hunt_sole_min_psk_snr_db = (
             self.config.operating.hunt_sole_min_psk_snr_db
         )
+        self.state_machine.ctx.hunt_sole_dx_gate = bool(
+            getattr(self.config.operating, "hunt_sole_dx_gate", False)
+        )
+        self.state_machine.ctx.hunt_sole_dx_km = int(
+            getattr(self.config.operating, "hunt_sole_dx_km", 4000)
+        )
         self.state_machine.ctx.hunt_strict_min_snr_db = (
             self.config.operating.hunt_strict_min_snr_db
         )
@@ -7880,6 +7916,7 @@ class Orchestrator:
                     winning_tier=meta.get("winning_tier"),
                     reply_kind=meta.get("reply_kind"),
                     pre_decode=meta.get("pre_decode"),
+                    fern_gate=meta.get("fern_gate"),
                     tx_offset_s=meta.get("tx_offset_s"),
                     n_candidates=meta.get("n_candidates"),
                     was_tailend=meta.get("was_tailend"),

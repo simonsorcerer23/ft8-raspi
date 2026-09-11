@@ -200,6 +200,9 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         # spaet nach der Slot-Grenze ging die Aussendung tatsaechlich raus?
         "pre_decode": "BOOLEAN",
         "tx_offset_s": "FLOAT",
+        # 2026-09-11 — galt in diesem Slot der Arm, der aussichtslose
+        # Fernziele im Alleingang dem CQ-Fallback ueberlaesst?
+        "fern_gate": "BOOLEAN",
     }
     for name, ddl in cols.items():
         if name not in existing:

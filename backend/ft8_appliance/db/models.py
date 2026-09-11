@@ -376,6 +376,9 @@ class PickAttempt(Base):
     qso_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     our_snr_received: Mapped[int | None] = mapped_column(Integer, nullable=True)
     distance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #  * fern_gate — galt in diesem Slot der Arm, der aussichtslose
+    #    Fernziele im Alleingang dem CQ-Fallback ueberlaesst? (A/B)
+    fern_gate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     continent: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # 2026-09-07 A/B Antwortfrequenz: quiet | on_freq
     reply_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

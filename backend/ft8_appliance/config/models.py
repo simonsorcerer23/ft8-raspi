@@ -557,6 +557,17 @@ class OperatingConfig(BaseModel):
     hunt_snr_floor_db: int = Field(default=-22, ge=-30, le=0)
     hunt_profile: Literal["balanced", "rate", "dx"] = "balanced"
     hunt_sole_min_snr_db: int = Field(default=-16, ge=-30, le=0)
+    # 2026-09-11 — Der Alleingang an ein weit entferntes Ziel ist der
+    # teuerste Leerlauf im Betrieb. Gemessen ueber zwei Tage Hunting
+    # (246 eigene Anrufe): Der Tier "sole" liefert unter 2000 km 27,3 %
+    # Abschluss, ueber 4000 km noch 2,0 % — 49 Anrufe, ein QSO, 69 Minuten
+    # Sendezeit. Bei vergleichbar ruhigem Band (hoechstens fuenf Decodes im
+    # Slot) sind es 0 von 32; die Bandbedingung erklaert es also nicht.
+    # Greift das Gate, uebernimmt der CQ-Fallback den Slot.
+    hunt_sole_dx_gate: bool = False
+    hunt_sole_dx_km: int = Field(default=4000, ge=1000, le=20000)
+    # Slotweise gewuerfelt, um den Nutzen zu messen statt ihn zu glauben.
+    hunt_sole_dx_ab: bool = False
     hunt_sole_min_psk_snr_db: int = Field(default=-10, ge=-30, le=20)
     hunt_strict_min_snr_db: int = Field(default=-14, ge=-30, le=0)
     hunt_strict_min_psk_snr_db: int = Field(default=-10, ge=-30, le=20)
