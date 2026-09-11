@@ -4805,6 +4805,43 @@ class Orchestrator:
             except Exception as exc:
                 _log_loop_exc("dx-cluster-hint loop", exc)
 
+    async def _persist_heard_reports(self, reports: list) -> None:
+        """Empfangsberichte in die Datenbank schreiben — wer hat uns gehoert.
+
+        Der Abruf laeuft ohnehin alle fuenfzehn Minuten, bisher landete aber
+        nur die Menge der Rufzeichen im Arbeitsspeicher und war nach dem
+        naechsten Durchgang weg. Die Tabelle ``psk_reporter_in`` gab es seit
+        jeher, beschrieben hat sie niemand: Die Empfaenger-Ansicht *liest*
+        aus ihr, gefuellt wurde sie nur vom Demo-Seed.
+
+        Wozu die Historie: Die groesste offene Frage im Betrieb ist, warum
+        rund zwei Drittel der eigenen Anrufe nie eine Antwort bekommen. Wer
+        uns tatsaechlich hoert, ist die einzige direkte Evidenz dazu — und
+        erst mit einer Historie laesst sich fragen, ob wir die Richtigen
+        angerufen haben. Nebenbei traegt sie die Empfaenger-Ansicht, wenn
+        pskreporter.info gerade nicht erreichbar ist.
+
+        Fail-soft: Ein Schreibfehler darf den Abruf nicht kosten.
+        """
+        if not self.db_enabled or not reports:
+            return
+        try:
+            from ..db import repository, session_scope
+            async with session_scope() as s:
+                for r in reports:
+                    rx = (getattr(r, "rx_call", "") or "").upper()
+                    ts = getattr(r, "received_at", None)
+                    if not rx or ts is None:
+                        continue
+                    await repository.merge_heard_report(
+                        s, ts=ts, rx_call=rx,
+                        rx_grid=getattr(r, "rx_grid", None),
+                        snr_db=getattr(r, "snr_db", None),
+                        band=getattr(r, "band", None),
+                    )
+        except Exception as exc:
+            log.debug("Empfangsberichte nicht gespeichert: %s", exc)
+
     def _psk_reciprocity_pause_reason(self) -> str | None:
         if not self.state_machine.ctx.auto_answer:
             return "hunt inactive"
@@ -4952,6 +4989,7 @@ class Orchestrator:
                                 if k not in snr_map or r.snr_db > snr_map[k]:
                                     snr_map[k] = int(r.snr_db)
                         per_call_snr[cache_key] = snr_map
+                        await self._persist_heard_reports(reports)
                         consecutive_fail = 0
                         self._psk_last_refresh_ok = True
                     except Exception as exc:
