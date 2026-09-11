@@ -133,3 +133,59 @@ def test_vorab_pfad_arbeitet_die_aktionen_ab():
     assert "on_decodes" in q
     nach = q.split("on_decodes", 1)[1]
     assert "_drain_actions" in nach, "Aktionen bleiben liegen"
+
+
+# ------------------------------- der regulaere Durchgang wiederholt nichts
+class _Tick:
+    def __init__(self, index):
+        self.index = index
+
+
+def _o_mit_merker(index, nachrichten):
+    o = _orch(decoder_pre_decode=True)
+    o._vorab_verarbeitet = (index, set(nachrichten))
+    o._vorab_neue_decodes = orch_mod.Orchestrator._vorab_neue_decodes.__get__(o)
+    return o
+
+
+class _D:
+    def __init__(self, message):
+        self.message = message
+
+
+def test_regulaerer_durchgang_ueberspringt_das_schon_verarbeitete():
+    """Beide Durchgaenge decodieren denselben Slot. Ohne Filter zaehlen
+    Slot-Paritaeten und Reputation doppelt, und die Versuchszaehler von
+    RR73-Nachklang und Wiederaufnahme werden zweimal je Slot verbraucht —
+    beim zweiten Mal ohne Wirkung, weil _tx_burst_active die Aussendung
+    verwirft."""
+    o = _o_mit_merker(7, {"CQ DL1ABC JO31", "DK9XR EA2JE -12"})
+    alle = [_D("CQ DL1ABC JO31"), _D("DK9XR EA2JE -12"), _D("CQ SP9XYZ KO02")]
+
+    neu = o._vorab_neue_decodes(_Tick(7), alle)
+
+    assert [d.message for d in neu] == ["CQ SP9XYZ KO02"]
+
+
+def test_anderer_slot_wird_nicht_gefiltert():
+    o = _o_mit_merker(7, {"CQ DL1ABC JO31"})
+    alle = [_D("CQ DL1ABC JO31")]
+
+    assert o._vorab_neue_decodes(_Tick(8), alle) == alle
+
+
+def test_merker_gilt_nur_einmal():
+    """Sonst wuerde ein spaeter Pass desselben Slots ebenfalls gefiltert."""
+    o = _o_mit_merker(7, {"CQ DL1ABC JO31"})
+    alle = [_D("CQ DL1ABC JO31")]
+
+    o._vorab_neue_decodes(_Tick(7), alle)
+
+    assert o._vorab_neue_decodes(_Tick(7), alle) == alle
+
+
+def test_picker_sieht_trotzdem_den_ganzen_slot():
+    """Der CQ-Frequenz-Picker braucht den vollen Slot, nicht nur den Rest."""
+    import inspect
+    q = inspect.getsource(orch_mod.Orchestrator._on_slot_inner)
+    assert "self.state_machine.last_decodes = list(decodes)" in q

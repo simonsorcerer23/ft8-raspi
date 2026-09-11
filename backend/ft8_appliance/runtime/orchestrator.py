@@ -625,6 +625,10 @@ class Orchestrator:
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
+    # (Slot-Index, Nachrichten) des letzten Vorab-Durchgangs — der
+    # regulaere Durchgang ueberspringt sie, s. _vorab_neue_decodes.
+    _vorab_verarbeitet: tuple[int, set[str]] | None = field(
+        default=None, init=False, repr=False)
     # nur tatsaechlich gesendete Bursts — verworfene (B4) verfaelschen sonst den Mittelwert
     _tx_sent_offsets_s: list[float] = field(default_factory=list, init=False)
     # 2026-09-06 lonely_cq: Decodes der letzten Slots (aelteste zuerst)
@@ -3368,6 +3372,17 @@ class Orchestrator:
                              st["fertig_vor_grenze_s"])
                 if decodes:
                     self._last_decodes = decodes
+                    # Was hier verarbeitet wird, darf der regulaere Durchgang
+                    # nicht erneut verarbeiten: Er decodiert denselben Slot
+                    # und liefert dieselben Nachrichten noch einmal. Sonst
+                    # zaehlen Slot-Paritaeten und Reputation doppelt, und die
+                    # Versuchszaehler von RR73-Nachklang und Wiederaufnahme
+                    # werden zweimal je Slot verbraucht — beim zweiten Mal
+                    # ohne Wirkung, weil _tx_burst_active die Aussendung
+                    # verwirft.
+                    self._vorab_verarbeitet = (
+                        index, {d.message for d in decodes if d.message}
+                    )
                     await self._refresh_decode_context(decodes)
                     self.state_machine.ctx.vorab_decode_aktiv = True
                     try:
@@ -3390,6 +3405,27 @@ class Orchestrator:
                     await asyncio.sleep(1.0)
                 except asyncio.CancelledError:
                     raise
+
+    def _vorab_neue_decodes(self, tick: SlotTick, decodes: list) -> list:
+        """Die Decodes dieses Slots, die der Vorab-Durchgang noch nicht hatte.
+
+        Der Vorab-Durchgang decodiert denselben Slot und hat seine Funde
+        bereits vollstaendig verarbeitet — inklusive Aussendung. Reicht der
+        regulaere Durchgang sie erneut in die State-Machine, zaehlen
+        Slot-Paritaeten und Reputation doppelt, und die Versuchszaehler von
+        RR73-Nachklang und Wiederaufnahme werden zweimal je Slot verbraucht;
+        beim zweiten Mal ohne Wirkung, weil ``_tx_burst_active`` die
+        Aussendung ohnehin verwirft.
+
+        Ein leeres Ergebnis ist kein Sonderfall: ``on_decodes`` laeuft auch
+        in stillen Slots und treibt dort Zeitueberschreitungen weiter.
+        """
+        merker = self._vorab_verarbeitet
+        if merker is None or merker[0] != tick.index:
+            return decodes
+        gesehen = merker[1]
+        self._vorab_verarbeitet = None
+        return [d for d in decodes if d.message not in gesehen]
 
     async def _slot_loop(self) -> None:
         try:
@@ -3523,8 +3559,13 @@ class Orchestrator:
         await self._publish_decodes(decodes)
         _phasen["veroeffentlichen"] = round(time.time() - _t, 3); _t = time.time()
 
-        # 4. drive the state machine
-        self.state_machine.on_decodes(self._hardware_state, decodes)
+        # 4. drive the state machine — ohne die, die der Vorab-Durchgang
+        #    fuer diesen Slot bereits verarbeitet hat.
+        self.state_machine.on_decodes(
+            self._hardware_state, self._vorab_neue_decodes(tick, decodes),
+        )
+        # Der Picker soll den ganzen Slot sehen, nicht nur den Rest.
+        self.state_machine.last_decodes = list(decodes)
         _phasen["zustandsmaschine"] = round(time.time() - _t, 3)
         _phasen["summe_bis_tx"] = round(self._slot_phase_s(), 3)
         self._slot_phasen_s = _phasen
