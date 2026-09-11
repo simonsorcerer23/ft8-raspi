@@ -146,6 +146,32 @@ def main() -> int:
         "group by 1 order by 1", (seit,)
     ).fetchall(), ("Lage", "Versuche", "fertig", "Quote"))
 
+    print("\n=== Vorab-Decode: was der fruehere Durchgang bringt (A/B) ===")
+    zeilen = con.execute(
+        "select case when pre_decode=1 then 'vorab' else 'regulaer' end, "
+        "  count(*), sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %', "
+        "  round(avg(tx_offset_s),3), "
+        "  round(100.0*sum(tx_offset_s < 0.1)/"
+        "        nullif(sum(tx_offset_s is not null),0),0)||' %', "
+        "  round(avg(n_candidates),2) "
+        "from pick_attempt where pre_decode is not null and ts > datetime('now',?) "
+        "group by 1 order by 1", (seit,)
+    ).fetchall()
+    if zeilen:
+        tabelle(zeilen, ("Durchgang", "Versuche", "fertig", "Quote",
+                         "Versatz s", "puenktlich", "Kandidaten"))
+        print("    Versatz = wie spaet die Aussendung nach der Slot-Grenze begann.")
+        print("    puenktlich = Anteil der Aussendungen unter 0,1 s Versatz.")
+        print("    Der Mittelwert des Vorab-Arms ist ueber laengere Zeitraeume")
+        print("    verwaessert: Bis v0.105.0 fuehrte der Durchgang seine")
+        print("    Entscheidung nicht selbst aus, der Arm war dann sogar")
+        print("    langsamer als der regulaere.")
+        print("    Der fruehere Durchgang sieht rund 8 % weniger Decodes; die")
+        print("    Spalte Kandidaten zeigt, was ihn das an Auswahl kostet.")
+    else:
+        print("    (keine Daten — decoder_pre_decode ist aus)")
+
     print("\n=== Abschluss nach Signalstaerke — traegt das Schwach-Gate? ===")
     tabelle(con.execute(
         "select case when snr_db >= -10 then '1 stark   >= -10' "
