@@ -340,6 +340,9 @@ class OrchestratorStatus:
     context_health: dict[str, int] | None = None
     # Zeitaufteilung im Slot bis zur Sendeentscheidung (Sekunden je Abschnitt)
     slot_phasen_s: dict[str, float] | None = None
+    # Vorab-Decode: Laeufe, letzte Dauer, Ausbeute und wie viel Vorsprung vor
+    # der Slot-Grenze blieb. Negativ = der Durchgang wurde erst danach fertig.
+    vorab_stats: dict[str, float] | None = None
 
 
 @dataclass
@@ -620,6 +623,9 @@ class Orchestrator:
     _vorab_slot_index: int = field(default=-1, init=False)
     _vorab_ab_zaehler: int = field(default=0, init=False)
     _vorab_aktiv_diesen_slot: bool = field(default=False, init=False)
+    # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
+    # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
+    _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
     # nur tatsaechlich gesendete Bursts — verworfene (B4) verfaelschen sonst den Mittelwert
     _tx_sent_offsets_s: list[float] = field(default_factory=list, init=False)
     # 2026-09-06 lonely_cq: Decodes der letzten Slots (aelteste zuerst)
@@ -1845,6 +1851,7 @@ class Orchestrator:
                           if self.state_machine.filter_drops else None),
             context_health=self._context_health(),
             slot_phasen_s=(dict(self._slot_phasen_s) if self._slot_phasen_s else None),
+            vorab_stats=(dict(self._vorab_stats) if self._vorab_stats else None),
             cq_count=self.state_machine.ctx.cq_count,
             current_qso_call=(
                 self.state_machine.qso.their_call if self.state_machine.qso else None
@@ -3292,6 +3299,10 @@ class Orchestrator:
         if vorab is None:
             log.info("Vorab-Decode: Pipeline unterstuetzt ihn nicht — Schleife endet")
             return
+        op0 = self.config.operating
+        log.info("Vorab-Decode aktiv: %.2f s Vorlauf, A/B %s",
+                 float(getattr(op0, "decoder_pre_decode_lead_s", 1.3)),
+                 "an" if getattr(op0, "decoder_pre_decode_ab", False) else "aus")
         while True:
             try:
                 op = self.config.operating
@@ -3323,9 +3334,21 @@ class Orchestrator:
                 )
                 t0 = time.time()
                 decodes = await vorab(tick)
+                dauer = time.time() - t0
                 self._vorab_aktiv_diesen_slot = True
-                self._slot_phasen_s["vorab_decode"] = round(time.time() - t0, 3)
-                self._slot_phasen_s["vorab_decodes"] = len(decodes)
+                st = self._vorab_stats
+                st["laeufe"] = st.get("laeufe", 0) + 1
+                st["letzte_dauer_s"] = round(dauer, 3)
+                st["letzte_decodes"] = len(decodes)
+                st["decodes_gesamt"] = st.get("decodes_gesamt", 0) + len(decodes)
+                st["fertig_vor_grenze_s"] = round(
+                    (tick.posix - time.time()), 3
+                )
+                if st["laeufe"] % 20 == 1:
+                    log.info("Vorab-Decode: %d Laeufe, zuletzt %.2f s fuer %d Decodes, "
+                             "%.2f s vor der Grenze fertig",
+                             st["laeufe"], dauer, len(decodes),
+                             st["fertig_vor_grenze_s"])
                 if decodes:
                     self._last_decodes = decodes
                     await self._refresh_decode_context(decodes)
