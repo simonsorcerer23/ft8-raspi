@@ -763,6 +763,15 @@ aber die Sendeentscheidung nicht mehr mit.
 beide unter derselben Ausbreitung laufen, und `pick_attempt.pre_decode` hält
 fest, aus welchem Durchgang jede Entscheidung kam. Siehe `docs/flags.md`.
 
+Ein Baustein ergibt sich daraus nicht von selbst: Die Entscheidung steht nun
+*vor* der Grenze, die Aussendung darf also nicht sofort ausgeführt werden —
+sie würde in den laufenden Slot hineinragen und mit negativem Zeitversatz
+ankommen. `_do_tx_message` wartet deshalb die restlichen Zehntel ab, wenn bis
+zur Grenze weniger als 2,5 s fehlen. Genau dieses Warten *ist* der Gewinn:
+Die Entscheidung ist früh, die Aussendung beginnt pünktlich. Sein Fehlen war
+binnen Minuten sichtbar — der gemessene Sendeversatz sprang von 0,93 s auf
+Werte um 13,9 s, also kurz *vor* die nächste Grenze.
+
 ### 8.1 Audio-Slot-Synchronisation (Anti-Drift)
 
 **Problem:** Der IC-705 USB-Audio hat einen eigenen Quartz (~±50 ppm). Der Pi-Systemtakt kommt von GPS (±100 ns). Über mehrere Slots driften beide auseinander. Würde man die Slot-Position nur aus Sample-Count rechnen, akkumuliert der Drift bis zu DT-Verletzung.
