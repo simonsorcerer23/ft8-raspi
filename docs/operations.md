@@ -174,3 +174,26 @@ hattest — das ist Absicht, nicht Bug. Im Log: `tx-power safety-floor
 - SSH-Key ist auf der **Workstation** zuhause. Im Feldeinsatz kommt Claude *eh nicht* drauf, da nicht im gleichen Netz.
 - Der Pi hat **kein** Internet-erreichbares SSH (kein Port-Forwarding, kein Tailscale, kein WireGuard im MVP).
 - Falls Remote-Access aus dem Urlaub später gewünscht: Tailscale-Integration als Phase 2 (siehe `architecture.md` Out-of-Scope).
+
+## Neue Konfigurationsschalter setzen (Reihenfolge beachten)
+
+`AppConfig` und alle Unterabschnitte laufen mit `extra="forbid"`. Ein
+Schlüssel, den die **laufende** Version noch nicht kennt, lässt die
+Validierung scheitern — und damit den Controller nicht mehr starten.
+
+Deshalb immer in dieser Reihenfolge:
+
+1. Release schneiden und warten, bis der Pi ihn gezogen hat
+   (`ssh … 'cd ~/ft8-raspi && git describe --tags'`), oder das Update mit
+   `sudo systemctl start ft8-self-update.service` vorziehen.
+2. Erst dann den Schalter in `/etc/ft8-appliance/config.yaml` eintragen.
+3. Vor dem Neustart gegenprüfen, dass die laufende Version ihn kennt:
+
+```bash
+cd ~/ft8-raspi/backend && .venv/bin/python -c \
+  "import sys; sys.path.insert(0,'.'); from ft8_appliance.config.models import OperatingConfig; \
+   OperatingConfig(neuer_schalter=True); print('ok')"
+```
+
+Am 2026-09-11 wäre das umgekehrt beinahe schiefgegangen: Ein Skript wollte
+`decoder_pre_decode` eintragen, während der Pi noch die Vorversion fuhr.
