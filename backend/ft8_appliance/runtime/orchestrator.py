@@ -3374,12 +3374,17 @@ class Orchestrator:
                     self._last_decodes = decodes
                     # Was hier verarbeitet wird, darf der regulaere Durchgang
                     # nicht erneut verarbeiten: Er decodiert denselben Slot
-                    # und liefert dieselben Nachrichten noch einmal. Sonst
-                    # zaehlen Slot-Paritaeten und Reputation doppelt, und die
+                    # und liefert dieselben Nachrichten noch einmal. Die
                     # Versuchszaehler von RR73-Nachklang und Wiederaufnahme
-                    # werden zweimal je Slot verbraucht — beim zweiten Mal
-                    # ohne Wirkung, weil _tx_burst_active die Aussendung
+                    # wuerden sonst zweimal je Slot verbraucht — beim zweiten
+                    # Mal ohne Wirkung, weil _tx_burst_active die Aussendung
                     # verwirft.
+                    #
+                    # (Slot-Paritaeten und Frequenz-Reputation sind NICHT
+                    # betroffen: Die Paritaets-Abstimmung laeuft allein im
+                    # regulaeren Durchgang, die Reputation haengt an der
+                    # Aussendung, nicht an den Decodes. Die Release-Notiz zu
+                    # v0.107.0 nennt beide faelschlich mit.)
                     self._vorab_verarbeitet = (
                         index, {d.message for d in decodes if d.message}
                     )
@@ -6941,25 +6946,6 @@ class Orchestrator:
         # Mid-QSO-Kinds (respond_report, r_report, ack73, rr73) zaehlen
         # NICHT — die wuerden den attempt-Counter pro QSO mehrfach hochziehen.
         # Erfolge werden im LOG_QSO-Handler verbucht via _last_cq_band_bin.
-        kind = payload.get("kind") or ""
-        if kind in ("cq", "respond_grid"):
-            band_now = self._current_band() or self.state_machine.ctx.band
-            bin_hz = int(audio_freq_hz // 100) * 100
-            key = (band_now, bin_hz)
-            self._last_cq_band_bin = key
-            att, succ = self._freq_reputation.get(key, (0, 0))
-            self._freq_reputation[key] = (att + 1, succ)
-            try:
-                asyncio.create_task(self._persist_freq_reputation_attempt(key))
-            except Exception:
-                pass
-        # Mark that we're actually radiating right now. _observe_alc_during_tx
-        # gates upward gain adjustments by recency of this timestamp — without
-        # this gate, ALC=0% during inter-burst gaps gets misread as "too quiet"
-        # and the loop runs away.
-        self._last_tx_message_at = time.monotonic()
-        log.info("TX_MESSAGE: %s @ %.0fHz gain=%.2f alc_last=%s",
-                 text, audio_freq_hz, self._audio_gain, self._last_alc_pct)
         # Vor dem playback-Return, damit auch Tests und Dev-Betrieb messen.
         # Synth + PTT-Kommando kommen real noch dazu (Millisekunden).
         # 2026-09-11 — Kommt die Entscheidung aus dem Vorab-Decode, sind wir
@@ -6990,8 +6976,39 @@ class Orchestrator:
             # Decoder zurueck.
             await asyncio.sleep(rest_bis_grenze + 0.02)
 
+        if self._tx_burst_active:
+            # Vorgezogen: Frueher stand diese Pruefung erst hinter dem Synth,
+            # und die Buchungen unten liefen auch dann, wenn die Aussendung
+            # gleich darauf verworfen wurde. Der zweite Check hinter dem
+            # Synth bleibt, weil dort ein await dazwischenliegt.
+            log.warning("TX %r verworfen: ein Burst laeuft noch — die "
+                        "State-Machine sendet an der naechsten Grenze", text)
+            return
         if not self._record_tx_start_offset():
             return  # B4: manueller Burst mitten im Slot — entfaellt, s.u.
+        # Erst hier steht fest, dass wirklich gesendet wird. Vorher gebucht
+        # zaehlte jede verworfene Aussendung als Frequenz-Versuch (der Nenner
+        # der Reputation war zu gross), und _last_tx_message_at markierte die
+        # Station als sendend — dieselbe Marke, an der der Vorab-Decode
+        # erkennt, ob der Slot taub ist.
+        kind = payload.get("kind") or ""
+        if kind in ("cq", "respond_grid"):
+            band_now = self._current_band() or self.state_machine.ctx.band
+            bin_hz = int(audio_freq_hz // 100) * 100
+            key = (band_now, bin_hz)
+            self._last_cq_band_bin = key
+            att, succ = self._freq_reputation.get(key, (0, 0))
+            self._freq_reputation[key] = (att + 1, succ)
+            try:
+                asyncio.create_task(self._persist_freq_reputation_attempt(key))
+            except Exception:
+                pass
+        # _observe_alc_during_tx gates upward gain adjustments by recency of
+        # this timestamp — without it, ALC=0% during inter-burst gaps gets
+        # misread as "too quiet" and the loop runs away.
+        self._last_tx_message_at = time.monotonic()
+        log.info("TX_MESSAGE: %s @ %.0fHz gain=%.2f alc_last=%s",
+                 text, audio_freq_hz, self._audio_gain, self._last_alc_pct)
         # Den tatsaechlichen Versatz beim laufenden Anrufversuch hinterlegen.
         # Er ist die Zielgroesse des Vorab-Decodes und muss sich je Arm
         # vergleichen lassen; nur der erste Burst eines Versuchs zaehlt.

@@ -154,11 +154,10 @@ class _D:
 
 
 def test_regulaerer_durchgang_ueberspringt_das_schon_verarbeitete():
-    """Beide Durchgaenge decodieren denselben Slot. Ohne Filter zaehlen
-    Slot-Paritaeten und Reputation doppelt, und die Versuchszaehler von
-    RR73-Nachklang und Wiederaufnahme werden zweimal je Slot verbraucht —
-    beim zweiten Mal ohne Wirkung, weil _tx_burst_active die Aussendung
-    verwirft."""
+    """Beide Durchgaenge decodieren denselben Slot. Ohne Filter werden die
+    Versuchszaehler von RR73-Nachklang und Wiederaufnahme zweimal je Slot
+    verbraucht — beim zweiten Mal ohne Wirkung, weil _tx_burst_active die
+    Aussendung verwirft."""
     o = _o_mit_merker(7, {"CQ DL1ABC JO31", "DK9XR EA2JE -12"})
     alle = [_D("CQ DL1ABC JO31"), _D("DK9XR EA2JE -12"), _D("CQ SP9XYZ KO02")]
 
