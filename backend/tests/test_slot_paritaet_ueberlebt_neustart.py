@@ -153,3 +153,40 @@ async def test_defekte_datenbank_bricht_den_start_nicht(monkeypatch):
     await o._restore_slot_parity()
 
     assert o._op_slot_parity == {}
+
+
+# --------------------------------------------------- die stille Kopplung
+def test_wiederherstellung_rechnet_wie_das_live_lernen():
+    """Beide Seiten muessen dieselbe Parität ergeben, sonst lernt die Box
+    nach jedem Neustart das Gegenteil dessen, was sie beobachtet hat — und
+    eine falsche Parität ist schlimmer als gar keine: Sie lenkt die
+    Sendeentscheidung aktiv in die Irre.
+
+    Die Kopplung ist still und liegt an drei Stellen: ``_compute_slot_parity``
+    rechnet aus ``tick.posix``, die Wiederherstellung aus ``decode.ts`` — und
+    dass beide denselben Wert tragen, entscheidet allein die Pipeline mit
+    ``ts=datetime.fromtimestamp(tick.posix)``.
+    """
+    import inspect
+    from datetime import UTC, datetime
+
+    from ft8_appliance.decode import pipeline as pl
+    from ft8_appliance.runtime import orchestrator as orch_mod
+
+    # 1. Die Pipeline stempelt den Decode mit der Slot-Grenze, nicht mit
+    #    der Uhrzeit der Verarbeitung.
+    assert "ts=datetime.fromtimestamp(tick.posix, tz=UTC)" in inspect.getsource(pl)
+
+    # 2. Beide Formeln liefern fuer denselben Zeitpunkt dasselbe Urteil.
+    quelle = inspect.getsource(orch_mod.Orchestrator._restore_slot_parity)
+    assert 'round(ts.timestamp() / 15.0) % 2 == 0' in quelle
+
+    o = object.__new__(orch_mod.Orchestrator)
+    for posix in (1757577600.0, 1757577615.0, 1757577630.0, 1757577645.0):
+        tick = type("T", (), {"posix": posix, "slot_seconds": 15.0})()
+        live = orch_mod.Orchestrator._compute_slot_parity(o, tick)
+        ts = datetime.fromtimestamp(posix, tz=UTC)
+        wiederhergestellt = (
+            "even" if round(ts.timestamp() / 15.0) % 2 == 0 else "odd"
+        )
+        assert live == wiederhergestellt, f"Parität weicht ab bei {posix}"
