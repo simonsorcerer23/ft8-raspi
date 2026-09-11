@@ -788,6 +788,13 @@ class StateMachine:
         if self.ctx.tail_end_hunter_enabled:
             self._update_tail_end_state(decodes)
 
+        # Vor allen Zustandszweigen: Wiederholt ein frisch abgeschlossener
+        # Partner seinen R-Report, wartet er noch auf unser RR73. Das hat
+        # Vorrang vor einem neuen Anruf — fuer ihn steht sonst kein QSO im
+        # Log, obwohl es bei uns steht.
+        if self._antworte_auf_spaeten_r_report(hw, decodes):
+            return
+
         # Hunting mode: when idle and auto_answer is on.
         if self.state is State.IDLE and self.ctx.auto_answer and not self.ctx.drain_for_update:
             # PRIO 1 — jemand spricht UNS direkt an (Tail-Ender oder
@@ -1610,6 +1617,11 @@ class StateMachine:
     # Wiederholungen ab (Partner sendet alle 15 s); danach ist die Station
     # weitergezogen und ein nachtraeglicher Abschluss waere geraten.
     RECENT_QSO_TTL_S = 600
+    # Wie lange nach einem Abschluss ein wiederholter R-Report des Partners
+    # noch ein RR73 ausloest, und wie oft hoechstens. Die beobachteten Faelle
+    # lagen bei bis zu sechs Wiederholungen ueber gut anderthalb Minuten.
+    RR73_NACHKLANG_S = 180
+    RR73_NACHKLANG_MAX = 3
 
     def _remember_unfinished_qso(self) -> None:
         """QSO-Daten fuer eine verspaetete Fortsetzung aufbewahren.
@@ -1745,6 +1757,46 @@ class StateMachine:
             if d.call_from == their and d.snr_db is not None:
                 self.qso.their_snr_at_us = d.snr_db
 
+    def _antworte_auf_spaeten_r_report(self, hw: HardwareState,
+                                       decodes: list[DecodedMsg]) -> bool:
+        """Ein frisch abgeschlossener Partner wiederholt seinen R-Report.
+
+        Dann hat er unser RR73 nicht decodiert und wartet weiter — fuer ihn
+        ist das QSO offen, waehrend es bei uns im Log steht. Gemessen ueber
+        sieben Tage: sechs von 131 QSOs (4,6 %) blieben so einseitig, RV6F
+        wiederholte sechsmal, TF1FT viermal.
+
+        Der bestehende QSO_GRACE-Pfad deckt das nicht ab: Er wartet genau
+        einen Slot und reagiert nur auf ein wiederholtes *RR73*, nicht auf
+        einen wiederholten Report.
+
+        Hoechstens ``RR73_NACHKLANG_MAX`` Wiederholungen je Partner, damit
+        daraus keine Endlosschleife wird, wenn er uns gar nicht hoert.
+        """
+        if not self.ctx.recent_logged or self.qso is not None:
+            return False
+        jetzt = datetime.now(UTC).timestamp()
+        for eintrag in list(self.ctx.recent_logged):
+            ablauf, freq_hz, gesendet = self.ctx.recent_logged[eintrag]
+            if ablauf <= jetzt:
+                del self.ctx.recent_logged[eintrag]
+                continue
+            if gesendet >= self.RR73_NACHKLANG_MAX:
+                continue
+            if _find_r_report_from_them(decodes, eintrag, self.ctx.tx_callsign) is None:
+                continue
+            if not self._check_guards(hw):
+                return False
+            log.info("%s wiederholt seinen Report nach dem Abschluss — RR73 noch "
+                     "einmal (%d/%d)", eintrag, gesendet + 1, self.RR73_NACHKLANG_MAX)
+            msg = f"{eintrag} {self.ctx.tx_callsign} RR73"
+            self._pending.append(
+                Action("TX_MESSAGE", self._tx_payload(msg, "rr73", freq_hz))
+            )
+            self.ctx.recent_logged[eintrag] = (ablauf, freq_hz, gesendet + 1)
+            return True
+        return False
+
     def _emit_log_qso(self, hw: HardwareState) -> None:
         """QSO abschliessen: RR73 senden (wenn erlaubt) und loggen.
 
@@ -1774,6 +1826,13 @@ class StateMachine:
                 "QSO mit %s wird geloggt, aber RR73 bleibt aus — Guard gesperrt",
                 self.qso.their_call,
             )
+        # Partner merken: wiederholt er gleich seinen R-Report, hat er
+        # unser RR73 nicht gesehen (siehe _antworte_auf_spaeten_r_report).
+        self.ctx.recent_logged[self.qso.their_call.upper()] = (
+            datetime.now(UTC).timestamp() + self.RR73_NACHKLANG_S,
+            self.qso.freq_offset_hz or self.CQ_DEFAULT_FREQ_HZ,
+            0,
+        )
         if self.qso is not None and getattr(self.qso, "from_cq_fallback", False):
             self.ctx.cq_fallback_qsos += 1
         self._pending.append(

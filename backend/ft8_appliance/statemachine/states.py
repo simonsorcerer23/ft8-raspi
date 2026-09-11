@@ -200,6 +200,12 @@ class MachineContext:
     # gueltigen Logeintrag. Am 2026-09-09 gemessen: EA3GXK wiederholte
     # seinen R-Report 186-mal ins Leere, CT1BFP 55-mal.
     recent_qso_ctx: dict[str, tuple[float, dict]] = field(default_factory=dict)
+    # 2026-09-11 — Frisch geloggte Partner: Call -> (Ablauf, Sendefrequenz,
+    # Zahl der bereits nachgeschickten RR73). Wiederholt der Partner nach
+    # unserem Abschluss seinen R-Report, hat er unser RR73 nicht gesehen und
+    # wartet weiter. Gemessen ueber sieben Tage: sechs von 131 QSOs (4,6 %)
+    # blieben so einseitig — RV6F wiederholte sechsmal, TF1FT viermal.
+    recent_logged: dict[str, tuple[float, int, int]] = field(default_factory=dict)
     # Set neuer DXCC-Calls (vom Orchestrator pro Slot aktualisiert).
     # Hunting-Picker priorisiert diese vor SNR — wenn drei Stationen
     # CQ rufen und nur eine ist aus einem neuen Land, wählen wir die
