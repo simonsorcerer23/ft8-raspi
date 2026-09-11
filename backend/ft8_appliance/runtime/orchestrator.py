@@ -6933,7 +6933,15 @@ class Orchestrator:
         # Sekunde zu spaet.
         slot_s = 7.5 if self.config.operating.mode == "FT4" else 15.0
         rest_bis_grenze = slot_s - self._slot_phase_s()
-        if 0.0 < rest_bis_grenze <= 2.5:
+        # Die Obergrenze muss den Vorlauf des Vorab-Decodes abdecken: Wird
+        # hier nicht gewartet, faellt die Sendung in die B4-Regel ("Burst
+        # mitten im Slot") und entfaellt ersatzlos. Mit festen 2,5 s haette
+        # ein groesserer decoder_pre_decode_lead_s das Senden still
+        # abgeschaltet.
+        lead = float(getattr(
+            self.config.operating, "decoder_pre_decode_lead_s", 1.3) or 0.0)
+        max_warten = max(2.5, lead + 1.0)
+        if 0.0 < rest_bis_grenze <= max_warten:
             # Ein kleiner Puffer ueber die Grenze hinaus: _slot_phase_s()
             # rechnet time.time() % slot_s, und wer exakt auf der Grenze
             # landet, misst 14,999 statt 0,001. Das sah wie ein verspaeteter
@@ -7050,6 +7058,11 @@ class Orchestrator:
                 return False
             log.info("manueller TX-Start %.2f s nach der Slot-Grenze", phase)
             self._note_tx_sent_offset(phase)
+            # Auch hier zuruecksetzen: Seit dem Vorab-Decode laeuft ein Teil
+            # der regulaeren Aussendungen durch diesen Zweig. Ohne den Reset
+            # bliebe ein alter Zaehlerstand stehen, und eine einzelne spaetere
+            # Verspaetung wuerde die Decoder-Rueckstufung ausloesen.
+            self._consecutive_late_tx = 0
             return True
         self._note_tx_sent_offset(phase)
         if phase <= op.tx_latency_max_s:
