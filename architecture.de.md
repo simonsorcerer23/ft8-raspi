@@ -734,6 +734,35 @@ t=27.5s TX fertig, PTT off, RX wieder aktiv
 t=30.0s Nächster Slot beginnt, Schleife schließt
 ```
 
+### 8.0 Vorab-Decode vor der Grenze (2026-09-11)
+
+Der Ablauf oben beginnt erst *an* der Slot-Grenze zu decodieren, und der
+Decoder braucht 0,5–1,0 s. Die Sendung startet dadurch rund 1,07 s zu spät,
+während die Stationen, die wir empfangen, im Mittel bei +0,12 s liegen — wir
+kommen also fast eine Sekunde später an als alle anderen. FT8-Decoder suchen
+±2,5 s, es geht nichts verloren; aber bei schwachen Signalen ist die Marge
+weg.
+
+FT8-Sendungen enden nach 12,64 s. Wer pünktlich sendet, ist also lange vor
+der Grenze vollständig im Ringpuffer, und ein Decode mit
+`decoder_pre_decode_lead_s` Vorlauf sieht ihn. Der Kniff braucht keine
+Änderung an der Audio-Kette: Der Vorab-Durchgang übergibt einen Tick, dessen
+`posix` die *kommende* Grenze trägt — damit zeigt `slot_start_posix =
+posix − 15 s` bereits auf den Anfang des laufenden Slots, und `extract_slot`
+nullt, was noch nicht aufgenommen ist.
+
+Nebenwirkungen bleiben beim regulären Durchgang — keine Dedup-Tabelle, keine
+Slot-Metrik, kein Stufe-2- oder jt9-Anstoß, keine Notch-Aktualisierung.
+Findet der Vorab-Durchgang nichts, entscheidet der reguläre wie bisher: Es
+kann nur früher werden, nie schlechter. Stationen, deren Zeitversatz den
+Vorlauf übersteigt, sind im frühen Durchgang unvollständig und fallen dort
+heraus; sie erreichen weiterhin über den regulären Durchgang das Log, treffen
+aber die Sendeentscheidung nicht mehr mit.
+
+`decoder_pre_decode_ab` wechselt die beiden Betriebsarten **slotweise**, damit
+beide unter derselben Ausbreitung laufen, und `pick_attempt.pre_decode` hält
+fest, aus welchem Durchgang jede Entscheidung kam. Siehe `docs/flags.md`.
+
 ### 8.1 Audio-Slot-Synchronisation (Anti-Drift)
 
 **Problem:** Der IC-705 USB-Audio hat einen eigenen Quartz (~±50 ppm). Der Pi-Systemtakt kommt von GPS (±100 ns). Über mehrere Slots driften beide auseinander. Würde man die Slot-Position nur aus Sample-Count rechnen, akkumuliert der Drift bis zu DT-Verletzung.

@@ -40,7 +40,9 @@ flowchart LR
 ```
 
 The tight constraint is between decode and PTT: the transmit decision has to
-be made before the next slot boundary. Getting the *full* decoder inside that
+be made before the next slot boundary. Since 2026-09-11 an optional
+pre-decode runs ahead of the boundary — FT8 transmissions end after 12.64 s,
+so a punctual station is already complete in the ring buffer (`docs/flags.md`). Getting the *full* decoder inside that
 window instead of a cheap pre-pass was the single largest improvement in
 answerable stations — see below.
 

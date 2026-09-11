@@ -270,3 +270,62 @@ Stufe 3 des Decoders: WSJT-X' `jt9` (Paket `wsjtx`) decodiert den Slot parallel 
 - `decoder_jt9_boost_in_qso` (Default an): im QSO und beim CQ-Rufen senden wir jeden zweiten Slot, jt9 hat dann 30 s bis zur nächsten Entscheidung und läuft in Tiefe 3 (Korpus: +1,4 Punkte). Überläuft Tiefe 3 trotzdem, 10 Minuten zurück auf Tiefe 2.
 - `decoder_jt9_ft4` (Default an): jt9 mit `-5` auf dem 7,5-s-Slot; gemessen an synthetischen Slots 5/5 Decodes in 0,1 s (x86). jt9 will für FT4 genau 7,5 s Audio, 15 s liefern nichts.
 - `decoder_jt9_ap` / `decoder_jt9_ap_flags` (Default an, Flags 1): eigener Call/Grid (`-c`/`-G`) und im QSO der Partner (`-x`/`-g`) plus `-X 1` an jt9, also WSJT-X' eigene AP-Decodierung. Messung 8.9. (synthetisch, Antwort an uns unter der BP-Grenze): `-X 1` findet 2 von 6, `-X 2/3/7` nichts; unsichere AP-Decodes (`?`-Marke) werden verworfen. Das Memo gegen AP-Eigenbau bleibt: das hier ist K1JTs Implementierung, nicht unsere.
+
+### `decoder_pre_decode` (2026-09-11, Vorgabe aus)
+
+Der Decoder beginnt sonst erst an der Slot-Grenze und braucht 0,5–1,0 s.
+Die Sendung geht dadurch im Mittel **1,07 s** nach der Grenze raus, während
+die Stationen, die wir hören, bei **+0,12 s** liegen — wir kommen also fast
+eine Sekunde später an als der Durchschnitt. FT8-Decoder suchen ±2,5 s um
+die Grenze, es geht nichts verloren; aber die Marge fehlt bei schwachen
+Signalen.
+
+Vor dem Umbau wurde gemessen, wo die Zeit hingeht (`slot_phasen_s` im
+Status):
+
+| Abschnitt | Dauer |
+|---|---|
+| Decode | 0,50–1,16 s |
+| Hardware-Abfrage | 0,010 s |
+| Kontext-Aufbau | 0,000 s |
+| Veröffentlichen (SSE, DB, PSK) | 0,000–0,024 s |
+| Zustandsmaschine | 0,000 s |
+
+Damit waren drei Verdächtige erledigt: Die Hardware ist nicht limitiert
+(2,4 GHz, kein Throttling), der adaptive LDPC-Faktor ist seit v0.89 bereits
+auf 150 % gedeckelt, und die 2,36 s mitdekodierte Stille kosten nichts
+Sparbares — `decode_slot` erwartet exakt 180 000 Samples, ein kürzeres
+Fenster müsste man mit Nullen auffüllen.
+
+**Wie es funktioniert:** FT8-Sendungen enden nach 12,64 s. Wer pünktlich
+sendet, ist lange vor der Grenze vollständig im Ringpuffer. Der
+Vorab-Durchgang läuft `decoder_pre_decode_lead_s` (Vorgabe 1,3 s) vor der
+Grenze — mit einem Tick, dessen `posix` die *kommende* Grenze trägt. Damit
+rechnet `slot_start_posix` von selbst richtig, und `extract_slot` nullt den
+noch fehlenden Rest. Kein Eingriff in die Audio-Kette nötig.
+
+**Was getrennt bleibt:** keine Dedup-Tabelle, keine Slot-Metrik, kein
+Stufe-2- oder jt9-Anstoß, keine Notch-Aktualisierung (bekannte Störlinien
+werden aber gefiltert). Findet der Vorab-Durchgang nichts, entscheidet der
+reguläre wie bisher — es kann nur früher werden, nie schlechter.
+
+**Preis:** Stationen mit größerem Zeitversatz als der Vorlauf sind im
+frühen Durchgang noch nicht vollständig und fallen dort heraus. Sie kommen
+weiterhin über den regulären Durchgang ins Log, treffen aber die
+Sendeentscheidung nicht mehr mit. Bei 1,3 s Vorlauf betrifft das nach
+eigener Messung rund 8 % der Decodes.
+
+### `decoder_pre_decode_ab` (2026-09-11)
+
+Lässt die Betriebsart **slotweise** wechseln, nicht tageweise. Damit laufen
+beide Wege unter denselben Bandbedingungen, und der Vergleich misst den
+Umbau statt der Ausbreitung — der Fehler, der bei der Auto-CQ-Auswertung
+desselben Tages noch unterlaufen war. `pick_attempt.pre_decode` hält je
+Anruf fest, aus welchem Durchgang die Entscheidung kam:
+
+```sql
+select pre_decode, count(*), sum(outcome='completed'),
+       round(100.0*sum(outcome='completed')/count(*),1)
+from pick_attempt where pre_decode is not null group by 1;
+```
+
