@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.100.1 — 2026-09-11
+- fix: vorab entschiedene Aussendung wartet auf die Slot-Grenze
+
 ## v0.100.0 — 2026-09-11
 - fix: drei Konfigurationsschalter liefen ins Leere
 
