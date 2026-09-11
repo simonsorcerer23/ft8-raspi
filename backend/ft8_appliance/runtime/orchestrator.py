@@ -815,6 +815,7 @@ class Orchestrator:
         # Erfolgs-Cooldowns aus dem Logbuch zurueckholen, sonst ist nach
         # jedem Update jede gerade gearbeitete Station wieder freigegeben.
         await self._restore_qso_cooldowns()
+        await self._restore_slot_parity()
         bm = self.config.operating.boot_mode
         if bm in ("hunt", "cq+hunt"):
             self.state_machine.set_auto_answer(True)
@@ -2197,6 +2198,62 @@ class Orchestrator:
                     ))
         except Exception as exc:
             log.warning("blacklist DB persist failed: %s", exc)
+
+    async def _restore_slot_parity(self) -> None:
+        """Gelernte Sende-Paritaeten beim Start aus der decode-Tabelle holen.
+
+        ``_op_slot_parity`` entsteht sonst nur im laufenden Betrieb und
+        braucht drei Decodes je Station. Nach jedem Neustart begann es leer
+        — und weil das Self-Update alle zehn Minuten prueft, war das Wissen
+        regelmaessig weg. Das Slot-Paritaets-Gate, das Stationen im eigenen
+        Sendedurchgang meiden soll, lief in dieser Zeit komplett leer.
+
+        Rekonstruiert wird aus den Decodes der letzten zwei Stunden, mit
+        denselben Schwellen wie das Live-Lernen (mindestens drei Decodes,
+        mindestens 70 Prozent auf einer Seite). Das Fenster ist bewusst
+        knapp: Eine Station, die vor Stunden in der einen Haelfte sendete,
+        kann laengst in der anderen sitzen — nach einem QSO wechselt man
+        regelmaessig die Seite.
+        """
+        fenster = timedelta(hours=2)
+        grenze = datetime.now(UTC) - fenster
+        stimmen: dict[str, dict[str, int]] = {}
+        try:
+            async with session_scope() as s:
+                for d in await repository.latest_decodes(s, limit=4000):
+                    ts = getattr(d, "ts", None)
+                    call = (getattr(d, "call_from", "") or "").upper()
+                    if not ts or not call:
+                        continue
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=UTC)
+                    if ts < grenze:
+                        break          # nach ts absteigend sortiert
+                    if call == (self.config.operator.callsign or "").upper():
+                        continue
+                    paritaet = "even" if round(ts.timestamp() / 15.0) % 2 == 0 else "odd"
+                    eintrag = stimmen.setdefault(call, {"even": 0, "odd": 0})
+                    eintrag[paritaet] += 1
+        except Exception as exc:
+            log.warning("Slot-Paritaeten nicht wiederherstellbar: %s", exc)
+            return
+        gelernt = 0
+        for call, eintrag in stimmen.items():
+            gesamt = eintrag["even"] + eintrag["odd"]
+            if gesamt < 3:
+                continue
+            if eintrag["even"] / gesamt >= 0.7:
+                self._op_slot_parity[call] = "even"
+            elif eintrag["odd"] / gesamt >= 0.7:
+                self._op_slot_parity[call] = "odd"
+            else:
+                continue
+            # Stimmen mitnehmen, damit das Live-Lernen nahtlos weiterzaehlt
+            self._op_slot_parity_votes[call] = dict(eintrag)
+            gelernt += 1
+        if gelernt:
+            log.info("Slot-Paritaeten aus den Decodes wiederhergestellt: %d Rufzeichen "
+                     "(aus %d beobachteten)", gelernt, len(stimmen))
 
     async def _restore_qso_cooldowns(self) -> None:
         """``worked_until`` nach einem Neustart aus dem Logbuch fuellen.
