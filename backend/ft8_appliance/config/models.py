@@ -332,6 +332,9 @@ class OperatingConfig(BaseModel):
     # weil's bei sauberer Umgebung 0 Overhead hat (Detector findet keine
     # Peaks → apply_notches ist no-op).
     auto_notch_enabled: bool = True
+    # VERALTET, wirkungslos: CQ_CALLING sendet an jeder paritaetspassenden
+    # Slot-Grenze, das Intervall ergibt sich daraus (30 s bei FT8). Bleibt
+    # wegen extra="forbid" im Modell, ist aber aus der Oberflaeche entfernt.
     auto_cq_interval_s: int = Field(default=30, ge=15, le=300)
     max_ptt_s: int = Field(default=18, ge=15, le=60)
     # 0 = aus. Sebastian 2026-09-09: "das nervt doch besonders wenns
@@ -433,16 +436,20 @@ class OperatingConfig(BaseModel):
     # Veraltet: wurde nie irgendwo gelesen. Erbe einer früheren
     # Design-Iteration. Bleibt im Schema als Optional damit alte
     # YAMLs nicht durchfallen, neuer Code ignoriert ihn.
+    # VERALTET, nie implementiert und nie in der Oberflaeche. Bleibt wegen
+    # extra="forbid" im Modell.
     answer_only_my_call: bool | None = None
     # ALC closed-loop: starting audio amplitude (0.0..1.0) for TX synth.
     # The orchestrator continuously trims this based on observed ALC
     # readings during TX — kept in config so we boot near the same gain
     # we landed on at shutdown. Architecture §6.x ALC closed-loop.
     audio_gain: float = Field(default=0.9, ge=0.05, le=1.0)
-    # ALC target window for the closed loop. We aim to keep the rig's
-    # reported ALC between *alc_target_low* and *alc_target_high* (each
-    # expressed as 0..100). Going above high → ease off the gain;
-    # going below low → bring it up a notch.
+    # VERALTET seit 2026-05-22, wirkungslos. Das Fenster [low, high] gehoerte
+    # zum Bang-Bang-Regler, den der PI-Regler mit Sollwert *alc_target_pct*
+    # abgeloest hat. Die Felder bleiben nur, weil bestehende config.yaml sie
+    # gesetzt haben und AppConfig mit extra="forbid" laeuft — ein Entfernen
+    # liesse die Station beim Start scheitern. Aus der Oberflaeche sind sie
+    # am 2026-09-11 entfernt worden, damit niemand mehr daran dreht.
     alc_target_low: int = Field(default=5, ge=0, le=100)
     alc_target_high: int = Field(default=25, ge=0, le=100)
     # PI-Regler-Parameter (ALC → audio_gain, mit pwr_meter-Fallback).
