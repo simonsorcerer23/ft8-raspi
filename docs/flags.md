@@ -309,11 +309,29 @@ Stufe-2- oder jt9-Anstoß, keine Notch-Aktualisierung (bekannte Störlinien
 werden aber gefiltert). Findet der Vorab-Durchgang nichts, entscheidet der
 reguläre wie bisher — es kann nur früher werden, nie schlechter.
 
+**Was der reguläre Durchgang überspringt:** genau die Nachrichten, die der
+Vorab-Durchgang desselben Slots schon verarbeitet hat. Beide decodieren
+dieselben Signale; ohne diesen Filter liefe die Zustandsmaschine zweimal
+je Slot über dieselben Decodes, und die Versuchszähler von RR73-Nachklang
+und Wiederaufnahme wären nach dem halben Slot aufgebraucht — beim zweiten
+Mal ohne Wirkung, weil eine zweite Aussendung im selben Slot ohnehin
+verworfen wird. Der Picker sieht weiterhin den vollen Slot.
+
 **Nicht vergessen:** Die Aussendung muss die Slot-Grenze abwarten. Steht die
 Entscheidung eine Sekunde zu früh und wird sofort gesendet, ragt der Burst in
 den laufenden Slot — live sichtbar als Sendeversatz von 13,9 s statt 0,9 s.
-`_do_tx_message` wartet daher die letzten Zehntel ab (Rest ≤ 2,5 s). Dieses
-Warten ist der eigentliche Gewinn des Vorab-Decodes.
+`_do_tx_message` wartet daher die letzten Zehntel ab. Dieses Warten ist der
+eigentliche Gewinn des Vorab-Decodes. Die Wartegrenze leitet sich aus dem
+Vorlauf ab (`max(2,5 s, Vorlauf + 1 s)`) — mit einer festen Grenze von
+2,5 s hätte ein größerer `decoder_pre_decode_lead_s` das Senden still
+abgeschaltet, weil die Aussendung dann in die B4-Regel gefallen wäre.
+
+**Und die Entscheidung muss auch ausgeführt werden.** `on_decodes` legt sie
+nur in die Warteschlange der Zustandsmaschine; abgearbeitet wird sie von
+`_drain_actions`. Das fehlte im Vorab-Pfad zunächst — die Entscheidung fiel
+früher, die Aussendung startete aber weiterhin erst im regulären Tick. Der
+Umbau war bis v0.105.0 wirkungslos, und die Messung zeigte den Vorab-Arm
+sogar minimal langsamer (1,059 s gegen 0,892 s).
 
 **Preis:** Stationen mit größerem Zeitversatz als der Vorlauf sind im
 frühen Durchgang noch nicht vollständig und fallen dort heraus. Sie kommen
@@ -323,10 +341,15 @@ eigener Messung rund 8 % der Decodes.
 
 ### `decoder_pre_decode_ab` (2026-09-11)
 
-Lässt die Betriebsart **slotweise** wechseln, nicht tageweise. Damit laufen
-beide Wege unter denselben Bandbedingungen, und der Vergleich misst den
-Umbau statt der Ausbreitung — der Fehler, der bei der Auto-CQ-Auswertung
-desselben Tages noch unterlaufen war. `pick_attempt.pre_decode` hält je
+Lässt die Betriebsart **je Slot gewürfelt** wechseln, nicht tageweise. Damit
+laufen beide Wege unter denselben Bandbedingungen, und der Vergleich misst
+den Umbau statt der Ausbreitung — der Fehler, der bei der Auto-CQ-Auswertung
+desselben Tages noch unterlaufen war.
+
+Gewürfelt und nicht im festen Takt, weil der Sende-Rhythmus dieselbe Periode
+von zwei Slots hat: Beide Takte synchronisierten sich, fast jeder A/B-Slot
+fiel auf einen Sende-Slot, in dem der Vorab-Durchgang übersprungen wird.
+Gemessen: 2 Läufe in 20 Minuten statt der erwarteten 40. `pick_attempt.pre_decode` hält je
 Anruf fest, aus welchem Durchgang die Entscheidung kam:
 
 ```sql

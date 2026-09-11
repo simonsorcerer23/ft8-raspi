@@ -759,18 +759,42 @@ Vorlauf übersteigt, sind im frühen Durchgang unvollständig und fallen dort
 heraus; sie erreichen weiterhin über den regulären Durchgang das Log, treffen
 aber die Sendeentscheidung nicht mehr mit.
 
-`decoder_pre_decode_ab` wechselt die beiden Betriebsarten **slotweise**, damit
-beide unter derselben Ausbreitung laufen, und `pick_attempt.pre_decode` hält
-fest, aus welchem Durchgang jede Entscheidung kam. Siehe `docs/flags.md`.
+Der reguläre Durchgang überspringt genau die Nachrichten, die der
+Vorab-Durchgang desselben Slots schon verarbeitet hat. Beide decodieren
+dieselben Signale; ohne diesen Filter liefe die Zustandsmaschine zweimal je
+Slot über dieselben Decodes, und die Versuchszähler von RR73-Nachklang und
+Wiederaufnahme wären nach dem halben Slot aufgebraucht — beim zweiten Mal
+ohne Wirkung, weil eine zweite Aussendung im selben Slot ohnehin verworfen
+wird. Der Picker sieht weiterhin den vollen Slot.
+
+`decoder_pre_decode_ab` würfelt die Betriebsart **je Slot**, damit beide unter
+derselben Ausbreitung laufen, und `pick_attempt.pre_decode` hält fest, aus
+welchem Durchgang jede Entscheidung kam. Gewürfelt und nicht im festen Takt,
+weil der Sende-Rhythmus dieselbe Periode von zwei Slots hat: Beide Takte
+synchronisierten sich, und fast jeder A/B-Slot fiel auf einen Sende-Slot, in
+dem der Vorab-Durchgang übersprungen wird — 2 Läufe in 20 Minuten statt der
+erwarteten 40. Siehe `docs/flags.md`.
 
 Ein Baustein ergibt sich daraus nicht von selbst: Die Entscheidung steht nun
 *vor* der Grenze, die Aussendung darf also nicht sofort ausgeführt werden —
 sie würde in den laufenden Slot hineinragen und mit negativem Zeitversatz
 ankommen. `_do_tx_message` wartet deshalb die restlichen Zehntel ab, wenn bis
-zur Grenze weniger als 2,5 s fehlen. Genau dieses Warten *ist* der Gewinn:
-Die Entscheidung ist früh, die Aussendung beginnt pünktlich. Sein Fehlen war
-binnen Minuten sichtbar — der gemessene Sendeversatz sprang von 0,93 s auf
-Werte um 13,9 s, also kurz *vor* die nächste Grenze.
+zur Grenze weniger als `max(2,5 s, Vorlauf + 1 s)` fehlen. Genau dieses
+Warten *ist* der Gewinn: Die Entscheidung ist früh, die Aussendung beginnt
+pünktlich. Sein Fehlen war binnen Minuten sichtbar — der gemessene
+Sendeversatz sprang von 0,93 s auf Werte um 13,9 s, also kurz *vor* die
+nächste Grenze. Die Grenze leitet sich aus dem Vorlauf ab statt fest bei
+2,5 s zu stehen: Mit fester Grenze hätte ein größerer
+`decoder_pre_decode_lead_s` das Senden still abgeschaltet, weil die
+Aussendung dann in die B4-Regel fällt ("manueller Burst mitten im Slot")
+und ersatzlos entfällt.
+
+Ein zweiter Baustein fehlte länger: `on_decodes` legt die Entscheidung nur
+in die Warteschlange, ausgeführt wird sie von `_drain_actions`. Der
+Vorab-Pfad rief das erste und nicht das zweite — die Entscheidung fiel also
+früher, die Aussendung wartete weiterhin auf den regulären Tick. Der Umbau
+war damit bis v0.105.0 wirkungslos, und die Messung zeigte den Vorab-Arm
+sogar minimal *langsamer* (1,059 s gegen 0,892 s).
 
 ### 8.1 Audio-Slot-Synchronisation (Anti-Drift)
 
