@@ -808,6 +808,9 @@ class Orchestrator:
         # boot_mode wiederherstellen — auto_answer/auto_cq lebten bisher
         # nur in-memory und gingen bei jedem Service-Restart verloren.
         # Sebastians Beobachtung: "Hunting plötzlich aus".
+        # Erfolgs-Cooldowns aus dem Logbuch zurueckholen, sonst ist nach
+        # jedem Update jede gerade gearbeitete Station wieder freigegeben.
+        await self._restore_qso_cooldowns()
         bm = self.config.operating.boot_mode
         if bm in ("hunt", "cq+hunt"):
             self.state_machine.set_auto_answer(True)
@@ -2189,6 +2192,64 @@ class Orchestrator:
                     ))
         except Exception as exc:
             log.warning("blacklist DB persist failed: %s", exc)
+
+    async def _restore_qso_cooldowns(self) -> None:
+        """``worked_until`` nach einem Neustart aus dem Logbuch fuellen.
+
+        Der Erfolgs-Cooldown lebte nur im Arbeitsspeicher und war nach jedem
+        Neustart weg — und Neustarts sind Alltag, das Self-Update prueft alle
+        zehn Minuten. Am 2026-09-11 wurde RC6OD um 06:57 gearbeitet, um 07:22
+        lief ein Update, und um 07:26 rief die Box ihn erneut an: 29 Minuten
+        nach dem ersten QSO, mit einem 30-Minuten-Cooldown, der die Sperre
+        gehalten haette.
+
+        Die QSOs stehen in der Datenbank, also laesst sich der Zustand
+        rekonstruieren. Betrachtet wird das laengstmoegliche Fenster (der
+        Cooldown fuer seltenes DX), alles Aeltere ist ohnehin abgelaufen.
+        """
+        try:
+            cd_min = int(getattr(self.config.operating, "qso_cooldown_min", 30) or 0)
+        except Exception:
+            cd_min = 30
+        if cd_min <= 0:
+            return
+        fenster_min = qso_cooldown_minuten(cd_min, rarity=100)[0]
+        grenze = datetime.now(UTC) - timedelta(minutes=fenster_min)
+        try:
+            from ..integrations.dxcc_rarity import rarity_for
+        except Exception:
+            def rarity_for(_call):  # type: ignore[misc]
+                return 0
+        wiederhergestellt = 0
+        try:
+            async with session_scope() as s:
+                for qso in await repository.latest_qsos(s, limit=200):
+                    start = getattr(qso, "qso_start", None)
+                    call = (getattr(qso, "call", "") or "").upper()
+                    if not start or not call:
+                        continue
+                    if start.tzinfo is None:
+                        start = start.replace(tzinfo=UTC)
+                    if start < grenze:
+                        break          # nach qso_start absteigend sortiert
+                    try:
+                        rarity = rarity_for(call)
+                    except Exception:
+                        rarity = 0
+                    minuten, _ = qso_cooldown_minuten(cd_min, rarity)
+                    bis = start.timestamp() + minuten * 60
+                    if bis <= time.time():
+                        continue
+                    schluessel = (call, getattr(qso, "band", "") or "")
+                    if bis > self.state_machine.ctx.worked_until.get(schluessel, 0.0):
+                        self.state_machine.ctx.worked_until[schluessel] = bis
+                        wiederhergestellt += 1
+        except Exception as exc:
+            log.warning("QSO-Cooldowns nicht wiederherstellbar: %s", exc)
+            return
+        if wiederhergestellt:
+            log.info("QSO-Cooldowns aus dem Logbuch wiederhergestellt: %d Eintraege",
+                     wiederhergestellt)
 
     async def handle_blacklist_remove(self, call: str) -> None:
         call = call.upper().strip()
