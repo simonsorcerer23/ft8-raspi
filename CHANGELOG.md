@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.113.0 — 2026-09-11
+- fix: fehlender SWR-Wert heisst 'unbekannt', nicht 'perfekt'
+
 ## v0.112.0 — 2026-09-11
 - feat: Stehwellenverlauf wird aufgezeichnet
 
