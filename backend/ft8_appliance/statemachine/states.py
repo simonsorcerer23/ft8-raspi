@@ -206,6 +206,10 @@ class MachineContext:
     # wartet weiter. Gemessen ueber sieben Tage: sechs von 131 QSOs (4,6 %)
     # blieben so einseitig — RV6F wiederholte sechsmal, TF1FT viermal.
     recent_logged: dict[str, tuple[float, int, int]] = field(default_factory=dict)
+    # Wie oft ein abgebrochenes QSO schon wieder aufgenommen wurde. Ohne
+    # Deckel liefe die Station in eine Schleife, wenn der Partner uns
+    # dauerhaft nicht hoert.
+    resume_zaehler: dict[str, int] = field(default_factory=dict)
     # Set neuer DXCC-Calls (vom Orchestrator pro Slot aktualisiert).
     # Hunting-Picker priorisiert diese vor SNR — wenn drei Stationen
     # CQ rufen und nur eine ist aus einem neuen Land, wählen wir die
