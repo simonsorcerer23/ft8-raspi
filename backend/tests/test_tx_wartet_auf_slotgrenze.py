@@ -1,89 +1,119 @@
-"""Eine vorab getroffene Entscheidung darf nicht vorzeitig senden.
+"""Die Aussendung wartet die Slot-Grenze ab.
 
-Der Vorab-Decode faellt die Sendeentscheidung rund eine Sekunde vor der
-Slot-Grenze. Wird die Aussendung dann sofort ausgefuehrt, ragt sie in den
-laufenden Slot hinein und kommt bei der Gegenstation mit negativem
-Zeitversatz an. Live am 2026-09-11 beobachtet: Der gemessene Sendeversatz
-sprang von 0,93 s auf Werte um 13,9 s — also kurz *vor* der naechsten
-Grenze statt kurz danach.
+Kommt die Entscheidung aus dem Vorab-Decode, steht sie *vor* der Grenze.
+Wird dann sofort gesendet, ragt der Burst in den laufenden Slot und kommt
+bei der Gegenstation mit negativem Zeitversatz an — live sichtbar als
+Sendeversatz von 13,9 s statt 0,9 s. Genau dieses Warten ist der Gewinn des
+Vorab-Decodes: Die Entscheidung ist frueh, die Aussendung beginnt puenktlich.
 
-Richtig ist, die letzten Zehntel abzuwarten. Genau darin liegt der Gewinn
-des Vorab-Decodes: Die Entscheidung steht frueh, die Aussendung beginnt
-puenktlich.
+Zwei Feinheiten, beide teuer erkauft:
 
-Die Wartezeit greift nur nahe der Grenze (<= 2,5 s Rest). Der regulaere
-Durchgang entscheidet kurz *nach* der Grenze und darf nicht verzoegert
-werden — sonst wuerde jede Aussendung einen ganzen Slot zu spaet kommen.
+* Ein kleiner Puffer ueber die Grenze hinaus. ``_slot_phase_s`` rechnet
+  ``time.time() % slot_s``; wer exakt auf der Grenze landet, misst 14,999
+  statt 0,001. Das sah wie ein verspaeteter Sendestart aus — und drei solche
+  Meldungen in Folge stufen den Decoder zurueck.
+* Die Obergrenze der Wartezeit folgt dem Vorlauf. Das ist Absicherung, kein
+  behobener Fehler: ``decoder_pre_decode_lead_s`` ist auf 2,5 s begrenzt,
+  und bis dahin haetten feste 2,5 s immer gereicht. Der Zusammenhang soll
+  aber im Code stehen und nicht nur in einer Feldvalidierung — ohne Warten
+  faellt die Aussendung in die B4-Regel ("Burst mitten im Slot") und
+  entfaellt ersatzlos.
 """
 
 from __future__ import annotations
 
-import inspect
+import pytest
 
-from ft8_appliance.runtime import orchestrator as orch_mod
-
-
-def _quelle() -> str:
-    return inspect.getsource(orch_mod.Orchestrator._do_tx_message)
+from .test_wave2_timing import _cfg, _orch
 
 
-def test_puffer_ueber_die_grenze():
-    """_slot_phase_s rechnet time.time() %% slot_s. Wer exakt auf der Grenze
-    landet, misst 14,999 statt 0,001 — das sah wie ein verspaeteter
-    Sendestart aus, und drei solche Meldungen in Folge stufen den Decoder
-    zurueck. Ein kleiner Puffer verhindert das."""
-    q = _quelle()
-    assert "rest_bis_grenze + 0.02" in q
+def _orch_mit_laufender_uhr(phase_s: float, **operating):
+    """Ein Orchestrator, dessen Slot-Phase durch das Warten weiterlaeuft."""
+    o = _orch(_cfg(**operating) if operating else None)
+    uhr = {"phase": phase_s}
+    o._slot_phase_s = lambda: uhr["phase"]  # type: ignore[method-assign]
+    o._in_slot_tick = False
+
+    async def _schlaf(s):
+        uhr["phase"] = (uhr["phase"] + s) % 15.0
+
+    o._schlaf_ersatz = _schlaf
+    o._uhr = uhr
+    return o
 
 
-def test_wartet_nur_kurz_vor_der_grenze():
-    q = _quelle()
-    assert "rest_bis_grenze" in q, "Wartezeit fehlt"
-    assert "0.0 < rest_bis_grenze <= max_warten" in q, (
-        "Die Bedingung muss den regulaeren Durchgang ausnehmen — der "
-        "entscheidet kurz nach der Grenze und haette sonst 14 s Wartezeit"
-    )
+async def _sende(o, monkeypatch):
+    import ft8_appliance.runtime.orchestrator as m
+    monkeypatch.setattr(m.asyncio, "sleep", o._schlaf_ersatz)
+    await o._do_tx_message({"message": "CQ DK9XR JN58",
+                            "freq_offset_hz": 1500, "kind": "cq"})
 
 
-def test_wartet_vor_der_versatzmessung():
-    """Sonst wuerde der gemessene Versatz die Wartezeit nicht abbilden."""
-    q = _quelle()
-    assert q.index("rest_bis_grenze") < q.index("_record_tx_start_offset")
+@pytest.mark.asyncio
+async def test_kurz_vor_der_grenze_wird_gewartet(monkeypatch):
+    """Der Fall des Vorab-Decodes: 0,5 s vor der Grenze entschieden."""
+    o = _orch_mit_laufender_uhr(14.5)
+
+    await _sende(o, monkeypatch)
+
+    assert o._uhr["phase"] == pytest.approx(0.02, abs=1e-6)
+    assert o._tx_sent_offsets_s == [pytest.approx(0.02, abs=1e-6)]
 
 
-def test_slotlaenge_folgt_der_betriebsart():
-    q = _quelle()
-    assert '7.5 if self.config.operating.mode == "FT4" else 15.0' in q
+@pytest.mark.asyncio
+async def test_ohne_warten_entfiele_die_aussendung(monkeypatch):
+    """Die Gegenprobe: 14,5 s gemessen waeren ein Burst mitten im Slot."""
+    o = _orch_mit_laufender_uhr(14.5)
+    o._slot_phase_s = lambda: 14.5  # Warten wirkungslos
+
+    await _sende(o, monkeypatch)
+
+    assert o._tx_sent_offsets_s == [], "B4 haette verwerfen muessen"
 
 
-def test_rechnung_stimmt_fuer_beide_faelle():
-    """Vorab-Entscheidung wartet, regulaere nicht."""
-    slot_s = 15.0
-    # Vorab: Entscheidung bei Phase 14,0 -> 1,0 s warten
-    assert 0.0 < slot_s - 14.0 <= 2.5
-    # Regulaer: Entscheidung bei Phase 0,9 -> kein Warten
-    assert not (0.0 < slot_s - 0.9 <= 2.5)
-    # Genau auf der Grenze: kein Warten (Rest 0)
-    assert not (0.0 < slot_s - 15.0 <= 2.5)
+@pytest.mark.asyncio
+async def test_der_regulaere_durchgang_wartet_nicht(monkeypatch):
+    """Er entscheidet kurz NACH der Grenze — sonst 14 s Wartezeit."""
+    o = _orch_mit_laufender_uhr(0.9)
+    o._in_slot_tick = True
+
+    await _sende(o, monkeypatch)
+
+    assert o._uhr["phase"] == pytest.approx(0.9)
 
 
-def test_wartegrenze_deckt_den_vorlauf_ab():
-    """Wird nicht gewartet, faellt die Sendung in die B4-Regel ("Burst
-    mitten im Slot") und entfaellt ersatzlos. Mit einer festen Obergrenze
-    von 2,5 s haette ein groesserer decoder_pre_decode_lead_s das Senden
-    still abgeschaltet."""
-    q = _quelle()
-    assert "decoder_pre_decode_lead_s" in q
-    assert "max(2.5, lead + 1.0)" in q
+@pytest.mark.asyncio
+async def test_puffer_haelt_die_phase_diesseits_der_grenze(monkeypatch):
+    """Ohne ihn misst _slot_phase_s 14,999 statt 0,001 — drei solche
+    Meldungen in Folge stufen den Decoder zurueck."""
+    o = _orch_mit_laufender_uhr(14.999)
+
+    await _sende(o, monkeypatch)
+
+    assert o._uhr["phase"] < 1.0
 
 
-def test_zaehler_auch_im_manuellen_zweig_zurueckgesetzt():
-    """Seit dem Vorab-Decode laeuft ein Teil der regulaeren Aussendungen
-    durch den manuellen Zweig (kein Slot-Tick). Ohne Reset bliebe ein alter
-    Zaehlerstand stehen, und eine einzelne spaetere Verspaetung wuerde die
-    Decoder-Rueckstufung ausloesen."""
-    import inspect
-    from ft8_appliance.runtime import orchestrator as orch_mod
-    q = inspect.getsource(orch_mod.Orchestrator._record_tx_start_offset)
-    manuell = q.split("manueller TX-Start %.2f", 1)[1].split("return True", 1)[0]
-    assert "_consecutive_late_tx = 0" in manuell
+@pytest.mark.asyncio
+async def test_wartegrenze_folgt_dem_vorlauf(monkeypatch):
+    """Beim hoechsten zulaessigen Vorlauf (2,5 s) deckt die Grenze 3,5 s
+    ab. Heute unerreichbar — der Vorab-Durchgang braucht selbst Zeit, der
+    Rest bleibt unter 2,5 s. Der Test haelt den Zusammenhang fest, falls
+    die Feldvalidierung je gelockert wird."""
+    o = _orch_mit_laufender_uhr(11.6, decoder_pre_decode_lead_s=2.5)
+
+    await _sende(o, monkeypatch)
+
+    assert o._uhr["phase"] == pytest.approx(0.02, abs=1e-6)
+    assert o._tx_sent_offsets_s == [pytest.approx(0.02, abs=1e-6)]
+
+
+@pytest.mark.asyncio
+async def test_mitten_im_slot_wird_nicht_gewartet(monkeypatch):
+    """Ein manueller Burst bei halbem Slot ist kein Vorab-Fall — er
+    entfaellt nach B4, statt 7 s zu blockieren."""
+    o = _orch_mit_laufender_uhr(7.5)
+
+    await _sende(o, monkeypatch)
+
+    assert o._uhr["phase"] == pytest.approx(7.5)
+    assert o._tx_sent_offsets_s == []
