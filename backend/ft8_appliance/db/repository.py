@@ -46,6 +46,32 @@ async def insert_decode(session: AsyncSession, **fields: object) -> Decode:
     return row
 
 
+async def merge_heard_report(
+    session: AsyncSession, *, ts, rx_call: str,
+    rx_grid: str | None = None, snr_db: int | None = None,
+    band: str | None = None,
+) -> None:
+    """Einen Empfangsbericht ablegen — wer hat uns gehoert.
+
+    Der Abruf liefert alle fuenfzehn Minuten ein rollendes Fenster; dieselbe
+    Station steht darin mehrfach. Schluessel ist deshalb (Zeitpunkt,
+    Rufzeichen), und ein bereits vorhandener Eintrag wird nur ergaenzt statt
+    verdoppelt.
+    """
+    vorhanden = await session.get(PskReporterIn, (ts, rx_call))
+    if vorhanden is not None:
+        if rx_grid and not vorhanden.rx_grid:
+            vorhanden.rx_grid = rx_grid
+        if snr_db is not None and vorhanden.snr_db is None:
+            vorhanden.snr_db = snr_db
+        if band and not vorhanden.band:
+            vorhanden.band = band
+        return
+    session.add(PskReporterIn(
+        ts=ts, rx_call=rx_call, rx_grid=rx_grid, snr_db=snr_db, band=band,
+    ))
+
+
 async def insert_pick_attempt(session: AsyncSession, **fields: object) -> PickAttempt:
     """Insert one hunt-pick-attempt telemetry row (psk_heard_us A/B)."""
     row = PickAttempt(**fields)
