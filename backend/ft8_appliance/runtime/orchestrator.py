@@ -2255,10 +2255,15 @@ class Orchestrator:
         liefern null. Bei einem Update-Rhythmus von zehn Minuten faellt das
         regelmaessig an.
 
-        Die Liste beschreibt, wer uns in den letzten 24 Stunden gehoert hat
-        — eine wenige Stunden alte Kopie ist daher fast so gut wie ein
-        frischer Abruf, und kostet PSK Reporter nichts. Aelter als sechs
-        Stunden wird sie verworfen.
+        Die Liste kostet PSK Reporter nichts und ueberbrueckt genau die
+        Luecke bis zum ersten Abruf. Sie darf aber nicht beliebig alt sein:
+        Der Abruf fragt ``who_heard_me(..., hours=1)`` — die frischeste
+        Information darin ist also selbst schon bis zu eine Stunde alt.
+        Aelter als zwei Stunden wird die Kopie daher verworfen.
+
+        (Die Grenze stand zunaechst bei sechs Stunden, begruendet mit einem
+        24-Stunden-Fenster des Abrufs. Das Fenster ist eine Stunde; die
+        Begruendung war schlicht falsch.)
         """
         try:
             daten = json.loads(self._psk_cache_path.read_text(encoding="utf-8"))
@@ -2266,7 +2271,7 @@ class Orchestrator:
             return
         try:
             alter_s = time.time() - float(daten.get("ts") or 0)
-            if alter_s > 6 * 3600:
+            if alter_s > 2 * 3600:
                 return
             if (daten.get("mode") or "") != self.config.operating.mode:
                 return
@@ -3369,6 +3374,14 @@ class Orchestrator:
                         self.state_machine.on_decodes(self._hardware_state, decodes)
                     finally:
                         self.state_machine.ctx.vorab_decode_aktiv = False
+                    # Ohne dieses Abarbeiten war der ganze Umbau wirkungslos:
+                    # on_decodes legt die Entscheidung nur in die Warteschlange,
+                    # ausgefuehrt haette sie erst der regulaere Tick — also
+                    # genau so spaet wie vorher. Ueberall sonst folgt
+                    # _drain_actions unmittelbar auf on_decodes; hier fehlte es.
+                    # _do_tx_message wartet die Slot-Grenze ab, die Aussendung
+                    # beginnt also puenktlich statt verfrueht.
+                    await self._drain_actions()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
