@@ -120,3 +120,16 @@ def test_ab_trifft_auf_dauer_beide_arme(monkeypatch):
     ergebnisse = [o._vorab_gewuenscht() for _ in range(400)]
     anteil = sum(ergebnisse) / len(ergebnisse)
     assert 0.35 < anteil < 0.65, f"Arme grob gleich gross erwartet, war {anteil:.2f}"
+
+
+def test_vorab_pfad_arbeitet_die_aktionen_ab():
+    """on_decodes legt die Entscheidung nur in die Warteschlange. Ohne ein
+    anschliessendes _drain_actions haette sie erst der regulaere Tick
+    ausgefuehrt — also genau so spaet wie vorher, und der ganze Umbau waere
+    wirkungslos. Ueberall sonst folgt _drain_actions unmittelbar auf
+    on_decodes; im Vorab-Pfad fehlte es."""
+    import inspect
+    q = inspect.getsource(orch_mod.Orchestrator._vorab_decode_loop)
+    assert "on_decodes" in q
+    nach = q.split("on_decodes", 1)[1]
+    assert "_drain_actions" in nach, "Aktionen bleiben liegen"

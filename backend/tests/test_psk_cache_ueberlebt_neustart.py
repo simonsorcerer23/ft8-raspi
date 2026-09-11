@@ -10,8 +10,8 @@ psk_heard_us, psk_snr, marine_psk und new_dxcc_psk liefern null. Bei einem
 Self-Update-Rhythmus von zehn Minuten faellt dieses Fenster regelmaessig an.
 
 Die Liste beschreibt, wer uns in den letzten 24 Stunden gehoert hat — eine
-wenige Stunden alte Kopie ist also fast so gut wie ein frischer Abruf und
-kostet PSK Reporter nichts. Genau deshalb wird sie zwischengespeichert
+kurz zurueckliegende Kopie ueberbrueckt die Luecke und kostet PSK Reporter
+nichts. Genau deshalb wird sie zwischengespeichert
 statt beim Start neu geholt.
 """
 
@@ -63,7 +63,7 @@ def test_geschriebene_liste_kommt_zurueck(tmp_path):
 def test_alte_liste_wird_verworfen(tmp_path):
     o = _orch(tmp_path)
     o._psk_cache_path.write_text(json.dumps({
-        "ts": time.time() - 8 * 3600, "mode": "FT8", "calls": ["W1AW"],
+        "ts": time.time() - 3 * 3600, "mode": "FT8", "calls": ["W1AW"],
     }))
 
     o._restore_psk_cache()
@@ -110,3 +110,20 @@ def test_leere_liste_wird_nicht_geschrieben(tmp_path):
     neu._restore_psk_cache()
 
     assert neu._psk_heard_us_cache == {"W1AW"}
+
+
+def test_verfall_passt_zum_abruffenster():
+    """Der Abruf fragt who_heard_me(..., hours=1). Eine Kopie darf nicht
+    deutlich aelter werden als die frischeste Information darin — die
+    Grenze stand zunaechst bei sechs Stunden, begruendet mit einem
+    24-Stunden-Fenster, das es nie gab."""
+    import inspect
+    from ft8_appliance.runtime import orchestrator as orch_mod
+    from ft8_appliance.integrations import psk_reporter
+
+    abruf = inspect.getsource(orch_mod.Orchestrator._psk_reciprocity_refresh_loop)
+    assert "hours=1" in abruf, "Abruffenster hat sich geaendert — Grenze pruefen"
+
+    verfall = inspect.getsource(orch_mod.Orchestrator._restore_psk_cache)
+    assert "2 * 3600" in verfall
+    assert "6 * 3600" not in verfall
