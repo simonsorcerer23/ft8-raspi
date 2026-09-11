@@ -43,7 +43,6 @@ class _Cfg:
 def _orch(**op_kw):
     class _O:
         config = _Cfg(_Operating(**op_kw))
-        _vorab_ab_zaehler = 0
         _vorab_gewuenscht = orch_mod.Orchestrator._vorab_gewuenscht
     return _O()
 
@@ -56,20 +55,23 @@ def test_abgeschaltet_laeuft_nichts():
 
 def test_eingeschaltet_ohne_ab_laeuft_immer():
     o = _orch(decoder_pre_decode=True, decoder_pre_decode_ab=False)
-    for zaehler in range(6):
-        o._vorab_ab_zaehler = zaehler
+    for _ in range(6):
         assert o._vorab_gewuenscht() is True
 
 
-def test_ab_wechselt_slotweise():
+def test_ab_haengt_nicht_am_slot_takt():
     """Beide Wege unter denselben Bandbedingungen — sonst misst man die
-    Ausbreitung statt den Umbau."""
+    Ausbreitung statt den Umbau. Frueher wechselte der Arm im 2-Slot-Takt;
+    weil der Sende-Rhythmus dieselbe Periode hat, synchronisierten sich
+    beide und fast jeder A/B-Slot fiel auf einen Sende-Slot, in dem der
+    Vorab-Durchgang uebersprungen wird — gemessen 2 Laeufe in 20 Minuten
+    statt der erwarteten 40."""
     o = _orch(decoder_pre_decode=True, decoder_pre_decode_ab=True)
-    ergebnis = []
-    for zaehler in range(6):
-        o._vorab_ab_zaehler = zaehler
-        ergebnis.append(o._vorab_gewuenscht())
-    assert ergebnis == [True, False, True, False, True, False]
+    assert not hasattr(o, "_vorab_ab_zaehler"), (
+        "der Slot-Zaehler ist ersatzlos entfallen"
+    )
+    ergebnis = [o._vorab_gewuenscht() for _ in range(6)]
+    assert ergebnis != [True, False, True, False, True, False]
 
 
 # ------------------------------------------------- die Pipeline-Seite
@@ -100,3 +102,21 @@ def test_telemetrie_haelt_den_durchgang_fest():
     from ft8_appliance.db.models import PickAttempt
 
     assert hasattr(PickAttempt, "pre_decode")
+
+
+def test_ab_wuerfelt_statt_im_takt_zu_wechseln(monkeypatch):
+    """Der Sende-Rhythmus ist ebenfalls zwei Slots lang. Ein A/B im
+    2-Slot-Takt synchronisierte sich damit, und fast alle A/B-Slots fielen
+    auf Sende-Slots, in denen der Vorab-Durchgang uebersprungen wird —
+    gemessen 2 Laeufe in 20 Minuten statt der erwarteten 40."""
+    import inspect
+    q = inspect.getsource(orch_mod.Orchestrator._vorab_gewuenscht)
+    assert "random.random()" in q
+    assert "% 2" not in q, "kein fester Takt mehr"
+
+
+def test_ab_trifft_auf_dauer_beide_arme(monkeypatch):
+    o = _orch(decoder_pre_decode=True, decoder_pre_decode_ab=True)
+    ergebnisse = [o._vorab_gewuenscht() for _ in range(400)]
+    anteil = sum(ergebnisse) / len(ergebnisse)
+    assert 0.35 < anteil < 0.65, f"Arme grob gleich gross erwartet, war {anteil:.2f}"

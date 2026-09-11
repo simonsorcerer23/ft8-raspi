@@ -27,6 +27,15 @@ def _quelle() -> str:
     return inspect.getsource(orch_mod.Orchestrator._do_tx_message)
 
 
+def test_puffer_ueber_die_grenze():
+    """_slot_phase_s rechnet time.time() %% slot_s. Wer exakt auf der Grenze
+    landet, misst 14,999 statt 0,001 — das sah wie ein verspaeteter
+    Sendestart aus, und drei solche Meldungen in Folge stufen den Decoder
+    zurueck. Ein kleiner Puffer verhindert das."""
+    q = _quelle()
+    assert "rest_bis_grenze + 0.02" in q
+
+
 def test_wartet_nur_kurz_vor_der_grenze():
     q = _quelle()
     assert "rest_bis_grenze" in q, "Wartezeit fehlt"

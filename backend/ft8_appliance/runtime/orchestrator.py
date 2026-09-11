@@ -621,7 +621,6 @@ class Orchestrator:
     # Vorab-Decode: welcher Slot zuletzt vorab entschieden wurde, und ob der
     # A/B-Wechsel diesen Slot vorab laufen laesst.
     _vorab_slot_index: int = field(default=-1, init=False)
-    _vorab_ab_zaehler: int = field(default=0, init=False)
     _vorab_aktiv_diesen_slot: bool = field(default=False, init=False)
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
@@ -3280,7 +3279,12 @@ class Orchestrator:
         if not getattr(op, "decoder_pre_decode", False):
             return False
         if getattr(op, "decoder_pre_decode_ab", False):
-            return (self._vorab_ab_zaehler % 2) == 0
+            # Bewusst gewuerfelt statt jeden zweiten Slot: Der Sende-Rhythmus
+            # ist ebenfalls zwei Slots lang, und beide Takte synchronisierten
+            # sich — dann fielen fast alle A/B-Slots auf Sende-Slots, in denen
+            # der Vorab-Durchgang ohnehin uebersprungen wird. Gemessen:
+            # 2 Laeufe in 20 Minuten statt der erwarteten 40.
+            return random.random() < 0.5
         return True
 
     async def _vorab_decode_loop(self) -> None:
@@ -3377,7 +3381,6 @@ class Orchestrator:
     async def _slot_loop(self) -> None:
         try:
             async for tick in self.slot_clock:
-                self._vorab_ab_zaehler += 1
                 await self.process_slot(tick)
         except asyncio.CancelledError:
             raise
@@ -6918,7 +6921,12 @@ class Orchestrator:
         slot_s = 7.5 if self.config.operating.mode == "FT4" else 15.0
         rest_bis_grenze = slot_s - self._slot_phase_s()
         if 0.0 < rest_bis_grenze <= 2.5:
-            await asyncio.sleep(rest_bis_grenze)
+            # Ein kleiner Puffer ueber die Grenze hinaus: _slot_phase_s()
+            # rechnet time.time() % slot_s, und wer exakt auf der Grenze
+            # landet, misst 14,999 statt 0,001. Das sah wie ein verspaeteter
+            # Sendestart aus — und drei solche Meldungen in Folge stufen den
+            # Decoder zurueck.
+            await asyncio.sleep(rest_bis_grenze + 0.02)
 
         if not self._record_tx_start_offset():
             return  # B4: manueller Burst mitten im Slot — entfaellt, s.u.
