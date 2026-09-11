@@ -6922,6 +6922,16 @@ class Orchestrator:
 
         if not self._record_tx_start_offset():
             return  # B4: manueller Burst mitten im Slot — entfaellt, s.u.
+        # Den tatsaechlichen Versatz beim laufenden Anrufversuch hinterlegen.
+        # Er ist die Zielgroesse des Vorab-Decodes und muss sich je Arm
+        # vergleichen lassen; nur der erste Burst eines Versuchs zaehlt.
+        try:
+            ziel = base_call(getattr(self.state_machine.qso, "their_call", None) or "")
+            meta = self.state_machine.ctx.hunt_attempt_meta.get(ziel) if ziel else None
+            if meta is not None and meta.get("tx_offset_s") is None:
+                meta["tx_offset_s"] = round(self._tx_start_offsets_s[-1], 3)
+        except Exception:
+            pass
 
         if self.playback is None:
             return  # noop in dev / tests
@@ -7776,6 +7786,7 @@ class Orchestrator:
                     winning_tier=meta.get("winning_tier"),
                     reply_kind=meta.get("reply_kind"),
                     pre_decode=meta.get("pre_decode"),
+                    tx_offset_s=meta.get("tx_offset_s"),
                     n_candidates=meta.get("n_candidates"),
                     was_tailend=meta.get("was_tailend"),
                     hunt_priority=meta.get("hunt_priority"),

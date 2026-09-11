@@ -382,3 +382,7 @@ class PickAttempt(Base):
     # Kam die Sendeentscheidung aus dem Vorab-Decode (vor der Slot-Grenze)
     # oder aus dem regulaeren Durchgang danach? Traegt das A/B.
     pre_decode: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    # Sekunden nach der Slot-Grenze, zu denen die erste Aussendung dieses
+    # Versuchs begann. Die Zielgroesse des Vorab-Decodes: Ohne ihn liegt der
+    # Wert bei rund 0,9 s, mit ihm sollte er gegen null gehen.
+    tx_offset_s: Mapped[float | None] = mapped_column(Float, nullable=True)
