@@ -644,6 +644,13 @@ class Orchestrator:
     # auf 0.21 weil der letzte ALC-trim-Wert nicht persistiert war →
     # ALC-Loop musste 10+ min hochregeln. Mit Persistenz beginnt der
     # Cold-Start dort wo der letzte Service stehen blieb.
+    # Wer uns laut PSK Reporter hoert. Eigene Datei statt runtime_state:
+    # die Liste ist gross und wird nur alle 15 min geschrieben, waehrend
+    # runtime_state im Minutentakt wegen audio_gain angefasst wird.
+    _psk_cache_path: Path = field(
+        default_factory=lambda: Path("/var/lib/ft8-appliance/psk_heard_cache.json"),
+        init=False,
+    )
     _runtime_state_path: Path = field(
         default_factory=lambda: Path("/var/lib/ft8-appliance/runtime_state.json"),
         init=False,
@@ -816,6 +823,7 @@ class Orchestrator:
         # jedem Update jede gerade gearbeitete Station wieder freigegeben.
         await self._restore_qso_cooldowns()
         await self._restore_slot_parity()
+        self._restore_psk_cache()
         bm = self.config.operating.boot_mode
         if bm in ("hunt", "cq+hunt"):
             self.state_machine.set_auto_answer(True)
@@ -2198,6 +2206,58 @@ class Orchestrator:
                     ))
         except Exception as exc:
             log.warning("blacklist DB persist failed: %s", exc)
+
+    def _persist_psk_cache(self, calls: set[str], mode: str) -> None:
+        """Die PSK-Liste auf Platte legen, damit sie einen Neustart uebersteht."""
+        if not calls:
+            return
+        try:
+            self._psk_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._psk_cache_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps({
+                "ts": time.time(),
+                "mode": mode,
+                "calls": sorted(calls),
+            }), encoding="utf-8")
+            tmp.replace(self._psk_cache_path)
+        except Exception as exc:
+            log.debug("psk-cache nicht geschrieben: %s", exc)
+
+    def _restore_psk_cache(self) -> None:
+        """Die zuletzt abgerufene PSK-Liste beim Start zurueckholen.
+
+        Der Abruf laeuft alle 15 Minuten, der erste erst rund zwei Minuten
+        nach dem Start — bis dahin war ``psk_heard_us`` leer. Das ist kein
+        harmloser Zustand: Das Schwach-Gate verlangt fuer Ziele unter
+        -13 dB einen Empfangsbeleg und verwirft ohne Liste *jedes* davon,
+        und die Tiers psk_heard_us, psk_snr, marine_psk und new_dxcc_psk
+        liefern null. Bei einem Update-Rhythmus von zehn Minuten faellt das
+        regelmaessig an.
+
+        Die Liste beschreibt, wer uns in den letzten 24 Stunden gehoert hat
+        — eine wenige Stunden alte Kopie ist daher fast so gut wie ein
+        frischer Abruf, und kostet PSK Reporter nichts. Aelter als sechs
+        Stunden wird sie verworfen.
+        """
+        try:
+            daten = json.loads(self._psk_cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        try:
+            alter_s = time.time() - float(daten.get("ts") or 0)
+            if alter_s > 6 * 3600:
+                return
+            if (daten.get("mode") or "") != self.config.operating.mode:
+                return
+            calls = {str(c).upper() for c in (daten.get("calls") or [])}
+        except Exception:
+            return
+        if not calls:
+            return
+        self._psk_heard_us_cache = calls
+        self.state_machine.ctx.psk_heard_us = set(calls)
+        log.info("psk-reciprocity: %d Rufzeichen aus dem Zwischenspeicher "
+                 "(%.0f min alt), bis der erste Abruf laeuft", len(calls), alter_s / 60)
 
     async def _restore_slot_parity(self) -> None:
         """Gelernte Sende-Paritaeten beim Start aus der decode-Tabelle holen.
@@ -4597,6 +4657,7 @@ class Orchestrator:
                         if cached_mode == mode:
                             merged |= s
                     self._psk_heard_us_cache = merged
+                    self._persist_psk_cache(merged, mode)
                     # 2026-09-06: Wer uns hoert, ist ein Kandidat fuer den
                     # Hint-Pass des Decoders (marginale Decodes werden gegen
                     # bekannte Calls validiert). Kleine Zahl, kein Flooding
