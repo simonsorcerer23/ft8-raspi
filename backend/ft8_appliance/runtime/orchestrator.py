@@ -625,6 +625,8 @@ class Orchestrator:
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
+    # Bis zur ersten echten Hardware-Messung — s. _loese_startsperre.
+    _erste_hw_messung_offen: bool = field(default=True, init=False)
     # Seit wann fehlt der SWR-Wert, obwohl gesendet wird? s. _buche_swr.
     _swr_fehlt_seit: float | None = field(default=None, init=False)
     _swr_fehlt_gemeldet: bool = field(default=False, init=False)
@@ -7059,6 +7061,43 @@ class Orchestrator:
                 else time.monotonic() - self._last_rig_at
             ),
         )
+        if self._erste_hw_messung_offen:
+            self._erste_hw_messung_offen = False
+            self._loese_startsperre()
+
+    def _loese_startsperre(self) -> None:
+        """Eine Sperre aus der Startphase aufheben, sobald echte Werte da sind.
+
+        Vor der ersten Messung steht ``_hardware_state`` bewusst auf lauter
+        unmoeglichen Werten — kein Guard soll auf erfundenen Vorgaben gruen
+        sein. Faellt in dieses Fenster eine Sendeentscheidung, sperrt der
+        Guard zu Recht. Nur: ``TX_LOCKED`` loest sich nicht von selbst, und
+        die Station bleibt stumm, bis jemand von Hand entsperrt.
+
+        Am 2026-09-11 traf das einen von siebenundzwanzig Neustarts: Die
+        Zeit stand auf dem Startwert von 99 s, der time_guard sperrte, und
+        die Station funkte zwanzig Minuten nicht mehr — bei tatsaechlich
+        auf 150 Mikrosekunden genauer Uhr.
+
+        Bewusst nur dieser eine Fall, und nur einmal je Start: Eine Sperre
+        im laufenden Betrieb muss haengen bleiben. Ein SWR-Runaway etwa
+        loest sich zwischen zwei Aussendungen von allein auf — der
+        gemessene Wert faellt ohne Sendung zurueck —, und eine Automatik
+        wuerde zwischen Sperre und Freigabe pendeln, statt den Fehler
+        sichtbar zu lassen.
+        """
+        from ..statemachine.states import State
+        sm = self.state_machine
+        if sm.state is not State.TX_LOCKED:
+            return
+        from ..statemachine.guards import evaluate, first_failure
+        offen = first_failure(evaluate(self._hardware_state, sm.limits))
+        if offen is not None:
+            return                      # echter Grund, bleibt gesperrt
+        log.info("Sperre aus der Startphase aufgehoben — die erste echte "
+                 "Messung zeigt alle Bedingungen erfuellt (vorher: %s)",
+                 sm.ctx.last_lock_reason or "unbekannt")
+        sm.on_user_reset_lock()
 
     def _resolve_current_band_name(self) -> str | None:
         """Live-Band-Name aus dem aktuellen Rig-Snapshot. Wird vom
