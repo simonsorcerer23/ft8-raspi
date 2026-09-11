@@ -271,6 +271,71 @@ Stufe 3 des Decoders: WSJT-X' `jt9` (Paket `wsjtx`) decodiert den Slot parallel 
 - `decoder_jt9_ft4` (Default an): jt9 mit `-5` auf dem 7,5-s-Slot; gemessen an synthetischen Slots 5/5 Decodes in 0,1 s (x86). jt9 will für FT4 genau 7,5 s Audio, 15 s liefern nichts.
 - `decoder_jt9_ap` / `decoder_jt9_ap_flags` (Default an, Flags 1): eigener Call/Grid (`-c`/`-G`) und im QSO der Partner (`-x`/`-g`) plus `-X 1` an jt9, also WSJT-X' eigene AP-Decodierung. Messung 8.9. (synthetisch, Antwort an uns unter der BP-Grenze): `-X 1` findet 2 von 6, `-X 2/3/7` nichts; unsichere AP-Decodes (`?`-Marke) werden verworfen. Das Memo gegen AP-Eigenbau bleibt: das hier ist K1JTs Implementierung, nicht unsere.
 
+### `hunt_sole_dx_gate` (2026-09-11, Vorgabe aus)
+
+Der **Alleingang an ein weit entferntes Ziel** ist der teuerste Leerlauf im
+Betrieb. Gemessen über zwei Tage Hunting (246 eigene Anrufe, 10.9. abends
+bis 11.9. nachmittags) für den Tier `sole` — den einzigen Kandidaten im
+Slot, es gibt also keine Alternative:
+
+| Entfernung | Anrufe | QSOs | Quote | Sendezeit | je QSO |
+|---|---|---|---|---|---|
+| < 2000 km | 128 | 35 | 27,3 % | 194 min | 5,5 min |
+| 2000–4000 km | 28 | 5 | 17,9 % | 37 min | 7,4 min |
+| **> 4000 km** | **49** | **1** | **2,0 %** | **69 min** | **69 min** |
+
+**Die naheliegende Erklärung trägt nicht.** `sole` heißt ja gerade, dass
+kaum jemand zu hören ist — der Verdacht lag also nahe, dass nicht die
+Entfernung schuld ist, sondern das tote Band. Bei vergleichbar ruhigem Band
+(höchstens fünf Decodes im Slot) sind es aber **0 von 32** gegen 15 von 64
+im Nahbereich. Und 53 der 54 Fernziele waren kein neues DXCC, es ging also
+auch nicht um seltene Länder.
+
+Greift das Gate, übernimmt der CQ-Fallback den Slot: Gerufen zu werden ist
+dort aussichtsreicher, als ins Leere zu rufen.
+
+**Bewusst nur im Alleingang.** Gab es eine Wahl, gingen drei von fünf
+Fernzielen durch — dort ist die Entfernung kein Ausschluss, höchstens ein
+Rangkriterium.
+
+**Ausgenommen** ist alles, was uns etwas bringt: neues DXCC, neues Grid,
+Marine, Buddy, Grayline (`_is_award_or_context_pick`). Und ohne bekannte
+Entfernung wird nie gesperrt — im Zweifel rufen wir an.
+
+`hunt_sole_dx_km` (Vorgabe 4000) setzt die Schwelle. Sie ist **nicht** scharf
+gemessen: Die Daten sagen nur, dass es irgendwo zwischen 2000 und 4000 km
+kippt.
+
+### `hunt_sole_dx_ab` (2026-09-11)
+
+Würfelt den Arm **je Slot**, wie beim Vorab-Decode und aus demselben Grund
+nicht im festen Takt: Der Sende-Rhythmus ist zwei Slots lang und hätte sich
+mit einem 2-Slot-Takt verkoppelt.
+
+Der Arm wird einmal je Slot gezogen und gemerkt — Vorab-Durchgang und
+regulärer Durchgang entscheiden im selben Slot und müssen denselben Arm
+sehen, sonst misst das Experiment sich selbst kaputt.
+
+`pick_attempt.fern_gate` hält je Versuch fest, welcher Arm galt, auch für
+eingehende Anrufe: Ob der Arm galt, entscheidet ja gerade darüber, ob wir in
+diesem Slot CQ rufen konnten.
+
+```sql
+-- Beide Arme haben gleich viele Slots, die QSO-Zahlen sind also direkt
+-- vergleichbar. Das ist der eigentliche Test: Bringt CQ-Rufen mehr als
+-- ein 2-Prozent-Anruf?
+select case when fern_gate=1 then 'Gate an' else 'Gate aus' end,
+       count(*), sum(outcome='completed'),
+       round(100.0*sum(outcome='completed')/count(*),1)
+from pick_attempt where fern_gate is not null group by 1;
+
+-- Und greift es überhaupt? (Filterstufe fernziel_allein im Status)
+```
+
+**Was offen bleibt:** dass CQ-Rufen in der freigewordenen Zeit messbar mehr
+bringt. Plausibel, aber unbewiesen — genau dafür ist der A/B da. Sicher ist
+nur, dass die Alternative bei 2 % liegt.
+
 ### `decoder_pre_decode` (2026-09-11, Vorgabe aus)
 
 Der Decoder beginnt sonst erst an der Slot-Grenze und braucht 0,5–1,0 s.

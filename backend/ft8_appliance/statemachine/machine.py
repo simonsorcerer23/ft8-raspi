@@ -761,6 +761,7 @@ class StateMachine:
                     "pick_kind": pick_kind,
                     "reply_kind": reply_kind,
                     "pre_decode": bool(self.ctx.vorab_decode_aktiv),
+                    "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
                     "freq_offset_hz": best.freq_offset_hz,
                     "target_grid": best.grid,
                     # v0.64.0 — Picker-Diagnose + Kontext:
@@ -1484,6 +1485,9 @@ class StateMachine:
             "was_tailend": art == "inbound_report",
             "hunt_priority": None,
             "psk_snr": self.ctx.psk_snr.get(call_u) or self.ctx.psk_snr.get(key),
+            # Auch fuer eingehende Anrufe: Ob der Gate-Arm galt, entscheidet
+            # ja gerade darueber, ob wir in diesem Slot CQ rufen konnten.
+            "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
         }
 
     def _stamp_outcome_meta(self) -> None:
@@ -2081,6 +2085,34 @@ class StateMachine:
             return None
         return None
 
+    def _ist_aussichtsloses_fernziel(self, d: DecodedMsg) -> bool:
+        """Ein Alleingang an ein weit entferntes Ziel ohne Award-Signal.
+
+        Gemessen ueber zwei Tage Hunting (246 eigene Anrufe): Der Tier
+        ``sole`` — der einzige Kandidat im Slot, es gibt also keine
+        Alternative — liefert unter 2000 km 27,3 % Abschluss, ueber 4000 km
+        noch **2,0 %**: 49 Anrufe, ein QSO, 69 Minuten Sendezeit. Zum
+        Vergleich braucht derselbe Tier im Nahbereich 5,5 Minuten je QSO.
+
+        Die naheliegende Erklaerung "totes Band" traegt nicht: Bei
+        vergleichbar ruhigem Band (hoechstens fuenf Decodes im Slot) sind es
+        **0 von 32** gegen 15 von 64 im Nahbereich.
+
+        Bewusst nur im Alleingang. Gab es eine Wahl, gingen drei von fuenf
+        Fernzielen durch — dort ist die Entfernung also kein Ausschluss,
+        sondern hoechstens ein Rangkriterium.
+
+        Ausgenommen ist alles, was uns etwas bringt: neues DXCC, neues Grid,
+        Marine, Buddy, Grayline (``_is_award_or_context_pick``). Und ohne
+        bekannte Entfernung wird nie gesperrt — im Zweifel rufen wir an.
+        """
+        if not (self.ctx.hunt_sole_dx_gate and self.ctx.hunt_sole_dx_arm):
+            return False
+        if self._is_award_or_context_pick(d):
+            return False
+        km = self._decode_distance_km(d)
+        return km is not None and km >= self.ctx.hunt_sole_dx_km
+
     def _is_high_confidence_pick(self, d: DecodedMsg, *, strict: bool) -> bool:
         if not strict and self.ctx.hunt_snr_floor_db is None:
             return True
@@ -2376,6 +2408,16 @@ class StateMachine:
             self._buche_filter("einzelner_schwacher_cq", 1, 0)
             self._last_pick_diag = {
                 "winning_tier": "sole_rejected",
+                "n_candidates": 1,
+                "was_tailend": False,
+            }
+            return None
+        if len(cqs) == 1 and self._ist_aussichtsloses_fernziel(cqs[0]):
+            # Der Slot geht an den CQ-Fallback: gerufen zu werden ist hier
+            # aussichtsreicher als ins Leere zu rufen.
+            self._buche_filter("fernziel_allein", 1, 0)
+            self._last_pick_diag = {
+                "winning_tier": "sole_dx_rejected",
                 "n_candidates": 1,
                 "was_tailend": False,
             }

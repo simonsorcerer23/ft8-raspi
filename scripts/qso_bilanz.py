@@ -146,6 +146,23 @@ def main() -> int:
         "group by 1 order by 1", (seit,)
     ).fetchall(), ("Lage", "Versuche", "fertig", "Quote"))
 
+    print("\n=== Fernziel-Gate: bringt CQ-Rufen mehr als ein 2-%-Anruf? (A/B) ===")
+    zeilen = con.execute(
+        "select case when fern_gate=1 then 'Gate an' else 'Gate aus' end, "
+        "  count(*), sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %', "
+        "  sum(pick_kind<>'cq') "
+        "from pick_attempt where fern_gate is not null and ts > datetime('now',?) "
+        "group by 1 order by 1", (seit,)
+    ).fetchall()
+    if zeilen:
+        tabelle(zeilen, ("Arm", "Versuche", "fertig", "Quote", "eingehend"))
+        print("    Beide Arme haben gleich viele Slots — die QSO-Zahlen sind")
+        print("    direkt vergleichbar. 'eingehend' zeigt, ob die frei")
+        print("    gewordene Zeit als Rufer zurueckkommt.")
+    else:
+        print("    (keine Daten — hunt_sole_dx_gate ist aus)")
+
     print("\n=== Vorab-Decode: was der fruehere Durchgang bringt (A/B) ===")
     zeilen = con.execute(
         "select case when pre_decode=1 then 'vorab' else 'regulaer' end, "

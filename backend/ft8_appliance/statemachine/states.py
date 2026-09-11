@@ -267,6 +267,12 @@ class MachineContext:
     hunt_profile: Literal["balanced", "rate", "dx"] = "balanced"
     mode: Literal["FT8", "FT4"] = "FT8"
     hunt_sole_min_snr_db: int = -16
+    hunt_sole_dx_gate: bool = False
+    hunt_sole_dx_km: int = 4000
+    # Gilt der Gate-Arm in diesem Slot? Wird je Slot gewuerfelt und
+    # in die Telemetrie gebucht, damit sich beide Arme vergleichen
+    # lassen — auch fuer Slots, in denen gar kein Pick entsteht.
+    hunt_sole_dx_arm: bool = False
     hunt_sole_min_psk_snr_db: int = -10
     hunt_strict_until: float = 0.0
     hunt_strict_min_snr_db: int = -14
