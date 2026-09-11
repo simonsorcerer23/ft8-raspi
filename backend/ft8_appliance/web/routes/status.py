@@ -105,6 +105,7 @@ class StatusResponse(BaseModel):
     # hat — zum Aufspueren von Gates, die zu viel oder gar nichts tun.
     filter_drops: dict | None = None
     context_health: dict | None = None
+    slot_phasen_s: dict | None = None
     # Audit 2026-09-06 B1: Sekunden nach der Slot-Grenze, zu denen der
     # letzte Burst begann, + Mittel der letzten 10.
     tx_start_offset_s: float | None = None
@@ -193,6 +194,7 @@ async def get_status(
         decoder_pass_stats=getattr(s, "decoder_pass_stats", None),
         filter_drops=getattr(s, "filter_drops", None),
         context_health=getattr(s, "context_health", None),
+        slot_phasen_s=getattr(s, "slot_phasen_s", None),
         decoder_late_pass=getattr(s, "decoder_late_pass", None),
         tx_start_offset_s=getattr(s, "tx_start_offset_s", None),
         tx_start_offset_avg_s=getattr(s, "tx_start_offset_avg_s", None),
