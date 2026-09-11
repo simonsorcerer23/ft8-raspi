@@ -196,8 +196,10 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "continent": "TEXT",
         # 2026-09-07
         "reply_kind": "TEXT",
-        # 2026-09-11 — kam die Entscheidung aus dem Vorab-Decode?
+        # 2026-09-11 — kam die Entscheidung aus dem Vorab-Decode, und wie
+        # spaet nach der Slot-Grenze ging die Aussendung tatsaechlich raus?
         "pre_decode": "BOOLEAN",
+        "tx_offset_s": "FLOAT",
     }
     for name, ddl in cols.items():
         if name not in existing:
