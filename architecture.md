@@ -773,18 +773,40 @@ worse. Stations whose time offset exceeds the lead are incomplete in the
 early pass and fall out of it; they still reach the log through the regular
 pass, they just no longer influence the transmit decision.
 
-`decoder_pre_decode_ab` alternates the two modes **per slot**, so both run
+The regular pass skips exactly the messages the pre-decode of the same slot
+already handled. Both passes decode the same signals; without that filter
+the state machine would run twice per slot over identical decodes, and the
+attempt counters of the RR73 echo and the QSO resume would be spent after
+half a slot — the second time to no effect, since a second transmission in
+the same slot is discarded anyway. The picker still sees the full slot.
+
+`decoder_pre_decode_ab` picks the mode **at random per slot**, so both run
 under identical propagation, and `pick_attempt.pre_decode` records which
-pass made each decision. See `docs/flags.md`.
+pass made each decision. Randomly rather than on a fixed alternation: the
+transmit rhythm has the same two-slot period, the two cycles locked onto
+each other, and almost every A/B slot landed on a transmit slot where the
+pre-decode is skipped — 2 runs in 20 minutes instead of the expected 40.
+See `docs/flags.md`.
 
 One piece does not fall out of this for free: the decision now exists
 *before* the boundary, so the transmission must not be executed
 immediately — it would bleed into the running slot and arrive with a
 negative time offset. `_do_tx_message` therefore waits out the remaining
-fraction whenever less than 2.5 s are left to the boundary. That wait *is*
-the gain: the decision is early, the transmission starts on time. Missing
-it was visible within minutes — the measured transmit offset jumped from
-0.93 s to values around 13.9 s, i.e. just *before* the next boundary.
+fraction whenever less than `max(2.5 s, lead + 1 s)` are left to the
+boundary. That wait *is* the gain: the decision is early, the transmission
+starts on time. Missing it was visible within minutes — the measured
+transmit offset jumped from 0.93 s to values around 13.9 s, i.e. just
+*before* the next boundary. The bound is derived from the lead rather than
+fixed at 2.5 s: with a fixed bound, a larger `decoder_pre_decode_lead_s`
+would have silently disabled transmitting, because the transmission then
+falls into the B4 rule ("manual burst mid-slot") and is dropped.
+
+A second piece was missing longer: `on_decodes` only queues the decision,
+`_drain_actions` executes it. The pre-decode path called the former and not
+the latter, so the decision was made earlier while the transmission still
+waited for the regular tick. The rebuild was therefore without effect until
+v0.105.0, and the measurement showed the pre-decode arm marginally *slower*
+(1.059 s against 0.892 s).
 
 ### 8.1 Audio slot synchronisation (anti-drift)
 
