@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.115.0 — 2026-09-11
+- feat: Waechter gegen dauerhaft haengende Sendesperre
+
 ## v0.114.0 — 2026-09-11
 - fix: Sperre aus der Startphase blieb haengen, die Station funkte nicht mehr
 
