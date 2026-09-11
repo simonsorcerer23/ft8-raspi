@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.99.1 — 2026-09-11
+- fix: Vorab-Decode-Statistik wurde vom regulaeren Durchgang geloescht
+
 ## v0.99.0 — 2026-09-11
 - fix: wiederholter Report des Partners nimmt das QSO wieder auf
 - docs: Reihenfolge beim Setzen neuer Konfigurationsschalter
