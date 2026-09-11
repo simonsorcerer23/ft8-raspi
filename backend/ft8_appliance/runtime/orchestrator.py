@@ -6312,7 +6312,12 @@ class Orchestrator:
             "standort_je_call": _n(getattr(c, "call_to_latlon", None)),
             "rarity_je_call": _n(getattr(c, "rarity_scores", None)),
             "pile_up_erkannt": _n(getattr(c, "pile_up_calls", None)),
-            # aus der Datenbank beim Start (muessen dauerhaft stehen)
+            # aus der Datenbank beim Start (muessen dauerhaft stehen).
+            # gearbeitete_calls startet mit dem lokalen Logbuch und springt
+            # rund eine Minute spaeter auf den vollen Stand, wenn der
+            # QRZ-Sync die Historie nachgezogen hat (110 -> 6153 am
+            # 2026-09-11). In dieser Minute ist der Wert also klein, ohne
+            # dass etwas fehlt.
             "gearbeitete_calls": _n(getattr(c, "worked", None)),
             "soft_blacklist": _n(getattr(c, "soft_blacklist", None)),
             "wunschliste": _n(getattr(c, "watchlist_calls", None)),
