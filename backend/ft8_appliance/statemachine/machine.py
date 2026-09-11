@@ -1648,6 +1648,41 @@ class StateMachine:
             },
         )
 
+    RESUME_MAX = 2
+
+    def _nimm_qso_wieder_auf(self, hw: HardwareState, call: str, daten: dict,
+                             decodes: list[DecodedMsg]) -> bool:
+        """Partner wiederholt seinen Report — unseren R-Report nachschicken.
+
+        Er hat unseren R-Report nicht decodiert; fuer ihn ist das QSO offen.
+        Loggen waere hier falsch, weil unser Rapport bei ihm nie ankam — er
+        braucht ihn noch. Also nehmen wir das QSO wieder auf und senden den
+        R-Report erneut; den Abschluss macht dann der normale Pfad.
+
+        Hoechstens ``RESUME_MAX`` Wiederaufnahmen je Partner, sonst liefe die
+        Station in eine Schleife, wenn er uns dauerhaft nicht hoert.
+        """
+        rep = _find_report_from_them(decodes, call, self.ctx.tx_callsign)
+        if rep is None:
+            return False
+        if self.ctx.resume_zaehler.get(call, 0) >= self.RESUME_MAX:
+            return False
+        if not self._check_guards(hw):
+            return False
+        self.ctx.resume_zaehler[call] = self.ctx.resume_zaehler.get(call, 0) + 1
+        del self.ctx.recent_qso_ctx[call]
+        self.qso = QsoContext(**daten)
+        self.qso.our_snr_received = rep
+        self.qso.stale_slots = 0
+        treffer = next((d for d in decodes if _hashed_match(d.call_from, call)), None)
+        if treffer is not None and treffer.snr_db is not None:
+            self.qso.their_snr_at_us = treffer.snr_db
+        log.info("%s wiederholt seinen Report nach dem Abbruch — R-Report noch "
+                 "einmal (%d/%d)", call, self.ctx.resume_zaehler[call], self.RESUME_MAX)
+        self.state = State.QSO_REPORT
+        self._emit_send_r_report()
+        return True
+
     def _try_resume_recent_qso(
         self, hw: HardwareState, decodes: list[DecodedMsg]
     ) -> bool:
@@ -1672,6 +1707,18 @@ class StateMachine:
             r_rep = _find_r_report_from_them(decodes, call, self.ctx.tx_callsign)
             schluss = _find_closing(decodes, call, self.ctx.tx_callsign)
             if r_rep is None and not schluss:
+                # 2026-09-11 — Er wiederholt seinen Report OHNE R, also hat
+                # er unseren R-Report nicht gehoert und wartet weiter. Das
+                # ist kein Abschluss: Loggen waere einseitig, weil unser
+                # Rapport bei ihm nie ankam. Richtig ist, den R-Report noch
+                # einmal zu senden und das QSO wieder aufzunehmen.
+                #
+                # Gemessen ueber drei Tage: 16 Abbrueche mit
+                # report_never_closed, und in fast allen sendete die Station
+                # danach weiter an uns — KG4OJT und K3ZK je fuenfmal,
+                # EA5QS und OZ1KZX je dreimal.
+                if self._nimm_qso_wieder_auf(hw, call, daten, decodes):
+                    return True
                 continue
             if not self._check_guards(hw):
                 return False
