@@ -144,3 +144,34 @@ def test_gesperrte_hardware_sendet_nicht():
     sm.on_decodes(hw_gesperrt, [_nachricht("EA5QS", "DK9XR EA5QS -17")])
 
     assert _gesendet(sm) == []
+
+
+def test_zaehler_verfaellt_mit_dem_nachklang():
+    """Sonst bliebe die Station Tage spaeter bei einem neuen QSO gesperrt —
+    und das Dict wuechse unbegrenzt."""
+    sm = _sm_nach_timeout("K3ZK")
+    sm.on_decodes(_hw_ok(), [_nachricht("K3ZK", "DK9XR K3ZK -15")])
+    assert sm.ctx.resume_zaehler.get("K3ZK") == 1
+
+    # QSO erneut abbrechen und den Nachklang ablaufen lassen
+    sm.qso.stale_slots = 99
+    sm.on_slot_tick(_hw_ok(), None)
+    ablauf, daten = sm.ctx.recent_qso_ctx["K3ZK"]
+    sm.ctx.recent_qso_ctx["K3ZK"] = (datetime.now(UTC).timestamp() - 1, daten)
+    sm._pending.clear()
+
+    sm.on_decodes(_hw_ok(), [_nachricht("DL9ZZZ", "CQ DL9ZZZ JN11")])
+
+    assert "K3ZK" not in sm.ctx.recent_qso_ctx
+    assert "K3ZK" not in sm.ctx.resume_zaehler, "Zaehler muss mit verfallen"
+
+
+def test_zaehler_verfaellt_nach_erfolgreichem_abschluss():
+    sm = _sm_nach_timeout("RV6F")
+    sm.on_decodes(_hw_ok(), [_nachricht("RV6F", "DK9XR RV6F -13")])
+    assert sm.ctx.resume_zaehler.get("RV6F") == 1
+
+    sm.on_decodes(_hw_ok(), [_nachricht("RV6F", "DK9XR RV6F RR73")])
+
+    assert any(a.kind == "LOG_QSO" for a in sm._pending)
+    assert "RV6F" not in sm.ctx.resume_zaehler

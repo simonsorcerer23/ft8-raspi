@@ -1703,6 +1703,10 @@ class StateMachine:
         for call, (ablauf, daten) in list(self.ctx.recent_qso_ctx.items()):
             if ablauf < jetzt:
                 del self.ctx.recent_qso_ctx[call]
+                # Der Zaehler gehoert zu diesem Nachklang. Bliebe er stehen,
+                # waere die Station bei einem ganz neuen QSO Tage spaeter
+                # immer noch gesperrt — und das Dict wuechse unbegrenzt.
+                self.ctx.resume_zaehler.pop(call, None)
                 continue
             r_rep = _find_r_report_from_them(decodes, call, self.ctx.tx_callsign)
             schluss = _find_closing(decodes, call, self.ctx.tx_callsign)
@@ -1874,6 +1878,9 @@ class StateMachine:
                 "QSO mit %s wird geloggt, aber RR73 bleibt aus — Guard gesperrt",
                 self.qso.their_call,
             )
+        # Das QSO ist durch — ein etwaiger Wiederaufnahme-Zaehler hat sich
+        # damit erledigt.
+        self.ctx.resume_zaehler.pop(self.qso.their_call.upper(), None)
         # Partner merken: wiederholt er gleich seinen R-Report, hat er
         # unser RR73 nicht gesehen (siehe _antworte_auf_spaeten_r_report).
         self.ctx.recent_logged[self.qso.their_call.upper()] = (
