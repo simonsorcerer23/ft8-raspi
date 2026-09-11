@@ -6960,11 +6960,13 @@ class Orchestrator:
         # Sekunde zu spaet.
         slot_s = 7.5 if self.config.operating.mode == "FT4" else 15.0
         rest_bis_grenze = slot_s - self._slot_phase_s()
-        # Die Obergrenze muss den Vorlauf des Vorab-Decodes abdecken: Wird
-        # hier nicht gewartet, faellt die Sendung in die B4-Regel ("Burst
-        # mitten im Slot") und entfaellt ersatzlos. Mit festen 2,5 s haette
-        # ein groesserer decoder_pre_decode_lead_s das Senden still
-        # abgeschaltet.
+        # Die Obergrenze folgt dem Vorlauf des Vorab-Decodes. Sie ist
+        # Absicherung, kein behobener Fehler: decoder_pre_decode_lead_s ist
+        # auf 2,5 s begrenzt, und bis dahin haetten feste 2,5 s immer
+        # gereicht. Der Zusammenhang soll aber im Code stehen und nicht nur
+        # in einer Feldvalidierung — wird die Grenze dort je gelockert und
+        # hier nicht gewartet, faellt die Aussendung in die B4-Regel
+        # ("Burst mitten im Slot") und entfaellt ersatzlos.
         lead = float(getattr(
             self.config.operating, "decoder_pre_decode_lead_s", 1.3) or 0.0)
         max_warten = max(2.5, lead + 1.0)
