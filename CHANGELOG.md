@@ -3,6 +3,13 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.109.0 — 2026-09-11
+- feat: Fernziel-Gate fuer den Alleingang, mit A/B-Schalter
+- feat: qso_bilanz.py zeigt die A/B-Auswertung des Vorab-Decodes
+- test: stille Kopplung der Slot-Paritaets-Formel festgenagelt
+- test: Quelltextpruefungen durch Verhaltenstests ersetzt
+- docs: Vorab-Decode auf den tatsaechlichen Stand gebracht
+
 ## v0.108.0 — 2026-09-11
 - fix: Reputation, Sendemarke und Logzeile standen vor den Verwerfungspunkten
 
