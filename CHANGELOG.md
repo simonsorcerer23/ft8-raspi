@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.111.0 — 2026-09-11
+- feat: Empfangsberichte werden gespeichert statt weggeworfen
+- docs: Warnhinweise zum Entwickler-Stack auf die Regel statt auf den Anlass gestuetzt
+
 ## v0.110.0 — 2026-09-11
 - fix: A/B-Arm des Fernziel-Gates lief in Slots statt in Zeitbloecken
 - test: Kette vom Fernziel-Gate bis zum CQ-Fallback festgenagelt
