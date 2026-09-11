@@ -1,15 +1,19 @@
 """Der Entwickler-Stack darf nichts nach draussen melden.
 
-Am 2026-09-10 lief ``scripts/dev_run.py`` fuer Doku-Screenshots — und lud
-dabei 45 Decodes seines eigenen Simulators als echte Empfangsberichte unter
-dem Rufzeichen des Betreibers zu pskreporter.info hoch. Ursache war kein
-Fehler im Skript, sondern ein *fehlender Eintrag*: ``PskReporterConfig``
-hat ``enabled=True`` und ``upload_decodes=True`` als Vorgabe — richtig fuer
-die Station am Antennenmast, falsch fuer einen Stack, dessen Signale
-erfunden sind.
+Die Signale dieses Stacks stammen aus einem Simulator. Sie sind erfunden
+und duerfen kein oeffentliches Meldenetz erreichen — was von dort nach
+draussen ginge, traegt das Rufzeichen des Betreibers und waere von echten
+Empfangsberichten nicht zu unterscheiden.
 
-Der Test liest die Konfiguration aus dem Skript selbst, damit er nicht bloss
-eine Kopie der Absicht prueft.
+Die Gefahr liegt nicht in einem Fehler im Skript, sondern in einem
+*fehlenden Eintrag*: ``PskReporterConfig`` hat ``enabled=True`` und
+``upload_decodes=True`` als Vorgabe — richtig fuer die Station am
+Antennenmast, falsch fuer jeden Testlauf. Wer die Konfiguration des
+Skripts erweitert und den ``integrations``-Block vergisst, erbt diese
+Vorgabe stillschweigend.
+
+Der Test liest die Konfiguration aus dem Skript selbst, damit er nicht
+bloss eine Kopie der Absicht prueft.
 """
 
 from __future__ import annotations
