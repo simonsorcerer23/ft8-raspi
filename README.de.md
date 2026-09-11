@@ -41,7 +41,9 @@ flowchart LR
 ```
 
 Eng wird es zwischen Decode und PTT: Die Sendeentscheidung muss vor der
-nächsten Slot-Grenze stehen. Den *vollen* Decoder statt eines billigen
+nächsten Slot-Grenze stehen. Seit dem 2026-09-11 kann ein Vorab-Decode schon
+vor der Grenze laufen — FT8-Sendungen enden nach 12,64 s, eine pünktliche
+Station ist also längst vollständig im Ringpuffer (`docs/flags.md`). Den *vollen* Decoder statt eines billigen
 Vorab-Durchgangs in dieses Fenster zu bekommen, war die mit Abstand größte
 Verbesserung bei der Zahl beantwortbarer Stationen.
 

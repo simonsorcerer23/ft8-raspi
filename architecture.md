@@ -750,6 +750,33 @@ t=27.5s TX done, PTT off, RX active again
 t=30.0s Next slot begins, the loop closes
 ```
 
+### 8.0 Pre-decode before the boundary (2026-09-11)
+
+The loop above starts decoding *at* the slot boundary, and the decoder needs
+0.5–1.0 s. Transmission therefore starts around 1.07 s late, while the
+stations we receive average +0.12 s — we arrive almost a second later than
+everyone else. FT8 decoders search ±2.5 s, so nothing is lost, but the
+margin is gone for weak signals.
+
+FT8 transmissions end after 12.64 s. A station that transmits on time is
+therefore complete in the ring buffer well before the boundary, and a
+decode with `decoder_pre_decode_lead_s` of lead time sees it. The trick
+needs no change to the audio chain: the pre-decode passes a tick whose
+`posix` is the *upcoming* boundary, so `slot_start_posix = posix - 15 s`
+already points at the start of the running slot, and `extract_slot`
+zero-pads whatever has not been captured yet.
+
+Side effects stay with the regular pass — no dedup table, no slot metric,
+no stage-2 or jt9 trigger, no notch update. If the pre-decode finds
+nothing, the regular pass decides as before: it can only get earlier, never
+worse. Stations whose time offset exceeds the lead are incomplete in the
+early pass and fall out of it; they still reach the log through the regular
+pass, they just no longer influence the transmit decision.
+
+`decoder_pre_decode_ab` alternates the two modes **per slot**, so both run
+under identical propagation, and `pick_attempt.pre_decode` records which
+pass made each decision. See `docs/flags.md`.
+
 ### 8.1 Audio slot synchronisation (anti-drift)
 
 **Problem:** the IC-705 USB audio has its own crystal (~±50 ppm). The Pi system clock comes from GPS (±100 ns). Over several slots the two drift apart. If you computed slot position from sample count alone, the drift would accumulate up to a DT violation.
