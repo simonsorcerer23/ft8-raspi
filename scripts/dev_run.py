@@ -193,13 +193,20 @@ async def main() -> None:
             AntennaConfig(name="doublet_8040", bands=["80m", "40m"]),
         ],
         operating=OperatingConfig(),
-        # 2026-09-10: Nach aussen wirkende Dienste sind hier HART AUS.
-        # PskReporterConfig hat enabled=True/upload_decodes=True als Default
-        # — richtig fuer die echte Station, fatal fuer diesen Stack: die
-        # Decodes stammen aus dem Simulator, und sie gingen als echte
-        # Empfangsberichte unter dem Rufzeichen des Betreibers an
-        # pskreporter.info. Einmal passiert, 45 erfundene Spots. Wer hier
-        # etwas ergaenzt, prueft zuerst, ob es nach draussen schreibt.
+        # Nach aussen wirkende Dienste sind hier HART AUS — und das ist
+        # keine Stilfrage, sondern die wichtigste Zeile dieser Datei.
+        #
+        # Die Decodes dieses Stacks stammen aus einem Simulator. Sie sind
+        # erfunden und duerfen unter keinen Umstaenden ein oeffentliches
+        # Meldenetz erreichen: Was von hier nach draussen geht, traegt das
+        # Rufzeichen des Betreibers und ist fuer jeden Empfaenger von
+        # echten Daten nicht zu unterscheiden.
+        #
+        # PskReporterConfig hat enabled=True/upload_decodes=True als
+        # Vorgabe — richtig fuer die Station am Mast, falsch hier. Deshalb
+        # werden sie ausdruecklich abgeschaltet statt auf Vorgabewerte zu
+        # vertrauen. Wer hier etwas ergaenzt, prueft ZUERST, ob es nach
+        # draussen schreibt. test_dev_run_sendet_nichts.py haelt das fest.
         integrations={
             "psk_reporter": {"enabled": False, "upload_decodes": False},
             "blitzortung": {"enabled": False},
