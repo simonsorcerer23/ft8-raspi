@@ -15,7 +15,7 @@ ssh-copy-id pi@ft8.local                                 # Pubkey installieren
 ssh pi@ft8.local 'hostname && uptime'                    # Funktioniert ohne Passwort?
 ```
 
-### Komfort-Alias (empfohlen)
+## Komfort-Alias (empfohlen)
 
 In `~/.ssh/config` der Workstation:
 
@@ -134,6 +134,20 @@ Claude darf **vorschlagen**, soll aber niemals destruktive Aktionen autonom ausf
 | Komplett-Reboot | `sudo reboot` |
 
 ---
+
+## Filterzähler des Pickers
+
+`filter_drops` im Status zeigt, wie viele Kandidaten jede Filterstufe
+weggenommen hat. Die Werte sind **Tageswerte** und überleben einen
+Neustart (`/var/lib/ft8-appliance/filter_drops.json`, höchstens einmal je
+Minute geschrieben, beim Datumswechsel auf null).
+
+Das war nicht immer so, und ohne diese Persistenz taugte das Instrument
+wenig: Der Dienst startete am 2026-09-11 **dreiundzwanzigmal** neu, weil das
+Self-Update alle zehn Minuten prüft. Die Zähler liefen im Mittel keine
+Stunde, bevor sie auf null gingen — im Status standen typisch drei Dutzend
+Verwerfungen, während die Merkregel lautet, unter fünfzig Fällen keine
+Schlüsse zu ziehen.
 
 ## 5. Längerfristige Trend-Analyse
 

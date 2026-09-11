@@ -170,44 +170,54 @@ def _orch_arm(**op_kw):
         state_machine = type("S", (), {"ctx": MachineContext(callsign="DK9XR", my_grid="JN58td")})()
         _fern_arm_slot = -1
         _fern_arm = False
+        _FERN_ARM_BLOCK_S = orch_mod.Orchestrator._FERN_ARM_BLOCK_S
         _setze_fern_gate_arm = orch_mod.Orchestrator._setze_fern_gate_arm
 
     return _O()
 
 
-def test_arm_bleibt_im_slot_stabil():
-    """Vorab- und regulaerer Durchgang entscheiden im selben Slot und
-    muessen denselben Arm sehen — sonst misst das Experiment sich selbst
-    kaputt."""
+def test_arm_bleibt_ueber_viele_slots_stabil():
+    """Die Wirkungskette ist laenger als ein Slot: Das Gate greift in Slot
+    N, der CQ-Fallback startet nach zwei Slots ohne Pick, die Antwort kommt
+    noch spaeter. Wuerfelte der Arm je Slot, wuerde der eingehende Anruf
+    dem Arm seines Ankunfts-Slots zugeschrieben statt dem, der den CQ-Ruf
+    veranlasst hat — der Effekt verteilte sich gleichmaessig auf beide
+    Arme, und der A/B waere wertlos."""
     o = _orch_arm()
 
     o._setze_fern_gate_arm(7)
     erster = o.state_machine.ctx.hunt_sole_dx_arm
-    for _ in range(20):
-        o._setze_fern_gate_arm(7)
-        assert o.state_machine.ctx.hunt_sole_dx_arm is erster
+    for slot in range(8, 40):
+        o._setze_fern_gate_arm(slot)
+        assert o.state_machine.ctx.hunt_sole_dx_arm is erster, (
+            "Arm darf innerhalb des Blocks nicht wechseln"
+        )
 
 
-def test_arm_haengt_nicht_am_slot_takt():
-    """Der Sende-Rhythmus ist zwei Slots lang; ein 2-Slot-Takt haette sich
-    damit verkoppelt — derselbe Fehler wie beim Vorab-Decode."""
+def test_arm_wechselt_mit_dem_zeitblock(monkeypatch):
+    from ft8_appliance.runtime import orchestrator as orch_mod
+
     o = _orch_arm()
+    uhr = {"t": 1_000_000.0}
+    monkeypatch.setattr(orch_mod.time, "time", lambda: uhr["t"])
+
     arme = []
-    for slot in range(6):
-        o._setze_fern_gate_arm(slot)
+    for _ in range(40):
+        o._setze_fern_gate_arm(0)
         arme.append(o.state_machine.ctx.hunt_sole_dx_arm)
+        uhr["t"] += o._FERN_ARM_BLOCK_S
 
-    assert arme != [True, False, True, False, True, False]
+    assert 0.30 < sum(arme) / len(arme) < 0.70, "beide Arme grob gleich oft"
+    assert len(set(arme)) == 2, "der Arm muss ueber die Bloecke wechseln"
 
 
-def test_beide_arme_kommen_auf_dauer_gleich_oft_vor():
-    o = _orch_arm()
-    treffer = 0
-    for slot in range(400):
-        o._setze_fern_gate_arm(slot)
-        treffer += bool(o.state_machine.ctx.hunt_sole_dx_arm)
+def test_block_ist_kurz_genug_fuer_vergleichbare_ausbreitung():
+    """Lang genug, dass Gate, CQ-Ruf und Antwort im selben Arm liegen;
+    kurz genug, dass sich die Bandbedingungen zwischen den Armen nicht
+    wesentlich unterscheiden."""
+    from ft8_appliance.runtime import orchestrator as orch_mod
 
-    assert 0.35 < treffer / 400 < 0.65
+    assert 5 * 60 <= orch_mod.Orchestrator._FERN_ARM_BLOCK_S <= 30 * 60
 
 
 def test_ohne_ab_gilt_das_gate_immer():

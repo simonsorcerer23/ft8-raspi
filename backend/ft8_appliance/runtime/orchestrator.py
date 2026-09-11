@@ -625,7 +625,7 @@ class Orchestrator:
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
-    # Gewuerfelter A/B-Arm des Fernziel-Gates, je Slot einmal gezogen.
+    # Gewuerfelter A/B-Arm des Fernziel-Gates, je Zeitblock einmal gezogen.
     _fern_arm_slot: int = field(default=-1, init=False)
     _fern_arm: bool = field(default=False, init=False)
     # (Slot-Index, Nachrichten) des letzten Vorab-Durchgangs — der
@@ -679,6 +679,14 @@ class Orchestrator:
         default_factory=lambda: Path("/var/lib/ft8-appliance/runtime_state.json"),
         init=False,
     )
+    # Tageswerte der Picker-Filterstufen. Eigene Datei, weil sie einen
+    # Tagesstempel traegt und nur beim Slot-Ende angefasst wird.
+    _filter_drops_path: Path = field(
+        default_factory=lambda: Path("/var/lib/ft8-appliance/filter_drops.json"),
+        init=False,
+    )
+    _filter_drops_tag: str = field(default="", init=False)
+    _filter_drops_letzte_sicherung: float = field(default=0.0, init=False)
     # Throttle für Persist-Writes (sonst schreiben wir potenziell jede
     # Sekunde — unnötiger Flash-Wear auf der SSD). Wir persistieren nur
     # wenn der Gain sich um ≥0.02 verschoben hat ODER ≥60s seit dem
@@ -848,6 +856,7 @@ class Orchestrator:
         await self._restore_qso_cooldowns()
         await self._restore_slot_parity()
         self._restore_psk_cache()
+        self._restore_filter_drops()
         bm = self.config.operating.boot_mode
         if bm in ("hunt", "cq+hunt"):
             self.state_machine.set_auto_answer(True)
@@ -2251,6 +2260,65 @@ class Orchestrator:
         except Exception as exc:
             log.debug("psk-cache nicht geschrieben: %s", exc)
 
+    def _restore_filter_drops(self) -> None:
+        """Die Filterzaehler des laufenden Tages zurueckholen.
+
+        Sie lebten nur im Arbeitsspeicher — und der Dienst startet oft neu:
+        am 2026-09-11 dreiundzwanzigmal, weil das Self-Update alle zehn
+        Minuten prueft. Die Zaehler liefen dadurch im Mittel keine Stunde,
+        bevor sie auf null gingen; im Status standen typisch drei Dutzend
+        Verwerfungen.
+
+        Das entwertete genau das Instrument, das zeigen soll, was der
+        Picker wegwirft: Die eigene Merkregel dazu lautet, unter fuenfzig
+        Faellen keine Schluesse zu ziehen — diese Schwelle wurde so gut wie
+        nie erreicht.
+
+        Tageswerte, nicht Gesamtwerte: Ein Zaehler, der ueber Wochen
+        hochlaeuft, zeigt keine Veraenderung mehr. Beim Datumswechsel faengt
+        er von vorn an.
+        """
+        heute = datetime.now(UTC).strftime("%Y-%m-%d")
+        self._filter_drops_tag = heute
+        try:
+            daten = json.loads(self._filter_drops_path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        if (daten.get("tag") or "") != heute:
+            return          # anderer Tag, bei null anfangen
+        werte = daten.get("stufen") or {}
+        if not isinstance(werte, dict):
+            return
+        self.state_machine.filter_drops.update(
+            {str(k): int(v) for k, v in werte.items() if isinstance(v, (int, float))}
+        )
+        log.info("Filterzaehler des Tages zurueckgeholt: %d Verwerfungen",
+                 sum(self.state_machine.filter_drops.values()))
+
+    def _persist_filter_drops(self) -> None:
+        """Die Filterzaehler wegschreiben — hoechstens einmal je Minute."""
+        jetzt = time.monotonic()
+        if jetzt - self._filter_drops_letzte_sicherung < 60.0:
+            return
+        self._filter_drops_letzte_sicherung = jetzt
+        werte = self.state_machine.filter_drops
+        if not werte:
+            return
+        heute = datetime.now(UTC).strftime("%Y-%m-%d")
+        if heute != self._filter_drops_tag:
+            # Datumswechsel: Der neue Tag faengt bei null an.
+            self._filter_drops_tag = heute
+            werte.clear()
+            return
+        try:
+            self._filter_drops_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._filter_drops_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps({"tag": heute, "stufen": dict(werte)}),
+                           encoding="utf-8")
+            tmp.replace(self._filter_drops_path)
+        except Exception as exc:
+            log.debug("Filterzaehler nicht geschrieben: %s", exc)
+
     def _restore_psk_cache(self) -> None:
         """Die zuletzt abgerufene PSK-Liste beim Start zurueckholen.
 
@@ -3415,25 +3483,36 @@ class Orchestrator:
                 except asyncio.CancelledError:
                     raise
 
+    # Ein A/B-Block des Fernziel-Gates. Bewusst Minuten statt Slots, s.u.
+    _FERN_ARM_BLOCK_S: typing.ClassVar[float] = 15 * 60.0
+
     def _setze_fern_gate_arm(self, index: int) -> None:
-        """Den A/B-Arm des Fernziel-Gates fuer diesen Slot festlegen.
+        """Den A/B-Arm des Fernziel-Gates festlegen.
 
-        Einmal je Slot gezogen und gemerkt: Der Vorab-Durchgang und der
-        regulaere Durchgang entscheiden beide im selben Slot, und sie
-        muessen denselben Arm sehen — sonst misst das Experiment sich
-        selbst kaputt. Wer zuerst fragt, wuerfelt; der zweite bekommt das
-        Ergebnis.
+        **In Zeitbloecken, nicht je Slot.** Die Wirkungskette des Gates ist
+        laenger als ein Slot: Es greift in Slot N, der CQ-Fallback startet
+        nach zwei Slots ohne Pick, die Antwort kommt noch spaeter. Wuerfelte
+        der Arm je Slot, wuerde der eingehende Anruf dem Arm seines
+        *Ankunfts*-Slots zugeschrieben statt dem, der den CQ-Ruf ueberhaupt
+        veranlasst hat — und der Effekt verteilte sich bei 50/50 exakt
+        gleichmaessig auf beide Arme, ob das Gate nun wirkt oder nicht. Der
+        A/B waere wertlos.
 
-        Gewuerfelt und nicht im festen Takt, aus demselben Grund wie beim
-        Vorab-Decode: Der Sende-Rhythmus ist zwei Slots lang, ein
-        2-Slot-Takt haette sich damit verkoppelt.
+        Fuenfzehn Minuten sind lang genug, dass Gate, CQ-Ruf und Antwort im
+        selben Arm liegen, und kurz genug, dass sich die Ausbreitung
+        zwischen den Armen nicht wesentlich unterscheidet.
+
+        Innerhalb des Blocks liefern Vorab-Durchgang und regulaerer
+        Durchgang denselben Arm — sie entscheiden im selben Slot und
+        duerfen sich nicht widersprechen.
         """
         op = self.config.operating
         if not getattr(op, "hunt_sole_dx_gate", False):
             self.state_machine.ctx.hunt_sole_dx_arm = False
             return
-        if index != self._fern_arm_slot:
-            self._fern_arm_slot = index
+        block = int(time.time() // self._FERN_ARM_BLOCK_S)
+        if block != self._fern_arm_slot:
+            self._fern_arm_slot = block
             self._fern_arm = (
                 random.random() < 0.5
                 if getattr(op, "hunt_sole_dx_ab", False) else True
@@ -3596,6 +3675,7 @@ class Orchestrator:
         # 4. drive the state machine — ohne die, die der Vorab-Durchgang
         #    fuer diesen Slot bereits verarbeitet hat.
         self._setze_fern_gate_arm(tick.index)
+        self._persist_filter_drops()
         self.state_machine.on_decodes(
             self._hardware_state, self._vorab_neue_decodes(tick, decodes),
         )
