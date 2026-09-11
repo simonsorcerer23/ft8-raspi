@@ -330,6 +330,10 @@ class OrchestratorStatus:
     # itself stays in the config-default lang for non-UI consumers).
     last_lock_code: str | None = None
     last_lock_params: dict[str, object] | None = None
+    # Wie viele Kandidaten jede Filterstufe des Pickers seit Dienststart
+    # entfernt hat. Macht Gates sichtbar, die zu viel wegnehmen — oder gar
+    # nichts mehr tun.
+    filter_drops: dict[str, int] | None = None
 
 
 @dataclass
@@ -1807,6 +1811,8 @@ class Orchestrator:
             last_lock_reason=self.state_machine.ctx.last_lock_reason,
             last_lock_code=self.state_machine.ctx.last_lock_code,
             last_lock_params=self.state_machine.ctx.last_lock_params,
+            filter_drops=(dict(self.state_machine.filter_drops)
+                          if self.state_machine.filter_drops else None),
             cq_count=self.state_machine.ctx.cq_count,
             current_qso_call=(
                 self.state_machine.qso.their_call if self.state_machine.qso else None

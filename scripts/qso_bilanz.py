@@ -63,6 +63,16 @@ def hole_db(quelle: str | None) -> Path:
     return ziel
 
 
+def _token() -> str:
+    """API-Token der Station — nur lesen, nie ausgeben."""
+    roh = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", PI,
+         "grep -m1 -E '^\\s*api_token' /etc/ft8-appliance/config.yaml"],
+        capture_output=True, text=True, timeout=30,
+    ).stdout
+    return roh.split(":", 1)[1].strip() if ":" in roh else ""
+
+
 def tabelle(zeilen: list[tuple], kopf: tuple[str, ...]) -> None:
     if not zeilen:
         print("    (keine Daten)")
@@ -147,6 +157,31 @@ def main() -> int:
         "from pick_attempt where snr_db is not null and ts > datetime('now',?) "
         "group by 1 order by 1", (seit,)
     ).fetchall(), ("Klasse", "Versuche", "fertig", "Quote"))
+
+    print("\n=== Was die Filterstufen des Pickers wegnehmen ===")
+    print("    (Live-Zaehler der Station, seit ihrem letzten Neustart)")
+    import json as _json
+    import urllib.request as _u
+    try:
+        req = _u.Request(
+            "http://100.77.48.117:8000/api/status",
+            headers={"X-API-Token": _token()},
+        )
+        with _u.urlopen(req, timeout=10) as r:
+            drops = (_json.load(r) or {}).get("filter_drops") or {}
+        if drops:
+            gesamt = sum(drops.values())
+            tabelle(
+                [(k, v, f"{100.0*v/gesamt:.1f} %") for k, v in
+                 sorted(drops.items(), key=lambda kv: -kv[1])],
+                ("Stufe", "verworfen", "Anteil"),
+            )
+            print("    Eine Stufe, die hier ploetzlich dominiert, ist der erste")
+            print("    Verdaechtige. Eine, die gar nicht auftaucht, ist Ballast.")
+        else:
+            print("    (noch keine Verwerfungen seit dem letzten Neustart)")
+    except Exception as e:
+        print(f"    (Station nicht erreichbar: {e})")
 
     print("\n=== Wunschliste: gesehen und versucht? ===")
     tabelle(con.execute(
