@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.97.0 — 2026-09-11
+- feat: Zeitaufteilung im Slot bis zur Sendeentscheidung messen
+
 ## v0.96.0 — 2026-09-11
 - fix: RR73 nachschicken, wenn der Partner weiter auf uns wartet
 - docs: Anlaufverhalten von gearbeitete_calls festhalten
