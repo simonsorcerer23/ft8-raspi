@@ -622,13 +622,6 @@
           </div>
         </div>
 
-        <h5 class="subgroup">{t('cfg.cq_behavior')}</h5>
-        <div class="grid">
-          <label class="field"><span>{t('cfg.auto_cq_interval')}<small>(s)</small></span>
-            <input type="number" bind:value={cfg.operating.auto_cq_interval_s} min="15" max="300"/>
-          </label>
-        </div>
-
         <h5 class="subgroup">{t('cfg.safety_limits')}</h5>
         <div class="grid">
           <label class="field"><span>{t('cfg.max_ptt')}<small>(s)</small></span>
@@ -769,14 +762,6 @@
 
         <h4>{t('cfg.auto_alc')}</h4>
         <div class="grid grid-bottom">
-          <label><span>{t('cfg.alc_low')}<small>(%)</small></span>
-            <input type="number" min="0" max="50"
-                   bind:value={cfg.operating.alc_target_low}/>
-          </label>
-          <label><span>{t('cfg.alc_high')}<small>(%)</small></span>
-            <input type="number" min="0" max="80"
-                   bind:value={cfg.operating.alc_target_high}/>
-          </label>
           <label><span>{t('cfg.start_gain')}<small>(0.0–1.0)</small></span>
             <input type="number" step="0.05" min="0.1" max="1.0"
                    bind:value={cfg.operating.audio_gain}/>
