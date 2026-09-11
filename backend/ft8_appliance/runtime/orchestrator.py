@@ -334,6 +334,10 @@ class OrchestratorStatus:
     # entfernt hat. Macht Gates sichtbar, die zu viel wegnehmen — oder gar
     # nichts mehr tun.
     filter_drops: dict[str, int] | None = None
+    # Fuellstand der Datenquellen, aus denen der Picker seine Entscheidungen
+    # ableitet. Eine Quelle, die leer ist, macht jedes darauf gebaute Gate
+    # und jeden Tier wirkungslos — ohne dass es irgendwo auffaellt.
+    context_health: dict[str, int] | None = None
 
 
 @dataclass
@@ -1816,6 +1820,7 @@ class Orchestrator:
             last_lock_params=self.state_machine.ctx.last_lock_params,
             filter_drops=(dict(self.state_machine.filter_drops)
                           if self.state_machine.filter_drops else None),
+            context_health=self._context_health(),
             cq_count=self.state_machine.ctx.cq_count,
             current_qso_call=(
                 self.state_machine.qso.their_call if self.state_machine.qso else None
@@ -3171,6 +3176,9 @@ class Orchestrator:
             log.warning("decode_source failed for slot %s: %s", tick.index, exc)
             decodes = []
         self._last_decodes = decodes
+        # Kontext fuer den Picker aus genau diesen Decodes bauen —
+        # nicht aus denen des vorigen Slots (siehe Methoden-Docstring).
+        await self._refresh_decode_context(decodes)
         self._slot_history.append(list(decodes))
         del self._slot_history[:-4]
         # v0.15.0 Slot-Parity-Tracking: aktuelle Parity dieses Slots
@@ -6150,6 +6158,107 @@ class Orchestrator:
         band = self._band_for_rig_freq(self._last_rig.freq_hz)
         return band.name if band is not None else None
 
+    def _context_health(self) -> dict[str, int]:
+        """Fuellstand jeder Datenquelle, auf die sich der Picker stuetzt.
+
+        Antwort auf eine berechtigte Frage: Entscheidet die Station auf
+        Grundlage echter Daten — oder auf leeren Tabellen? Am 2026-09-11
+        stellte sich heraus, dass das Kontinent-Verzeichnis fuer die
+        aktuellen Kandidaten praktisch immer leer war, weil es aus den
+        Decodes des vorigen Slots gebaut wurde. Ein scharfes Gate hat
+        deshalb monatelang nichts getan.
+
+        Die Werte sind absichtlich roh (Anzahl Eintraege). Was davon "zu
+        wenig" ist, haengt vom Band und der Tageszeit ab — aber eine Null,
+        wo dauerhaft etwas stehen sollte, ist immer ein Befund.
+        """
+        c = self.state_machine.ctx
+        def _n(wert) -> int:
+            try:
+                return len(wert or ())
+            except Exception:
+                return 0
+        return {
+            # pro Slot aus den aktuellen Decodes (leer = Band still)
+            "kontinent_je_call": _n(getattr(c, "call_to_continent", None)),
+            "dxcc_je_call": _n(getattr(c, "call_to_dxcc", None)),
+            "standort_je_call": _n(getattr(c, "call_to_latlon", None)),
+            "rarity_je_call": _n(getattr(c, "rarity_scores", None)),
+            "pile_up_erkannt": _n(getattr(c, "pile_up_calls", None)),
+            # aus der Datenbank beim Start (muessen dauerhaft stehen)
+            "gearbeitete_calls": _n(getattr(c, "worked", None)),
+            "soft_blacklist": _n(getattr(c, "soft_blacklist", None)),
+            "wunschliste": _n(getattr(c, "watchlist_calls", None)),
+            "kontinent_quoten": _n(getattr(c, "continent_success", None)),
+            # gelernt bzw. abgerufen, beginnt nach einem Neustart leer
+            "slot_paritaet_gelernt": _n(getattr(c, "op_slot_parity", None)),
+            "psk_hoert_uns": _n(getattr(c, "psk_heard_us", None)),
+            "qso_cooldowns": _n(getattr(c, "worked_until", None)),
+        }
+
+    async def _refresh_decode_context(self, decodes: list) -> None:
+        """Nachschlagetabellen fuer den Picker — aus den AKTUELLEN Decodes.
+
+        Bis 2026-09-11 lief das in :meth:`_refresh_hardware_state`, also als
+        erster Schritt des Slots — bevor der Decoder ueberhaupt gefragt war.
+        Gearbeitet wurde daher mit ``self._last_decodes``, den Rufern des
+        *vorigen* Slots. Weil FT8-Stationen abwechselnd senden, sind das
+        groesstenteils andere Stationen: An diesem Tag waren nur **5,3 %**
+        der CQ-Rufer eines Slots schon im Slot davor zu hoeren.
+
+        Damit standen Kontinent, DXCC, Rarity und Standort fuer die
+        tatsaechlichen Kandidaten fast nie zur Verfuegung. Das
+        Kontinent-Gate hat deshalb nie gegriffen (14 Anrufe nach Nordamerika
+        an einem Tag, bei 4 % Abschlussquote und scharfem Gate), und die
+        Tiers new_dxcc, dxcc_rarity, grayline und active_hour liefen ins
+        Leere. Auch die Pile-Up-Erkennung zaehlte die Anrufer des falschen
+        Slots.
+        """
+        new_dxcc: set[str] = set()
+        call_to_dxcc: dict[str, str] = {}
+        call_to_latlon: dict[str, tuple[float, float]] = {}
+        call_to_continent: dict[str, str] = {}  # v0.16.0
+        rarity_scores: dict[str, int] = {}
+        if self.integrations.cty is not None:
+            # Lazy-Import damit Tests ohne dxcc_rarity-Daten nicht failen
+            try:
+                from ..integrations.dxcc_rarity import rarity_for
+            except ImportError:
+                rarity_for = lambda _c: 0  # type: ignore[assignment]
+            for d in decodes:
+                call = d.call_from
+                if not call or d.call_to is not None:
+                    continue
+                if not (d.message or "").startswith("CQ"):
+                    continue
+                norm = call.upper()
+                rec = self.integrations.cty.lookup(call)
+                if rec is not None:
+                    call_to_dxcc[norm] = rec.entity.name
+                    if rec.entity.name not in self._worked_dxccs:
+                        new_dxcc.add(call)
+                    # v0.14.0 Grayline-Tier: Lat/Lon der DXCC-Entity
+                    # cachen damit der Tier ohne weiteren Lookup auskommt.
+                    if rec.entity.lat is not None and rec.entity.lon is not None:
+                        call_to_latlon[norm] = (rec.entity.lat, rec.entity.lon)
+                    # v0.16.0 Hour-of-Day-Tier: Continent cachen
+                    if rec.entity.continent:
+                        call_to_continent[norm] = rec.entity.continent
+                # Rarity-Score (0..100) per Call — basiert auf cty-prefix
+                # fallback, daher unabhängig vom cty-Lookup verfügbar.
+                score = rarity_for(call)
+                if score > 0:
+                    rarity_scores[norm] = score
+        self.state_machine.ctx.new_dxcc_calls = new_dxcc
+        self.state_machine.ctx.call_to_dxcc = call_to_dxcc
+        self.state_machine.ctx.call_to_latlon = call_to_latlon
+        self.state_machine.ctx.call_to_continent = call_to_continent
+        self.state_machine.ctx.rarity_scores = rarity_scores
+        # Pile-Up-Erkennung aus denselben, aktuellen Decodes.
+        self.state_machine.ctx.pile_up_calls = self._detect_pile_ups(
+            decodes, rarity_scores,
+        )
+
     async def _refresh_hardware_state(self, tick: SlotTick) -> None:
         """Materialise the current :class:`HardwareState` for the guards."""
         from ..util.system_health import _read_cpu_temp  # local import: Pi-only path
@@ -6267,46 +6376,6 @@ class Orchestrator:
         # haben. Plus call_to_dxcc-Mapping für 5BWAS-Tier (jeden CQ-Call
         # auf seine DXCC-Entität mappen) und rarity_scores für den
         # DXCC-Rarity-Tier.
-        new_dxcc: set[str] = set()
-        call_to_dxcc: dict[str, str] = {}
-        call_to_latlon: dict[str, tuple[float, float]] = {}
-        call_to_continent: dict[str, str] = {}  # v0.16.0
-        rarity_scores: dict[str, int] = {}
-        if self.integrations.cty is not None:
-            # Lazy-Import damit Tests ohne dxcc_rarity-Daten nicht failen
-            try:
-                from ..integrations.dxcc_rarity import rarity_for
-            except ImportError:
-                rarity_for = lambda _c: 0  # type: ignore[assignment]
-            for d in self._last_decodes:
-                call = d.call_from
-                if not call or d.call_to is not None:
-                    continue
-                if not (d.message or "").startswith("CQ"):
-                    continue
-                norm = call.upper()
-                rec = self.integrations.cty.lookup(call)
-                if rec is not None:
-                    call_to_dxcc[norm] = rec.entity.name
-                    if rec.entity.name not in self._worked_dxccs:
-                        new_dxcc.add(call)
-                    # v0.14.0 Grayline-Tier: Lat/Lon der DXCC-Entity
-                    # cachen damit der Tier ohne weiteren Lookup auskommt.
-                    if rec.entity.lat is not None and rec.entity.lon is not None:
-                        call_to_latlon[norm] = (rec.entity.lat, rec.entity.lon)
-                    # v0.16.0 Hour-of-Day-Tier: Continent cachen
-                    if rec.entity.continent:
-                        call_to_continent[norm] = rec.entity.continent
-                # Rarity-Score (0..100) per Call — basiert auf cty-prefix
-                # fallback, daher unabhängig vom cty-Lookup verfügbar.
-                score = rarity_for(call)
-                if score > 0:
-                    rarity_scores[norm] = score
-        self.state_machine.ctx.new_dxcc_calls = new_dxcc
-        self.state_machine.ctx.call_to_dxcc = call_to_dxcc
-        self.state_machine.ctx.call_to_latlon = call_to_latlon
-        self.state_machine.ctx.call_to_continent = call_to_continent
-        self.state_machine.ctx.rarity_scores = rarity_scores
         # v0.16.0 active_continent_hours aus DB-Aggregat
         self.state_machine.ctx.active_continent_hours = set(self._active_continent_hours)
         # v0.14.0 Band-Conditions aus hamqsl-Cache spiegeln. Daten werden
@@ -6324,10 +6393,6 @@ class Orchestrator:
         self.state_machine.ctx.worked_call_band = set(self._worked_call_band)
         # v0.18.0 Freq-Reputation in ctx spiegeln fuer Smart-CQ-Picker
         self.state_machine.ctx.freq_reputation = dict(self._freq_reputation)
-        # v0.19.0 Pile-Up-Detection: pro Slot aus aktuellen Decodes.
-        self.state_machine.ctx.pile_up_calls = self._detect_pile_ups(
-            self._last_decodes, rarity_scores,
-        )
         # 2026-09-06: eigener Call + aktueller QSO-Partner immer in der
         # Known-Call-Tabelle — sonst faellt eine schwache Antwort AN UNS,
         # die erst OSD/Feinsync liefert, am Known-Call-Gate durch, wenn
