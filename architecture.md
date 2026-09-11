@@ -777,6 +777,15 @@ pass, they just no longer influence the transmit decision.
 under identical propagation, and `pick_attempt.pre_decode` records which
 pass made each decision. See `docs/flags.md`.
 
+One piece does not fall out of this for free: the decision now exists
+*before* the boundary, so the transmission must not be executed
+immediately — it would bleed into the running slot and arrive with a
+negative time offset. `_do_tx_message` therefore waits out the remaining
+fraction whenever less than 2.5 s are left to the boundary. That wait *is*
+the gain: the decision is early, the transmission starts on time. Missing
+it was visible within minutes — the measured transmit offset jumped from
+0.93 s to values around 13.9 s, i.e. just *before* the next boundary.
+
 ### 8.1 Audio slot synchronisation (anti-drift)
 
 **Problem:** the IC-705 USB audio has its own crystal (~±50 ppm). The Pi system clock comes from GPS (±100 ns). Over several slots the two drift apart. If you computed slot position from sample count alone, the drift would accumulate up to a DT violation.

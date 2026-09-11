@@ -309,6 +309,12 @@ Stufe-2- oder jt9-Anstoß, keine Notch-Aktualisierung (bekannte Störlinien
 werden aber gefiltert). Findet der Vorab-Durchgang nichts, entscheidet der
 reguläre wie bisher — es kann nur früher werden, nie schlechter.
 
+**Nicht vergessen:** Die Aussendung muss die Slot-Grenze abwarten. Steht die
+Entscheidung eine Sekunde zu früh und wird sofort gesendet, ragt der Burst in
+den laufenden Slot — live sichtbar als Sendeversatz von 13,9 s statt 0,9 s.
+`_do_tx_message` wartet daher die letzten Zehntel ab (Rest ≤ 2,5 s). Dieses
+Warten ist der eigentliche Gewinn des Vorab-Decodes.
+
 **Preis:** Stationen mit größerem Zeitversatz als der Vorlauf sind im
 frühen Durchgang noch nicht vollständig und fallen dort heraus. Sie kommen
 weiterhin über den regulären Durchgang ins Log, treffen aber die
