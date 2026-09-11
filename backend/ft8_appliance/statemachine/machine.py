@@ -539,6 +539,13 @@ class StateMachine:
     # Telemetrie): {winning_tier, n_candidates, was_tailend}. Wird direkt
     # nach dem Pick in die hunt_attempt_meta uebernommen.
     _last_pick_diag: dict = field(default_factory=dict)
+    # 2026-09-11 — Wie viele Kandidaten jede Filterstufe wegnimmt, summiert
+    # ueber die Laufzeit. Drei der letzten fuenf Fehler waren Gates, deren
+    # Begruendung eine spaetere Aenderung ueberlebt hatte, ohne dass es
+    # jemand sah: der Randfrequenz-Filter, die Slot-Paritaet und die
+    # Cooldown-Verkuerzung. Wer hier hinschaut, sieht ein Gate, das zu viel
+    # frisst, bevor es Monate kostet — und eines, das nie greift.
+    filter_drops: dict[str, int] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ I/O
     def drain_actions(self) -> list[Action]:
@@ -2014,6 +2021,14 @@ class StateMachine:
             return dx or cqs
         return cqs
 
+    def _buche_filter(self, name: str, vorher: int, nachher: int) -> int:
+        """Haelt fest, wie viele Kandidaten eine Filterstufe entfernt hat."""
+        if nachher < vorher:
+            self.filter_drops[name] = (
+                self.filter_drops.get(name, 0) + (vorher - nachher)
+            )
+        return nachher
+
     def _pick_hunt_target(self, decodes: Iterable[DecodedMsg]) -> DecodedMsg | None:
         """Pick the strongest non-blacklisted CQ from this slot's decodes.
 
@@ -2071,11 +2086,13 @@ class StateMachine:
         # die mit SNR < hunt_snr_floor_db ankommen sind hoehstens schwach
         # erreichbar und produzieren in der Praxis lange Bail-Sequences.
         if self.ctx.hunt_snr_floor_db is not None:
+            _v = len(cqs)
             cqs = [
                 d for d in cqs
                 if d.snr_db is None or d.snr_db >= self.ctx.hunt_snr_floor_db
                 or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
             ]
+            self._buche_filter("snr_floor", _v, len(cqs))
         # 2026-09-08: Kontinent-Gate — aus Kontinenten mit Vollendungsquote
         # unter hunt_continent_gate_pct nur mit PSK-Bestaetigung (NA 3 %).
         if self.ctx.hunt_continent_gate and self.ctx.continent_success:
@@ -2089,11 +2106,14 @@ class StateMachine:
                 if _in_watchlist(d.call_from, self.ctx.watchlist_calls):
                     return True
                 return cu in self.ctx.psk_heard_us or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
+            _v = len(cqs)
             cqs = [d for d in cqs if _cont_ok(d)]
+            self._buche_filter("kontinent_gate", _v, len(cqs))
         # 2026-09-07: schwache Ziele nur mit PSK-Bestaetigung (Telemetrie:
         # unter -13 dB kamen 3 % zurueck, darueber 12 %).
         if self.ctx.hunt_weak_requires_psk:
             weak = self.ctx.hunt_weak_snr_db
+            _v = len(cqs)
             cqs = [
                 d for d in cqs
                 if d.snr_db is None or d.snr_db >= weak
@@ -2101,6 +2121,7 @@ class StateMachine:
                 or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
                 or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
             ]
+            self._buche_filter("schwach_ohne_psk", _v, len(cqs))
         # DT-Filter (Sebastian v0.5.4, Audit-Lücke 1 vs WSJT-X):
         # Stationen mit |dt_s| > 2.5s sind zwar decodebar (FT8-Decoder
         # toleriert mehr), aber ihr eigenes RX-Fenster ist schon zu
@@ -2109,10 +2130,12 @@ class StateMachine:
         # koennen. Audit 2026-05-25: 0.6% der Decodes betroffen,
         # darunter mehrere CQs die wir gepickt aber nie ne Reply
         # bekommen haben (z.B. T48FCR dt=+3.1s, OH5C dt=+2.6s).
+        _v = len(cqs)
         cqs = [
             d for d in cqs
             if d.dt_s is None or abs(d.dt_s) <= 2.5
         ]
+        self._buche_filter("dt_fenster", _v, len(cqs))
         # Audio-Frequenz-Filter: Decodes ausserhalb [min, max] uebersprungen,
         # weil unser Reply dort durch den Rig-Audio-Bandpass gedaempft
         # waere. Sebastian sah 2026-05-22 wie ein Reply auf 262 Hz (unter
@@ -2134,6 +2157,7 @@ class StateMachine:
             fmin = self.ctx.hunt_audio_freq_min_hz
             fmax = self.ctx.hunt_audio_freq_max_hz
             if fmin is not None or fmax is not None:
+                _v = len(cqs)
                 cqs = [
                     d for d in cqs
                     if d.freq_offset_hz is None
@@ -2142,8 +2166,11 @@ class StateMachine:
                         and (fmax is None or d.freq_offset_hz <= fmax)
                     )
                 ]
+                self._buche_filter("bandrand", _v, len(cqs))
         if self.ctx.skip_worked:
+            _v = len(cqs)
             cqs = [d for d in cqs if d.call_from not in self.ctx.worked]
+            self._buche_filter("schon_gearbeitet", _v, len(cqs))
         # DXCC-Only-Modus (Award-Hunter): wir picken nur Calls aus
         # Ländern die wir noch nicht haben. Falls keine neu-DXCC-Calls
         # in dieser Slot-Welle, halten wir die Sendung an statt was
@@ -2160,6 +2187,7 @@ class StateMachine:
         # zu sabotieren.
         if self.ctx.recent_until or self.ctx.worked_until:
             now_ts = datetime.now(UTC).timestamp()
+            _v = len(cqs)
             cqs = [
                 d for d in cqs
                 if self.ctx.recent_until.get(d.call_from or "", 0) <= now_ts
@@ -2167,6 +2195,7 @@ class StateMachine:
                     (d.call_from or "", d.band or ""), 0
                 ) <= now_ts
             ]
+            self._buche_filter("cooldown", _v, len(cqs))
         # v0.20.4 — Hard-Filter fuer die drei "Filter-Tiers" damit sie
         # auch dann greifen wenn nur ein einziger CQ im Slot ist
         # (Tier-Score 0 alleine reicht nicht — bei nur einem Kandidaten
@@ -2180,10 +2209,12 @@ class StateMachine:
         # bestehen als zusaetzliche Defense (falls User sie aus der
         # Priority-Liste rausnimmt aber das Filter-Set noch befuellt).
         if self.ctx.soft_blacklist:
+            _v = len(cqs)
             cqs = [
                 d for d in cqs
                 if (d.call_from or "").upper() not in self.ctx.soft_blacklist
             ]
+            self._buche_filter("soft_blacklist", _v, len(cqs))
         # 2026-09-10 — Trennlinie bei den Filtern: Gates, die fragen "lohnt
         # sich das?" (Pile-Up, SNR-Floor, Kontinent-Quote, Schwach-Gate),
         # werden fuer Stationen von der Wunschliste uebersteuert. Wer eine
@@ -2201,17 +2232,21 @@ class StateMachine:
             # V51WH (Namibia) ebenso. Wer eine Station auf die Liste setzt,
             # nimmt das Gedraenge bewusst in Kauf. Alle anderen bleiben
             # gefiltert.
+            _v = len(cqs)
             cqs = [
                 d for d in cqs
                 if (d.call_from or "").upper() not in self.ctx.pile_up_calls
                 or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
             ]
+            self._buche_filter("pile_up", _v, len(cqs))
         # Slot-Parity: meide Calls, die in UNSEREM Sende-Slot senden — die
         # hoeren uns nicht. Gegen den gerade dekodierten Slot zu pruefen
         # waere genau verkehrt: wer darin sendet, hoert im naechsten, und
         # genau dann antworten wir (siehe _sendet_wenn_wir_senden).
         if self.ctx.current_slot_parity and self.ctx.op_slot_parity:
+            _v = len(cqs)
             cqs = [d for d in cqs if not _sendet_wenn_wir_senden(d, self.ctx)]
+            self._buche_filter("slot_paritaet", _v, len(cqs))
         # Conservative Hunt Gates:
         # - Ein einziger CQ im Slot ("sole") ist live auffaellig oft ein
         #   Fehlversuch. Ohne Award-/Kontextsignal rufen wir ihn nur an,
@@ -2224,6 +2259,7 @@ class StateMachine:
         now_ts = datetime.now(UTC).timestamp()
         strict = self.ctx.hunt_strict_until > now_ts
         if len(cqs) == 1 and not self._is_high_confidence_pick(cqs[0], strict=False):
+            self._buche_filter("einzelner_schwacher_cq", 1, 0)
             self._last_pick_diag = {
                 "winning_tier": "sole_rejected",
                 "n_candidates": 1,
@@ -2231,7 +2267,9 @@ class StateMachine:
             }
             return None
         if strict:
+            _v = len(cqs)
             cqs = [d for d in cqs if self._is_high_confidence_pick(d, strict=True)]
+            self._buche_filter("strict_modus", _v, len(cqs))
         cqs = self._apply_hunt_profile(cqs)
         if not cqs:
             return None
