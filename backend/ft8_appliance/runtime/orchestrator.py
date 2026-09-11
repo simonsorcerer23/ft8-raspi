@@ -6897,6 +6897,21 @@ class Orchestrator:
                  text, audio_freq_hz, self._audio_gain, self._last_alc_pct)
         # Vor dem playback-Return, damit auch Tests und Dev-Betrieb messen.
         # Synth + PTT-Kommando kommen real noch dazu (Millisekunden).
+        # 2026-09-11 — Kommt die Entscheidung aus dem Vorab-Decode, sind wir
+        # noch VOR der Slot-Grenze. Die Sendung darf dann nicht sofort raus:
+        # Sie wuerde in den laufenden Slot hineinragen und bei der
+        # Gegenstation mit negativem Zeitversatz ankommen. Erst live
+        # aufgefallen, weil der gemessene Sendeversatz auf 13,9 s sprang.
+        #
+        # Genau hier liegt der Gewinn des Vorab-Decodes: Die Entscheidung
+        # steht frueh, und die letzten Zehntel bis zur Grenze werden
+        # abgewartet — dadurch beginnt die Aussendung puenktlich statt eine
+        # Sekunde zu spaet.
+        slot_s = 7.5 if self.config.operating.mode == "FT4" else 15.0
+        rest_bis_grenze = slot_s - self._slot_phase_s()
+        if 0.0 < rest_bis_grenze <= 2.5:
+            await asyncio.sleep(rest_bis_grenze)
+
         if not self._record_tx_start_offset():
             return  # B4: manueller Burst mitten im Slot — entfaellt, s.u.
 
