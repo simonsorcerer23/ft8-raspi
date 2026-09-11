@@ -6169,8 +6169,17 @@ class Orchestrator:
         deshalb monatelang nichts getan.
 
         Die Werte sind absichtlich roh (Anzahl Eintraege). Was davon "zu
-        wenig" ist, haengt vom Band und der Tageszeit ab — aber eine Null,
-        wo dauerhaft etwas stehen sollte, ist immer ein Befund.
+        wenig" ist, haengt vom Band und der Tageszeit ab.
+
+        **Zur Lesart:** Die ersten fuenf Zeilen sind Momentwerte aus dem
+        zuletzt verarbeiteten Slot. In einem Sende-Slot hoert die Station
+        nichts, dort stehen sie zu Recht auf null — eine einzelne Messung
+        sagt also nichts. Aussagekraeftig sind sie nur ueber mehrere Slots
+        hinweg. Die Quellen aus der Datenbank dagegen muessen dauerhaft
+        stehen; eine Null ist dort immer ein Befund. ``psk_hoert_uns``
+        braucht nach einem Neustart rund zwei Minuten bis zum ersten Abruf,
+        ``slot_paritaet_gelernt`` faengt bei null an und waechst erst mit
+        drei Decodes je Station.
         """
         c = self.state_machine.ctx
         def _n(wert) -> int:

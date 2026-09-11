@@ -158,6 +158,33 @@ def main() -> int:
         "group by 1 order by 1", (seit,)
     ).fetchall(), ("Klasse", "Versuche", "fertig", "Quote"))
 
+    print("\n=== Datenbasis: worauf stuetzt der Picker seine Entscheidungen? ===")
+    import json as _json
+    import urllib.request as _u
+    _tok = None
+    try:
+        _tok = _token()
+        req = _u.Request("http://100.77.48.117:8000/api/status",
+                         headers={"X-API-Token": _tok})
+        with _u.urlopen(req, timeout=10) as r:
+            st = _json.load(r) or {}
+        ch = st.get("context_health") or {}
+        dauerhaft = ("gearbeitete_calls", "soft_blacklist", "wunschliste",
+                     "kontinent_quoten", "qso_cooldowns")
+        moment = ("kontinent_je_call", "dxcc_je_call", "standort_je_call",
+                  "rarity_je_call", "pile_up_erkannt")
+        tabelle(
+            [(k, ch.get(k, "?"), "muss stehen" if k in dauerhaft else
+              ("Momentwert" if k in moment else "waechst nach Neustart"))
+             for k in list(dauerhaft) + list(moment)
+             + ["slot_paritaet_gelernt", "psk_hoert_uns"]],
+            ("Quelle", "Eintraege", "Erwartung"),
+        )
+        print("    Momentwerte stammen aus dem letzten Slot — in einem Sende-Slot")
+        print("    sind sie zu Recht null. Eine Null bei 'muss stehen' ist ein Befund.")
+    except Exception as e:
+        print(f"    (Station nicht erreichbar: {e})")
+
     print("\n=== Was die Filterstufen des Pickers wegnehmen ===")
     print("    (Live-Zaehler der Station, seit ihrem letzten Neustart)")
     import json as _json
