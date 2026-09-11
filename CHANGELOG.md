@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.93.0 — 2026-09-11
+- fix: Picker-Kontext stammte aus den Decodes des vorigen Slots
+
 ## v0.92.0 — 2026-09-11
 - fix: Erfolgs-Cooldown ueberlebt jetzt den Neustart
 
