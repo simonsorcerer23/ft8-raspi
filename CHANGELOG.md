@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.114.0 — 2026-09-11
+- fix: Sperre aus der Startphase blieb haengen, die Station funkte nicht mehr
+
 ## v0.113.0 — 2026-09-11
 - fix: fehlender SWR-Wert heisst 'unbekannt', nicht 'perfekt'
 
