@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.110.0 — 2026-09-11
+- fix: A/B-Arm des Fernziel-Gates lief in Slots statt in Zeitbloecken
+- test: Kette vom Fernziel-Gate bis zum CQ-Fallback festgenagelt
+
 ## v0.109.0 — 2026-09-11
 - feat: Fernziel-Gate fuer den Alleingang, mit A/B-Schalter
 - feat: qso_bilanz.py zeigt die A/B-Auswertung des Vorab-Decodes
