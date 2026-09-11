@@ -37,7 +37,11 @@ class HardwareState:
     # war bis 2026-09-06 genau die Luecke, durch die eine frei laufende
     # Uhr als "perfekt synchron" durchging.
     time_offset_s: float | None = 0.0
-    swr: float = 1.2
+    # None = das Rig hat den Wert nicht geliefert. Bis 2026-09-11 setzte
+    # der Orchestrator hier 1,0 ein — einen Idealwert, den niemand
+    # gemessen hatte. Der Guard sah dann 'perfekt angepasst', obwohl er
+    # gar nichts wusste. Siehe swr_guard.
+    swr: float | None = 1.2
     alc_pct: int = 0
     battery_v: float | None = None  # None = on external power
     # None = Sensor nicht lesbar (kein /sys/class/thermal, Dev-Rechner).
@@ -199,6 +203,25 @@ def dial_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
 
 
 def swr_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
+    """Blocke TX bei zu hohem Stehwellenverhaeltnis.
+
+    ``None`` heisst "das Rig hat keinen Wert geliefert" und sperrt hier
+    bewusst *nicht*: Ein Rig, das gar nicht mehr antwortet, faengt der
+    :func:`rig_link_guard` eine Ebene hoeher ueber das Alter des Snapshots
+    ab — er ist genau dafuer da, damit nicht fuenf Guards einzeln auf
+    ``None`` pruefen muessen. Uebrig bleibt der Fall, dass rigctld lebt und
+    nur dieses eine Level fehlt (jedes Feld hat sein eigenes try/except);
+    dann ist Weiterfunken richtig, denn das Rig hat seinen eigenen Schutz.
+
+    Bis 2026-09-11 kam dieser Fall hier gar nicht an: Der Orchestrator
+    ersetzte ``None`` durch 1,0 und der Guard urteilte ueber einen
+    Idealwert, den niemand gemessen hatte. Das ist derselbe Fehlertyp, der
+    beim Zeit-Guard (GPS-Fix statt Uhrzeit) und beim ALC-Guard
+    (hartkodierte 0) schon einmal zuschlug — nur faellt er bei SWR nicht
+    auf, weil ein gut angepasster Aufbau tatsaechlich 1,0 misst.
+    """
+    if hw.swr is None:
+        return GuardResult(True, "swr_guard")
     if hw.swr > lim.swr_max:
         return GuardResult(
             False, "swr_guard", "guard.swr",

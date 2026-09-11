@@ -625,6 +625,9 @@ class Orchestrator:
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
+    # Seit wann fehlt der SWR-Wert, obwohl gesendet wird? s. _buche_swr.
+    _swr_fehlt_seit: float | None = field(default=None, init=False)
+    _swr_fehlt_gemeldet: bool = field(default=False, init=False)
     # Letzter in swr_log geschriebener Wert — s. _buche_swr.
     _swr_log_at: float = field(default=0.0, init=False)
     _swr_log_wert: float | None = field(default=None, init=False)
@@ -6248,6 +6251,33 @@ class Orchestrator:
             self._audio_clip_since = None
 
     # ------------------------------------------------------------------ SWR / ALC warnings
+    _SWR_FEHLT_WARNUNG_S: typing.ClassVar[float] = 900.0
+
+    def _melde_fehlenden_swr(self) -> None:
+        """Einmal melden, wenn waehrend des Sendens dauerhaft kein SWR kommt.
+
+        Nur waehrend eines eigenen Bursts: Zwischen den Aussendungen ist ein
+        fehlender Wert normal. Bleibt er auch beim Senden ueber eine
+        Viertelstunde aus, arbeitet der SWR-Schutz blind — das soll im Log
+        stehen, statt unbemerkt zu bleiben.
+        """
+        if not self._tx_burst_active:
+            return
+        jetzt = time.monotonic()
+        if self._swr_fehlt_seit is None:
+            self._swr_fehlt_seit = jetzt
+            return
+        if self._swr_fehlt_gemeldet:
+            return
+        if jetzt - self._swr_fehlt_seit < self._SWR_FEHLT_WARNUNG_S:
+            return
+        self._swr_fehlt_gemeldet = True
+        log.warning(
+            "SWR-Schutz ohne Messwert: das Rig liefert seit %.0f Minuten "
+            "kein SWR, obwohl gesendet wird — der Guard kann nicht greifen",
+            (jetzt - self._swr_fehlt_seit) / 60.0,
+        )
+
     def _buche_swr(self, swr: float) -> None:
         """Den Stehwellenwert in die Historie schreiben.
 
@@ -6314,7 +6344,13 @@ class Orchestrator:
             return
         swr = self._last_rig.swr
         if swr is None:
+            # Stillschweigend aussteigen hiesse: Der Schutz ist aus, und
+            # niemand erfaehrt es. Ein Waechter, der nie anschlaegt, sieht
+            # aus wie einer, der funktioniert.
+            self._melde_fehlenden_swr()
             return
+        self._swr_fehlt_seit = None
+        self._swr_fehlt_gemeldet = False
         op = self.config.operating
         warn = op.swr_warn
         hard = op.swr_max
@@ -6978,7 +7014,11 @@ class Orchestrator:
             # Der time_guard sperrt dann — ein erfundener Idealwert liess
             # bis 2026-09-06 eine frei laufende Uhr als synchron durchgehen.
             time_offset_s=self._chrony.offset_s if self._chrony else None,
-            swr=rig.swr if rig.swr is not None else 1.0,
+            # Kein Ersatzwert: 1,0 hiesse 'perfekt angepasst' und waere
+            # eine Messung, die nie stattgefunden hat. Der swr_guard
+            # behandelt None ausdruecklich, das Ausbleiben des Rigs
+            # faengt der rig_link_guard ueber das Snapshot-Alter.
+            swr=rig.swr,
             # ALC aus dem letzten TX-Burst (Peak, gesetzt an der
             # PTT-Abfallflanke). Stand hier bis 2026-07-30 hartkodiert auf
             # 0 — der alc_guard konnte darum nie feuern. None = seit dem
