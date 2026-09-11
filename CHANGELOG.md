@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.94.0 — 2026-09-11
+- fix: gelernte Slot-Paritaeten ueberleben den Neustart
+- docs: Lesart der Datenbasis-Anzeige klarstellen
+
 ## v0.93.0 — 2026-09-11
 - fix: Picker-Kontext stammte aus den Decodes des vorigen Slots
 
