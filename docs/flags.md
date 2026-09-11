@@ -308,13 +308,24 @@ kippt.
 
 ### `hunt_sole_dx_ab` (2026-09-11)
 
-Würfelt den Arm **je Slot**, wie beim Vorab-Decode und aus demselben Grund
-nicht im festen Takt: Der Sende-Rhythmus ist zwei Slots lang und hätte sich
-mit einem 2-Slot-Takt verkoppelt.
+Würfelt den Arm in **Blöcken von 15 Minuten**, nicht je Slot. Der Grund ist
+die Länge der Wirkungskette: Das Gate greift in Slot N, der CQ-Fallback
+startet nach zwei Slots ohne Pick, die Antwort kommt noch später. Wechselte
+der Arm je Slot, würde ein eingehender Anruf dem Arm seines *Ankunfts*-Slots
+zugeschrieben statt dem, der den CQ-Ruf überhaupt veranlasst hat — und der
+Effekt verteilte sich bei 50/50 exakt gleichmäßig auf beide Arme, ob das
+Gate nun wirkt oder nicht. Der A/B wäre wertlos.
 
-Der Arm wird einmal je Slot gezogen und gemerkt — Vorab-Durchgang und
-regulärer Durchgang entscheiden im selben Slot und müssen denselben Arm
-sehen, sonst misst das Experiment sich selbst kaputt.
+Fünfzehn Minuten sind lang genug, dass Gate, CQ-Ruf und Antwort im selben
+Arm liegen, und kurz genug, dass sich die Ausbreitung zwischen den Armen
+nicht wesentlich unterscheidet.
+
+Innerhalb des Blocks sehen Vorab-Durchgang und regulärer Durchgang denselben
+Arm — sie entscheiden im selben Slot und dürfen sich nicht widersprechen.
+
+(Der Vorab-Decode würfelt dagegen zu Recht je Slot: Dort ist die
+Wirkungskette einen Slot lang, die Aussendung folgt unmittelbar auf die
+Entscheidung.)
 
 `pick_attempt.fern_gate` hält je Versuch fest, welcher Arm galt, auch für
 eingehende Anrufe: Ob der Arm galt, entscheidet ja gerade darüber, ob wir in
