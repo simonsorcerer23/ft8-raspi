@@ -233,6 +233,25 @@ def detect_lonely_cqs(current: list, prev1: list | None, prev2: list | None) -> 
     answered = {(d.call_to or "").upper() for d in prev1 if d.call_to}
     return {c for c in cq_callers(current) & cq_callers(prev2) if c not in answered}
 
+def qso_cooldown_minuten(cd_min: int, rarity: int) -> tuple[int, str]:
+    """Wie lange bleibt eine gearbeitete Station auf diesem Band gesperrt?
+
+    Der Schluessel ist (Call, Band) — andere Baender sind davon nie
+    betroffen. Deshalb gibt es hier auch keine Verkuerzung mehr fuer
+    Routine-Stationen: Die frueher dafuer genannte Begruendung ("andere
+    Baender sollen schnell wieder pickbar sein") war seit der
+    Band-Bewusstheit gegenstandslos, und auf demselben Band blieb nur die
+    Nebenwirkung. Am 2026-09-10 wurde EA5QS dreimal in 30 Minuten auf 20 m
+    gearbeitet, EA1FUB zweimal in 14 Minuten.
+
+    Seltenes DX bleibt laenger gesperrt: Dort will man den anderen den
+    Vortritt lassen, statt gleich noch einmal zu rufen.
+    """
+    if rarity >= 70:
+        return cd_min * 4, "rare-DXCC"
+    return cd_min, "default"
+
+
 @dataclass(slots=True)
 class OrchestratorStatus:
     """Snapshot for /api/status."""
@@ -6722,11 +6741,17 @@ class Orchestrator:
                 #     im Sack, wir wollen nicht 30 min spaeter nochmal
                 #     den selben rare Op picken — andere brauchen auch
                 #     eine Chance, und wir picken andere wichtigere DX.
-                #   * Routine-Op (rarity_score < 20, kein new DXCC, kein
-                #     new Grid) → 1/3 cd_min (=~10 min). Confirms via
-                #     Mehrfachkontakt sind erlaubt, andere Ops auf
-                #     anderem Band sollen schnell wieder pickbar sein.
                 #   * Sonst → cd_min Default.
+                #
+                # 2026-09-11: Die fruehere Verkuerzung auf 1/3 cd_min fuer
+                # Routine-Ops ist entfallen. Ihre Begruendung ("andere Ops
+                # auf anderem Band sollen schnell wieder pickbar sein")
+                # stammt aus der Zeit, als der Cooldown call-weit galt —
+                # seit v0.32.0 steht das Band im Schluessel, andere Baender
+                # sind also ohnehin frei. Auf demselben Band erzeugte die
+                # Verkuerzung nur Doppel-QSOs: EA5QS wurde am 2026-09-10
+                # dreimal in 30 Minuten auf 20 m gearbeitet, EA1FUB zweimal
+                # in 14 Minuten.
                 try:
                     from ..integrations.dxcc_rarity import rarity_for
                     rarity = rarity_for(call)
@@ -6740,17 +6765,7 @@ class Orchestrator:
                     and band is not None
                     and (g4, band) not in self._worked_grid_band
                 )
-                if rarity >= 70:
-                    effective_min = cd_min * 4
-                    cd_kind = "rare-DXCC"
-                elif (rarity < 20
-                        and not is_new_dxcc
-                        and not is_new_grid):
-                    effective_min = max(1, cd_min // 3)
-                    cd_kind = "routine"
-                else:
-                    effective_min = cd_min
-                    cd_kind = "default"
+                effective_min, cd_kind = qso_cooldown_minuten(cd_min, rarity)
                 # v0.32.0 — Erfolgs-Cooldown band-bewusst: (Call, Band).
                 # Band aus dem QSO-Payload; leeres Band → "" (greift dann
                 # wie zuvor call-weit fuer diesen einen Eintrag).
