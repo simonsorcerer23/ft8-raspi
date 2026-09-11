@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.98.0 — 2026-09-11
+- feat: Vorab-Decode vor der Slot-Grenze, mit A/B-Schalter
+
 ## v0.97.0 — 2026-09-11
 - feat: Zeitaufteilung im Slot bis zur Sendeentscheidung messen
 
