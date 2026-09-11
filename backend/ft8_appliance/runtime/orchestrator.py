@@ -625,6 +625,9 @@ class Orchestrator:
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
+    # Letzter in swr_log geschriebener Wert — s. _buche_swr.
+    _swr_log_at: float = field(default=0.0, init=False)
+    _swr_log_wert: float | None = field(default=None, init=False)
     # Gewuerfelter A/B-Arm des Fernziel-Gates, je Zeitblock einmal gezogen.
     _fern_arm_slot: int = field(default=-1, init=False)
     _fern_arm: bool = field(default=False, init=False)
@@ -6245,6 +6248,54 @@ class Orchestrator:
             self._audio_clip_since = None
 
     # ------------------------------------------------------------------ SWR / ALC warnings
+    def _buche_swr(self, swr: float) -> None:
+        """Den Stehwellenwert in die Historie schreiben.
+
+        Die Tabelle ``swr_log`` gab es seit jeher und war nie beschrieben
+        worden. Ohne Verlauf faellt eine Verschlechterung der Antenne nicht
+        auf: Ein Stecker, der ueber Wochen korrodiert, oder Wasser im Kabel
+        aendern das Stehwellenverhaeltnis langsam. Der Schutz greift erst
+        beim Grenzwert — bis dahin sieht jeder Einzelwert unauffaellig aus.
+
+        Nur waehrend eines eigenen Bursts: Zwischen den Aussendungen faellt
+        der gemessene Wert auf den Empfangs-Vorgabewert 1,0 zurueck und
+        waere gelogen. Die Settling-Periode nach dem Tasten ist beim Aufruf
+        bereits abgewartet.
+
+        Sparsam: Ein Eintrag, wenn sich der Wert merklich aendert, sonst
+        hoechstens alle zehn Minuten einer als Grundlinie. Der Rig-Poll
+        laeuft jede Sekunde — ungefiltert waeren das Zehntausende Zeilen
+        am Tag fuer eine Groesse, die sich kaum bewegt.
+        """
+        if not self._tx_burst_active or not self.db_enabled:
+            return
+        jetzt = time.monotonic()
+        vorher = self._swr_log_wert
+        merklich = vorher is None or abs(swr - vorher) >= 0.15
+        faellig = (jetzt - self._swr_log_at) >= 600.0
+        if not (merklich or faellig):
+            return
+        band = self._current_band() or self.state_machine.ctx.band
+        freq = getattr(self._last_rig, "freq_hz", None)
+        if not band or not freq:
+            return
+        self._swr_log_at = jetzt
+        self._swr_log_wert = swr
+        try:
+            asyncio.create_task(self._persist_swr(band, int(freq), float(swr)))
+        except Exception:
+            pass
+
+    async def _persist_swr(self, band: str, freq_hz: int, swr: float) -> None:
+        """Fail-soft — eine Messreihe darf den Sendebetrieb nie kosten."""
+        try:
+            from ..db.models import SwrLog
+            async with session_scope() as s:
+                s.add(SwrLog(ts=datetime.now(UTC), band=band,
+                             freq_hz=freq_hz, swr=swr))
+        except Exception as exc:
+            log.debug("SWR nicht gespeichert: %s", exc)
+
     def _check_swr_warn(self) -> None:
         """SWR-Live-Monitor während laufender TX (PTT=True).
 
@@ -6277,6 +6328,8 @@ class Orchestrator:
         SWR_SETTLING_S = 1.5
         if self._ptt_on_at > 0 and now - self._ptt_on_at < SWR_SETTLING_S:
             return
+
+        self._buche_swr(swr)
 
         # Stufe 1: Hard-Runaway → sofort cut
         # 2026-09-06: nur waehrend EIGENER Bursts eingreifen. Beim Abstimmen
