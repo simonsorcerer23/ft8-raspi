@@ -615,6 +615,11 @@ class Orchestrator:
     # die wir hoeren, im Mittel bei +0,12 s liegen. Bevor daran etwas
     # umgebaut wird, muss klar sein, welcher Abschnitt sie verbraucht.
     _slot_phasen_s: dict[str, float] = field(default_factory=dict, init=False)
+    # Vorab-Decode: welcher Slot zuletzt vorab entschieden wurde, und ob der
+    # A/B-Wechsel diesen Slot vorab laufen laesst.
+    _vorab_slot_index: int = field(default=-1, init=False)
+    _vorab_ab_zaehler: int = field(default=0, init=False)
+    _vorab_aktiv_diesen_slot: bool = field(default=False, init=False)
     # nur tatsaechlich gesendete Bursts — verworfene (B4) verfaelschen sonst den Mittelwert
     _tx_sent_offsets_s: list[float] = field(default_factory=list, init=False)
     # 2026-09-06 lonely_cq: Decodes der letzten Slots (aelteste zuerst)
@@ -917,6 +922,8 @@ class Orchestrator:
             setattr(self.decode_source, "jt9_ap_flags", int(getattr(self.config.operating, "decoder_jt9_ap_flags", 1)))
         self._spawn(self.gps.run_forever(), name="gpsd")
         self._spawn(self._slot_loop(), name="slot-loop")
+        if getattr(self.config.operating, "decoder_pre_decode", False):
+            self._spawn(self._vorab_decode_loop(), name="vorab-decode")
         self._spawn(self._rig_poll_loop(), name="rig-poll")
         if self.config.operating.mode_watchdog_min > 0:
             self._spawn(self._mode_watchdog_loop(), name="mode-watchdog")
@@ -3255,9 +3262,91 @@ class Orchestrator:
     # noch von einem Vorgaenger-Prozess ansteht (siehe start()).
     _boot_ptt_checked: bool = field(default=False, init=False)
 
+    def _vorab_gewuenscht(self) -> bool:
+        """Soll der naechste Slot vorab dekodiert werden?
+
+        Beim A/B wechselt das slotweise, damit sich beide Wege unter
+        denselben Bandbedingungen vergleichen lassen — sonst misst man die
+        Ausbreitung und nicht den Umbau.
+        """
+        op = self.config.operating
+        if not getattr(op, "decoder_pre_decode", False):
+            return False
+        if getattr(op, "decoder_pre_decode_ab", False):
+            return (self._vorab_ab_zaehler % 2) == 0
+        return True
+
+    async def _vorab_decode_loop(self) -> None:
+        """Decodiert kurz VOR der Slot-Grenze, damit die Sendung puenktlich ist.
+
+        Der regulaere Weg beginnt erst an der Grenze und braucht 0,5-1,0 s;
+        die Sendung geht dadurch rund eine Sekunde zu spaet raus. FT8-Signale
+        enden nach 12,64 s — wer puenktlich sendet, ist also lange vor der
+        Grenze vollstaendig im Ringpuffer.
+
+        Der Durchgang laeuft im selben Pfad wie sonst (on_decodes), nur
+        frueher. Findet er nichts, entscheidet der regulaere Durchgang wie
+        bisher — es geht also nichts verloren, es kann nur frueher werden.
+        """
+        vorab = getattr(self.decode_source, "vorab_decode", None)
+        if vorab is None:
+            log.info("Vorab-Decode: Pipeline unterstuetzt ihn nicht — Schleife endet")
+            return
+        while True:
+            try:
+                op = self.config.operating
+                slot_s = 7.5 if op.mode == "FT4" else 15.0
+                lead = float(getattr(op, "decoder_pre_decode_lead_s", 1.3))
+                jetzt = time.time()
+                grenze = jetzt - (jetzt % slot_s) + slot_s
+                schlaf = (grenze - lead) - jetzt
+                if schlaf > 0:
+                    await asyncio.sleep(schlaf)
+                if not self._vorab_gewuenscht():
+                    self._vorab_aktiv_diesen_slot = False
+                    await asyncio.sleep(lead)      # bis hinter die Grenze
+                    continue
+                if self._in_slot_tick:
+                    # Der regulaere Durchgang laeuft noch (voriger Slot) —
+                    # dann nicht dazwischenfunken.
+                    await asyncio.sleep(lead)
+                    continue
+                index = (self._last_slot.index + 1) if self._last_slot else 0
+                if index == self._vorab_slot_index:
+                    await asyncio.sleep(lead)
+                    continue
+                self._vorab_slot_index = index
+                tick = SlotTick(
+                    index=index, posix=grenze,
+                    utc_start=datetime.fromtimestamp(grenze, tz=UTC),
+                    slot_seconds=slot_s,
+                )
+                t0 = time.time()
+                decodes = await vorab(tick)
+                self._vorab_aktiv_diesen_slot = True
+                self._slot_phasen_s["vorab_decode"] = round(time.time() - t0, 3)
+                self._slot_phasen_s["vorab_decodes"] = len(decodes)
+                if decodes:
+                    self._last_decodes = decodes
+                    await self._refresh_decode_context(decodes)
+                    self.state_machine.ctx.vorab_decode_aktiv = True
+                    try:
+                        self.state_machine.on_decodes(self._hardware_state, decodes)
+                    finally:
+                        self.state_machine.ctx.vorab_decode_aktiv = False
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("Vorab-Decode fehlgeschlagen: %s", exc)
+                try:
+                    await asyncio.sleep(1.0)
+                except asyncio.CancelledError:
+                    raise
+
     async def _slot_loop(self) -> None:
         try:
             async for tick in self.slot_clock:
+                self._vorab_ab_zaehler += 1
                 await self.process_slot(tick)
         except asyncio.CancelledError:
             raise
@@ -7640,6 +7729,7 @@ class Orchestrator:
                     tx_power_w=self._tx_power_w,
                     winning_tier=meta.get("winning_tier"),
                     reply_kind=meta.get("reply_kind"),
+                    pre_decode=meta.get("pre_decode"),
                     n_candidates=meta.get("n_candidates"),
                     was_tailend=meta.get("was_tailend"),
                     hunt_priority=meta.get("hunt_priority"),

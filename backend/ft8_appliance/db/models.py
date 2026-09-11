@@ -379,3 +379,6 @@ class PickAttempt(Base):
     continent: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # 2026-09-07 A/B Antwortfrequenz: quiet | on_freq
     reply_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Kam die Sendeentscheidung aus dem Vorab-Decode (vor der Slot-Grenze)
+    # oder aus dem regulaeren Durchgang danach? Traegt das A/B.
+    pre_decode: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)

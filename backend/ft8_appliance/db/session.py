@@ -196,6 +196,8 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "continent": "TEXT",
         # 2026-09-07
         "reply_kind": "TEXT",
+        # 2026-09-11 — kam die Entscheidung aus dem Vorab-Decode?
+        "pre_decode": "BOOLEAN",
     }
     for name, ddl in cols.items():
         if name not in existing:

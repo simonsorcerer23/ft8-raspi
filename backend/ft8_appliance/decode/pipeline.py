@@ -201,6 +201,11 @@ class DecodePipelineMetrics:
     late_decodes_total: int = 0
     late_pass_last_duration_s: float = 0.0
     late_pass_skipped: int = 0
+    # 2026-09-11 — Vorab-Decode: Dauer und Ausbeute des Durchgangs vor der
+    # Slot-Grenze. Getrennt von der regulaeren Slot-Metrik, damit der
+    # Vergleich beider Wege moeglich bleibt.
+    vorab_dauer_s: float = 0.0
+    vorab_decodes: int = 0
     # Stufe 3 (jt9, 2026-09-08)
     jt9_last_count: int = 0
     jt9_total: int = 0
@@ -346,7 +351,26 @@ class DecodePipeline:
     # ALSA-Period plus Scheduling-Slack ohne den nächsten Slot zu blocken.
     extract_delay_s: float = 0.15
 
+    async def vorab_decode(self, tick: SlotTick) -> list[DecodedMsg]:
+        """Decode vor der Slot-Grenze — fuer eine puenktliche Sendung.
+
+        *tick* traegt hier die **kommende** Slot-Grenze. Damit rechnet
+        ``slot_start_posix`` von selbst richtig, und ``extract_slot`` nullt
+        den Teil des Fensters, der noch nicht aufgenommen ist. FT8-Signale
+        sind nach 12,64 s zu Ende: Wer puenktlich sendet, ist also
+        vollstaendig im Puffer, sobald genug Vorlauf da ist.
+
+        Nebenwirkungen des regulaeren Durchgangs bleiben aus — kein
+        jt9-Anstoss, keine Notch-Aktualisierung, keine Slot-Metrik. Der
+        regulaere Durchgang an der Grenze macht das ohnehin, und die
+        Statistik soll nicht doppelt zaehlen.
+        """
+        return await self._decode(tick, vorab=True)
+
     async def __call__(self, tick: SlotTick) -> list[DecodedMsg]:
+        return await self._decode(tick, vorab=False)
+
+    async def _decode(self, tick: SlotTick, *, vorab: bool = False) -> list[DecodedMsg]:
         from ..audio.slot_sync import (
             FT4_SLOT_SECONDS,
             FT4_TX_SECONDS,
@@ -396,10 +420,17 @@ class DecodePipeline:
         # gefunden hat, strippe sie aus dem Slot bevor Decoder drueber
         # laeuft. FFT-Spektral-Subtract, numpy-only, ~10ms pro Slot.
         pcm_for_decode = extraction.pcm_s16le
-        if self.notch_detector is not None:
+        if self.notch_detector is not None and not vorab:
             from ..audio.notch import apply_notches
             self.notch_detector.feed(pcm_for_decode)
             self.notch_detector.maybe_update()
+            notches = self.notch_detector.active_notches_hz
+            if notches:
+                pcm_for_decode = apply_notches(pcm_for_decode, notches)
+        elif self.notch_detector is not None and vorab:
+            # Bekannte Stoerlinien werden auch vorab gefiltert, nur die
+            # Detektor-Statistik bleibt dem regulaeren Durchgang vorbehalten.
+            from ..audio.notch import apply_notches
             notches = self.notch_detector.active_notches_hz
             if notches:
                 pcm_for_decode = apply_notches(pcm_for_decode, notches)
@@ -470,11 +501,13 @@ class DecodePipeline:
                 )
         except Exception:  # noqa: BLE001 — Diagnose darf nie den Slot kosten
             pass
-        self._slot_seen[tick.index] = {r.message for r in raw}
-        for old_idx in [i for i in self._slot_seen if i < tick.index - 3]:
-            self._slot_seen.pop(old_idx, None)
-
-        self.metrics.record_slot(len(raw), duration_s=duration_s)
+        if not vorab:
+            # Dedup-Tabelle und Slot-Metrik gehoeren dem regulaeren
+            # Durchgang; sonst zaehlt beides doppelt.
+            self._slot_seen[tick.index] = {r.message for r in raw}
+            for old_idx in [i for i in self._slot_seen if i < tick.index - 3]:
+                self._slot_seen.pop(old_idx, None)
+            self.metrics.record_slot(len(raw), duration_s=duration_s)
         # Late-Slot-Detection: wenn der Decoder >80% der Slot-Laenge
         # braucht, ist er nahe am Limit. Bei FT8: >12s von 15s.
         # Bei FT4: >6s von 7.5s. Pi 5 sollte unter 1s bleiben, Pi 4
@@ -517,6 +550,11 @@ class DecodePipeline:
                 log.debug("band_resolver failed: %s, fallback band_hint=%s", exc, self.band_hint)
 
         out = [_to_decoded_msg(r, tick, band_for_decodes) for r in raw]
+        if vorab:
+            # Stufe 2 und jt9 laufen am regulaeren Durchgang — hier nicht.
+            self.metrics.vorab_dauer_s = round(duration_s, 3)
+            self.metrics.vorab_decodes = len(raw)
+            return out
         if late_decoder is not None:
             self._schedule_late_pass(
                 late_decoder, pcm_for_decode, tick, band_for_decodes, raw, slot_seconds,

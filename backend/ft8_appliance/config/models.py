@@ -380,6 +380,22 @@ class OperatingConfig(BaseModel):
     # 2026-09-08 Stufe 3: WSJT-X' jt9 (Paket wsjtx) als Unterprozess neben
     # Stufe 2. Tiefe 2 = 6 s am Pi 4B, 97,5 % der WSJT-X-Decodes; Tiefe 3 waere
     # 11-17 s und passt nicht in den Slot. Auto-aus ohne installiertes jt9.
+    # 2026-09-11 — Vorab-Decode. Der Decoder laeuft sonst erst an der
+    # Slot-Grenze und braucht 0,5-1,0 s; die Sendung geht dadurch rund
+    # eine Sekunde nach der Grenze raus, waehrend die Stationen, die wir
+    # hoeren, im Mittel bei +0,12 s liegen. FT8-Signale sind nach 12,64 s
+    # zu Ende — ab dann ist alles da, was ein puenktlicher Sender
+    # geschickt hat. Faengt der Decode schon vor der Grenze an, steht die
+    # Sendeentscheidung rechtzeitig.
+    #
+    # Preis: Stationen mit groesserem Zeitversatz als
+    # (lead_s - 0,15 s Audio-Latenz) sind im Vorab-Durchgang noch nicht
+    # vollstaendig und fallen dort heraus. Sie kommen weiterhin im
+    # reguleren Durchgang ins Log, nur nicht mehr in die Sendeentscheidung.
+    decoder_pre_decode: bool = False
+    decoder_pre_decode_lead_s: float = Field(default=1.3, ge=0.3, le=2.5)
+    # Slotweise abwechseln, um den Nutzen zu messen statt ihn zu glauben.
+    decoder_pre_decode_ab: bool = False
     decoder_jt9: bool = True
     decoder_jt9_depth: int = Field(default=2, ge=1, le=3)
     # Tiefe 3, wenn wir im naechsten Slot senden (QSO/CQ): 30 s Zeitfenster
