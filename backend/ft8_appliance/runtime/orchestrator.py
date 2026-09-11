@@ -625,6 +625,11 @@ class Orchestrator:
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
+    # Sperr-Waechter: seit wann steht TX_LOCKED, und wie oft wurde
+    # zuletzt selbst geheilt (Pendelschutz) — s. _sperr_waechter_loop.
+    _lock_seit: float | None = field(default=None, init=False)
+    _lock_heilungen: list[float] = field(default_factory=list, init=False)
+    _lock_push_at: float = field(default=0.0, init=False)
     # Bis zur ersten echten Hardware-Messung — s. _loese_startsperre.
     _erste_hw_messung_offen: bool = field(default=True, init=False)
     # Seit wann fehlt der SWR-Wert, obwohl gesendet wird? s. _buche_swr.
@@ -956,6 +961,7 @@ class Orchestrator:
         self._spawn(self._rig_poll_loop(), name="rig-poll")
         if self.config.operating.mode_watchdog_min > 0:
             self._spawn(self._mode_watchdog_loop(), name="mode-watchdog")
+            self._spawn(self._sperr_waechter_loop(), name="sperr-waechter")
         self._spawn(self._daily_summary_loop(), name="daily-summary")
         self._spawn(self._continent_prior_loop(), name="continent-prior")
         self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
@@ -4318,6 +4324,112 @@ class Orchestrator:
         self._autopilot_last_switch_at = now
         self._autopilot_last_reason = reason
         self._push_status()
+
+    # Wie lange TX_LOCKED stehen darf, bevor der Waechter eingreift.
+    _LOCK_GEDULD_S: typing.ClassVar[float] = 600.0
+    # Mehr Selbstheilungen je Stunde heissen: Es pendelt, also Finger weg.
+    _LOCK_HEILUNG_MAX_PRO_H: typing.ClassVar[int] = 3
+
+    async def _sperr_waechter_loop(self) -> None:
+        """Aufpassen, dass die Station nicht dauerhaft gesperrt stehen bleibt.
+
+        ``TX_LOCKED`` loest sich nicht von selbst. Das ist fuer einen
+        echten Hardware-Fehler richtig — bei einem Stehwellen-Weglauf soll
+        ein Mensch nachsehen, bevor weitergesendet wird. Es ist aber falsch,
+        wenn der Grund laengst weg ist: Am 2026-09-11 sperrte der
+        Zeit-Waechter gegen den Startwert von 99 s und die Station funkte
+        zwanzig Minuten nicht mehr, bei tatsaechlich mikrosekundengenauer
+        Uhr. Aufgefallen ist das nur zufaellig.
+
+        Der Waechter prueft jede Minute und greift erst nach
+        ``_LOCK_GEDULD_S`` ein — kurze Sperren im Normalbetrieb sind kein
+        Fall fuer ihn.
+
+        Zwei Ausgaenge:
+
+        * **Alle Bedingungen wieder erfuellt** → Sperre aufheben und im Log
+          vermerken. Damit daraus kein Dauerpendeln wird, zaehlt er die
+          Selbstheilungen: Ab der vierten in einer Stunde greift er nicht
+          mehr ein, sondern meldet. Wer viermal je Stunde heilt, hat kein
+          haengendes Banner, sondern ein echtes Problem.
+        * **Ein Grund besteht weiter** → Push aufs Handy, hoechstens
+          stuendlich. Die Station steht ja still; das soll niemand erst
+          Stunden spaeter merken.
+        """
+        from ..statemachine.guards import evaluate, first_failure
+        from ..statemachine.states import State
+
+        while True:
+            await asyncio.sleep(60.0)
+            try:
+                sm = self.state_machine
+                if sm.state is not State.TX_LOCKED:
+                    self._lock_seit = None
+                    continue
+                jetzt = time.monotonic()
+                if self._lock_seit is None:
+                    self._lock_seit = jetzt
+                    continue
+                if jetzt - self._lock_seit < self._LOCK_GEDULD_S:
+                    continue
+
+                dauer_min = (jetzt - self._lock_seit) / 60.0
+                grund = sm.ctx.last_lock_reason or "unbekannt"
+                offen = first_failure(evaluate(self._hardware_state, sm.limits))
+
+                if offen is None:
+                    self._lock_heilungen = [
+                        t for t in self._lock_heilungen if jetzt - t < 3600.0
+                    ]
+                    if len(self._lock_heilungen) >= self._LOCK_HEILUNG_MAX_PRO_H:
+                        log.warning(
+                            "Station seit %.0f min gesperrt (%s). Alle Bedingungen "
+                            "sind erfuellt, aber in der letzten Stunde wurde schon "
+                            "%dmal geheilt — das pendelt, hier greift niemand mehr "
+                            "automatisch ein.",
+                            dauer_min, grund, len(self._lock_heilungen),
+                        )
+                        await self._melde_haengende_sperre(dauer_min, grund, pendelt=True)
+                        continue
+                    self._lock_heilungen.append(jetzt)
+                    log.warning(
+                        "Station stand %.0f min gesperrt (%s), obwohl alle "
+                        "Bedingungen erfuellt sind — Sperre aufgehoben.",
+                        dauer_min, grund,
+                    )
+                    sm.on_user_reset_lock()
+                    self._lock_seit = None
+                    continue
+
+                log.warning("Station seit %.0f min gesperrt: %s", dauer_min, grund)
+                await self._melde_haengende_sperre(dauer_min, grund, pendelt=False)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _log_loop_exc("sperr-waechter loop", exc)
+
+    async def _melde_haengende_sperre(
+        self, dauer_min: float, grund: str, *, pendelt: bool,
+    ) -> None:
+        """Push aufs Handy — hoechstens stuendlich, damit es nicht nervt."""
+        jetzt = time.monotonic()
+        if jetzt - self._lock_push_at < 3600.0:
+            return
+        ntfy = self.integrations.ntfy
+        if ntfy is None or not ntfy.enabled or self.config.demo_mode:
+            return
+        self._lock_push_at = jetzt
+        zusatz = (" Mehrfach automatisch geheilt — das deutet auf ein "
+                  "wiederkehrendes Problem." if pendelt else "")
+        try:
+            await ntfy.notify(
+                f"Die Station sendet seit {dauer_min:.0f} Minuten nicht: {grund}.{zusatz}",
+                title="Sendesperre haengt",
+                priority="high",
+                tags=["warning"],
+            )
+        except Exception as exc:
+            log.debug("Sperr-Push nicht zugestellt: %s", exc)
 
     async def _mode_watchdog_loop(self) -> None:
         """Push eine ntfy-Notification wenn der Mode hängt.
