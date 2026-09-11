@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.105.0 — 2026-09-11
+- fix: Vorab-Decode fuehrte seine Entscheidung nie aus
+
 ## v0.104.0 — 2026-09-11
 - fix: A/B-Takt des Vorab-Decodes lief synchron zum Sende-Rhythmus
 - docs: Auswertung des Vorab-Decodes und die zwei Fallstricke
