@@ -330,8 +330,29 @@ desselben Tages noch unterlaufen war. `pick_attempt.pre_decode` hält je
 Anruf fest, aus welchem Durchgang die Entscheidung kam:
 
 ```sql
+-- Die Zielgroesse: wie spaet ging die Aussendung tatsaechlich raus?
+select case when pre_decode=1 then 'vorab' else 'regulaer' end,
+       count(*), round(avg(tx_offset_s),3)
+from pick_attempt where tx_offset_s is not null group by 1;
+
+-- Und was es gebracht hat
 select pre_decode, count(*), sum(outcome='completed'),
        round(100.0*sum(outcome='completed')/count(*),1)
 from pick_attempt where pre_decode is not null group by 1;
 ```
+
+`tx_offset_s` ist der eigentliche Massstab. Der Wert im Status mittelt ueber
+die letzten zehn Sendungen und taugt dafuer nicht: Solange die meisten
+Entscheidungen aus dem regulaeren Durchgang kommen, dominiert dieser den
+Mittelwert und der Effekt des Umbaus verschwindet darin.
+
+Zwei Dinge, die beim Bau nicht offensichtlich waren:
+
+* **Die Aussendung muss die Grenze abwarten.** Steht die Entscheidung eine
+  Sekunde zu frueh und wird sofort gesendet, ragt der Burst in den laufenden
+  Slot — sichtbar als Sendeversatz von 13,9 s statt 0,9 s.
+* **In Sende-Slots ist der Durchgang sinnlos.** Waehrend der eigenen
+  Aussendung hoert die Station nichts; der Vorab-Decode faende dort per
+  Konstruktion nichts und kostete nur Rechenzeit. 38 % der Slots sind
+  Sende-Slots, sie werden uebersprungen.
 
