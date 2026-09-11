@@ -497,7 +497,15 @@ class OperatingConfig(BaseModel):
     # überspringt Stationen innerhalb dieses Fensters — Beispiel:
     # 30 min Default heißt "selbe Station nicht im selben CQ-Run drei
     # mal anrufen, gleicher Op darf aber morgen wieder dran". 0 = aus.
-    qso_cooldown_min: int = Field(default=30, ge=0, le=1440)
+    # 2026-09-11 von 30 auf 360 Minuten. Der Schluessel ist (Call, Band):
+    # Ein anderes Band ist davon nie betroffen, auf demselben will man eine
+    # Station im FT8-Betrieb aber nur einmal am Tag arbeiten. Mit 30 Minuten
+    # entstanden Doppel-QSOs, sobald eine Station spaeter erneut auftauchte —
+    # RC6OD dreimal an einem Vormittag (06:57, 07:26, 08:02), UT7UJ zweimal
+    # (07:33, 08:04), jeweils gut eine halbe Stunde auseinander. Sechs Stunden
+    # decken den ueblichen Bandverlauf ab und lassen abends bei anderer
+    # Ausbreitung trotzdem ein zweites QSO zu.
+    qso_cooldown_min: int = Field(default=360, ge=0, le=1440)
     # Wie viele Slots warten wir auf eine Reaktion vom Partner bevor
     # wir abbrechen? FT8 hat 15-s-Slots, also 6 Slots ≈ 90 s. Wir
     # senden in QSO_RESPOND re-tx wenn der Partner nochmal CQ ruft,
