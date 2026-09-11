@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.103.0 — 2026-09-11
+- feat: Sendeversatz je Anrufversuch in der Telemetrie
+
 ## v0.102.0 — 2026-09-11
 - fix: Wiederaufnahme-Zaehler verfiel nie, Vorab-Decode lief in Sende-Slots
 
