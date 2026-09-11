@@ -224,3 +224,56 @@ def test_abgeschaltetes_gate_setzt_keinen_arm():
     o._setze_fern_gate_arm(3)
 
     assert o.state_machine.ctx.hunt_sole_dx_arm is False
+
+
+# ------------------------------- die Kette bis zum CQ-Fallback
+def test_gate_treibt_den_slot_in_den_cq_fallback():
+    """Daran haengt der ganze Nutzen: Der Slot soll nicht verfallen,
+    sondern als CQ-Ruf zurueckkommen. Ohne diese Kette waere das Gate
+    schlechter als nichts — wir wuerden einfach schweigen."""
+    from ft8_appliance.statemachine.guards import HardwareState
+    from ft8_appliance.statemachine.states import State
+
+    hw = HardwareState(
+        gps_fix_mode=3, time_offset_s=0.05, swr=1.2, alc_pct=0,
+        battery_v=12.0, cpu_temp_c=45.0, audio_drift_samples=0,
+        antenna_covers_band=True, chrony_synced=True,
+    )
+    sm = _picker_sm()
+    sm.state = State.IDLE
+    sm.ctx.auto_answer = True
+    sm.ctx.hunt_cq_fallback = True
+    sm.ctx.hunt_cq_fallback_after_slots = 2
+    sm.ctx.idle_slots_without_pick = 0
+
+    # Zwei Slots, in denen nur das aussichtslose Fernziel zu hoeren ist
+    sm.on_decodes(hw, [FERN])
+    assert sm.ctx.idle_slots_without_pick == 1
+    sm.on_decodes(hw, [FERN])
+    assert sm.ctx.idle_slots_without_pick == 2
+
+    sm.on_slot_tick(hw, None)
+
+    assert sm.state is State.CQ_CALLING
+    assert sm.ctx.cq_fallback_active is True
+
+
+def test_ohne_gate_bliebe_der_zaehler_stehen():
+    """Die Gegenprobe: Im Vergleichsarm wird angerufen, der Slot geht also
+    nicht an den CQ-Fallback."""
+    from ft8_appliance.statemachine.guards import HardwareState
+    from ft8_appliance.statemachine.states import State
+
+    hw = HardwareState(
+        gps_fix_mode=3, time_offset_s=0.05, swr=1.2, alc_pct=0,
+        battery_v=12.0, cpu_temp_c=45.0, audio_drift_samples=0,
+        antenna_covers_band=True, chrony_synced=True,
+    )
+    sm = _picker_sm(arm=False)
+    sm.state = State.IDLE
+    sm.ctx.auto_answer = True
+
+    sm.on_decodes(hw, [FERN])
+
+    assert sm.ctx.idle_slots_without_pick == 0
+    assert sm.state is not State.IDLE
