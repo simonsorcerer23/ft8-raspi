@@ -345,6 +345,9 @@ class MachineContext:
     # Aktuelle Slot-Parity dieses Slots — vom Orchestrator pro Slot
     # gesetzt aus SlotTick. "even" oder "odd".
     current_slot_parity: str = ""
+    # Laeuft dieser Decode-Durchgang vor der Slot-Grenze (Vorab-Decode)?
+    # Wandert in die Telemetrie, damit sich beide Wege vergleichen lassen.
+    vorab_decode_aktiv: bool = False
     # v0.16.0 Hour-of-Day-Predictor — fuer jeden Decoded-Call cachen wir
     # den Continent (aus cty.dat). Tier `active_hour` schaut nach ob
     # die aktuelle UTC-Hour historisch ein "aktive Stunde" fuer diesen

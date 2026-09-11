@@ -760,6 +760,7 @@ class StateMachine:
                     "pick_age_s": pick_age_s,
                     "pick_kind": pick_kind,
                     "reply_kind": reply_kind,
+                    "pre_decode": bool(self.ctx.vorab_decode_aktiv),
                     "freq_offset_hz": best.freq_offset_hz,
                     "target_grid": best.grid,
                     # v0.64.0 — Picker-Diagnose + Kontext:
