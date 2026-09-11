@@ -3322,6 +3322,14 @@ class Orchestrator:
                     # dann nicht dazwischenfunken.
                     await asyncio.sleep(lead)
                     continue
+                # Haben wir in diesem Slot selbst gesendet, ist das Audio
+                # taub: Waehrend der eigenen Aussendung hoert die Station
+                # nichts, der Durchgang fände per Konstruktion nichts und
+                # kostete nur Rechenzeit. 38 % der Slots sind Sende-Slots.
+                seit_tx = time.monotonic() - (self._last_tx_message_at or 0.0)
+                if seit_tx < slot_s:
+                    await asyncio.sleep(lead)
+                    continue
                 index = (self._last_slot.index + 1) if self._last_slot else 0
                 if index == self._vorab_slot_index:
                     await asyncio.sleep(lead)
