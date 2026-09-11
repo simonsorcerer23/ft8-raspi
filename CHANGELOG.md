@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.101.0 — 2026-09-11
+- fix: QSO-Cooldown von 30 auf 360 Minuten
+- docs: Wartezeit bis zur Slot-Grenze in Architektur und Flags
+
 ## v0.100.1 — 2026-09-11
 - fix: vorab entschiedene Aussendung wartet auf die Slot-Grenze
 
