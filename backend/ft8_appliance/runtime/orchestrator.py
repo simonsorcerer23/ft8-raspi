@@ -338,6 +338,8 @@ class OrchestratorStatus:
     # ableitet. Eine Quelle, die leer ist, macht jedes darauf gebaute Gate
     # und jeden Tier wirkungslos — ohne dass es irgendwo auffaellt.
     context_health: dict[str, int] | None = None
+    # Zeitaufteilung im Slot bis zur Sendeentscheidung (Sekunden je Abschnitt)
+    slot_phasen_s: dict[str, float] | None = None
 
 
 @dataclass
@@ -608,6 +610,11 @@ class Orchestrator:
     # wartet dort auf die Grenze. Beides gehoert gemessen, bevor jemand
     # daran baut.
     _tx_start_offsets_s: list[float] = field(default_factory=list, init=False)
+    # 2026-09-11 — Wo im Slot die Zeit bis zum Sendestart hingeht. Der
+    # Sendeversatz liegt konstant bei rund 1,07 s, waehrend die Stationen,
+    # die wir hoeren, im Mittel bei +0,12 s liegen. Bevor daran etwas
+    # umgebaut wird, muss klar sein, welcher Abschnitt sie verbraucht.
+    _slot_phasen_s: dict[str, float] = field(default_factory=dict, init=False)
     # nur tatsaechlich gesendete Bursts — verworfene (B4) verfaelschen sonst den Mittelwert
     _tx_sent_offsets_s: list[float] = field(default_factory=list, init=False)
     # 2026-09-06 lonely_cq: Decodes der letzten Slots (aelteste zuerst)
@@ -1830,6 +1837,7 @@ class Orchestrator:
             filter_drops=(dict(self.state_machine.filter_drops)
                           if self.state_machine.filter_drops else None),
             context_health=self._context_health(),
+            slot_phasen_s=(dict(self._slot_phasen_s) if self._slot_phasen_s else None),
             cq_count=self.state_machine.ctx.cq_count,
             current_qso_call=(
                 self.state_machine.qso.their_call if self.state_machine.qso else None
@@ -3270,8 +3278,11 @@ class Orchestrator:
             self._in_slot_tick = False
 
     async def _on_slot_inner(self, tick: SlotTick) -> None:
+        _t = time.time()
+        _phasen = {"eintritt": round(self._slot_phase_s(), 3)}
         # 1. refresh hardware state for guards
         await self._refresh_hardware_state(tick)
+        _phasen["hardware"] = round(time.time() - _t, 3); _t = time.time()
         # 2026-09-08 jt9-Kontext fuer diesen Slot: Tiefe 3, wenn wir im naechsten
         # Slot senden (QSO oder CQ); eigener Call/Grid + Partner fuer AP.
         try:
@@ -3292,10 +3303,12 @@ class Orchestrator:
         except Exception as exc:
             log.warning("decode_source failed for slot %s: %s", tick.index, exc)
             decodes = []
+        _phasen["decode"] = round(time.time() - _t, 3); _t = time.time()
         self._last_decodes = decodes
         # Kontext fuer den Picker aus genau diesen Decodes bauen —
         # nicht aus denen des vorigen Slots (siehe Methoden-Docstring).
         await self._refresh_decode_context(decodes)
+        _phasen["kontext"] = round(time.time() - _t, 3); _t = time.time()
         self._slot_history.append(list(decodes))
         del self._slot_history[:-4]
         # v0.15.0 Slot-Parity-Tracking: aktuelle Parity dieses Slots
@@ -3370,10 +3383,15 @@ class Orchestrator:
 
         # 3. SSE + DB + PSK-Reporter (gemeinsamer Pfad mit der zweiten
         #    Decoder-Stufe, siehe _publish_decodes)
+        _phasen["zwischen"] = round(time.time() - _t, 3); _t = time.time()
         await self._publish_decodes(decodes)
+        _phasen["veroeffentlichen"] = round(time.time() - _t, 3); _t = time.time()
 
         # 4. drive the state machine
         self.state_machine.on_decodes(self._hardware_state, decodes)
+        _phasen["zustandsmaschine"] = round(time.time() - _t, 3)
+        _phasen["summe_bis_tx"] = round(self._slot_phase_s(), 3)
+        self._slot_phasen_s = _phasen
         self.state_machine.on_slot_tick(self._hardware_state, tick)
 
         # 5. execute emitted actions
