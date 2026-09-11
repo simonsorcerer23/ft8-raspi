@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.108.0 — 2026-09-11
+- fix: Reputation, Sendemarke und Logzeile standen vor den Verwerfungspunkten
+
 ## v0.107.0 — 2026-09-11
 - fix: regulaerer Durchgang verarbeitete alle Vorab-Decodes ein zweites Mal
 
