@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.133.0 — 2026-09-12
+- feat: Vorhersagen dorthin, wo uns wirklich jemand hoert
+- fix: zwei Fehler in meiner eigenen MUF-Auswertung
+- feat: drei Messreihen bekommen einen Abnehmer
+- docs: README und Architektur auf den Stand von heute gebracht
+- fix: Logs ueberlebten keinen Neustart
+- test: die Zweisprachigkeit der Oberflaeche wird jetzt geprueft
+- test: Stub des Filterzaehler-Tests kannte db_enabled nicht
+
 ## v0.132.0 — 2026-09-12
 - feat: Filterstufen bekommen eine Tageshistorie
 - test: Rauchtest fuer die Bilanz — 16 Abschnitte, vorher ungetestet
