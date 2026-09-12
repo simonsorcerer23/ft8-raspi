@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.134.0 — 2026-09-12
+- fix: Empfangsfelder nach Berichtsumme statt nach Spitzenreiter
+- feat: Ersatz fuer den fehlenden Empfangsbeleg — und er traegt
+
 ## v0.133.0 — 2026-09-12
 - feat: Vorhersagen dorthin, wo uns wirklich jemand hoert
 - fix: zwei Fehler in meiner eigenen MUF-Auswertung
