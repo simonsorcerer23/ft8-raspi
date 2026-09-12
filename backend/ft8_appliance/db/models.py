@@ -165,6 +165,30 @@ class SolarLog(Base):
 
 
 # ---------------------------------------------------------------------------
+class FilterDropDaily(Base):
+    """Wie viele Kandidaten jede Filterstufe an einem Tag verworfen hat.
+
+    Die laufenden Zaehler leben in einer JSON-Datei und gelten nur fuer den
+    aktuellen Tag — beim Datumswechsel fangen sie bei null an. Das ist fuer
+    die Anzeige richtig (ein ueber Wochen hochlaufender Zaehler zeigt keine
+    Veraenderung mehr), macht aber jede Aussage ueber mehrere Tage
+    unmoeglich. Genau die braucht es, um zu beurteilen, ob eine Stufe
+    ueberhaupt je greift: Am 2026-09-12 hatten sechs von dreizehn Stufen
+    keinen einzigen Treffer, und ob das an dem Tag lag oder grundsaetzlich
+    so ist, liess sich nicht sagen.
+
+    Hier landet derselbe Stand einmal je Minute als Tageszeile. Dadurch
+    ueberlebt er den Datumswechsel auch dann, wenn der Dienst genau dabei
+    neu startet.
+    """
+
+    __tablename__ = "filter_drop_daily"
+
+    tag: Mapped[str] = mapped_column(String, primary_key=True)
+    stufe: Mapped[str] = mapped_column(String, primary_key=True)
+    anzahl: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class BandNoise(Base):
     """Rauschpegel im Empfang, gemessen zwischen den Aussendungen.
 

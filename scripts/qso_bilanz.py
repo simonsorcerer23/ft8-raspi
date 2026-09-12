@@ -91,6 +91,17 @@ def tabelle(zeilen: list[tuple], kopf: tuple[str, ...]) -> None:
         print("    " + "  ".join(str(w).ljust(b) for w, b in zip(z, breiten)))
 
 
+# Alle Stufen, die die Zustandsmaschine kennt. Ohne diese Liste faellt eine
+# Stufe ohne jeden Treffer gar nicht auf — sie fehlt dann einfach in der
+# Tabelle und sieht aus wie nicht vorhanden.
+ALLE_FILTERSTUFEN = {
+    "bandrand", "cooldown", "dt_fenster", "einzelner_schwacher_cq",
+    "fernziel_allein", "kontinent_gate", "pile_up", "schon_gearbeitet",
+    "schwach_ohne_psk", "slot_paritaet", "snr_floor", "soft_blacklist",
+    "strict_modus",
+}
+
+
 def urteil(k_a: int, n_a: int, k_b: int, n_b: int) -> str:
     """Ist der Unterschied zweier Quoten echt oder Rauschen?
 
@@ -402,11 +413,37 @@ def main() -> int:
                 ("Stufe", "verworfen", "Anteil"),
             )
             print("    Eine Stufe, die hier ploetzlich dominiert, ist der erste")
-            print("    Verdaechtige. Eine, die gar nicht auftaucht, ist Ballast.")
+            print("    Verdaechtige. Eine ohne Treffer ist NICHT automatisch")
+            print("    Ballast — sie kann an einem Schalter haengen oder absicht-")
+            print("    lich inaktiv sein. Die Tageshistorie unten trennt das.")
         else:
             print("    (noch keine Verwerfungen seit dem letzten Neustart)")
     except Exception as e:
         print(f"    (Station nicht erreichbar: {e})")
+
+    print("\n=== Filterstufen ueber die Tage: greift eine Stufe ueberhaupt? ===")
+    # Der Live-Zaehler oben gilt nur fuer den laufenden Tag. Ohne diese
+    # Historie war nicht zu unterscheiden, ob eine Stufe grundsaetzlich nie
+    # greift oder ob es nur an diesem Tag so war (Lücke gefunden 2026-09-12).
+    zeilen = con.execute(
+        "select stufe, count(distinct tag), sum(anzahl), max(anzahl) "
+        "from filter_drop_daily where tag >= date('now', ?) "
+        "group by stufe order by sum(anzahl) desc",
+        (f"-{args.tage} day",),
+    ).fetchall()
+    if zeilen:
+        tabelle([(z[0], z[1], z[2], z[3]) for z in zeilen],
+                ("Stufe", "Tage mit Daten", "verworfen gesamt", "bester Tag"))
+        bekannt = {z[0] for z in zeilen}
+        stumm = sorted(ALLE_FILTERSTUFEN - bekannt)
+        if stumm:
+            print("    Ohne einen einzigen Treffer im ganzen Zeitraum:")
+            print("      " + ", ".join(stumm))
+            print("    Das heisst nicht 'ueberfluessig' — nachsehen, ob die Stufe")
+            print("    an einem abgeschalteten Schalter haengt (hunt_skip_worked)")
+            print("    oder hinter einer Bedingung sitzt, die nie eintritt.")
+    else:
+        print("    (noch keine Tageszeilen — die Historie laeuft seit v0.132.0)")
 
     print("\n=== Wunschliste: gesehen und versucht? ===")
     tabelle(con.execute(

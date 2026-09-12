@@ -79,6 +79,12 @@ def _baue_db(pfad: Path) -> None:
                 muf_lp=11.0 + i, luf_sp=3.0, luf_lp=4.0,
             ))
         s.add(m.Watchlist(call="V51WH", added=jetzt))
+        # Tageshistorie der Filterstufen: zwei Tage, eine Stufe ohne Treffer
+        for tage_zurueck in (0, 1):
+            tag = (jetzt - timedelta(days=tage_zurueck)).strftime("%Y-%m-%d")
+            for stufe, n in (("cooldown", 120 + tage_zurueck),
+                             ("schwach_ohne_psk", 80), ("snr_floor", 1)):
+                s.add(m.FilterDropDaily(tag=tag, stufe=stufe, anzahl=n))
         s.commit()
     eng.dispose()
 
@@ -124,6 +130,7 @@ ERWARTETE_ABSCHNITTE = (
     "Was die Filterstufen des Pickers wegnehmen",
     "Wunschliste",
     "Bandrand",
+    "Filterstufen ueber die Tage",
 )
 
 
@@ -153,3 +160,27 @@ def test_abschnitte_mit_daten_bleiben_nicht_leer(ausgabe):
 def test_signifikanzspalte_erscheint(ausgabe):
     """Ohne sie liest man Rauschen als Befund."""
     assert "Rauschen" in ausgabe or "z=" in ausgabe
+
+
+def test_stufen_ohne_treffer_werden_benannt(ausgabe):
+    """Der eigentliche Zweck der Historie: eine Stufe, die im ganzen
+    Zeitraum nie greift, faellt sonst gar nicht auf — sie fehlt einfach in
+    der Tabelle und sieht aus wie nicht vorhanden."""
+    assert "Ohne einen einzigen Treffer" in ausgabe
+    for stufe in ("bandrand", "pile_up", "strict_modus"):
+        assert stufe in ausgabe, stufe
+
+
+def test_historie_zeigt_mehrere_tage(ausgabe):
+    """Gezielt die Spalte "Tage mit Daten" pruefen, nicht irgendeine Zwei
+    im Abschnitt — eine lose Suche laesst eine kaputte Zaehlung durch
+    (nachgewiesen mit einer Mutationsprobe)."""
+    abschnitt = ausgabe.split("=== Filterstufen ueber die Tage")[1]
+    zeile = next((z for z in abschnitt.split("\n")
+                  if z.strip().startswith("cooldown")), None)
+    assert zeile is not None, abschnitt
+    spalten = zeile.split()
+    # Stufe, Tage mit Daten, verworfen gesamt, bester Tag
+    assert len(spalten) >= 4, spalten
+    assert int(spalten[1]) == 2, f"Tage mit Daten falsch: {spalten}"
+    assert int(spalten[2]) == 241, f"Summe falsch: {spalten}"  # 120 + 121
