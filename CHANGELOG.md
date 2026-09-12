@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.119.0 — 2026-09-12
+- fix: Abruf der Pfadvorhersage am Stundenlauf des Dienstes ausrichten
+- feat: qso_bilanz wertet Empfangsberichte und Pfadvorhersage aus
+
 ## v0.118.0 — 2026-09-12
 - fix: ungenutzte Importe in der Pfad-Vorhersage-Schleife
 
