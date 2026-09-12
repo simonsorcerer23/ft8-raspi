@@ -266,6 +266,36 @@ tatsächlich für ein paar Sekunden in den AP-Modus und wirft die bestehende
 WLAN-Verbindung ab. NetworkManager fängt sich zwar wieder, aber über eine
 SSH-Sitzung, die selbst über dieses WLAN läuft, ist das eine schlechte Idee.
 
+## Die Logs überleben jetzt einen Neustart
+
+Bis zum 12.09.2026 taten sie das nicht. Raspberry Pi OS liefert ein Drop-in
+`/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf` mit
+`Storage=volatile` aus — das Journal liegt dann in `/run`, also im
+Arbeitsspeicher, und ist nach jedem Neustart weg. Gedacht ist das für
+SD-Karten, die man schonen will; dieser Pi bootet von einer 468-GB-NVMe.
+
+Die Folge war unangenehm konkret: Der älteste Journaleintrag war exakt der
+Boot-Zeitpunkt. Nach einem Absturz mit anschließendem Neustart wäre genau
+die Spur weg gewesen, die man dann braucht.
+
+Behoben durch `deploy/systemd-dropins/99-ft8-journal-persistent.conf`, das
+`install.sh` mitinstalliert. **Die 99 ist Absicht:** Drop-ins werden
+alphabetisch über alle Verzeichnisse hinweg gelesen, und `/etc` gewinnt nur
+bei *gleichem Dateinamen*. Eine `10-...` in `/etc` verliert gegen die
+`40-...` aus `/usr/lib` — genau das ist am 12.09. passiert und fiel erst im
+dritten Anlauf auf.
+
+Prüfen lässt sich der Zustand so:
+
+```bash
+journalctl --header | grep -m1 "^File path"
+```
+
+Steht dort `/run/log/journal/…`, sind die Logs flüchtig. Bei
+`/var/log/journal/…` liegen sie auf der Platte. Der Gegentest ist
+`journalctl --list-boots`: Zeigt es mehr als einen Eintrag, hat die Historie
+einen Neustart überlebt.
+
 ## 7. Sicherheits-Hinweis
 
 - SSH-Key ist auf der **Workstation** zuhause. Im Feldeinsatz kommt Claude *eh nicht* drauf, da nicht im gleichen Netz.
