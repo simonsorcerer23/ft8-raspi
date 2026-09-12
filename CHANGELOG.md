@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.118.0 — 2026-09-12
+- fix: ungenutzte Importe in der Pfad-Vorhersage-Schleife
+
 ## v0.116.0 — 2026-09-12
 - fix: Grid-Ausnahme fraß das Fernziel-Gate, Vorab-Decode gemessen wirkungslos
 
