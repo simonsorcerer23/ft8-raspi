@@ -540,3 +540,58 @@ kein Reservepolster.
 
 Im Status: `decoder_late_pass.stage1_last_s` / `stage1_avg_s` /
 `two_stage`, `decoder_pass_stats.threads`.
+
+## 2026-09-12 — Überlagerung ist nicht die Ursache der Verluste
+
+Der Prüflauf vom 11.09. hatte einen Zusammenhang gefunden: Von den
+Decodes, die WSJT-X im Korpus findet und wir nicht, hat der weit
+überwiegende Teil einen anderen Decode in weniger als 60 Hz Abstand. Die
+naheliegende Deutung war, ein stärkerer Nachbar überdecke das Signal, und
+mehr Subtraktionsrunden würden es freilegen. Beides ist falsch.
+
+**Gegenprobe mit dem Nachbarn im Bild.** Über alle 22 Referenzaufnahmen
+getrennt ausgezählt, wie oft ein *von uns selbst* dekodierter Nachbar
+in ≤ 60 Hz vorhanden war:
+
+| | mit Nachbar | gesamt | Anteil |
+|---|---|---|---|
+| Treffer | 122 | 312 | 39,1 % |
+| Verluste | 28 | 41 | 68,3 % |
+
+Der Zusammenhang ist echt. Er trägt aber nicht, was ihm zugeschrieben
+wurde.
+
+**Der Eingriffstest.** Für sechs Verluste mit dekodiertem Nachbarn wurde
+der Nachbar mit `ft8_shim_subtract_message` von Hand abgezogen und das
+Residuum neu dekodiert. **Fünf von sechs blieben verschwunden.** Nur
+`K1GUY NA4RR EM61` (websdr_test10) tauchte auf, und zwar sowohl nach
+Einzelabzug als auch nach Abzug aller vierzehn Decodes des Slots — ein
+Überabzug-Schaden ist damit ausgeschlossen, warum die Schleife im Shim
+ihn nicht findet, blieb offen.
+
+Damit ist der Nachbar ein **Confounder**: Dichte Slots haben mehr
+Nachbarn *und* mehr schwer dekodierbare Signale. Dieselbe Falle wie beim
+„Nachbar-Beleg" im Picker am selben Tag.
+
+**Kein Knopf bewegt die Quote.** Alle Läufe bei 312 von 353 (88,4 %):
+
+    sub_rounds 2 (Vorgabe) · 3 · 4
+    sub_score 15 (Vorgabe) · 10
+    max_cand 300 (Vorgabe) · 600 · 1200
+    llr_scales 1 (Vorgabe) · 2 · 3 · 4, auch mit osd=3
+
+Die zweite Subtraktionsrunde bringt im Betrieb 2 Decodes gegen 65 der
+ersten; eine dritte ist damit ohne Aussicht. Die Pass-Statistik ist über
+alle `llr_scales`-Werte byte-gleich: Wo Belief Propagation mit der
+Originalskala konvergiert, bricht die Schleife nach der ersten Skalierung
+ab, und wo sie scheitert, scheitern auch die anderen drei.
+
+**Aufgeräumt.** Der Kommentar am Subtract-Helfer beschrieb noch die
+Vorgängerversion mit fester Amplitude 0,4. Die ist seit 2026-09-06
+ersetzt durch eine komplexe, zeitvariante Schätzung aus dem Signal
+selbst; der alte Text sagte also das Gegenteil des Codes.
+
+**Was bleibt.** Die verbleibenden 11,6 % sind mit den vorhandenen
+Parametern nicht zu holen. Ein Fortschritt bräuchte Arbeit am
+Kandidatengenerator oder einen A-priori-Decoder, nicht mehr Runden über
+dasselbe Residuum.

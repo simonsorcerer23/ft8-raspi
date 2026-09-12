@@ -833,10 +833,10 @@ void ft8_shim_pass_stats_get(ft8_shim_pass_stats_t* out) {
  * the residual surfaces weaker signals that were previously masked by
  * stronger ones in the same audio bin. This is the JTDX-style move.
  *
- * Amplitude estimate: we don't know the true RF amplitude, so we
- * subtract a conservative 0.4. Over-subtract introduces phase ghosts;
- * under-subtract leaves residual energy. 0.4 is a compromise that
- * works empirically (WSPR-style decoder uses similar). */
+ * Die Amplitude wird NICHT mehr geraten: _ft8_subtract_decoded schaetzt
+ * sie seit 2026-09-06 komplex und zeitvariant aus dem Signal selbst
+ * (s. dort). Der frueher hier beschriebene feste Faktor 0,4 ist
+ * Geschichte — er fand im Residual-Pass nachweislich null Decodes. */
 /* v0.7.0 Build 2: Hint-Decoder Helper.
  *
  * Prüft ob ein decoded Message-Text einen Call aus der s_hash_table
