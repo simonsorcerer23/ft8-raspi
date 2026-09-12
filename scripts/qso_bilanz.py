@@ -80,6 +80,20 @@ def _token() -> str:
     return wert
 
 
+def hat_spalte(con, tabelle_name: str, spalte: str) -> bool:
+    """Kennt diese Datenbank die Spalte schon?
+
+    Die Bilanz laeuft oft auf einer Kopie, die vor dem letzten Ausrollen
+    gezogen wurde. Eine Abfrage auf eine frisch migrierte Spalte riss dann
+    den ganzen Lauf ab, statt nur ihren Abschnitt leer zu lassen — die
+    siebzehn Abschnitte davor waren mit umsonst gerechnet.
+    """
+    return any(
+        r[1] == spalte
+        for r in con.execute(f"pragma table_info({tabelle_name})")
+    )
+
+
 def tabelle(zeilen: list[tuple], kopf: tuple[str, ...]) -> None:
     if not zeilen:
         print("    (keine Daten)")
@@ -338,7 +352,7 @@ def main() -> int:
         print("    (zu wenige Daten)")
 
     print("\n=== Fernziel-Gate: bringt CQ-Rufen mehr als ein 2-%-Anruf? (A/B) ===")
-    zeilen = con.execute(
+    zeilen = [] if not hat_spalte(con, "pick_attempt", "fern_gate") else con.execute(
         "select case when fern_gate=1 then 'Gate an' else 'Gate aus' end, "
         "  count(*), sum(outcome='completed'), "
         "  round(100.0*sum(outcome='completed')/count(*),1)||' %', "
@@ -354,8 +368,29 @@ def main() -> int:
     else:
         print("    (keine Daten — hunt_sole_dx_gate ist aus)")
 
+    print("\n=== Stunden-Tier: Zellen-Quote gegen die alte Stundenliste (A/B) ===")
+    zeilen = [] if not hat_spalte(con, "pick_attempt", "zellen_arm") else con.execute(
+        "select case when zellen_arm=1 then 'Zellen-Quote' else 'Stundenliste' end, "
+        "  count(*), sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %' "
+        "from pick_attempt where zellen_arm is not null and pick_kind='cq' "
+        "  and ts > datetime('now',?) group by 1 order by 1", (seit,)
+    ).fetchall()
+    if zeilen:
+        tabelle(zeilen, ("Quelle", "Anrufe", "fertig", "Quote"))
+        if len(zeilen) == 2:
+            a, b = zeilen
+            print("   ", urteil(int(b[2]), int(b[1]), int(a[2]), int(a[1]),
+                                "Zellen-Quote besser als Stundenliste"))
+        print("    Die alte Liste zaehlt, wann wir QSOs hatten — ihr Nenner sind")
+        print("    Erfolge. Die Zellen-Quote setzt Abschluesse ins Verhaeltnis zu")
+        print("    Anrufen derselben Stunde und desselben Kontinents.")
+    else:
+        print("    (keine Daten — hunt_zellen_prior ist aus, oder die Kopie")
+        print("     stammt von vor dem Ausrollen der Spalte)")
+
     print("\n=== Vorab-Decode: was der fruehere Durchgang bringt (A/B) ===")
-    zeilen = con.execute(
+    zeilen = [] if not hat_spalte(con, "pick_attempt", "pre_decode") else con.execute(
         "select case when pre_decode=1 then 'vorab' else 'regulaer' end, "
         "  count(*), sum(outcome='completed'), "
         "  round(100.0*sum(outcome='completed')/count(*),1)||' %', "

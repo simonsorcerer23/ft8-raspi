@@ -139,6 +139,7 @@ ERWARTETE_ABSCHNITTE = (
     "Umgebung",
     "Ersatz fuer den fehlenden Empfangsbeleg",
     "Umentscheiden",
+    "Stunden-Tier",
 )
 
 
@@ -235,3 +236,40 @@ def test_ersatzbeleg_urteilt_nur_ohne_eigenen(ausgabe):
     if "Ohne eigenen Beleg:" in abschnitt:
         zeile = [z for z in abschnitt.split("\n") if "Ohne eigenen Beleg:" in z][0]
         assert any(w in zeile for w in ("Rauschen", "echt", "sicher", "zu wenig"))
+
+def test_alte_datenbank_ohne_junge_spalten(tmp_path) -> None:
+    """Eine Kopie von vor dem letzten Ausrollen darf den Lauf nicht abreissen.
+
+    Genau das passierte am 12.09.: Die Bilanz fragte ``zellen_arm`` ab,
+    die Kopie stammte von davor, und der Lauf brach im siebzehnten
+    Abschnitt ab — die sechzehn davor waren mit umsonst gerechnet.
+    """
+    import sqlite3
+    import subprocess
+    import sys
+
+    db = tmp_path / "alt.sqlite"
+    _baue_db(db)
+    con = sqlite3.connect(db)
+    junge = [
+        r[1] for r in con.execute("pragma table_info(pick_attempt)")
+        if r[1] in ("zellen_arm", "fern_gate", "pre_decode", "tx_offset_s")
+    ]
+    # Spalten wieder entfernen, wie sie eine aeltere Kopie nicht haette.
+    # Ihre Indizes muessen zuerst weg, sonst verweigert SQLite das Drop.
+    for (idx,) in list(con.execute(
+        "select name from sqlite_master where type='index' and tbl_name='pick_attempt'"
+    )):
+        if any(name in idx for name in junge):
+            con.execute(f"drop index if exists {idx}")
+    for name in junge:
+        con.execute(f"alter table pick_attempt drop column {name}")
+    con.commit()
+    con.close()
+
+    res = subprocess.run(
+        [sys.executable, str(SKRIPT), "--db", str(db)],
+        capture_output=True, text=True,
+    )
+    assert res.returncode == 0, f"Bilanz brach ab:\n{res.stderr[-2000:]}"
+    assert "Datenbasis" in res.stdout, "Lauf endete vorzeitig"
