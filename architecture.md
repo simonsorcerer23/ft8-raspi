@@ -60,13 +60,26 @@ NetworkManager with a prioritised profile list:
 3. Dad's Android hotspot
 4..N. Networks added manually via the web UI (camping, hotel, etc.)
 
-→ none available after 60s → AP fallback
+→ none available → AP fallback. Since v0.127.0 the delay is asymmetric:
+   `network.fallback_delay_s` (60 s) after a start with no network —
+   that is the field case; 10 minutes for a dropout during operation,
+   because a router reboot sorts itself out.
 ```
 
 ### 3.2 AP fallback
 
 - SSID: `ft8-hotspot` (renamed 2026-09-06; was `ft8-hochgericht`)
 - WPA2-PSK, password in `config.yaml`
+- **Returns to Wi-Fi since v0.126.0** (it used to be a dead end): after 15
+  minutes in AP mode the hotspot is switched off briefly to check whether a
+  network is back — there is no other way, because while it runs `wlan0` is
+  unmanaged and NetworkManager cannot scan. If a connection appears within
+  90 s the hotspot stays off; if not it comes straight back and the next
+  wait doubles (up to 4 h), so it does not flap in the field every quarter
+  hour. Anyone who needs it for longer reboots the station. The reason for
+  the change: in AP mode there is no internet, hence no ntfy message either
+  — whoever came home from a field trip and left the station running found
+  it sitting silently in its own hotspot.
 - Own captive portal: `hostapd` + `dnsmasq` + nftables DNAT to the local web server
 - Android opens the UI automatically when joining the Wi-Fi
 
@@ -318,6 +331,18 @@ Additional modes:
     rig (power, mode, filter, frequency) trigger an ntfy push with a
     rollback action; the appliance's own CAT commands are recognised via
     an echo-window helper and not alarmed (see §6.5)
+  - **Lock watchdog** (v0.119.0): `TX_LOCKED` does not clear by itself.
+    That is right for a genuine hardware fault, but not once the reason is
+    long gone — on 2026-09-11 the time guard locked against its own start
+    value and the station stayed silent for 21 minutes. The watchdog clears
+    the lock once every condition holds again, and reports instead of
+    healing from the fourth self-heal per hour onwards.
+  - **Upload backlog watchdog** (v0.124.0): reports QSOs that have not
+    reached the logbook for more than six hours. The older drain watchdog
+    counts *crashed* loops and therefore could not see what happened on
+    2026-09-12: ClubLog rejected two QSOs for thirteen hours without
+    anything crashing. The six hours are measured against 219 uploads
+    (median 5.4 minutes, 90 % under ten).
 - ADIF log (live in the UI, exportable)
 - Band presets (standard FT8 frequencies)
 - Callsign, locator (or GPS auto), power profile
