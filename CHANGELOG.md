@@ -3,6 +3,16 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.125.0 — 2026-09-12
+- fix: "taegliche" Wartung lief fuenf Minuten nach jedem Neustart
+- docs: Hotspot-Modus und seine Folgen im Betriebsleitfaden
+- fix: Sicherung zielte auf den toten Tailscale-Knoten
+- docs: Betriebsleitfaden erklaert, was die ntfy-Meldungen bedeuten
+- docs: Schwelle des Upload-Waechters an 219 QSOs nachgemessen
+- fix: MUF-Tabelle zeigt die Gelegenheiten, nicht nur die Treffer
+- feat: Bilanz sagt jetzt, ob ein Unterschied echt ist
+- fix: Sicherung prueft jetzt, ob die Datenbank heil ist — und laeuft taeglich
+
 ## v0.124.0 — 2026-09-12
 - feat: Waechter meldet liegengebliebene Uploads
 
