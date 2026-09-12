@@ -227,6 +227,10 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         # 2026-09-11 — galt in diesem Slot der Arm, der aussichtslose
         # Fernziele im Alleingang dem CQ-Fallback ueberlaesst?
         "fern_gate": "BOOLEAN",
+        # 2026-09-12 — welche Quelle der Stunden-Tier in diesem Slot
+        # benutzte: Zellen-Quote aus der Anruf-Telemetrie (1) oder die
+        # alte Stundenliste aus der QSO-Tabelle (0).
+        "zellen_arm": "BOOLEAN",
     }
     for name, ddl in cols.items():
         if name not in existing:

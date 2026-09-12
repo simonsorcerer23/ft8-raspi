@@ -359,6 +359,19 @@ Additional modes:
   `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
   `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
+- **`active_hour` with two sources (A/B since v0.136.0):** the hour tier asks
+  whether the current UTC hour is worth it for the caller's continent. Arm A
+  uses the top-50 % hours from the QSO table — its denominator is
+  *successes*, so the tier measures the very thing it is meant to predict.
+  Arm B uses the completion rate of the (continent, UTC hour) cell from call
+  telemetry, shrunk towards the continent mean (k=20 pseudo-calls, so three
+  calls do not weigh like three hundred). In the 2026-09-12 model the cell
+  was the strongest predictor of all at z=+5.25, while arm A retained only
+  z=+2.43 once the cell history was controlled for. The arm is drawn per
+  15-minute block from a salted hash — without its own salt it would
+  coincide with the distant-target gate's arm and neither effect could be
+  separated. Read-out: section "Stunden-Tier" in `scripts/qso_bilanz.py`,
+  column `pick_attempt.zellen_arm`.
 - **Conservative hunt gates:** before tier scoring, weak single-CQ routine
   picks are skipped unless they carry award/context value or good decode/PSK
   SNR. After a poor hunt run, the picker enters temporary strict mode and

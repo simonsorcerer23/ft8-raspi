@@ -484,6 +484,10 @@ class PickAttempt(Base):
     #    Fernziele im Alleingang dem CQ-Fallback ueberlaesst? (A/B)
     fern_gate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     continent: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # 2026-09-12 A/B Stunden-Quelle: galt in diesem Slot die Zellen-Quote
+    # aus der Anruf-Telemetrie (True) oder die alte Stundenliste aus der
+    # QSO-Tabelle (False)? Ohne die Spalte waere der Test nicht auswertbar.
+    zellen_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
     # 2026-09-07 A/B Antwortfrequenz: quiet | on_freq
     reply_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # Kam die Sendeentscheidung aus dem Vorab-Decode (vor der Slot-Grenze)

@@ -312,22 +312,40 @@ def _tier_buddy_seen(d: DecodedMsg, ctx: MachineContext) -> int:
 
 
 def _tier_active_hour(d: DecodedMsg, ctx: MachineContext) -> int:
-    """v0.16.0 — Aktuelle UTC-Stunde ist historisch aktiv fuer den
-    Continent des CQ-Rufers.
+    """Lohnt diese UTC-Stunde fuer den Kontinent des CQ-Rufers?
 
-    Continent kommt aus ctx.call_to_continent (vom Orchestrator pro Slot
-    aus cty.dat befuellt). active_continent_hours ist die Set-Repraesen-
-    tation der Top-50%-Stunden pro Continent aus eigener QSO-DB.
+    Zwei Quellen, per A/B umgeschaltet (``ctx.zellen_arm``):
 
-    Effekt: VK morgens auf 15m aktiv → Boost. Mittagspause auf 15m fuer
-    VK → kein Boost (andere Tiers entscheiden).
+    *Arm A* (v0.16.0, urspruenglich): ``active_continent_hours``, die
+    Top-50-%-Stunden je Kontinent aus der eigenen QSO-Tabelle.
+
+    *Arm B* (2026-09-12): die Abschlussquote der Zelle (Kontinent,
+    UTC-Stunde) aus der Anruf-Telemetrie, zum Kontinentmittel geschrumpft.
+
+    Der Unterschied ist der Nenner. Arm A zaehlt, wann wir QSOs *hatten* —
+    also genau das, was der Tier vorhersagen soll; wer viel anruft, hat
+    viele QSOs, und die Stunde sieht gut aus. Arm B setzt die Abschluesse
+    ins Verhaeltnis zu den Anrufen und misst damit, ob sich das Anrufen in
+    dieser Stunde ueberhaupt lohnt. Im Modell vom 12.09. blieb von Arm A
+    nach Kontrolle der Zellen-Historie z=+2,43 uebrig, waehrend die Zelle
+    mit z=+5,25 der staerkste Praediktor im ganzen Modell war.
+
+    Beide Arme liefern 0, wenn ihre Quelle den Kontinent nicht kennt —
+    der Tier entscheidet dann nichts und ueberlaesst das Feld den anderen.
     """
-    if not d.call_from or not ctx.active_continent_hours:
+    if not d.call_from:
         return 0
     continent = ctx.call_to_continent.get(d.call_from.upper())
     if not continent:
         return 0
     hour = datetime.now(UTC).hour
+    if ctx.zellen_arm:
+        rate = ctx.zellen_success.get((continent, hour))
+        if rate is None:
+            return 0
+        return 1 if rate >= ctx.zellen_success_overall else 0
+    if not ctx.active_continent_hours:
+        return 0
     return 1 if (continent, hour) in ctx.active_continent_hours else 0
 
 
@@ -762,6 +780,7 @@ class StateMachine:
                     "reply_kind": reply_kind,
                     "pre_decode": bool(self.ctx.vorab_decode_aktiv),
                     "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
+                    "zellen_arm": bool(self.ctx.zellen_arm),
                     "freq_offset_hz": best.freq_offset_hz,
                     "target_grid": best.grid,
                     # v0.64.0 — Picker-Diagnose + Kontext:
@@ -1488,6 +1507,7 @@ class StateMachine:
             # Auch fuer eingehende Anrufe: Ob der Gate-Arm galt, entscheidet
             # ja gerade darueber, ob wir in diesem Slot CQ rufen konnten.
             "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
+            "zellen_arm": bool(self.ctx.zellen_arm),
         }
 
     def _stamp_outcome_meta(self) -> None:
