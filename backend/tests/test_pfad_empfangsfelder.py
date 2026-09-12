@@ -97,3 +97,33 @@ async def test_ohne_berichte_leere_liste(tmp_path):
     init_engine(tmp_path / "qso.sqlite")
     await create_all(default_user_callsign="DK9XR")
     assert await _stub()._haeufigste_empfangsfelder() == []
+
+
+@pytest.mark.asyncio
+async def test_feldsumme_schlaegt_einzelnen_vielredner(tmp_path):
+    """Der eigentliche Fehler vom 2026-09-12: Sortiert man nach der
+    Haeufigkeit einzelner Locator, gewinnt ein Feld mit einer fleissigen
+    Station gegen eines mit vielen verschiedenen Zuhoerern. IP62 rutschte
+    so in die Liste, waehrend JP herausfiel — obwohl JP fast doppelt so
+    viele Berichte hatte."""
+    init_engine(tmp_path / "qso.sqlite")
+    await create_all(default_user_callsign="DK9XR")
+    # Feld AA: eine Station mit 40 Berichten. Feld BB: vier Stationen mit
+    # je 25, zusammen 100 — BB muss gewinnen.
+    await _seed([("AA11XX", "VIEL", 40),
+                 ("BB11AA", "B1", 25), ("BB22BB", "B2", 25),
+                 ("BB33CC", "B3", 25), ("BB44DD", "B4", 25)])
+    felder = await _stub()._haeufigste_empfangsfelder()
+    assert felder[0].startswith("BB"), felder
+    assert felder[1].startswith("AA"), felder
+
+
+@pytest.mark.asyncio
+async def test_je_feld_der_haeufigste_locator(tmp_path):
+    """Innerhalb des Feldes soll der Punkt dort liegen, wo die meisten
+    zuhoeren — nicht beim erstbesten."""
+    init_engine(tmp_path / "qso.sqlite")
+    await create_all(default_user_callsign="DK9XR")
+    await _seed([("CC11AA", "SELTEN", 3), ("CC99ZZ", "OFT", 30)])
+    felder = await _stub()._haeufigste_empfangsfelder()
+    assert felder == ["CC99"], felder

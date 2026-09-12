@@ -5471,20 +5471,32 @@ class Orchestrator:
                     .where(PskReporterIn.rx_grid.isnot(None))
                     .group_by(PskReporterIn.rx_grid)
                     .order_by(func.count().desc())
-                    .limit(400)
+                    # Hoch genug, dass die Feldsummen nicht an der Grenze
+                    # abgeschnitten werden — es geht um die Summe je Feld,
+                    # nicht um die Spitzenreiter.
+                    .limit(5000)
                 )).all()
         except Exception as exc:
             log.debug("Empfangsfelder nicht ermittelbar: %s", exc)
             return []
-        gesehen: dict[str, str] = {}
-        for grid, _n in rows:
+        # Erst die Felder nach ihrer GESAMTZAHL ordnen, dann je Feld den
+        # haeufigsten Locator nehmen. Nach der Locator-Haeufigkeit allein zu
+        # sortieren waere falsch: Ein Feld mit vielen verschiedenen Zuhoerern
+        # faellt dann hinter eines mit einer einzelnen fleissigen Station
+        # zurueck. Am 2026-09-12 rutschte so IP62 in die Liste, waehrend JP
+        # herausfiel — obwohl JP fast doppelt so viele Berichte hatte.
+        summe: dict[str, int] = {}
+        beste: dict[str, tuple[int, str]] = {}
+        for grid, n in rows:
             g = (grid or "").strip().upper()
             if len(g) < 4:
                 continue
-            gesehen.setdefault(g[:2], g[:4])
-            if len(gesehen) >= self._PFAD_EMPFANGSFELDER_MAX:
-                break
-        return list(gesehen.values())
+            feld, locator = g[:2], g[:4]
+            summe[feld] = summe.get(feld, 0) + int(n)
+            if int(n) > beste.get(feld, (0, ""))[0]:
+                beste[feld] = (int(n), locator)
+        reihenfolge = sorted(summe, key=lambda f: -summe[f])
+        return [beste[f][1] for f in reihenfolge[:self._PFAD_EMPFANGSFELDER_MAX]]
 
     async def _pfad_vorhersage_loop(self) -> None:
         """MUF und LUF fuer ein paar Referenzrichtungen mitschreiben.
