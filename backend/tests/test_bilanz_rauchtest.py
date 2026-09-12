@@ -138,6 +138,7 @@ ERWARTETE_ABSCHNITTE = (
     "Filterstufen ueber die Tage",
     "Umgebung",
     "Ersatz fuer den fehlenden Empfangsbeleg",
+    "Umentscheiden",
 )
 
 
