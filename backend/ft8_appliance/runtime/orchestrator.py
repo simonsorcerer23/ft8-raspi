@@ -125,7 +125,7 @@ from ..util.bandplan import (
     band_from_freq_hz as _band_from_freq_hz,
 )
 from ..util.callsign import base_call
-from ..util.maidenhead import latlon_to_locator
+from ..util.maidenhead import latlon_to_locator, locator_to_latlon
 from ..util.redact import redact_secrets
 from ..util.system_health import ChronyStatus, read_chrony_tracking
 from .slot_clock import SlotClock, SlotTick
@@ -663,6 +663,7 @@ class Orchestrator:
     # den Neustart — s. _upload_stau_waechter_loop).
     _upload_stau_gemeldet_at: float = field(default=0.0, init=False)
     _rausch_pegel_proben: list[float] = field(default_factory=list, init=False)
+    _alc_sweetspot_gemeldet_at: float = field(default=0.0, init=False)
     # Wann der Wartungslauf zuletzt durch war (Wandzeit, ueberlebt den
     # Neustart — s. _maintenance_loop).
     _maintenance_at: float = field(default=0.0, init=False)
@@ -6734,6 +6735,18 @@ class Orchestrator:
             # Sweet-Spot mit Limiter inaktiv (alc=0 ist hier "perfekt"):
             # pwr_meter zeigt voll-rated Power, ALC zeigt keinen Limiter-
             # Eingriff. Loop bleibt stehen.
+            # Einmal je Stunde ein Lebenszeichen auf INFO. Bis 2026-09-12 lief
+            # dieser Pfad nur auf DEBUG — der Regler stand seit Tagen still
+            # bei gain 0,29, und ob das "konvergiert" oder "tot" hiess, war
+            # von aussen nicht zu unterscheiden. (Es war konvergiert: pwr
+            # 0,60 >= 0,8 x 0,698, ALC nahe null — genau der Sweet-Spot.)
+            _jetzt = time.monotonic()
+            if _jetzt - self._alc_sweetspot_gemeldet_at > 3600.0:
+                self._alc_sweetspot_gemeldet_at = _jetzt
+                log.info(
+                    "PI: Sweet-Spot gehalten — gain %.2f, alc %d %%, pwr %.2f >= %.2f",
+                    self._audio_gain, alc_peak, pwr_peak, underdrive_threshold,
+                )
             log.debug(
                 "PI: Sweet-Spot (alc=0, pwr=%.2f >= %.2f) — kein Update",
                 pwr_peak, underdrive_threshold,
@@ -7454,6 +7467,18 @@ class Orchestrator:
                 if not (d.message or "").startswith("CQ"):
                     continue
                 norm = call.upper()
+                # Grid aus dem Decode hat Vorrang vor der Landesmitte aus
+                # cty.dat. Die liegt bei grossen Laendern weit daneben —
+                # gemessen am 2026-09-12 ueber 1223 Ziele: Nordamerika im
+                # Median 1130 km, Ozeanien bis 6265 km. Das Grayline-Fenster
+                # ist +-6 Grad Sonnenhoehe, gut eine halbe Stunde; 1000 km
+                # Ost-West sind eine Stunde Sonnenzeit. Der Grayline-Tier
+                # traf ausserhalb Europas also zufaellig.
+                if d.grid and len(d.grid) >= 4:
+                    try:
+                        call_to_latlon[norm] = locator_to_latlon(d.grid[:4])
+                    except Exception:
+                        pass
                 rec = self.integrations.cty.lookup(call)
                 if rec is not None:
                     call_to_dxcc[norm] = rec.entity.name
@@ -7461,7 +7486,8 @@ class Orchestrator:
                         new_dxcc.add(call)
                     # v0.14.0 Grayline-Tier: Lat/Lon der DXCC-Entity
                     # cachen damit der Tier ohne weiteren Lookup auskommt.
-                    if rec.entity.lat is not None and rec.entity.lon is not None:
+                    if (norm not in call_to_latlon
+                            and rec.entity.lat is not None and rec.entity.lon is not None):
                         call_to_latlon[norm] = (rec.entity.lat, rec.entity.lon)
                     # v0.16.0 Hour-of-Day-Tier: Continent cachen
                     if rec.entity.continent:

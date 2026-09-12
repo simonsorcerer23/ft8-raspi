@@ -25,10 +25,10 @@ import pytest
 from ft8_appliance.runtime import orchestrator as orch_mod
 
 
-def _decode(call: str, message: str | None = None):
+def _decode(call: str, message: str | None = None, grid: str | None = "FN20"):
     from ft8_appliance.statemachine.states import DecodedMsg
     return DecodedMsg(
-        ts=datetime.now(UTC), call_from=call, call_to=None, grid="FN20",
+        ts=datetime.now(UTC), call_from=call, call_to=None, grid=grid,
         message=message or f"CQ {call} FN20", snr_db=-8, dt_s=0.2,
         freq_offset_hz=1500, band="20m",
     )
@@ -112,7 +112,29 @@ async def test_standort_und_dxcc_kommen_mit(monkeypatch):
 
     ctx = o.state_machine.ctx
     assert ctx.call_to_dxcc.get("DL1ABC") == "Fed. Rep. of Germany"
-    assert ctx.call_to_latlon.get("DL1ABC") == (51.0, 10.0)
+    # Seit 2026-09-12 hat der Grid aus dem Decode Vorrang vor der
+    # Landesmitte aus cty.dat: FN20 liegt bei (40,5 / -75,0), die
+    # Landesmitte von Deutschland bei (51 / 10). Ueber 1223 echte Ziele
+    # gemessen lag die Landesmitte fuer Nordamerika im Median 1130 km
+    # neben dem Grid — fuer ein Grayline-Fenster von einer halben Stunde
+    # ist das eine Stunde Sonnenzeit daneben.
+    assert ctx.call_to_latlon.get("DL1ABC") == (40.5, -75.0)
+
+
+@pytest.mark.asyncio
+async def test_ohne_grid_bleibt_die_landesmitte(monkeypatch):
+    """Kein Grid im Decode → cty.dat liefert, wie vorher."""
+    o = _orch(monkeypatch)
+    await o._refresh_decode_context([_decode("DL1ABC", grid=None)])
+    assert o.state_machine.ctx.call_to_latlon.get("DL1ABC") == (51.0, 10.0)
+
+
+@pytest.mark.asyncio
+async def test_kaputter_grid_faellt_auf_landesmitte_zurueck(monkeypatch):
+    """Ein unbrauchbarer Locator darf den Kontext nicht leer lassen."""
+    o = _orch(monkeypatch)
+    await o._refresh_decode_context([_decode("DL1ABC", grid="ZZ")])
+    assert o.state_machine.ctx.call_to_latlon.get("DL1ABC") == (51.0, 10.0)
 
 
 @pytest.mark.asyncio
