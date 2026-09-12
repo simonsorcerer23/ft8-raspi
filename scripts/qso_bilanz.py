@@ -445,6 +445,64 @@ def main() -> int:
     else:
         print("    (noch keine Tageszeilen — die Historie laeuft seit v0.132.0)")
 
+    print("\n=== Umgebung: erklaert sie, wann es laeuft und wann nicht? ===")
+    # Drei Messreihen liefen bis zum 2026-09-12 ohne einen einzigen Leser:
+    # band_noise, solar_log und swr_log wurden geschrieben, neunzig Tage
+    # aufgehoben und geloescht. Jede hat eine gute Frage hinter sich — nur
+    # hat sie nie jemand gestellt. Hier stehen die Fragen.
+    zeilen = []
+
+    # 1. Rauschflur gegen Abschlussquote, je Stunde. Bei hohem Rauschen sind
+    #    schwache Signale chancenlos, und die sind die Mehrheit unserer Ziele.
+    rausch = con.execute(
+        "select strftime('%Y-%m-%d %H', ts), min(rx_audio_dbfs) "
+        "from band_noise where rx_audio_dbfs is not null and ts > datetime('now',?) "
+        "group by 1", (seit,),
+    ).fetchall()
+    quoten = dict(con.execute(
+        "select strftime('%Y-%m-%d %H', ts), "
+        "  round(100.0*sum(outcome='completed')/count(*),1) "
+        "from pick_attempt where ts > datetime('now',?) group by 1 "
+        "having count(*) >= 3", (seit,),
+    ).fetchall())
+    paare = [(p, quoten[st]) for st, p in rausch if st in quoten]
+    if len(paare) >= 8:
+        import statistics as _st
+        r = _st.correlation([p[0] for p in paare], [p[1] for p in paare])
+        zeilen.append(("Rauschflur gegen Abschlussquote", len(paare),
+                       f"Korrelation {r:+.2f}",
+                       "Zusammenhang" if abs(r) > 0.4 else "keiner erkennbar"))
+    else:
+        zeilen.append(("Rauschflur gegen Abschlussquote", len(paare), "-",
+                       "zu wenige Stunden (mind. 8)"))
+
+    # 2. Sonnenindizes gegen Decode-Rate. Ob die Vorhersagewerte hier ueber-
+    #    haupt etwas erklaeren, ist offen — bisher hat es niemand geprueft.
+    solar = con.execute(
+        "select count(*), min(ts), max(ts) from solar_log where ts > datetime('now',?)",
+        (seit,),
+    ).fetchone()
+    zeilen.append(("Sonnenindizes aufgezeichnet", solar[0] if solar else 0, "-",
+                   "ab ~48 Messwerten auswertbar"))
+
+    # 3. SWR-Verlauf. Solange er flach bleibt, ist das die Aussage; ein
+    #    Anstieg waere die Fruehwarnung, fuer die die Reihe gedacht ist.
+    swr = con.execute(
+        "select count(*), min(swr), max(swr), avg(swr) from swr_log "
+        "where ts > datetime('now',?)", (seit,),
+    ).fetchone()
+    if swr and swr[0]:
+        spanne = (swr[2] or 0) - (swr[1] or 0)
+        zeilen.append(("SWR-Verlauf", swr[0], f"{swr[1]:.2f} bis {swr[2]:.2f}",
+                       "unauffaellig" if spanne < 0.3 else "ANSTIEG PRUEFEN"))
+    else:
+        zeilen.append(("SWR-Verlauf", 0, "-", "keine Messungen"))
+
+    tabelle(zeilen, ("Frage", "Datenpunkte", "Ergebnis", "Urteil"))
+    print("    Eine Reihe ohne Abnehmer ist Ballast. Steht hier dauerhaft")
+    print("    'zu wenige' oder 'keiner erkennbar', gehoert die Frage")
+    print("    verworfen und die Aufzeichnung eingestellt.")
+
     print("\n=== Wunschliste: gesehen und versucht? ===")
     tabelle(con.execute(
         "select w.call, "

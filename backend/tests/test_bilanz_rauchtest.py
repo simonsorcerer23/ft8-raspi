@@ -78,6 +78,12 @@ def _baue_db(pfad: Path) -> None:
                 muf_lp=11.0 + i, luf_sp=3.0, luf_lp=4.0,
             ))
         s.add(m.Watchlist(call="V51WH", added=jetzt))
+        # Die drei Umgebungsreihen, die bis 2026-09-12 ohne Leser liefen.
+        for i in range(10):
+            s.add(m.BandNoise(ts=t(20 + i * 55), band="20m", freq_hz=14_074_000,
+                              s_meter_db=-54, rx_audio_dbfs=-30.0 - i))
+            s.add(m.SwrLog(ts=t(18 + i * 55), band="20m", freq_hz=14_074_000,
+                           swr=1.0 + i * 0.01))
         # Tageshistorie der Filterstufen: zwei Tage, eine Stufe ohne Treffer
         for tage_zurueck in (0, 1):
             tag = (jetzt - timedelta(days=tage_zurueck)).strftime("%Y-%m-%d")
@@ -130,6 +136,7 @@ ERWARTETE_ABSCHNITTE = (
     "Wunschliste",
     "Bandrand",
     "Filterstufen ueber die Tage",
+    "Umgebung",
 )
 
 
@@ -183,3 +190,19 @@ def test_historie_zeigt_mehrere_tage(ausgabe):
     assert len(spalten) >= 4, spalten
     assert int(spalten[1]) == 2, f"Tage mit Daten falsch: {spalten}"
     assert int(spalten[2]) == 241, f"Summe falsch: {spalten}"  # 120 + 121
+
+
+def test_umgebungsreihen_haben_einen_abnehmer(ausgabe):
+    """band_noise, solar_log und swr_log liefen bis 2026-09-12 ohne einen
+    einzigen Leser: geschrieben, neunzig Tage aufgehoben, geloescht. Dieser
+    Abschnitt ist ihr Abnehmer — faellt er weg, sammeln sie wieder ins Leere."""
+    abschnitt = ausgabe.split("=== Umgebung")[1]
+    for frage in ("Rauschflur", "Sonnenindizes", "SWR-Verlauf"):
+        assert frage in abschnitt, frage
+
+
+def test_umgebung_sagt_wann_die_daten_reichen(ausgabe):
+    """Ohne diese Angabe liest man aus drei Datenpunkten einen Befund."""
+    abschnitt = ausgabe.split("=== Umgebung")[1]
+    assert "zu wenige" in abschnitt or "auswertbar" in abschnitt
+    assert "Ballast" in abschnitt
