@@ -95,6 +95,21 @@ async function download(pathOrUrl, filename) {
   return { filename: name, size: blob.size };
 }
 
+async function blobUrl(pathOrUrl) {
+  // Fuer Bilder, die hinter der Token-Pruefung liegen. Ein <img src=...>
+  // kann keinen Authorization-Header setzen und bekaeme 401; Leaflets
+  // ImageOverlay benutzt aber genau so ein Element. Also holen wir die
+  // Daten selbst und reichen eine blob:-Adresse weiter.
+  // Der Aufrufer MUSS sie mit URL.revokeObjectURL wieder freigeben.
+  const init = { method: 'GET', headers: {} };
+  const tok = getToken();
+  if (tok) init.headers['Authorization'] = `Bearer ${tok}`;
+  const r = await fetch(_apiUrl(pathOrUrl), init);
+  if (r.status === 401) { _requireLogin(); throw new Error('401 unauthorized'); }
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return URL.createObjectURL(await r.blob());
+}
+
 function adifPath(operator) {
   return operator
     ? `/log/adif?operator=${encodeURIComponent(operator)}`
@@ -255,6 +270,7 @@ export const api = {
                             { method: 'DELETE' }),
 
   // v0.37.0 — API-Auth
+  blobUrl,                                        // Bild hinter der Token-Pruefung
   authToken:    ()       => getToken(),           // fuer SSE ?token=
   authTokens:   ()       => request('/auth/token'),  // {api_token, ntfy_action_token}
   // v0.39.0 — Master-Token auf merkbares Passwort setzen
