@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.135.0 — 2026-09-12
+- fix: Grayline aus dem Grid statt aus der Landesmitte; ALC-Regler meldet sich
+- fix: kein voller Cooldown nach picked_another
+- fix: SQLite synchronous=FULL — NORMAL stammte aus SD-Karten-Zeiten
+
 ## v0.134.0 — 2026-09-12
 - fix: Empfangsfelder nach Berichtsumme statt nach Spitzenreiter
 - feat: Ersatz fuer den fehlenden Empfangsbeleg — und er traegt
