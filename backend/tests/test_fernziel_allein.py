@@ -340,3 +340,49 @@ def test_grayline_hebelt_das_gate_nicht_mehr_aus():
     code = q.split('"""', 2)[-1]
     assert "_is_award_or_context_pick" not in code
     assert "new_dxcc_calls" in code
+
+
+# ====================================== Arm-Zuordnung ohne Zufallsquelle
+
+
+def test_arm_ist_reproduzierbar():
+    """Mit random.random() war die Zuordnung nach einem Neustart verloren —
+    zu einem QSO von gestern liess sich nicht mehr sagen, in welchem Arm es
+    entstanden ist. Aus dem Blockindex abgeleitet geht das auch rueckwirkend."""
+    from ft8_appliance.runtime.orchestrator import _arm_aus_block
+
+    erste = [_arm_aus_block(b) for b in range(500)]
+    zweite = [_arm_aus_block(b) for b in range(500)]
+    assert erste == zweite
+
+
+def test_arm_verteilt_sich_gleichmaessig():
+    from ft8_appliance.runtime.orchestrator import _arm_aus_block
+
+    arme = [_arm_aus_block(b) for b in range(4000)]
+    anteil = sum(arme) / len(arme)
+    assert 0.45 < anteil < 0.55, anteil
+
+
+def test_arm_haengt_nicht_an_der_globalen_zufallsquelle():
+    """Sonst flackert der A/B-Test, je nachdem was sonst im Prozess
+    wuerfelt — und genau das hat er getan."""
+    import random as _r
+
+    from ft8_appliance.runtime.orchestrator import _arm_aus_block
+
+    _r.seed(1)
+    a = [_arm_aus_block(b) for b in range(200)]
+    _r.seed(999)
+    b = [_arm_aus_block(x) for x in range(200)]
+    assert a == b
+
+
+def test_benachbarte_bloecke_wechseln_haeufig():
+    """Ein Hash, der lange Laeufe desselben Arms erzeugt, waere fuer den
+    A/B unbrauchbar — dann laegen ganze Bandoeffnungen in einem Arm."""
+    from ft8_appliance.runtime.orchestrator import _arm_aus_block
+
+    arme = [_arm_aus_block(b) for b in range(1000)]
+    wechsel = sum(1 for i in range(1, len(arme)) if arme[i] != arme[i - 1])
+    assert wechsel > 400, wechsel

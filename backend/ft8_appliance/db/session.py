@@ -139,6 +139,23 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_station_callsign_column(conn)
         await _migrate_decode_columns(conn)
         await _migrate_pick_attempt_columns(conn)
+        await _migrate_band_noise_columns(conn)
+
+
+async def _migrate_band_noise_columns(conn) -> None:
+    """v0.131.0 — der belastbare Rauschwert neben dem S-Meter.
+
+    ``s_meter_db`` liefert beim IC-7300 ueber hamlib einen festen Wert:
+    275 Messungen ueber sechs Stunden, jede exakt -54 dB. Der RX-Pegel aus
+    dem ALSA-Strom bewegt sich dagegen (gemessen -5,8 bis -8,4 dBFS). Alte
+    Zeilen behalten NULL — sie enthalten ohnehin nur den konstanten Wert.
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(band_noise)")
+    existing = {row[1] for row in res.fetchall()}
+    if "rx_audio_dbfs" not in existing:
+        await conn.exec_driver_sql(
+            "ALTER TABLE band_noise ADD COLUMN rx_audio_dbfs FLOAT"
+        )
 
 
 async def _migrate_decode_columns(conn) -> None:

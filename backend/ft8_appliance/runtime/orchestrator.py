@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -93,6 +94,22 @@ from ..integrations import (
     QrzClient,
 )
 from ..integrations.mf_lookup import get_mf_lookup
+
+
+def _arm_aus_block(block: int) -> bool:
+    """Welcher A/B-Arm gilt in diesem Zeitblock?
+
+    Bewusst deterministisch statt gewuerfelt. Mit ``random.random()`` war
+    die Zuordnung nach einem Neustart verloren: Zu einem QSO von gestern
+    liess sich nicht mehr sagen, in welchem Arm es entstanden ist. Aus dem
+    Blockindex abgeleitet ist jeder Zeitpunkt nachtraeglich seinem Arm
+    zuzuordnen — auch rueckwirkend fuer Daten von vor dem letzten Neustart.
+
+    Nebenbei wird der A/B-Test davon reproduzierbar; an der globalen
+    Zufallsquelle hing er davon ab, was sonst noch im Prozess wuerfelt.
+    """
+    ziffer = hashlib.sha256(str(block).encode("ascii")).digest()[0]
+    return ziffer & 1 == 1
 
 
 def _mf_snapshot_mfnr(call: str | None) -> int | None:
@@ -645,6 +662,7 @@ class Orchestrator:
     # Wann zuletzt ein Upload-Stau gemeldet wurde (Wandzeit, ueberlebt
     # den Neustart — s. _upload_stau_waechter_loop).
     _upload_stau_gemeldet_at: float = field(default=0.0, init=False)
+    _rausch_pegel_proben: list[float] = field(default_factory=list, init=False)
     # Wann der Wartungslauf zuletzt durch war (Wandzeit, ueberlebt den
     # Neustart — s. _maintenance_loop).
     _maintenance_at: float = field(default=0.0, init=False)
@@ -1853,17 +1871,7 @@ class Orchestrator:
                 # In dem Fall hat status() ohnehin nichts mit echtem Rig
                 # zu tun, also kein Safety-Issue.
                 pass
-        # RX-Audio-Pegel aus dem ALSA-Capture-Stream — Workaround für
-        # den IC-7300/Hamlib-STRENGTH-Bug. decode_source ist auf dem
-        # Pi die DecodePipeline mit .slot_buffer; auf Dev/Tests-Maschine
-        # ein Closure ohne Slot-Buffer (dann liefert getattr None).
-        rx_audio_dbfs: float | None = None
-        slot_buf = getattr(self.decode_source, "slot_buffer", None)
-        if slot_buf is not None:
-            try:
-                rx_audio_dbfs = slot_buf.rms_dbfs_recent()
-            except Exception:
-                rx_audio_dbfs = None
+        rx_audio_dbfs = self._rx_audio_dbfs()
         # Peak-Hold mit 6 dB/sec Decay. Wenn der Burst kommt, springt die
         # Anzeige sofort hoch; danach fällt sie sanft auf den Rauschpegel.
         # So sieht der Operator den echten Spitzenpegel statt eine zappelnde
@@ -3681,7 +3689,7 @@ class Orchestrator:
         if block != self._fern_arm_slot:
             self._fern_arm_slot = block
             self._fern_arm = (
-                random.random() < 0.5
+                _arm_aus_block(block)
                 if getattr(op, "hunt_sole_dx_ab", False) else True
             )
         self.state_machine.ctx.hunt_sole_dx_arm = self._fern_arm
@@ -7614,6 +7622,23 @@ class Orchestrator:
             self._erste_hw_messung_offen = False
             self._loese_startsperre()
 
+    def _rx_audio_dbfs(self) -> float | None:
+        """RX-Pegel aus dem ALSA-Capture-Strom.
+
+        Workaround fuer den IC-7300/Hamlib-STRENGTH-Bug: das S-Meter des
+        Rigs kommt ueber hamlib als fester Wert zurueck und taugt als
+        Rauschmass nicht. ``decode_source`` ist auf dem Pi die
+        DecodePipeline mit ``slot_buffer``; auf einer Entwicklungsmaschine
+        ein Closure ohne Puffer, dann liefert ``getattr`` None.
+        """
+        slot_buf = getattr(self.decode_source, "slot_buffer", None)
+        if slot_buf is None:
+            return None
+        try:
+            return slot_buf.rms_dbfs_recent()
+        except Exception:
+            return None
+
     def _buche_rauschen(self, rig) -> None:
         """Den Rauschflur des Bandes aufzeichnen.
 
@@ -7629,12 +7654,23 @@ class Orchestrator:
 
         Nur im Empfang — waehrend der eigenen Aussendung zeigt das S-Meter
         nichts Brauchbares.
+
+        Gemessen wird beides: das S-Meter des Rigs und der RX-Pegel aus dem
+        ALSA-Strom. Beim IC-7300 ist nur der zweite zu gebrauchen. Das
+        S-Meter kommt ueber hamlib als fester Wert zurueck — 275 Messungen
+        ueber sechs Stunden, jede exakt -54 dB (2026-09-12). Dass dieser
+        Bug existiert, stand an anderer Stelle im Orchestrator laengst im
+        Kommentar; diese Reihe schrieb ihn trotzdem eine Nacht lang mit und
+        sah dabei wie eine Messung aus.
         """
         if not self.db_enabled or self._tx_burst_active:
             return
         wert = getattr(rig, "s_meter_db", None)
         if wert is None:
             return
+        pegel = self._rx_audio_dbfs()
+        if pegel is not None:
+            self._rausch_pegel_proben.append(pegel)
         self._rausch_proben.append(int(wert))
         jetzt = time.monotonic()
         if self._rausch_bis == 0.0:
@@ -7643,6 +7679,7 @@ class Orchestrator:
         if jetzt < self._rausch_bis:
             return
         proben, self._rausch_proben = self._rausch_proben, []
+        pegel_proben, self._rausch_pegel_proben = self._rausch_pegel_proben, []
         self._rausch_bis = jetzt + 60.0
         if not proben:
             return
@@ -7652,18 +7689,25 @@ class Orchestrator:
             return
         try:
             asyncio.create_task(
-                self._persist_rauschen(band, int(freq), min(proben))
+                self._persist_rauschen(
+                    band, int(freq), min(proben),
+                    min(pegel_proben) if pegel_proben else None,
+                )
             )
         except Exception:
             pass
 
-    async def _persist_rauschen(self, band: str, freq_hz: int, s_meter: int) -> None:
+    async def _persist_rauschen(
+        self, band: str, freq_hz: int, s_meter: int,
+        rx_audio_dbfs: float | None = None,
+    ) -> None:
         """Fail-soft — eine Messreihe darf den Betrieb nie kosten."""
         try:
             from ..db.models import BandNoise
             async with session_scope() as s:
                 s.add(BandNoise(ts=datetime.now(UTC), band=band,
-                                freq_hz=freq_hz, s_meter_db=s_meter))
+                                freq_hz=freq_hz, s_meter_db=s_meter,
+                                rx_audio_dbfs=rx_audio_dbfs))
         except Exception as exc:
             log.debug("Rauschflur nicht gespeichert: %s", exc)
 
