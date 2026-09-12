@@ -72,7 +72,12 @@ def _token() -> str:
          "grep -m1 -E '^\\s*api_token' /etc/ft8-appliance/config.yaml"],
         capture_output=True, text=True, timeout=30,
     ).stdout
-    return roh.split(":", 1)[1].strip() if ":" in roh else ""
+    wert = roh.split(":", 1)[1].strip() if ":" in roh else ""
+    # YAML darf den Wert quoten; ohne das Abstreifen wandern die
+    # Anfuehrungszeichen in den Header und die Anfrage scheitert.
+    if len(wert) >= 2 and wert[0] == wert[-1] and wert[0] in "\"'":
+        wert = wert[1:-1]
+    return wert
 
 
 def tabelle(zeilen: list[tuple], kopf: tuple[str, ...]) -> None:
@@ -358,7 +363,7 @@ def main() -> int:
     try:
         _tok = _token()
         req = _u.Request("http://100.77.48.117:8000/api/status",
-                         headers={"X-API-Token": _tok})
+                         headers={"Authorization": f"Bearer {_tok}"})
         with _u.urlopen(req, timeout=10) as r:
             st = _json.load(r) or {}
         ch = st.get("context_health") or {}
@@ -385,7 +390,7 @@ def main() -> int:
     try:
         req = _u.Request(
             "http://100.77.48.117:8000/api/status",
-            headers={"X-API-Token": _token()},
+            headers={"Authorization": f"Bearer {_token()}"},
         )
         with _u.urlopen(req, timeout=10) as r:
             drops = (_json.load(r) or {}).get("filter_drops") or {}
