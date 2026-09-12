@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.131.0 — 2026-09-12
+- fix: Rauschreihe mass den Wert, der bei diesem Rig kaputt ist
+
 ## v0.130.0 — 2026-09-12
 - fix: die Wunschliste wurde vom Cooldown ausgehebelt
 - fix: Bilanz schickte einen Header, den niemand liest
