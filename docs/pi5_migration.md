@@ -5,7 +5,7 @@ Update auf v0.81.0 mit der jt9-Stufe) und lief erst nach einem Stromreset
 wieder. Vorher lief er 40 Tage durch. Ersatz: Raspberry Pi 5 8 GB im
 Argon NEO 5 M.2 mit NVMe-SSD, offiziellem 27-W-Netzteil und RTC-Batterie.
 
-**Vor dem Umbau immer zuerst:** `./scripts/backup-appliance.sh ft8`
+**Vor dem Umbau immer zuerst:** `./scripts/backup-appliance.sh`
 (liegt in `~/.config/codex/secrets/ft8-backup/<Zeitstempel>/`, nie ins Repo).
 
 ## Was aus dem Backup übernommen wird
@@ -80,7 +80,7 @@ ist beabsichtigt (seit v0.83.0) und kein Fehler.
    `install.sh` zieht auch das Paket `wsjtx` für die jt9-Decoderstufe.
 5. **Daten einspielen** (vom PC aus):
    ```bash
-   ./scripts/restore-appliance.sh ~/.config/codex/secrets/ft8-backup/<Stempel>/ft8-backup.tgz ft8
+   ./scripts/restore-appliance.sh ~/.config/codex/secrets/ft8-backup/<Stempel>/ft8-backup.tgz ft8-pi5
    ```
    Das Skript stoppt den Controller, kopiert Konfiguration, Datenbank und
    WLAN-Profile, richtet Rechte, startet neu und liest den Status zurück.
