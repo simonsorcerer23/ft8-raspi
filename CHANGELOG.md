@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.120.0 — 2026-09-12
+- fix: Strict-Modus und Fehlschlag-Eskalation ueberleben den Neustart
+- fix: hamqsl-Abruf am gemessenen Stundenrhythmus statt am geratenen
+
 ## v0.119.0 — 2026-09-12
 - fix: Abruf der Pfadvorhersage am Stundenlauf des Dienstes ausrichten
 - feat: qso_bilanz wertet Empfangsberichte und Pfadvorhersage aus
