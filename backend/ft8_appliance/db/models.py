@@ -142,6 +142,74 @@ class PskReporterIn(Base):
 
 
 # ---------------------------------------------------------------------------
+class SolarLog(Base):
+    """Ausbreitungsbedingungen, wie sie hamqsl.com meldet.
+
+    Wurde seit jeher abgerufen und nur angezeigt — weder gespeichert noch
+    von der Zielauswahl gelesen. Der K-Index misst geomagnetische
+    Stoerungen, die besonders Nordpolarpfade treffen: also genau die
+    Nordamerika-Verbindungen, deren Abschlussquote bei 3,7 % liegt. Ohne
+    Historie bleibt der Zusammenhang Spekulation.
+    """
+
+    __tablename__ = "solar_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    sfi: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    a_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    k_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sunspots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    aurora: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    x_ray: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+class BandNoise(Base):
+    """Rauschpegel im Empfang — das S-Meter zwischen den Aussendungen.
+
+    Die fehlende Groesse fuer "wie gut ist das Band gerade wirklich". Die
+    Zahl der Decodes misst die Aktivitaet, nicht die Stoerung; bei hohem
+    Rauschen sind schwache Signale chancenlos, und genau die machen den
+    Grossteil unserer Anrufe aus.
+    """
+
+    __tablename__ = "band_noise"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    band: Mapped[str] = mapped_column(String, index=True)
+    freq_hz: Mapped[int] = mapped_column(Integer)
+    s_meter_db: Mapped[int] = mapped_column(Integer)
+
+
+# ---------------------------------------------------------------------------
+class PathPrediction(Base):
+    """Vorhergesagte MUF/LUF fuer eine Zielrichtung (prop.kc2g.com).
+
+    Bewusst nur fuer eine Handvoll Referenzrichtungen und alle fuenfzehn
+    Minuten, nicht je Anruf: Der Dienst wird kostenlos betrieben, und
+    hunderte Abfragen am Tag waeren unangemessen.
+
+    Die klassische MUF ist fuer FT8 zu konservativ — sie ist fuer
+    SSB-taugliche Signalstaerken definiert, FT8 arbeitet rund 20 dB
+    darunter. Ein direktes Gate taugt sie deshalb nicht. Gespeichert wird
+    sie, um genau das zu pruefen: Bei welchem Verhaeltnis von Frequenz zu
+    MUF lag unsere Erfolgsquote wo?
+    """
+
+    __tablename__ = "path_prediction"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ziel_grid: Mapped[str] = mapped_column(String, index=True)
+    muf_sp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    muf_lp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    luf_sp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    luf_lp: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 class SwrLog(Base):
     __tablename__ = "swr_log"
 

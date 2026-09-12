@@ -635,6 +635,9 @@ class Orchestrator:
     # Seit wann fehlt der SWR-Wert, obwohl gesendet wird? s. _buche_swr.
     _swr_fehlt_seit: float | None = field(default=None, init=False)
     _swr_fehlt_gemeldet: bool = field(default=False, init=False)
+    # Gesammelte S-Meter-Werte der laufenden Minute — s. _buche_rauschen.
+    _rausch_proben: list[int] = field(default_factory=list, init=False)
+    _rausch_bis: float = field(default=0.0, init=False)
     # Letzter in swr_log geschriebener Wert — s. _buche_swr.
     _swr_log_at: float = field(default=0.0, init=False)
     _swr_log_wert: float | None = field(default=None, init=False)
@@ -1020,6 +1023,7 @@ class Orchestrator:
         # liefert 0 (no boost), kein Crash.
         if self.integrations.hamqsl is not None and self.integrations.hamqsl.enabled:
             self._spawn(self._solar_refresh_loop(), name="solar-refresh")
+            self._spawn(self._pfad_vorhersage_loop(), name="pfad-vorhersage")
 
         # v0.38.0 — taegliche Wartung: Telemetrie-Retention (DATA-M1) +
         # QSO-DB-Backup (DATA-C3). Schuetzt die unersetzlichen Logdaten
@@ -5183,16 +5187,142 @@ class Orchestrator:
                     self._band_conditions_day = dict(sd.band_conditions_day or {})
                     self._band_conditions_night = dict(sd.band_conditions_night or {})
                     self._solar_last_refresh_at = time.time()
+                    await self._persist_solar(sd)
                     log.info(
-                        "solar-refresh: %d day-conditions, %d night-conditions",
+                        "solar-refresh: %d day-conditions, %d night-conditions"
+                        " (SFI %s, K %s, A %s)",
                         len(self._band_conditions_day),
                         len(self._band_conditions_night),
+                        getattr(sd, "sfi", None), getattr(sd, "k_index", None),
+                        getattr(sd, "a_index", None),
                     )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 log.warning("solar-refresh hiccup: %s", exc)
             await asyncio.sleep(1800)
+
+    async def _persist_solar(self, sd) -> None:
+        """Die Ausbreitungsbedingungen in die Historie schreiben.
+
+        Sie wurden seit jeher abgerufen und nur angezeigt — weder
+        gespeichert noch von der Zielauswahl gelesen. Der K-Index misst
+        geomagnetische Stoerungen, die besonders Nordpolarpfade treffen,
+        also genau die Nordamerika-Verbindungen mit ihren 3,7 %
+        Abschlussquote. Ohne Historie bleibt der Zusammenhang Spekulation.
+
+        Alle dreissig Minuten ein Eintrag; die Werte selbst aendern sich
+        ohnehin nur stuendlich.
+        """
+        if not self.db_enabled or sd is None:
+            return
+        try:
+            from ..db.models import SolarLog
+            async with session_scope() as s:
+                s.add(SolarLog(
+                    ts=datetime.now(UTC),
+                    sfi=getattr(sd, "sfi", None),
+                    a_index=getattr(sd, "a_index", None),
+                    k_index=getattr(sd, "k_index", None),
+                    sunspots=getattr(sd, "sunspots", None),
+                    aurora=getattr(sd, "aurora", None),
+                    x_ray=getattr(sd, "x_ray", None),
+                ))
+        except Exception as exc:
+            log.debug("Sonnendaten nicht gespeichert: %s", exc)
+
+    # Referenzrichtungen fuer die Ausbreitungsvorhersage. Bewusst eine
+    # Handvoll statt je Anruf: Der Dienst wird kostenlos betrieben.
+    _PFAD_REFERENZEN: typing.ClassVar[tuple[tuple[str, str], ...]] = (
+        ("EU-West",   "IO91"),   # London
+        ("EU-Ost",    "KO85"),   # Moskau
+        ("NA-Ost",    "FN20"),   # Washington
+        ("NA-West",   "DM12"),   # Los Angeles
+        ("SA",        "GG66"),   # Sao Paulo
+        ("AS-Ost",    "PM95"),   # Tokio
+        ("AF",        "KG33"),   # Nairobi
+        ("OC",        "QF56"),   # Sydney
+    )
+
+    async def _pfad_vorhersage_loop(self) -> None:
+        """MUF und LUF fuer ein paar Referenzrichtungen mitschreiben.
+
+        Die Frage dahinter: Zwei Drittel unserer Anrufe bekommen nie eine
+        Antwort. Ob das an der Ausbreitung liegt, laesst sich ohne
+        Vorhersagedaten nicht pruefen — die Zahl der Decodes misst nur, wer
+        *uns* erreicht, nicht ob *wir* ankommen.
+
+        **Kein Gate, nur Beobachtung.** Die klassische MUF ist fuer FT8 zu
+        konservativ: Sie ist fuer SSB-taugliche Signalstaerken definiert,
+        FT8 arbeitet rund 20 dB darunter. Eine Stichprobe am 12.9. zeigte
+        fuer *jede* Richtung "20 m geschlossen" — auch fuer Pfade, auf
+        denen wir gerade QSOs fuhren. Gespeichert wird sie, um genau das zu
+        kalibrieren: Bei welchem Verhaeltnis von Arbeitsfrequenz zu MUF lag
+        unsere Erfolgsquote wo?
+
+        Schonend fuer prop.kc2g.com: acht Richtungen alle fuenfzehn
+        Minuten, also gut dreissig Abfragen je Stunde, mit Pausen
+        dazwischen. Faellt der Dienst aus, faellt nur diese Beobachtung aus.
+        """
+        import urllib.parse
+        import urllib.request
+
+        mein_grid = (self.config.operator.default_locator
+                     or self.state_machine.ctx.my_grid or "")[:6]
+        if not mein_grid:
+            log.info("Pfad-Vorhersage: kein eigener Locator — Schleife endet")
+            return
+        await asyncio.sleep(120)          # Boot-Schonfrist
+        while True:
+            try:
+                for _name, ziel in self._PFAD_REFERENZEN:
+                    werte = await asyncio.to_thread(
+                        self._hole_pfad_vorhersage, mein_grid, ziel
+                    )
+                    if werte:
+                        await self._persist_pfad(ziel, werte)
+                    await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _log_loop_exc("pfad-vorhersage loop", exc)
+            await asyncio.sleep(900)
+
+    @staticmethod
+    def _hole_pfad_vorhersage(von_grid: str, nach_grid: str) -> dict | None:
+        """Eine Abfrage bei prop.kc2g.com — blockierend, laeuft im Thread."""
+        import json as _json
+        import urllib.parse
+        import urllib.request
+        p = urllib.parse.urlencode(
+            {"from_grid": von_grid, "to_grid": nach_grid, "path": "both"}
+        )
+        url = f"https://prop.kc2g.com/api/ptp.json?{p}"
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "ft8-raspi (Amateurfunk, DK9XR)"}
+            )
+            with urllib.request.urlopen(req, timeout=20) as r:
+                daten = _json.loads(r.read())
+            if isinstance(daten, list) and daten:
+                return daten[0].get("metrics") or None
+        except Exception:
+            return None
+        return None
+
+    async def _persist_pfad(self, ziel_grid: str, metriken: dict) -> None:
+        if not self.db_enabled:
+            return
+        try:
+            from ..db.models import PathPrediction
+            async with session_scope() as s:
+                s.add(PathPrediction(
+                    ts=datetime.now(UTC), ziel_grid=ziel_grid,
+                    muf_sp=metriken.get("muf_sp"), muf_lp=metriken.get("muf_lp"),
+                    luf_sp=metriken.get("luf_sp"), luf_lp=metriken.get("luf_lp"),
+                ))
+        except Exception as exc:
+            log.debug("Pfad-Vorhersage nicht gespeichert: %s", exc)
 
     async def _blitzortung_ws_loop(self) -> None:
         """v0.13.0: Liest den Blitzortung.org Live-WS und ingestiert Strikes
@@ -7173,9 +7303,63 @@ class Orchestrator:
                 else time.monotonic() - self._last_rig_at
             ),
         )
+        self._buche_rauschen(rig)
         if self._erste_hw_messung_offen:
             self._erste_hw_messung_offen = False
             self._loese_startsperre()
+
+    def _buche_rauschen(self, rig) -> None:
+        """Den Rauschflur des Bandes aufzeichnen.
+
+        Die fehlende Groesse fuer "wie gut ist das Band gerade wirklich":
+        Die Zahl der Decodes misst die *Aktivitaet*, nicht die *Stoerung*.
+        Bei hohem Rauschen sind schwache Signale chancenlos — und die
+        machen den Grossteil unserer Anrufe aus.
+
+        Gespeichert wird das **Minimum** je Minute, nicht ein Einzelwert:
+        Das S-Meter steigt mit jedem einlaufenden Signal, der Rauschflur
+        ist der untere Rand. Ein Momentwert misst den Zufall, ob gerade
+        jemand sendet.
+
+        Nur im Empfang — waehrend der eigenen Aussendung zeigt das S-Meter
+        nichts Brauchbares.
+        """
+        if not self.db_enabled or self._tx_burst_active:
+            return
+        wert = getattr(rig, "s_meter_db", None)
+        if wert is None:
+            return
+        self._rausch_proben.append(int(wert))
+        jetzt = time.monotonic()
+        if self._rausch_bis == 0.0:
+            self._rausch_bis = jetzt + 60.0
+            return
+        if jetzt < self._rausch_bis:
+            return
+        proben, self._rausch_proben = self._rausch_proben, []
+        self._rausch_bis = jetzt + 60.0
+        if not proben:
+            return
+        band = self._current_band() or self.state_machine.ctx.band
+        freq = getattr(rig, "freq_hz", None)
+        if not band or not freq:
+            return
+        try:
+            asyncio.create_task(
+                self._persist_rauschen(band, int(freq), min(proben))
+            )
+        except Exception:
+            pass
+
+    async def _persist_rauschen(self, band: str, freq_hz: int, s_meter: int) -> None:
+        """Fail-soft — eine Messreihe darf den Betrieb nie kosten."""
+        try:
+            from ..db.models import BandNoise
+            async with session_scope() as s:
+                s.add(BandNoise(ts=datetime.now(UTC), band=band,
+                                freq_hz=freq_hz, s_meter_db=s_meter))
+        except Exception as exc:
+            log.debug("Rauschflur nicht gespeichert: %s", exc)
 
     def _loese_startsperre(self) -> None:
         """Eine Sperre aus der Startphase aufheben, sobald echte Werte da sind.
