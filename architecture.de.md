@@ -342,7 +342,7 @@ Zusätzliche Modi:
 - **20-Tier Hunting-Picker** (konfigurierbare Prioritäts-Reihenfolge,
   `OperatingConfig.hunt_priority`, Drag-and-Drop im UI): lexikografisches
   Scoring über Tiers wie `not_bad_reputation`, `not_in_pileup`,
-  `tail_end_target`, `grayline`, `band_open`, `buddy_seen`, `new_dxcc(_band)`,
+  `tail_end_target`, `grayline` (Koordinaten seit v0.135.0 aus dem Grid des Decodes, sonst Landesmitte aus cty.dat — die lag für Nordamerika im Median 1130 km daneben), `band_open`, `buddy_seen`, `new_dxcc(_band)`,
   `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
   `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
@@ -442,7 +442,7 @@ Zusätzliche Modi:
 
 **Daten-Sicherheit (Audit 2026-05-30):** Die unersetzlichen Logdaten sind mehrfach abgesichert:
 - **Atomare Config-Writes** (`util/atomicfile.py`): tmp + `fsync(file)` + `fsync(dir)` + rename, `.bak`-Snapshot, `0600`, prozessweiter Write-Lock gegen konkurrierende Schreiber. `PUT /api/config` plättet keine Operatoren/Secrets mehr (`preserve_secrets`: „leer = behalten").
-- **SQLite robust:** WAL + `synchronous=NORMAL` + `busy_timeout=30s` (eliminiert „database is locked" zwischen QSO-Insert und Upload-Drains).
+- **SQLite robust:** WAL + `synchronous=FULL` (seit v0.135.0; vorher NORMAL für SD-Karten, der Pi bootet von NVMe) + `busy_timeout=30s` (eliminiert „database is locked" zwischen QSO-Insert und Upload-Drains).
 - **QSO-Spill:** schlägt der DB-Write eines abgeschlossenen QSO fehl (volle SD/Lock/Korruption) → Sicherung in `unlogged_qsos.jsonl` + ntfy-Alarm, automatischer Nachtrag beim nächsten Erfolg/Start. **Kein stiller QSO-Verlust.**
 - **Tägliches DB-Backup** (`VACUUM INTO`, Rotation 7) + **Telemetrie-Retention** (decode/pick_attempt/heard/swr/psk auf 90 Tage; `qso` nie).
 
