@@ -183,6 +183,43 @@ hattest — das ist Absicht, nicht Bug. Im Log: `tx-power safety-floor
 
 ---
 
+## Was die ntfy-Meldungen bedeuten
+
+Die Station meldet sich von selbst. Diese Übersicht sagt, was dahintersteckt
+und was zu tun ist — sortiert danach, wie eilig es ist.
+
+**Sofort nachsehen**
+
+| Meldung | Bedeutung | Handlung |
+|---|---|---|
+| 🚨 SWR-Notabschaltung | Stehwellenverhältnis über der Grenze, Senden gesperrt | Antenne und Kabel prüfen, bevor entsperrt wird |
+| ⚠ SWR-Vorwarnung | SWR steigt, noch unter der Abschaltgrenze | Bei Gelegenheit nachsehen; Tuner eingeschaltet? |
+| Sendesperre hängt | Station sendet seit Minuten nicht, Grund steht in der Meldung | Meldung lesen — der Wächter hebt selbst auf, wenn der Grund weg ist |
+
+**Die Station arbeitet, aber etwas stimmt nicht**
+
+| Meldung | Bedeutung | Handlung |
+|---|---|---|
+| ⚠️ Uploads bleiben liegen | Ein QSO ist seit über sechs Stunden nicht im Logbuch angekommen. Der Upload läuft weiter, kommt aber nicht durch | Log auf `ClubLog`/`QRZ` durchsehen; typisch sind abgelaufene Zugangsdaten |
+| 🚨 Upload hängt | Die Upload-Schleife ist mehrfach hintereinander abgestürzt | Anders als oben: hier wirft der Code selbst, Traceback im Journal |
+| ⚠️ Upload aufgegeben | Nach 15 Versuchen aufgegeben; das QSO bleibt lokal im Log und im ADIF | Von Hand hochladen |
+| ⚠ Upload-Setup unvollständig | Zugangsdaten fehlen für diesen Operator | Konfiguration ergänzen |
+| 📡 Funkstille | Kein Decode mehr, Audio verdächtig still | Kabel, ALSA-Gerät, Rig-Modus |
+| ⚠️ Auto-Modus inaktiv | Die Betriebsart ist nicht die erwartete | Umschalten oder Konfiguration prüfen |
+
+**Jemand hat am Gerät gedreht**
+
+`🛠 Rig-Settings / Rig-Modus / Rig-Filter extern geändert` und
+`📻 Frequenz wurde verstellt` heißen: Am Rig wurde von Hand etwas geändert,
+das die Appliance selbst gesetzt hatte. Das ist kein Fehler — nur eine Notiz,
+damit nachher niemand rätselt.
+
+Der Unterschied zwischen den beiden Upload-Meldungen ist der wichtigste hier:
+**„Upload hängt" zählt Abstürze, „Uploads bleiben liegen" zählt Ergebnisse.**
+Am 2026-09-12 lehnte ClubLog zwei QSOs dreizehn Stunden lang ab, ohne dass
+irgendetwas abstürzte — die erste Meldung konnte das per Konstruktion nicht
+sehen, deshalb gibt es die zweite.
+
 ## 7. Sicherheits-Hinweis
 
 - SSH-Key ist auf der **Workstation** zuhause. Im Feldeinsatz kommt Claude *eh nicht* drauf, da nicht im gleichen Netz.
