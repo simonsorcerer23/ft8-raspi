@@ -220,6 +220,37 @@ Am 2026-09-12 lehnte ClubLog zwei QSOs dreizehn Stunden lang ab, ohne dass
 irgendetwas abstürzte — die erste Meldung konnte das per Konstruktion nicht
 sehen, deshalb gibt es die zweite.
 
+## Der Hotspot kommt nicht von selbst zurück
+
+Findet die Station für `network.fallback_delay_s` weder WLAN noch Kabel,
+öffnet sie ihren eigenen Zugangspunkt (`ft8-hotspot`). Das ist gewollt und
+funktioniert — geprüft am 2026-09-12: hostapd fährt den AP mit der
+vorhandenen `/etc/hostapd/ft8-ap.conf` sauber hoch.
+
+**Sie verlässt diesen Modus aber nicht von allein.** Im AP-Betrieb ist
+`wlan0` unmanaged, NetworkManager kann also gar nicht nach bekannten Netzen
+suchen. Zurück geht es auf zwei Wegen:
+
+- über die Oberfläche bzw. `POST /api/network/ap-fallback/stop`, während man
+  selbst am Hotspot hängt,
+- oder schlicht durch einen Neustart der Station.
+
+Das ist im Feld richtig so, hat daheim aber eine Folge, an die man denken
+muss: **Im Hotspot-Modus gibt es kein Internet.** Keine Uploads zu QRZ und
+ClubLog, keine Spots an PSK Reporter, kein Self-Update — und vor allem keine
+ntfy-Meldung, mit der sich die Station beschweren könnte. Wer nach einem
+Feldeinsatz nach Hause kommt und die Station durchlaufen lässt, findet sie
+still im eigenen Hotspot wieder. Ein Neustart genügt.
+
+Wenn sie unerwartet nicht mehr über Tailscale erreichbar ist, lohnt der Blick
+aufs Handy: Taucht `ft8-hotspot` in der WLAN-Liste auf, ist genau das passiert.
+
+**Nicht `hostapd -t <datei>` zur Prüfung benutzen.** Das `-t` setzt nur
+Zeitstempel ins Debug-Log, es ist kein Trockenlauf — der Befehl reißt `wlan0`
+tatsächlich für ein paar Sekunden in den AP-Modus und wirft die bestehende
+WLAN-Verbindung ab. NetworkManager fängt sich zwar wieder, aber über eine
+SSH-Sitzung, die selbst über dieses WLAN läuft, ist das eine schlechte Idee.
+
 ## 7. Sicherheits-Hinweis
 
 - SSH-Key ist auf der **Workstation** zuhause. Im Feldeinsatz kommt Claude *eh nicht* drauf, da nicht im gleichen Netz.
