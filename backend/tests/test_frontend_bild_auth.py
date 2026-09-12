@@ -51,3 +51,22 @@ def test_blob_adresse_wird_freigegeben() -> None:
     """Ohne revokeObjectURL sammelt jede Aktualisierung Speicher an."""
     karte = (FRONTEND / "components" / "Map.svelte").read_text()
     assert "revokeObjectURL" in karte, "blob:-Adresse wird nie freigegeben"
+
+
+def test_deckkraft_wird_bedingungslos_gelesen() -> None:
+    """Ein $effect merkt sich nur, was er beim Laufen tatsaechlich liest.
+
+    Stand ``mufOpacity`` hinter der Abfrage auf ``mufOverlay``, lief der
+    Effekt beim Einschalten einmal ins Leere (das Bild kommt asynchron,
+    das Overlay ist noch null) und danach nie wieder — der Regler bewegte
+    sich ohne Wirkung. Dieselbe Falle steckt in jedem Effekt, der einen
+    Wert erst hinter einer Bedingung liest.
+    """
+    karte = (FRONTEND / "components" / "Map.svelte").read_text()
+    i = karte.index("const deckkraft")
+    j = karte.rindex("$effect(() => {", 0, i)
+    block = karte[j:i]
+    assert "if (mufOverlay)" not in block, (
+        "mufOpacity wird erst hinter der Abfrage auf mufOverlay gelesen — "
+        "dann registriert Svelte keine Abhaengigkeit und der Regler wirkt nicht"
+    )
