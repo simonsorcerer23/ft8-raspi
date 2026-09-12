@@ -470,6 +470,39 @@ def main() -> int:
     else:
         print("    (noch keine Tageszeilen — die Historie laeuft seit v0.132.0)")
 
+    print("\n=== Umentscheiden: lohnt der Wechsel zu einem anderen Ziel? ===")
+    # Gemessen 2026-09-12 ueber 448 Faelle: Der Wechsel ging genauso oft zu
+    # einem schlechteren wie zu einem besseren Ziel, das neue schloss zu
+    # 17,0 % ab (Basis 15,8 %), und das alte rief in 65,6 % danach noch CQ.
+    # Seit v0.135.0 ist die Sperre nach 'picked_another' auf 60 s gekappt.
+    # Ob das wirkt, zeigt sich hier: an der Quote der Wiederanrufe binnen
+    # 15 Minuten (vorher 31 %, n=32) und daran, wie oft das alte Ziel
+    # ueberhaupt noch einmal versucht wird.
+    r = con.execute(
+        "select count(*), sum(x>0), sum(y='completed') from ("
+        "  select p.id,"
+        "   (select count(*) from decode d where d.call_from=p.target_call and d.call_to is null"
+        "      and d.ts>p.ts and d.ts<datetime(p.ts,'+5 minutes')) x,"
+        "   (select q.outcome from pick_attempt q where q.ts>p.ts and q.pick_kind='cq' order by q.ts limit 1) y"
+        "  from pick_attempt p where p.bail_reason='picked_another' and p.ts > datetime('now',?))",
+        (seit,)).fetchone()
+    wieder = con.execute(
+        "select count(*), sum(p.outcome='completed') from pick_attempt p"
+        " join pick_attempt q on q.target_call=p.target_call and q.ts<p.ts and q.bail_reason='picked_another'"
+        " where p.pick_kind='cq' and (julianday(p.ts)-julianday(q.ts))*1440 < 15 and p.ts > datetime('now',?)"
+        " and q.ts=(select max(ts) from pick_attempt where target_call=p.target_call and ts<p.ts)",
+        (seit,)).fetchone()
+    if r and r[0]:
+        tabelle([
+            ("Wechsel gesamt", r[0], "-"),
+            ("altes Ziel rief danach noch CQ", r[1] or 0, f"{100.0*(r[1] or 0)/r[0]:.1f} %"),
+            ("neues Ziel abgeschlossen", r[2] or 0, f"{100.0*(r[2] or 0)/r[0]:.1f} %"),
+            ("Wiederanruf des alten binnen 15 min", wieder[0] or 0,
+             f"{100.0*(wieder[1] or 0)/wieder[0]:.1f} %" if wieder and wieder[0] else "-"),
+        ], ("Was", "n", "Quote"))
+    else:
+        print("    (keine Wechsel im Zeitraum)")
+
     print("\n=== Ersatz fuer den fehlenden Empfangsbeleg ===")
     # Der eigene Beleg ("diese Station hat uns gehoert") ist der beste
     # bekannte Hinweis, fehlt aber bei zwei Dritteln der Ziele. Die Frage:

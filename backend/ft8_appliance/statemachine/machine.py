@@ -1594,8 +1594,33 @@ class StateMachine:
     # der Untergrenze. Zwei Minuten reichen, damit wir nicht in jedem Slot
     # desselben Pile-Ups erneut rufen, und sind kurz genug, dass ein zweiter
     # CQ-Ruf wenige Minuten spaeter wieder erreichbar ist.
+    # Sperrfrist nach 'picked_another' — zwei Slot-Paare, damit wir nicht
+    # im selben Pile-Up zwischen zwei Zielen pendeln.
+    _PICKED_ANOTHER_COOLDOWN_S: ClassVar[float] = 60.0
     _WATCHLIST_COOLDOWN_TEILER: ClassVar[float] = 4.0
     _WATCHLIST_COOLDOWN_MIN_S: ClassVar[float] = 120.0
+
+    def _cooldown_fuer_grund(self, reason: str) -> float:
+        """Grund-Sperrfrist nach dem Abbruchgrund, vor Wiederholungs- und
+        Wunschlisten-Anpassung.
+
+        went_silent wird verlaengert: Das Ziel hat uns nicht gehoert, ein
+        schneller Wiederanruf bringt nichts.
+
+        picked_another wird gekappt: Hier hat das Ziel nichts falsch gemacht,
+        WIR haben es fuer ein anderes verlassen. Gemessen 2026-09-12 ueber
+        448 Faelle: in 65,6 % rief das alte Ziel in den fuenf Minuten danach
+        noch CQ, das neue schloss nur zu 17,0 % ab (Basis 15,8 %), und der
+        Wechsel ging genauso oft zu einem schlechteren wie zu einem besseren
+        Ziel (222:214). Ein Wiederanruf binnen 15 Minuten schloss dagegen zu
+        31 % ab. Die volle Sperre nahm uns genau diese zweite Chance.
+        """
+        cooldown_s = float(self.qso_failed_cooldown_s)
+        if reason == "went_silent":
+            cooldown_s *= max(1.0, self.qso_failed_cooldown_went_silent_multiplier)
+        elif reason == "picked_another":
+            cooldown_s = min(cooldown_s, self._PICKED_ANOTHER_COOLDOWN_S)
+        return cooldown_s
 
     def _cooldown_mit_wunschliste(self, their_call: str, cooldown_s: float) -> float:
         """Kuerzt die Sperrfrist fuer Stationen von der Wunschliste.
@@ -1648,9 +1673,7 @@ class StateMachine:
             key = base_call(their_call) or their_call.upper()
             repeats = self.ctx.failed_attempt_counts.get(key, 0) + 1
             self.ctx.failed_attempt_counts[key] = repeats
-            cooldown_s = self.qso_failed_cooldown_s
-            if reason == "went_silent":
-                cooldown_s *= max(1.0, self.qso_failed_cooldown_went_silent_multiplier)
+            cooldown_s = self._cooldown_fuer_grund(reason)
             if repeats > 1:
                 cooldown_s *= (
                     max(1.0, self.qso_failed_cooldown_repeat_multiplier)
