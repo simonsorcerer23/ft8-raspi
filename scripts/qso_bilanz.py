@@ -210,16 +210,37 @@ def main() -> int:
     # Jede Referenzrichtung deckt ein Grid-Feld-Gebiet ab; die Zuordnung
     # ist grob, reicht aber fuer die Frage "offen oder zu".
     zeilen = con.execute(
+        # Je Bericht genau EINE Vorhersage — die zeitlich naechste. Ohne das
+        # trifft der Verbund alle Vorhersagen im +/-15-Minuten-Fenster und
+        # zaehlt denselben Bericht mehrfach, im Schnitt 2,3-mal und bis zu
+        # viermal (gemessen 2026-09-12: 636 Berichte wurden zu 1452 Paaren).
+        # Das blaeht nicht nur die Zahlen auf, es verwischt auch die Grenzen
+        # zwischen den Lagen, weil ein Bericht in mehreren Klassen landet.
         "with paare as ("
         "  select r.snr_db,"
-        "         14.074 / nullif(max(p.muf_sp, p.muf_lp), 0) as ueber_muf"
+        # Mittelwert ueber das Fenster statt "die zeitlich naechste": ein
+        # Bericht zaehlt so genau einmal, und die Glaettung ist hier sogar
+        # richtiger, weil die Vorhersage selbst im Stundenraster kommt.
+        # (SQLite laesst die aeussere Spalte nicht im ORDER BY einer
+        # korrelierten Unterabfrage zu, eine Auswahl "die naechste" ginge
+        # also ohnehin nur ueber einen zweiten Durchgang.)
+        "         14.074 / nullif((select avg(max(p2.muf_sp, p2.muf_lp))"
+        "             from path_prediction p2"
+        "             where substr(upper(p2.ziel_grid),1,2) = substr(upper(r.rx_grid),1,2)"
+        "               and abs(julianday(p2.ts) - julianday(r.ts)) < 0.0105), 0)"
+        "         as ueber_muf"
         "  from psk_reporter_in r"
-        "  join path_prediction p"
-        "    on substr(upper(p.ziel_grid),1,2) = substr(upper(r.rx_grid),1,2)"
+        "  where 1=1"
         # 0,0105 Tage = gut 15 Minuten, der Takt der Vorhersage-Abfrage
-        "   and abs(julianday(p.ts) - julianday(r.ts)) < 0.0105"
-        "  where r.ts > datetime('now',?) and r.snr_db is not null)"
-        " select case when ueber_muf <= 0.8 then '1 klar unter der MUF'"
+        "    and r.ts > datetime('now',?) and r.snr_db is not null)"
+        # Berichte ohne passende Vorhersage im Fenster liefern NULL. Ohne
+        # diesen Filter fallen sie in der Fallunterscheidung in den
+        # else-Zweig und erscheinen als "mehr als 80 % darueber" — am
+        # 2026-09-12 waren das 5390 angebliche Berichte bei null
+        # Gelegenheiten. Aufgefallen ist es nur, weil die Gelegenheiten
+        # danebenstehen; ohne sie haette die Zeile wie ein Befund ausgesehen.
+        " select case when ueber_muf is null then '0 ohne Vorhersage'"
+        "             when ueber_muf <= 0.8 then '1 klar unter der MUF'"
         "             when ueber_muf <= 1.0 then '2 knapp unter'"
         "             when ueber_muf <= 1.3 then '3 bis 30 % darueber'"
         "             when ueber_muf <= 1.8 then '4 bis 80 % darueber'"
@@ -242,7 +263,8 @@ def main() -> int:
         " from path_prediction where muf_sp is not null and ts > datetime('now',?)"
         " group by 1", (seit,)
     ).fetchall())
-    nach_lage = {z[0]: z for z in zeilen}
+    nach_lage = {z[0]: z for z in zeilen if not z[0].startswith("0 ")}
+    ohne = next((z for z in zeilen if z[0].startswith("0 ")), None)
     alle_lagen = ("1 klar unter der MUF", "2 knapp unter", "3 bis 30 % darueber",
                   "4 bis 80 % darueber", "5 mehr als 80 % darueber")
     if gelegenheiten or zeilen:
@@ -261,6 +283,9 @@ def main() -> int:
         print("    arbeitet rund 20 dB darunter. Die gesuchte FT8-MUF liegt dort,")
         print("    wo es Gelegenheiten GAB und trotzdem keine Berichte kamen —")
         print("    eine Zeile ohne Gelegenheiten sagt gar nichts.")
+        if ohne:
+            print(f"    ({ohne[1]} Berichte ohne Vorhersage im Zeitfenster — "
+                  "nicht zugeordnet, nicht gezaehlt.)")
     else:
         print("    (noch keine ueberlappenden Messungen — Daten sammeln sich)")
 
