@@ -70,6 +70,12 @@ def _stub(operators: list, active: int = 0) -> SimpleNamespace:
         _alert_upload_giveup=lambda *a, **kw: None,
         _alert_upload_giveup_many=lambda *a, **kw: None,
         _orphan_upload_warned=set(),
+        # Der QRZ-Abgleich haelt seit 2026-09-12 einen Tagesabstand ein,
+        # dessen Zeitpunkt den Neustart ueberlebt. Ohne gesicherten Wert
+        # (0.0) laeuft er sofort — genau wie bei einer frischen Anlage.
+        _qrz_sync_abstand_s=Orchestrator._qrz_sync_abstand_s,
+        _qrz_sync_at=0.0,
+        _maybe_persist_runtime_state=lambda *a, **kw: None,
     )
     # Echte Operator-Zuordnung (K4), nicht der alte Test-Fallback auf ops[0].
     stub._operator_for_call = partial(Orchestrator._operator_for_call, stub)
@@ -237,6 +243,12 @@ def _sync_stub(key: str | None) -> SimpleNamespace:
         _worked_calls=set(), _worked_dxccs=set(), _worked_dxcc_band=set(),
         _worked_grids=set(), _worked_grid_band=set(),
         notes=[],
+        # Seit 2026-09-12 haelt der Abgleich einen Tagesabstand ein, dessen
+        # Zeitpunkt den Neustart ueberlebt. 0.0 = noch nie gelaufen, also
+        # sofort holen — wie bei einer frischen Anlage.
+        _qrz_sync_abstand_s=Orchestrator._qrz_sync_abstand_s,
+        _qrz_sync_at=0.0,
+        _maybe_persist_runtime_state=lambda *a, **kw: None,
     )
 
     async def note(service, exc):
