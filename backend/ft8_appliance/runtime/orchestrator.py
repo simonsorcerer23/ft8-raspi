@@ -7321,9 +7321,13 @@ class Orchestrator:
         if self.integrations.cty is not None:
             # Lazy-Import damit Tests ohne dxcc_rarity-Daten nicht failen
             try:
-                from ..integrations.dxcc_rarity import rarity_for
+                from ..integrations.dxcc_rarity import (
+                    rarity_for,
+                    rarity_for_entity,
+                )
             except ImportError:
                 rarity_for = lambda _c: 0  # type: ignore[assignment]
+                rarity_for_entity = lambda _p: 0  # type: ignore[assignment]
             for d in decodes:
                 call = d.call_from
                 if not call or d.call_to is not None:
@@ -7345,7 +7349,15 @@ class Orchestrator:
                         call_to_continent[norm] = rec.entity.continent
                 # Rarity-Score (0..100) per Call — basiert auf cty-prefix
                 # fallback, daher unabhängig vom cty-Lookup verfügbar.
+                # Zwei Wege, weil keiner allein reicht: ueber den
+                # Rufzeichen-Praefix (findet BS7H, das cty.dat nicht als
+                # eigene Entitaet fuehrt) und ueber das cty-Kuerzel (findet
+                # FT/w = Crozet, das als FT8WW funkt und ueber keinen
+                # Praefix erreichbar war). Das Maximum gewinnt.
                 score = rarity_for(call)
+                if rec is not None:
+                    score = max(score, rarity_for_entity(
+                        getattr(rec.entity, "primary_prefix", None)))
                 if score > 0:
                     rarity_scores[norm] = score
         self.state_machine.ctx.new_dxcc_calls = new_dxcc
