@@ -40,6 +40,8 @@ Zwei Fallen, in die eine Auswertung sonst laeuft:
 from __future__ import annotations
 
 import argparse
+import math
+import statistics
 import shutil
 import sqlite3
 import subprocess
@@ -82,6 +84,48 @@ def tabelle(zeilen: list[tuple], kopf: tuple[str, ...]) -> None:
     print("    " + "  ".join("-" * b for b in breiten))
     for z in zeilen:
         print("    " + "  ".join(str(w).ljust(b) for w, b in zip(z, breiten)))
+
+
+def urteil(k_a: int, n_a: int, k_b: int, n_b: int) -> str:
+    """Ist der Unterschied zweier Quoten echt oder Rauschen?
+
+    Zweiseitiger z-Test auf zwei Anteile, ohne scipy (auf dem Pi nicht
+    installiert). Rueckgabe ist eine kurze Klartextspalte fuer die Tabellen.
+
+    Warum das hier steht: Wir haben mehrfach Quoten verglichen und ueber
+    Unterschiede von fuenf Prozentpunkten geredet, ohne nachzurechnen, ob sie
+    ueberhaupt vom Zufall zu unterscheiden sind. Beim Bandrand-Filter waren es
+    11,9 % gegen 17,0 % bei n=59 — das sieht nach einem Befund aus und ist
+    keiner (z = -1,05). Ohne diese Spalte optimiert man irgendwann Rauschen.
+    """
+    if n_a < 1 or n_b < 1:
+        return "zu wenig"
+    p_a, p_b = k_a / n_a, k_b / n_b
+    p_gesamt = (k_a + k_b) / (n_a + n_b)
+    nenner = p_gesamt * (1 - p_gesamt) * (1 / n_a + 1 / n_b)
+    if nenner <= 0:
+        return "zu wenig"
+    z = (p_a - p_b) / math.sqrt(nenner)
+    # NormalDist statt scipy: zweiseitiger p-Wert aus der Standardnormalen.
+    p_wert = 2 * (1 - statistics.NormalDist().cdf(abs(z)))
+    if p_wert < 0.01:
+        return f"z={z:+.2f} sicher"
+    if p_wert < 0.05:
+        return f"z={z:+.2f} echt"
+    return f"z={z:+.2f} Rauschen"
+
+
+def n_fuer_nachweis(p_erwartet: float, p_referenz: float) -> int | None:
+    """Wie viele Beobachtungen braeuchte es, damit dieser Unterschied
+    nachweisbar waere? Beantwortet die Frage "noch warten oder nie?"."""
+    if not 0 < p_erwartet < 1 or not 0 < p_referenz < 1:
+        return None
+    unterschied = abs(p_erwartet - p_referenz)
+    if unterschied < 1e-9:
+        return None
+    # z=1,96 fuer 5 %; Referenzquote als Streuungsschaetzer.
+    return int(math.ceil(
+        (1.96 ** 2) * p_referenz * (1 - p_referenz) / unterschied ** 2))
 
 
 def main() -> int:
@@ -338,6 +382,46 @@ def main() -> int:
         "  case when exists(select 1 from qso q where q.call=w.call) then 'im Log' else '-' end "
         "from watchlist w order by 2 desc", (seit, seit)
     ).fetchall(), ("Call", "Decodes", "Versuche", "QSO"))
+
+    print("\n=== Bandrand: sitzt hunt_audio_freq_min_hz an der richtigen Stelle? ===")
+    # Die Audio-Frequenz steht nicht am Anruf, sondern am Decode davor —
+    # deshalb der Unterabfrage-Umweg ueber das letzte Signal der Gegenstation.
+    roh = con.execute(
+        "with v as ("
+        "  select p.outcome,"
+        "    (select d.freq_offset_hz from decode d"
+        "      where d.call_from = p.target_call and d.ts <= p.ts"
+        "      order by d.ts desc limit 1) as hz"
+        "  from pick_attempt p)"
+        " select case when hz < 500 then '400-499 Hz'"
+        "             when hz < 700 then '500-699 Hz'"
+        "             when hz < 1000 then '700-999 Hz'"
+        "             when hz < 1500 then '1000-1499 Hz'"
+        "             when hz < 2000 then '1500-1999 Hz'"
+        "             else '2000+ Hz' end,"
+        "        count(*), sum(outcome='completed'), min(hz)"
+        " from v where hz is not null group by 1 order by 4"
+    ).fetchall()
+    n_alle = sum(r[1] for r in roh)
+    k_alle = sum(r[2] or 0 for r in roh)
+    zeilen = []
+    for bereich, n, k, _sort in roh:
+        k = k or 0
+        # Jeder Bereich gegen alle uebrigen zusammen, nicht gegen sich selbst.
+        zeilen.append((
+            bereich, n, f"{100.0 * k / n:.1f} %",
+            urteil(k, n, k_alle - k, n_alle - n),
+        ))
+    tabelle(zeilen, ("Bereich", "Anrufe", "abgeschlossen", "gegen den Rest"))
+    if n_alle:
+        unten = next((r for r in roh if r[0] == "400-499 Hz"), None)
+        if unten and unten[1]:
+            quote_unten = (unten[2] or 0) / unten[1]
+            quote_rest = (k_alle - (unten[2] or 0)) / max(1, n_alle - unten[1])
+            noetig = n_fuer_nachweis(quote_unten, quote_rest)
+            if noetig and unten[1] < noetig:
+                print(f"    Fuer einen Nachweis braeuchte der unterste Bereich "
+                      f"rund {noetig} Anrufe, vorhanden sind {unten[1]}.")
 
     con.close()
     if not args.db:
