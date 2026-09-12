@@ -876,6 +876,7 @@ class Orchestrator:
         await self._restore_slot_parity()
         await self._restore_hunt_outcomes()
         await self._restore_fehlversuche()
+        await self._restore_offene_qsos()
         self._restore_psk_cache()
         self._restore_filter_drops()
         bm = self.config.operating.boot_mode
@@ -2438,6 +2439,52 @@ class Orchestrator:
         if gelernt:
             log.info("Slot-Paritaeten aus den Decodes wiederhergestellt: %d Rufzeichen "
                      "(aus %d beobachteten)", gelernt, len(stimmen))
+
+    async def _restore_offene_qsos(self) -> None:
+        """Abgebrochene QSOs fuer die Fortsetzung zurueckholen.
+
+        Meldet sich ein Partner nach einem Abbruch doch noch — weil er
+        unsere Bestaetigung nicht gehoert hat und seinen Rapport wiederholt
+        —, nimmt die Station das QSO wieder auf. Der dafuer noetige Kontext
+        lag nur im Arbeitsspeicher und galt zehn Minuten.
+
+        Gemessen ueber drei Tage: 37 Abbrueche mit erhaltenem Rapport, und
+        in **36 Faellen** meldete sich der Partner binnen zehn Minuten
+        zurueck. Wieder aufgenommen wurden drei. Ein Teil der Luecke geht
+        auf Neustarts: Die Station startet im Mittel alle gut siebzig
+        Minuten neu, jeder Neustart im Zehn-Minuten-Fenster loescht die
+        Erinnerung.
+
+        Siebter Fall derselben Klasse. Rekonstruiert wird aus der
+        Telemetrie; ``from_cq_fallback`` ist dort nicht hinterlegt und
+        bleibt auf der Vorgabe — es steuert nur eine Zaehlstatistik.
+        """
+        try:
+            ttl_min = int(self.state_machine.RECENT_QSO_TTL_S // 60) or 10
+        except Exception:
+            ttl_min = 10
+        try:
+            async with session_scope() as s:
+                offen = await repository.offene_qsos(s, minuten=ttl_min)
+        except Exception as exc:
+            log.warning("Offene QSOs nicht wiederherstellbar: %s", exc)
+            return
+        if not offen:
+            return
+        ctx = self.state_machine.ctx
+        jetzt = datetime.now(UTC).timestamp()
+        gesetzt = 0
+        for daten in offen:
+            abbruch = daten.pop("_abbruch")
+            if abbruch.tzinfo is None:
+                abbruch = abbruch.replace(tzinfo=UTC)
+            ablauf = abbruch.timestamp() + self.state_machine.RECENT_QSO_TTL_S
+            if ablauf <= jetzt:
+                continue
+            ctx.recent_qso_ctx[daten["their_call"]] = (ablauf, daten)
+            gesetzt += 1
+        if gesetzt:
+            log.info("Offene QSOs wiederhergestellt: %d fortsetzbar", gesetzt)
 
     async def _restore_fehlversuche(self) -> None:
         """Fehlschlag-Cooldown und seine Eskalation zurueckholen.
