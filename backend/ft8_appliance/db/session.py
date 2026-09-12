@@ -65,7 +65,7 @@ def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
     *db_path* of ``None`` or ``":memory:"`` creates an in-memory DB —
     used by tests. A real Path uses ``aiosqlite`` against that file.
 
-    Auf einer File-DB (Pi) setzen wir WAL + synchronous=NORMAL +
+    Auf einer File-DB (Pi) setzen wir WAL + synchronous=FULL +
     busy_timeout (v0.35.0, Audit 2026-05-30):
       * WAL: Leser blockieren Schreiber nicht → die QRZ/ClubLog-Drain-Loops
         konkurrieren nicht mehr toedlich mit dem QSO-Insert.
