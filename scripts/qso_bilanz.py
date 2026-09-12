@@ -211,11 +211,40 @@ def main() -> int:
         "        count(*), round(avg(snr_db),1), min(snr_db)"
         " from paare group by 1 order by 1", (seit,)
     ).fetchall()
-    if zeilen:
-        tabelle(zeilen, ("Arbeitsfrequenz zur MUF", "Berichte", "SNR im Mittel", "schwaechster"))
+    # Ohne die Gelegenheiten daneben ist die Tabelle eine Falle: Am
+    # 2026-09-12 fehlte die Zeile "mehr als 80 % darueber" komplett, was
+    # nach einer Grenze aussah. Tatsaechlich lag 14,074 MHz in 128
+    # Vorhersagen kein einziges Mal so hoch ueber der MUF — gemessen wurde
+    # dort nie. Eine leere Zeile heisst "nicht beobachtet", nicht "geht nicht".
+    gelegenheiten = dict(con.execute(
+        "select case when 14.074/max(muf_sp,muf_lp) <= 0.8 then '1 klar unter der MUF'"
+        "            when 14.074/max(muf_sp,muf_lp) <= 1.0 then '2 knapp unter'"
+        "            when 14.074/max(muf_sp,muf_lp) <= 1.3 then '3 bis 30 % darueber'"
+        "            when 14.074/max(muf_sp,muf_lp) <= 1.8 then '4 bis 80 % darueber'"
+        "            else '5 mehr als 80 % darueber' end,"
+        "       count(*)"
+        " from path_prediction where muf_sp is not null and ts > datetime('now',?)"
+        " group by 1", (seit,)
+    ).fetchall())
+    nach_lage = {z[0]: z for z in zeilen}
+    alle_lagen = ("1 klar unter der MUF", "2 knapp unter", "3 bis 30 % darueber",
+                  "4 bis 80 % darueber", "5 mehr als 80 % darueber")
+    if gelegenheiten or zeilen:
+        ausgabe = []
+        for lage in alle_lagen:
+            chancen = gelegenheiten.get(lage, 0)
+            z = nach_lage.get(lage)
+            if z:
+                ausgabe.append((lage, chancen, z[1], z[2], z[3]))
+            else:
+                ausgabe.append((lage, chancen,
+                                0, "-", "nie beobachtet" if not chancen else "-"))
+        tabelle(ausgabe, ("Arbeitsfrequenz zur MUF", "Gelegenheiten", "Berichte",
+                          "SNR im Mittel", "schwaechster"))
         print("    Die klassische MUF gilt fuer SSB-taugliche Signale; FT8")
-        print("    arbeitet rund 20 dB darunter. Wo die Berichte aufhoeren,")
-        print("    liegt die praktische Grenze — das ist die gesuchte FT8-MUF.")
+        print("    arbeitet rund 20 dB darunter. Die gesuchte FT8-MUF liegt dort,")
+        print("    wo es Gelegenheiten GAB und trotzdem keine Berichte kamen —")
+        print("    eine Zeile ohne Gelegenheiten sagt gar nichts.")
     else:
         print("    (noch keine ueberlappenden Messungen — Daten sammeln sich)")
 
