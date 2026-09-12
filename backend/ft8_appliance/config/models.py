@@ -541,6 +541,11 @@ class OperatingConfig(BaseModel):
         default=1.7, ge=1.0, le=4.0,
     )
     qso_failed_cooldown_max_min: int = Field(default=60, ge=1, le=240)
+    # Zuschlag auf qso_max_report_resends, wenn das Signal stark genug ist
+    # (Schwellen darunter). ACHTUNG: Die Summe aus beiden wird in
+    # _effective_report_resend_limit hart auf 3 gedeckelt. Wer hier 2 setzt
+    # und oben schon 3 stehen hat, bekommt trotzdem 3 — der Zuschlag ist
+    # dann wirkungslos, ohne dass irgendetwas davon berichtet.
     qso_report_extra_resends: int = Field(default=1, ge=0, le=2)
     qso_report_extra_resend_snr_db: int = Field(default=-12, ge=-30, le=20)
     qso_report_extra_resend_psk_snr_db: int = Field(default=-10, ge=-30, le=20)

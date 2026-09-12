@@ -1564,6 +1564,12 @@ class StateMachine:
             and (strong_rx or strong_psk or heard_us_strong)
         ):
             limit += self.qso_report_extra_resends
+        # Deckel bei 3: mehr Wiederholungen desselben R-Reports bringen
+        # niemanden weiter — wer ihn dreimal nicht decodiert hat, hoert uns
+        # nicht gut genug, und jeder weitere Versuch kostet einen Sendeslot,
+        # in dem eine andere Station erreichbar waere. Der Deckel kann die
+        # Summe aus Grundwert und Zuschlag beschneiden; beide sind einzeln
+        # gueltig konfigurierbar, siehe Hinweis an qso_report_extra_resends.
         return max(0, min(3, limit))
 
     def _bail_qso_with_cooldown(self, their_call: str, reason: str) -> None:
