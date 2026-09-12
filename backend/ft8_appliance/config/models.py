@@ -654,6 +654,12 @@ class OperatingConfig(BaseModel):
     # PSK-Bestaetigung. Am 8.9.: EU 18 %, AS 7 %, NA 3 %.
     hunt_continent_gate: bool = True
     hunt_continent_gate_pct: float = Field(default=5.0, ge=0.0, le=100.0)
+    # 2026-09-12: Stunden-Tier aus der Anruf-Telemetrie statt aus der
+    # QSO-Tabelle (Zelle Kontinent x UTC-Stunde). Laeuft als A/B, bis die
+    # Zahlen fuer einen der beiden Arme sprechen — hunt_zellen_prior_ab=False
+    # schaltet dauerhaft auf die neue Quelle.
+    hunt_zellen_prior: bool = True
+    hunt_zellen_prior_ab: bool = True
     # A/B: Antwort abwechselnd auf ruhigem Bin / auf der Rufer-Frequenz;
     # pick_attempt.reply_kind haelt fest, was gewonnen hat.
     hunt_reply_ab_test: bool = True

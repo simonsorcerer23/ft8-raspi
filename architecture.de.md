@@ -346,6 +346,19 @@ Zusätzliche Modi:
   `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
   `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
+- **`active_hour` mit zwei Quellen (A/B seit v0.136.0):** Der Stunden-Tier
+  fragt, ob sich die aktuelle UTC-Stunde fuer den Kontinent des Rufers
+  lohnt. Arm A nimmt die Top-50-%-Stunden aus der QSO-Tabelle — deren
+  Nenner sind *Erfolge*, womit der Tier misst, was er vorhersagen soll.
+  Arm B nimmt die Abschlussquote der Zelle (Kontinent, UTC-Stunde) aus der
+  Anruf-Telemetrie, zum Kontinentmittel geschrumpft (k=20 Pseudo-Anrufe,
+  damit drei Anrufe nicht wie dreihundert wirken). Im Modell vom 12.09.
+  war die Zelle mit z=+5,25 der staerkste Praediktor ueberhaupt, waehrend
+  von Arm A nach Kontrolle nur z=+2,43 blieb. Der Arm wird je
+  15-Minuten-Block aus einem gesalzenen Hash gezogen — ohne eigenes Salz
+  fiele er mit dem des Fernziel-Gates zusammen und beide Effekte waeren
+  nicht trennbar. Auswertung: Abschnitt „Stunden-Tier" in
+  `scripts/qso_bilanz.py`, Spalte `pick_attempt.zellen_arm`.
 - **Konservative Hunt-Gates:** vor dem Tier-Scoring werden schwache einzelne
   Routine-CQs uebersprungen, wenn sie keinen Award-/Kontextwert und kein gutes
   Decode-/PSK-SNR haben. Nach einer schlechten Hunt-Serie geht der Picker

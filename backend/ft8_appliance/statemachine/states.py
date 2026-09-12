@@ -164,6 +164,16 @@ class MachineContext:
     # Kontinent-Prior aus der eigenen pick_attempt-Telemetrie (Orchestrator)
     continent_success: dict[str, float] = field(default_factory=dict)
     continent_success_overall: float = 0.0
+    # 2026-09-12: dieselbe Quelle, aber je (Kontinent, UTC-Stunde) statt nur
+    # je Kontinent — die Zelle war im Modell vom 12.09. der staerkste
+    # Praediktor fuer den Abschluss (z=+5,25), deutlich vor Distanz und
+    # Azimut. Die Rate ist zum Kontinentmittel geschrumpft, damit eine
+    # Zelle mit drei Anrufen nicht wie eine mit dreihundert wirkt.
+    zellen_success: dict[tuple[str, int], float] = field(default_factory=dict)
+    zellen_success_overall: float = 0.0
+    # A/B: gilt in diesem Zeitblock die Zellen-Quote (True) oder die alte
+    # Stundenliste aus der QSO-Tabelle (False)? Siehe _tier_active_hour.
+    zellen_arm: bool = False
     # WSJT-Z-style "Auto CQ": after a QSO completes, automatically return
     # to CQ_CALLING (instead of IDLE). Set when the user presses the CQ
     # button; cleared by Stop. Without this, CQ mode is one-shot.

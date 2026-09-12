@@ -96,7 +96,7 @@ from ..integrations import (
 from ..integrations.mf_lookup import get_mf_lookup
 
 
-def _arm_aus_block(block: int) -> bool:
+def _arm_aus_block(block: int, salz: str = "") -> bool:
     """Welcher A/B-Arm gilt in diesem Zeitblock?
 
     Bewusst deterministisch statt gewuerfelt. Mit ``random.random()`` war
@@ -107,9 +107,60 @@ def _arm_aus_block(block: int) -> bool:
 
     Nebenbei wird der A/B-Test davon reproduzierbar; an der globalen
     Zufallsquelle hing er davon ab, was sonst noch im Prozess wuerfelt.
+
+    Das *salz* trennt mehrere gleichzeitig laufende A/B-Tests. Ohne es
+    bekaemen zwei Tests in jedem Block denselben Arm; ihre Effekte waeren
+    dann nicht mehr voneinander zu loesen. Der leere Default liefert
+    weiter genau den Hash von vorher, damit der laufende Fernziel-Test
+    seine Zuordnung behaelt.
     """
-    ziffer = hashlib.sha256(str(block).encode("ascii")).digest()[0]
+    ziffer = hashlib.sha256((salz + str(block)).encode("ascii")).digest()[0]
     return ziffer & 1 == 1
+
+
+_ZELLEN_SHRINK_K = 20.0
+"""Wie viele Pseudo-Anrufe das Kontinentmittel in jeder Zelle mitbringt.
+
+Ohne Schrumpfung entscheidet eine Zelle mit drei Anrufen und null
+Abschluessen genauso hart wie eine mit dreihundert. Mit k=20 braucht eine
+Zelle rund zwanzig eigene Anrufe, bevor sie sich zur Haelfte vom
+Kontinentmittel loest — bei den rund 600 Anrufen am Tag sind die
+belegten Zellen nach zwei Wochen darueber, die leeren bleiben am Mittel.
+"""
+
+
+def _utc_stunde(ts: datetime | None) -> int | None:
+    """UTC-Stunde eines Telemetrie-Zeitstempels.
+
+    SQLite gibt DateTime-Spalten ohne tzinfo zurueck, obwohl sie als UTC
+    geschrieben wurden. Ein naiver Wert wird deshalb als UTC gelesen —
+    sonst verschoebe sich die Stunde im Sommer um zwei.
+    """
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        return ts.hour
+    return ts.astimezone(UTC).hour
+
+
+def _zellen_quoten(
+    je_zelle: dict[tuple[str, int], list[int]],
+    kontinent: dict[str, float],
+    gesamt: float,
+) -> dict[tuple[str, int], float]:
+    """Abschlussquote je (Kontinent, UTC-Stunde), zum Kontinentmittel geschrumpft.
+
+    Die rohe Zellenquote ist bei kleinem n wertlos: Eine Stunde mit zwei
+    Anrufen und einem Abschluss stuende bei 50 %. Deshalb mischt jede
+    Zelle _ZELLEN_SHRINK_K Pseudo-Anrufe mit der Quote ihres Kontinents
+    bei (und, wo auch die fehlt, mit der Gesamtquote).
+    """
+    out: dict[tuple[str, int], float] = {}
+    for (cont, stunde), werte in je_zelle.items():
+        n = len(werte)
+        prior = kontinent.get(cont, gesamt)
+        out[(cont, stunde)] = (sum(werte) + _ZELLEN_SHRINK_K * prior) / (n + _ZELLEN_SHRINK_K)
+    return out
 
 
 def _mf_snapshot_mfnr(call: str | None) -> int | None:
@@ -672,6 +723,10 @@ class Orchestrator:
     # Gewuerfelter A/B-Arm des Fernziel-Gates, je Zeitblock einmal gezogen.
     _fern_arm_slot: int = field(default=-1, init=False)
     _fern_arm: bool = field(default=False, init=False)
+    # Dasselbe fuer die Stunden-Quelle des Pickers (Zellen-Prior), aber mit
+    # eigenem Salz — sonst faellt der Arm mit dem des Fernziel-Gates zusammen.
+    _zellen_arm_slot: int = field(default=-1, init=False)
+    _zellen_arm: bool = field(default=False, init=False)
     # (Slot-Index, Nachrichten) des letzten Vorab-Durchgangs — der
     # regulaere Durchgang ueberspringt sie, s. _vorab_neue_decodes.
     _vorab_verarbeitet: tuple[int, set[str]] | None = field(
@@ -3670,6 +3725,7 @@ class Orchestrator:
                     )
                     await self._refresh_decode_context(decodes)
                     self._setze_fern_gate_arm(index)
+                    self._setze_zellen_arm()
                     self.state_machine.ctx.vorab_decode_aktiv = True
                     try:
                         self.state_machine.on_decodes(self._hardware_state, decodes)
@@ -3727,6 +3783,34 @@ class Orchestrator:
                 if getattr(op, "hunt_sole_dx_ab", False) else True
             )
         self.state_machine.ctx.hunt_sole_dx_arm = self._fern_arm
+
+    def _setze_zellen_arm(self) -> None:
+        """A/B fuer die Stunden-Quelle des Pickers, im Takt des Fern-Gates.
+
+        Arm A nimmt die alte Stundenliste aus der QSO-Tabelle, Arm B die
+        Abschlussquote der Zelle (Kontinent, UTC-Stunde) aus der
+        Anruf-Telemetrie. Die alte Liste ist zirkulaer: Sie zaehlt, wann
+        wir QSOs *hatten*, also genau das, was der Tier vorhersagen soll.
+        Ihr Nenner sind Erfolge, nicht Versuche. Am 12.09. blieb von ihrem
+        Effekt nach Kontrolle der Zellen-Historie z=+2,43 uebrig, waehrend
+        die Zelle selbst mit z=+5,25 der staerkste Praediktor war.
+
+        Eigenes Salz, damit der Arm nicht mit dem des Fernziel-Gates
+        zusammenfaellt — sonst liessen sich die beiden Effekte nicht
+        trennen.
+        """
+        op = self.config.operating
+        if not getattr(op, "hunt_zellen_prior", False):
+            self.state_machine.ctx.zellen_arm = False
+            return
+        block = int(time.time() // self._FERN_ARM_BLOCK_S)
+        if block != self._zellen_arm_slot:
+            self._zellen_arm_slot = block
+            self._zellen_arm = (
+                _arm_aus_block(block, "zellen")
+                if getattr(op, "hunt_zellen_prior_ab", True) else True
+            )
+        self.state_machine.ctx.zellen_arm = self._zellen_arm
 
     def _vorab_neue_decodes(self, tick: SlotTick, decodes: list) -> list:
         """Die Decodes dieses Slots, die der Vorab-Durchgang noch nicht hatte.
@@ -3884,6 +3968,7 @@ class Orchestrator:
         # 4. drive the state machine — ohne die, die der Vorab-Durchgang
         #    fuer diesen Slot bereits verarbeitet hat.
         self._setze_fern_gate_arm(tick.index)
+        self._setze_zellen_arm()
         self._persist_filter_drops()
         self.state_machine.on_decodes(
             self._hardware_state, self._vorab_neue_decodes(tick, decodes),
@@ -6328,22 +6413,30 @@ class Orchestrator:
         since = datetime.now(UTC) - timedelta(days=14)
         async with session_scope() as s:
             rows = list((await s.execute(
-                select(PickAttempt.continent, PickAttempt.outcome).where(PickAttempt.ts >= since)
+                select(PickAttempt.continent, PickAttempt.outcome, PickAttempt.ts)
+                .where(PickAttempt.ts >= since)
             )).all())
         by: dict[str, list[int]] = {}
+        je_zelle: dict[tuple[str, int], list[int]] = {}
         total = 0; done = 0
-        for cont, outcome in rows:
+        for cont, outcome, ts in rows:
             ok = 1 if outcome == "completed" else 0
             total += 1; done += ok
             if cont:
                 by.setdefault(cont, []).append(ok)
+                stunde = _utc_stunde(ts)
+                if stunde is not None:
+                    je_zelle.setdefault((cont, stunde), []).append(ok)
         rates = {c: sum(v) / len(v) for c, v in by.items() if len(v) >= 20}
         self.state_machine.ctx.continent_success = rates
-        self.state_machine.ctx.continent_success_overall = (done / total) if total else 0.0
+        gesamt = (done / total) if total else 0.0
+        self.state_machine.ctx.continent_success_overall = gesamt
+        self.state_machine.ctx.zellen_success = _zellen_quoten(je_zelle, rates, gesamt)
+        self.state_machine.ctx.zellen_success_overall = gesamt
         if rates:
-            log.info("continent prior: %s (gesamt %.0f %%)",
+            log.info("continent prior: %s (gesamt %.0f %%) — %d Zellen",
                      {c: f"{r*100:.0f} %" for c, r in sorted(rates.items())},
-                     self.state_machine.ctx.continent_success_overall * 100)
+                     gesamt * 100, len(self.state_machine.ctx.zellen_success))
 
     async def _rig_poll_loop(self) -> None:
         """Refresh the cached rig snapshot every second outside slot-time.
@@ -9191,6 +9284,7 @@ class Orchestrator:
                     reply_kind=meta.get("reply_kind"),
                     pre_decode=meta.get("pre_decode"),
                     fern_gate=meta.get("fern_gate"),
+                    zellen_arm=meta.get("zellen_arm"),
                     tx_offset_s=meta.get("tx_offset_s"),
                     n_candidates=meta.get("n_candidates"),
                     was_tailend=meta.get("was_tailend"),
