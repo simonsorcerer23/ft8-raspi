@@ -5260,9 +5260,16 @@ class Orchestrator:
         kalibrieren: Bei welchem Verhaeltnis von Arbeitsfrequenz zu MUF lag
         unsere Erfolgsquote wo?
 
-        Schonend fuer prop.kc2g.com: acht Richtungen alle fuenfzehn
-        Minuten, also gut dreissig Abfragen je Stunde, mit Pausen
-        dazwischen. Faellt der Dienst aus, faellt nur diese Beobachtung aus.
+        **Abrufrhythmus am Dienst ausgerichtet, nicht geraten.** Die
+        Vorhersage wird stuendlich gerechnet: ``latest_run.json`` nennt
+        eine ``run_id`` und 25 Karten im Stundenraster (04:15, 05:15 …).
+        Haeufiger abzufragen liefert dieselben Zahlen — ein
+        Viertelstundentakt haette viermal am Tag umsonst angeklopft.
+
+        Deshalb wird zuerst die ``run_id`` geholt (eine kleine Abfrage) und
+        nur bei einem neuen Lauf werden die Richtungen abgefragt. Im
+        Normalfall sind das acht Abfragen je Stunde statt zweiunddreissig.
+        Faellt der Dienst aus, faellt nur diese Beobachtung aus.
         """
         mein_grid = (self.config.operator.default_locator
                      or self.state_machine.ctx.my_grid or "")[:6]
@@ -5270,20 +5277,49 @@ class Orchestrator:
             log.info("Pfad-Vorhersage: kein eigener Locator — Schleife endet")
             return
         await asyncio.sleep(120)          # Boot-Schonfrist
+        letzter_lauf: int | None = None
         while True:
             try:
-                for _name, ziel in self._PFAD_REFERENZEN:
-                    werte = await asyncio.to_thread(
-                        self._hole_pfad_vorhersage, mein_grid, ziel
-                    )
-                    if werte:
-                        await self._persist_pfad(ziel, werte)
-                    await asyncio.sleep(5)
+                lauf = await asyncio.to_thread(self._hole_lauf_id)
+                if lauf is not None and lauf != letzter_lauf:
+                    letzter_lauf = lauf
+                    for _name, ziel in self._PFAD_REFERENZEN:
+                        werte = await asyncio.to_thread(
+                            self._hole_pfad_vorhersage, mein_grid, ziel
+                        )
+                        if werte:
+                            await self._persist_pfad(ziel, werte)
+                        await asyncio.sleep(5)
+                    log.info("Pfad-Vorhersage: Lauf %d fuer %d Richtungen geholt",
+                             lauf, len(self._PFAD_REFERENZEN))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 _log_loop_exc("pfad-vorhersage loop", exc)
-            await asyncio.sleep(900)
+            # Alle zehn Minuten nachsehen, ob ein neuer Lauf vorliegt —
+            # die Abfrage selbst ist winzig, die acht Richtungen folgen
+            # nur, wenn es wirklich etwas Neues gibt.
+            await asyncio.sleep(600)
+
+    @staticmethod
+    def _hole_lauf_id() -> int | None:
+        """Die Kennung des letzten Vorhersagelaufs — eine winzige Abfrage.
+
+        Sie entscheidet, ob sich die acht Richtungsabfragen ueberhaupt
+        lohnen: Die Vorhersage wird stuendlich gerechnet, und derselbe Lauf
+        liefert immer dieselben Zahlen.
+        """
+        import json as _json
+        import urllib.request
+        try:
+            req = urllib.request.Request(
+                "https://prop.kc2g.com/api/latest_run.json",
+                headers={"User-Agent": "ft8-raspi (Amateurfunk, DK9XR)"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return int(_json.loads(r.read()).get("run_id"))
+        except Exception:
+            return None
 
     @staticmethod
     def _hole_pfad_vorhersage(von_grid: str, nach_grid: str) -> dict | None:

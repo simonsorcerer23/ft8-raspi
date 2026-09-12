@@ -66,12 +66,27 @@ def test_rauschen_wird_gedrosselt():
 
 # ------------------------------------------------------ Pfad-Vorhersage
 def test_pfad_vorhersage_ist_schonend():
-    """prop.kc2g.com wird kostenlos betrieben — eine Handvoll Richtungen
-    alle fuenfzehn Minuten, mit Pausen dazwischen, statt je Anruf."""
+    """prop.kc2g.com wird kostenlos betrieben — eine Handvoll Richtungen,
+    mit Pausen dazwischen, statt je Anruf."""
     q = inspect.getsource(orch_mod.Orchestrator._pfad_vorhersage_loop)
-    assert "900" in q, "Viertelstunden-Takt"
     assert "asyncio.sleep(5)" in q, "Pause zwischen den Richtungen"
     assert len(orch_mod.Orchestrator._PFAD_REFERENZEN) <= 10
+
+
+def test_abruf_folgt_dem_stundenlauf_des_dienstes():
+    """Die Vorhersage wird stuendlich gerechnet — latest_run.json nennt
+    eine run_id und 25 Karten im Stundenraster. Haeufiger abzufragen
+    liefert dieselben Zahlen; ein Viertelstundentakt haette viermal je
+    Stunde umsonst angeklopft.
+
+    Deshalb zuerst die winzige run_id-Abfrage, und die acht Richtungen nur
+    bei einem neuen Lauf."""
+    q = inspect.getsource(orch_mod.Orchestrator._pfad_vorhersage_loop)
+    assert "_hole_lauf_id" in q
+    assert "letzter_lauf" in q
+    # Die Richtungsabfragen haengen an der Pruefung, nicht am Takt
+    vor_pruefung = q.split("if lauf is not None and lauf != letzter_lauf:", 1)[0]
+    assert "_hole_pfad_vorhersage" not in vor_pruefung
 
 
 def test_pfad_vorhersage_nennt_sich_beim_namen():
