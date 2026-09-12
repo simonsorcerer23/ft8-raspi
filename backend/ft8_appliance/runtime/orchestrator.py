@@ -8562,10 +8562,24 @@ class Orchestrator:
         gab es diesen Aufruf nie (Audit 2026-09-06 A4). Der AP kommt nur
         hoch, wenn jemand ihn startet; das ist jetzt dieser Loop.
 
-        Verlassen wird der AP-Modus NICHT automatisch: im AP-Modus kann
-        NetworkManager nicht nach bekannten WLANs suchen (wlan0 ist
-        unmanaged), und ein Kabel, das kommt und geht, soll den Hotspot
-        nicht flattern lassen. Stop per UI/API oder Neustart.
+        Seit 2026-09-12 ist der AP-Modus keine Sackgasse mehr. Vorher blieb
+        die Station dort, bis jemand von Hand stoppte oder neu startete —
+        und das faellt niemandem auf: im AP-Betrieb gibt es kein Internet,
+        also auch keine ntfy-Meldung, mit der sie sich beschweren koennte.
+        Wer vom Feldeinsatz heimkommt und durchlaufen laesst, findet sie
+        still im eigenen Hotspot wieder, ohne Uploads und ohne Updates.
+
+        Stattdessen: nach ``_AP_RUECKKEHR_NACH_S`` im AP-Betrieb wird der
+        Hotspot kurz abgeschaltet und geprueft, ob wieder ein Netz da ist.
+        Scannen geht im AP-Modus naemlich nicht (wlan0 ist unmanaged) —
+        also muss er dafuer weichen. Kommt binnen
+        ``_AP_WLAN_GNADENFRIST_S`` keine Verbindung, geht er sofort wieder
+        an, und die naechste Wartezeit verdoppelt sich (bis
+        ``_AP_RUECKKEHR_MAX_S``). Damit flattert er nicht, wenn wirklich
+        kein Netz in Reichweite ist.
+
+        Wer den Hotspot laenger braucht: Station neu starten, dann laeuft
+        die Frist wieder von vorn.
         """
         if self.config.demo_mode:
             return
@@ -8581,11 +8595,31 @@ class Orchestrator:
             await asyncio.sleep(self._AP_FALLBACK_POLL_S)
 
     _ap_fallback_offline_since: float | None = field(default=None, init=False)
+    # Seit wann der AP laeuft (monotonic). Beim Start des Controllers None —
+    # laeuft der AP aus einer frueheren Sitzung weiter, beginnt die Frist mit
+    # dem ersten Tick. "Nach Neustart 15 Minuten AP" ist genau das.
+    _ap_aktiv_seit: float | None = field(default=None, init=False)
+    # Erfolglose Rueckkehrversuche in Folge — verdoppeln die Wartezeit.
+    _ap_rueckkehr_fehlversuche: int = field(default=0, init=False)
+
+    # 15 Minuten reichen, um sich zu verbinden und zu tun, was noetig ist.
+    _AP_RUECKKEHR_NACH_S: typing.ClassVar[float] = 900.0
+    # So lange bekommt NetworkManager Zeit, ein bekanntes Netz zu greifen.
+    # fallback_delay_s steht auf 60 s, der Poll laeuft alle 15 s — 90 s
+    # decken beides ab, ohne dass die Station lange ganz ohne Zugang ist.
+    _AP_WLAN_GNADENFRIST_S: typing.ClassVar[float] = 90.0
+    _AP_RUECKKEHR_MAX_S: typing.ClassVar[float] = 4 * 3600.0
 
     async def _ap_fallback_tick(self) -> None:
         now = time.monotonic()
-        if await self.ap_fallback_is_active() or await self._has_upstream_connection():
+        if await self.ap_fallback_is_active():
             self._ap_fallback_offline_since = None
+            await self._pruefe_ap_rueckkehr(now)
+            return
+        if await self._has_upstream_connection():
+            self._ap_fallback_offline_since = None
+            self._ap_aktiv_seit = None
+            self._ap_rueckkehr_fehlversuche = 0
             return
         delay = float(self.config.network.fallback_delay_s)
         if self._ap_fallback_offline_since is None:
@@ -8600,6 +8634,52 @@ class Orchestrator:
         )
         await self.set_ap_fallback(True)
         self._ap_fallback_offline_since = None
+        self._ap_aktiv_seit = time.monotonic()
+
+    async def _pruefe_ap_rueckkehr(self, now: float) -> None:
+        """Der Hotspot laeuft — ist das Netz vielleicht wieder da?
+
+        Herausfinden laesst sich das nur, indem der AP weicht: solange er
+        laeuft, ist wlan0 unmanaged und NetworkManager kann nicht suchen.
+        Deshalb abschalten, kurz warten, und bei Misserfolg sofort wieder
+        anwerfen.
+        """
+        if self._ap_aktiv_seit is None:
+            self._ap_aktiv_seit = now
+            return
+        frist = min(
+            self._AP_RUECKKEHR_NACH_S * (2 ** min(self._ap_rueckkehr_fehlversuche, 5)),
+            self._AP_RUECKKEHR_MAX_S,
+        )
+        if now - self._ap_aktiv_seit < frist:
+            return
+        log.warning(
+            "AP-Rueckkehr: Hotspot laeuft seit %.0f min — schalte ihn ab und "
+            "sehe nach, ob wieder ein Netz da ist",
+            (now - self._ap_aktiv_seit) / 60.0,
+        )
+        await self.set_ap_fallback(False)
+        ende = time.monotonic() + self._AP_WLAN_GNADENFRIST_S
+        while time.monotonic() < ende:
+            await asyncio.sleep(10.0)
+            if await self._has_upstream_connection():
+                log.warning("AP-Rueckkehr: Netz wieder da — Hotspot bleibt aus")
+                self._ap_aktiv_seit = None
+                self._ap_rueckkehr_fehlversuche = 0
+                self._ap_fallback_offline_since = None
+                return
+        self._ap_rueckkehr_fehlversuche += 1
+        naechste = min(
+            self._AP_RUECKKEHR_NACH_S * (2 ** min(self._ap_rueckkehr_fehlversuche, 5)),
+            self._AP_RUECKKEHR_MAX_S,
+        )
+        log.warning(
+            "AP-Rueckkehr: kein Netz in Reichweite (%d. Versuch) — Hotspot "
+            "wieder an, naechster Blick in %.0f min",
+            self._ap_rueckkehr_fehlversuche, naechste / 60.0,
+        )
+        await self.set_ap_fallback(True)
+        self._ap_aktiv_seit = time.monotonic()
 
     # ------------------------------------------------------------------ v0.38.0 Wartung
     _TELEMETRY_RETENTION_DAYS: typing.ClassVar[int] = 90

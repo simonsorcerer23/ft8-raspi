@@ -29,7 +29,16 @@ def _stub(*, upstream: bool, ap_active: bool = False, delay: int = 60) -> Simple
         _has_upstream_connection=AsyncMock(return_value=upstream),
         ap_fallback_is_active=AsyncMock(return_value=ap_active),
         set_ap_fallback=AsyncMock(),
+        # Seit v0.126.0 prueft der Tick im AP-Betrieb, ob das Netz wieder
+        # da ist. Die echte Methode statt eines Dummys, damit hier auch
+        # abgesichert bleibt, dass sie beim ersten Tick nur die Uhr stellt.
+        _ap_aktiv_seit=None,
+        _ap_rueckkehr_fehlversuche=0,
+        _AP_RUECKKEHR_NACH_S=Orchestrator._AP_RUECKKEHR_NACH_S,
+        _AP_WLAN_GNADENFRIST_S=Orchestrator._AP_WLAN_GNADENFRIST_S,
+        _AP_RUECKKEHR_MAX_S=Orchestrator._AP_RUECKKEHR_MAX_S,
     )
+    stub._pruefe_ap_rueckkehr = lambda now: Orchestrator._pruefe_ap_rueckkehr(stub, now)
     stub._ap_fallback_tick = lambda: Orchestrator._ap_fallback_tick(stub)
     return stub
 
@@ -82,12 +91,17 @@ async def test_upstream_returning_resets_the_clock() -> None:
 @pytest.mark.asyncio
 async def test_running_ap_is_never_restarted() -> None:
     """Im AP-Modus ist wlan0 unmanaged, also 'kein Upstream' — das darf
-    nicht alle 60 s einen neuen Start ausloesen."""
+    nicht alle 60 s einen neuen Start ausloesen.
+
+    Seit v0.126.0 schaltet der Tick den AP nach 15 Minuten einmal ab, um
+    nach dem Netz zu sehen. Beim ersten Tick stellt er nur die Uhr, hier
+    darf also weiterhin nichts geschaltet werden."""
     stub = _stub(upstream=False, ap_active=True)
     stub._ap_fallback_offline_since = time.monotonic() - 600.0
     await stub._ap_fallback_tick()
     stub.set_ap_fallback.assert_not_called()
     assert stub._ap_fallback_offline_since is None
+    assert stub._ap_aktiv_seit is not None, "die Rueckkehr-Uhr muss laufen"
 
 
 def test_nmcli_parsing_counts_only_ethernet_and_wifi() -> None:
