@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.137.2 — 2026-09-12
+- fix: Deckkraft-Regler der MUF-Ebene war wirkungslos
+
 ## v0.137.1 — 2026-09-12
 - fix: MUF-Ebene blieb leer — ein Bild kann keinen Auth-Header senden
 
