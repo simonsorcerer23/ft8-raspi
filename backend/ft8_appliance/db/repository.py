@@ -13,7 +13,8 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Decode, Heard, PickAttempt, PskReporterIn, Qso, SwrLog
+from .models import (BandNoise, Decode, Heard, PathPrediction, PickAttempt,
+                     PskReporterIn, Qso, SolarLog, SwrLog)
 
 
 # DATA-M1 (Audit 2026-05-30): Telemetrie-Tabellen wachsen sonst unbegrenzt
@@ -25,6 +26,9 @@ _TELEMETRY_TABLES = (
     (Heard, Heard.last_seen),
     (SwrLog, SwrLog.ts),
     (PskReporterIn, PskReporterIn.ts),
+    (SolarLog, SolarLog.ts),
+    (BandNoise, BandNoise.ts),
+    (PathPrediction, PathPrediction.ts),
 )
 
 
