@@ -227,20 +227,24 @@ Findet die Station für `network.fallback_delay_s` weder WLAN noch Kabel,
 funktioniert — geprüft am 2026-09-12: hostapd fährt den AP mit der
 vorhandenen `/etc/hostapd/ft8-ap.conf` sauber hoch.
 
-**Sie verlässt diesen Modus aber nicht von allein.** Im AP-Betrieb ist
-`wlan0` unmanaged, NetworkManager kann also gar nicht nach bekannten Netzen
-suchen. Zurück geht es auf zwei Wegen:
+**Seit v0.126.0 kommt sie von selbst zurück.** Nach 15 Minuten im
+Hotspot-Betrieb schaltet sie ihn kurz ab und sieht nach, ob wieder ein Netz
+da ist — anders geht es nicht, denn solange der AP läuft, ist `wlan0`
+unmanaged und NetworkManager kann nicht suchen. Kommt binnen 90 Sekunden
+eine Verbindung, bleibt der Hotspot aus. Kommt keine, geht er sofort wieder
+an, und die nächste Wartezeit verdoppelt sich (15 min → 30 → 60 … bis
+höchstens 4 Stunden), damit er im Feld nicht alle Viertelstunde flattert.
 
-- über die Oberfläche bzw. `POST /api/network/ap-fallback/stop`, während man
-  selbst am Hotspot hängt,
-- oder schlicht durch einen Neustart der Station.
+**Wer den Hotspot länger am Stück braucht: Station neu starten.** Dann läuft
+die Frist wieder von vorn. Sofort beenden lässt er sich weiterhin über die
+Oberfläche bzw. `POST /api/network/ap-fallback/stop`.
 
-Das ist im Feld richtig so, hat daheim aber eine Folge, an die man denken
-muss: **Im Hotspot-Modus gibt es kein Internet.** Keine Uploads zu QRZ und
-ClubLog, keine Spots an PSK Reporter, kein Self-Update — und vor allem keine
-ntfy-Meldung, mit der sich die Station beschweren könnte. Wer nach einem
-Feldeinsatz nach Hause kommt und die Station durchlaufen lässt, findet sie
-still im eigenen Hotspot wieder. Ein Neustart genügt.
+Warum das nötig wurde: **Im Hotspot-Modus gibt es kein Internet.** Keine
+Uploads zu QRZ und ClubLog, keine Spots an PSK Reporter, kein Self-Update —
+und vor allem keine ntfy-Meldung, mit der sich die Station beschweren
+könnte. Vorher blieb sie dort, bis jemand von Hand eingriff; wer vom
+Feldeinsatz heimkam und durchlaufen ließ, fand sie still im eigenen Hotspot
+wieder, ohne dass irgendetwas darauf hingewiesen hätte.
 
 Wenn sie unerwartet nicht mehr über Tailscale erreichbar ist, lohnt der Blick
 aufs Handy: Taucht `ft8-hotspot` in der WLAN-Liste auf, ist genau das passiert.
