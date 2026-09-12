@@ -1536,11 +1536,29 @@ class StateMachine:
             return
         successes = sum(1 for ok in outcomes if ok)
         if successes < self.ctx.hunt_poor_run_min_successes:
+            vorher = self.ctx.hunt_strict_until
+            war_aus = vorher <= datetime.now(UTC).timestamp()
             self.ctx.hunt_strict_until = max(
                 self.ctx.hunt_strict_until,
                 datetime.now(UTC).timestamp()
                 + max(0, self.ctx.hunt_poor_run_strict_s),
             )
+            # 2026-09-12: Das Umschalten lief bis hierher ohne jede Spur.
+            # Weder Log noch Status sagten, ob die strenge Auswahl je
+            # gegriffen hat — bei rund 20 % Abschlussquote muesste die
+            # Bedingung rechnerisch in etwa jedem vierzehnten Fenster
+            # erfuellt sein, nachweisen liess es sich nicht. Ein Mechanismus,
+            # dessen Wirkung niemand sehen kann, ist nicht bewertbar.
+            # Nur das Einschalten melden. Jeder weitere erfolglose Anruf
+            # schiebt die Frist nach vorn — das im Log zu wiederholen wuerde
+            # in einer langen Pechstraehne alles andere zudecken.
+            if war_aus and self.ctx.hunt_strict_until > vorher:
+                log.info(
+                    "Strenge Auswahl fuer %.0f min: nur %d Abschluesse in "
+                    "den letzten %d Anrufen (noetig: %d)",
+                    max(0, self.ctx.hunt_poor_run_strict_s) / 60.0,
+                    successes, window, self.ctx.hunt_poor_run_min_successes,
+                )
 
     def _effective_report_resend_limit(self) -> int:
         if self.qso is None:
