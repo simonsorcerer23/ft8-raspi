@@ -282,7 +282,14 @@
   $effect(() => {
     // Deckkraft getrennt vom Ein/Aus, sonst wuerde jede Schieberegung
     // das Bild neu laden.
-    if (mufOverlay) mufOverlay.setOpacity(mufOpacity / 100);
+    //
+    // Der Wert wird BEDINGUNGSLOS gelesen. Stand er hinter der Abfrage auf
+    // mufOverlay, liefe der Effekt beim Einschalten einmal ins Leere — das
+    // Bild kommt asynchron, mufOverlay ist also noch null —, und weil
+    // mufOpacity dabei nie gelesen wurde, merkt sich Svelte keine
+    // Abhaengigkeit darauf. Der Regler bewegte sich dann ohne jede Wirkung.
+    const deckkraft = mufOpacity / 100;
+    if (mufOverlay) mufOverlay.setOpacity(deckkraft);
   });
 
   async function renderMuf() {
