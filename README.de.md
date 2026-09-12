@@ -170,9 +170,20 @@ die nur während eigener Sendungen messen. Eine Verletzung verweigert die
 Sendung und setzt ein Alarmzeichen; der Panik-Stopp kappt PTT und sperrt den
 Sender bis zum Reset.
 
+Im laufenden Betrieb kommen Wächter dazu, die nicht das Senden prüfen, sondern
+ob die Station ihre Arbeit noch tut. Zwei davon sind aus Fehlern entstanden, die
+lange niemandem auffielen: Die Sendesperre löst sich nicht von selbst — richtig
+bei echtem Hardwarefehler, falsch wenn der Grund längst weg ist, weshalb ein
+Wächter sie aufhebt und ab der vierten Selbstheilung je Stunde lieber meldet.
+Und ein zweiter meldet QSOs, die länger als sechs Stunden nicht im Logbuch
+angekommen sind. Der ältere Wächter dafür zählte abgestürzte Upload-Schleifen
+und sah deshalb nicht, wie ClubLog zwei QSOs dreizehn Stunden lang ablehnte,
+ohne dass irgendetwas abstürzte.
+
 Datensicherheit: atomare Konfigurationsschreibvorgänge mit `.bak` + fsync,
 WAL-SQLite mit Busy-Timeout, QSO-Log-Spill in eine Datei samt Alarm, falls ein
-DB-Schreibvorgang je fehlschlägt, tägliches Backup, Geheimnisse aus den
+DB-Schreibvorgang je fehlschlägt, tägliche Sicherung per systemd-Timer, die
+nachträglich prüft, ob die gesicherte Datenbank heil ist, Geheimnisse aus den
 API-Antworten entfernt.
 
 ## Alles Weitere, in Kürze

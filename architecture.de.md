@@ -56,13 +56,26 @@ NetworkManager mit priorisierter Profilliste:
 3. Dads Android-Hotspot
 4..N. Manuell via Web nachgepflegte Netze (Camping, Hotel etc.)
 
-→ keiner verfügbar nach 60s → AP-Fallback
+→ keiner verfügbar → AP-Fallback. Frist seit v0.127.0 asymmetrisch:
+   `network.fallback_delay_s` (60 s) nach einem Start ohne Netz —
+   das ist der Feldeinsatz; 10 Minuten bei einem Aussetzer im
+   laufenden Betrieb, denn ein Router-Neustart erledigt sich selbst.
 ```
 
 ### 3.2 AP-Fallback
 
 - SSID: `ft8-hotspot` (umbenannt 2026-09-06; vorher `ft8-hochgericht`)
 - WPA2-PSK, Passwort in `config.yaml`
+- **Rückkehr ins WLAN seit v0.126.0** (vorher eine Sackgasse): Nach 15 Minuten
+  im AP-Betrieb wird der Hotspot kurz abgeschaltet und geprüft, ob wieder ein
+  Netz da ist — anders geht es nicht, denn solange er läuft, ist `wlan0`
+  unmanaged und NetworkManager kann nicht suchen. Kommt binnen 90 s eine
+  Verbindung, bleibt er aus; kommt keine, geht er sofort wieder an und die
+  nächste Wartezeit verdoppelt sich (bis höchstens 4 h), damit er im Feld
+  nicht alle Viertelstunde flattert. Wer ihn länger am Stück braucht, startet
+  die Station neu. Grund für den Umbau: Im Hotspot-Betrieb gibt es kein
+  Internet, also auch keine ntfy-Meldung — wer vom Feldeinsatz heimkam und
+  durchlaufen ließ, fand die Station still im eigenen Hotspot wieder.
 - Eigenes Captive Portal: `hostapd` + `dnsmasq` + nftables-DNAT auf den lokalen Webserver
 - Android öffnet die UI automatisch beim WLAN-Beitritt
 
@@ -305,6 +318,18 @@ Zusätzliche Modi:
     Rig (Power, Mode, Filter, Frequenz) lösen ntfy-Push mit Rollback-
     Action aus; Eigene CAT-Befehle werden via Echo-Window-Helper
     erkannt und nicht alarmiert (siehe §6.5)
+  - **Sperr-Wächter** (v0.119.0): `TX_LOCKED` löst sich nicht von selbst.
+    Für einen echten Hardwarefehler ist das richtig, nicht aber wenn der
+    Grund längst weg ist — am 2026-09-11 sperrte der Zeit-Wächter gegen
+    seinen eigenen Startwert und die Station funkte 21 Minuten nicht. Der
+    Wächter hebt auf, wenn alle Bedingungen wieder erfüllt sind, und meldet
+    ab der vierten Selbstheilung je Stunde, statt weiter zu heilen.
+  - **Upload-Stau-Wächter** (v0.124.0): meldet QSOs, die länger als sechs
+    Stunden nicht im Logbuch angekommen sind. Der ältere Drain-Wächter zählt
+    *abgestürzte* Schleifen und sah deshalb nicht, was am 2026-09-12 geschah:
+    ClubLog lehnte zwei QSOs dreizehn Stunden lang ab, ohne dass irgendetwas
+    abstürzte. Die sechs Stunden sind an 219 Uploads nachgemessen (Median
+    5,4 Minuten, 90 % unter zehn).
 - ADIF-Log (live in der UI, exportierbar)
 - Band-Presets (Standard-FT8-Frequenzen)
 - Rufzeichen, Locator (oder GPS-Auto), Power-Profile

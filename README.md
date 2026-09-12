@@ -164,9 +164,20 @@ per-band cap of the operator's licence class, SWR and ALC watchdogs that only
 sample during our own bursts. Violation refuses the transmission and raises an
 alarm badge; a panic stop cuts PTT and locks TX until reset.
 
+During operation further watchdogs run that do not check transmitting, but
+whether the station is still doing its job. Two of them came out of faults that
+went unnoticed for a long time: the transmit lock does not clear by itself —
+right for a genuine hardware fault, wrong once the reason is long gone, so a
+watchdog clears it and from the fourth self-heal per hour reports instead. And a
+second one reports QSOs that have not reached the logbook for more than six
+hours. The older watchdog for that counted crashed upload loops and therefore
+never saw ClubLog rejecting two QSOs for thirteen hours without anything
+crashing.
+
 Data safety: atomic config writes with `.bak` + fsync, WAL SQLite with
-busy-timeout, QSO-log spill-to-file plus alert if a DB write ever fails, daily
-backup, secrets redacted from API responses.
+busy-timeout, QSO-log spill-to-file plus alert if a DB write ever fails, a daily
+backup via systemd timer that afterwards verifies the saved database is intact,
+secrets redacted from API responses.
 
 ## Everything else, briefly
 
