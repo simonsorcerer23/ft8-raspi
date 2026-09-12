@@ -7269,6 +7269,14 @@ class Orchestrator:
                 return 0
         return {
             # pro Slot aus den aktuellen Decodes (leer = Band still)
+            # ACHTUNG beim Lesen: die naechsten vier Zahlen gelten fuer den
+            # ZULETZT verarbeiteten Slot, nicht kumuliert. Sie werden aus den
+            # CQ-Rufen dieses Slots neu aufgebaut, und ein Slot ohne CQ-Ruf
+            # ist voellig normal — vormittags auf 20 m kommen die reihenweise
+            # vor. Eine Null heisst hier also "gerade nichts zu tun gehabt",
+            # nicht "Datenquelle kaputt". Am 2026-09-12 sah das beim Nachsehen
+            # nach einem Totalausfall der DXCC-Zuordnung aus; drei Slots
+            # spaeter standen wieder Werte drin.
             "kontinent_je_call": _n(getattr(c, "call_to_continent", None)),
             "dxcc_je_call": _n(getattr(c, "call_to_dxcc", None)),
             "standort_je_call": _n(getattr(c, "call_to_latlon", None)),
