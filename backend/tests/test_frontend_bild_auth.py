@@ -70,3 +70,21 @@ def test_deckkraft_wird_bedingungslos_gelesen() -> None:
         "mufOpacity wird erst hinter der Abfrage auf mufOverlay gelesen — "
         "dann registriert Svelte keine Abhaengigkeit und der Regler wirkt nicht"
     )
+
+
+def test_anmeldemaske_nur_wenn_der_server_wirklich_sperrt() -> None:
+    """Ohne Token erschien die Maske auch dort, wo der Server keinen will.
+
+    Die Middleware laesst Anfragen von localhost absichtlich durch (auf dem
+    Pi selbst, und durch einen SSH-Tunnel). Die Oberflaeche machte das
+    zunichte: kein Token gespeichert, also Maske — und vorbei kam man nur
+    mit einem Passwort, das an der Stelle keine Rolle spielt.
+    """
+    app = (FRONTEND / "App.svelte").read_text()
+    i = app.index("const onAuthRequired")
+    block = app[i : i + 700]
+    assert "api.status()" in block, (
+        "App.svelte probiert keinen Aufruf, bevor es die Maske zeigt — "
+        "der localhost-Zugang bleibt damit unbenutzbar"
+    )
+    assert "handleAuthed" in block, "Erfolgsfall hebt die Sperre nicht auf"
