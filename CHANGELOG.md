@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.127.0 — 2026-09-12
+- fix: Hotspot springt nicht mehr nach einer Minute Aussetzer an
+
 ## v0.126.0 — 2026-09-12
 - feat: der Hotspot ist keine Sackgasse mehr
 
