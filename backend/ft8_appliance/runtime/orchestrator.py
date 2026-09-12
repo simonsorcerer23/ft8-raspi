@@ -639,6 +639,9 @@ class Orchestrator:
     _rausch_proben: list[int] = field(default_factory=list, init=False)
     _rausch_bis: float = field(default=0.0, init=False)
     # Letzter in swr_log geschriebener Wert — s. _buche_swr.
+    # Zeitpunkt des letzten QRZ-Logbuchabgleichs (Unix-Zeit), ueber
+    # runtime_state gesichert — s. _qrz_logbook_sync_loop.
+    _qrz_sync_at: float = field(default=0.0, init=False)
     _swr_log_at: float = field(default=0.0, init=False)
     _swr_log_wert: float | None = field(default=None, init=False)
     # Gewuerfelter A/B-Arm des Fernziel-Gates, je Zeitblock einmal gezogen.
@@ -5559,13 +5562,27 @@ class Orchestrator:
         Boot gemacht hat, sondern auch Dads Lifetime-Historie. Stand-
         Mai-2026 sind das vermutlich tausende QSOs.
 
-        Schedule: einmalig 60 s nach Boot (Service muss erst laufen,
-        Internet warm), danach alle 24 h. Bei Fehler 5-min-Backoff.
+        Schedule: alle 24 h, der Zeitpunkt des letzten Laufs ueberlebt
+        einen Neustart.
+
+        Das tat er bis 2026-09-12 nicht, und weil die Station im Mittel
+        alle gut siebzig Minuten neu startet (Self-Update), lief der
+        Abgleich **einundachtzigmal in 48 Stunden statt zweimal** — jedes
+        Mal rund 8400 Datensaetze von qrz.com. Tatsaechlich geaendert
+        hatten sich in zwei Stunden vier Eintraege. Das ist erhebliche
+        Last fuer einen fremden Dienst, und sie war unbeabsichtigt.
+
+        Bei Fehler 5-min-Backoff.
         """
         from ..integrations import qrz_logbook as _qrzlog
         # Erste Sync ein Minütchen nach Boot — gibt Netzwerk + chrony
         # Zeit sauber zu landen.
         await asyncio.sleep(60.0)
+        rest = self._qrz_sync_abstand_s - (time.time() - self._qrz_sync_at)
+        if self._qrz_sync_at > 0 and rest > 0:
+            log.info("QRZ-Logbuchabgleich: letzter Lauf vor %.1f h, naechster "
+                     "in %.1f h", (time.time() - self._qrz_sync_at) / 3600, rest / 3600)
+            await asyncio.sleep(rest)
         auth_failures = 0
         while True:
             # Audit H2: Key PRO ZYKLUS lesen, nicht einmal vor der Schleife.
@@ -5632,6 +5649,8 @@ class Orchestrator:
                     len(records), added_calls, len(added_dxccs),
                     len(self._worked_calls), len(self._worked_dxccs),
                 )
+                self._qrz_sync_at = time.time()
+                self._maybe_persist_runtime_state(force=True)
             except _qrzlog.QrzLogbookError as exc:
                 # Audit H2: ein dauerhafter Auth-Fehler (falscher/abgelaufener
                 # Key) aendert sich nicht durch Retry alle 5 min. Nach dem
@@ -6621,6 +6640,9 @@ class Orchestrator:
             self._audio_clip_since = None
 
     # ------------------------------------------------------------------ SWR / ALC warnings
+    # Abstand zwischen zwei QRZ-Logbuchabgleichen. Die Daten aendern
+    # sich um wenige Eintraege am Tag; ein Abgleich holt ueber 8000.
+    _qrz_sync_abstand_s: typing.ClassVar[float] = 86400.0
     _SWR_FEHLT_WARNUNG_S: typing.ClassVar[float] = 900.0
 
     def _melde_fehlenden_swr(self) -> None:
@@ -6905,6 +6927,13 @@ class Orchestrator:
                 self._audio_gain = persisted
                 self._last_persisted_gain = persisted
                 self._last_persisted_gain_at = time.monotonic()
+            # Zeitpunkt des letzten QRZ-Logbuchabgleichs. Ohne ihn lief der
+            # 24-Stunden-Zyklus nach jedem Neustart neu — 81-mal in 48
+            # Stunden statt zweimal, jedes Mal ueber 8000 Datensaetze.
+            try:
+                self._qrz_sync_at = float(data.get("qrz_sync_at") or 0.0)
+            except Exception:
+                self._qrz_sync_at = 0.0
             # tx_power_w: Sebastian 2026-05-24 — jetzt im runtime_state
             # statt in operator.default_power_w (siehe handle_tx_power).
             persisted_pwr = data.get("tx_power_w")
@@ -6986,6 +7015,10 @@ class Orchestrator:
                     "audio_gain": round(self._audio_gain, 3),
                     "audio_gain_by_rig": by_rig,
                     "tx_power_w": int(self._tx_power_w),
+                    # Wann zuletzt das QRZ-Logbuch geholt wurde. Ohne diesen
+                    # Wert lief der 24-Stunden-Abgleich nach jedem Neustart
+                    # neu — 81-mal in 48 Stunden statt zweimal.
+                    "qrz_sync_at": round(self._qrz_sync_at, 0),
                 }),
                 encoding="utf-8",
             )
