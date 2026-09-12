@@ -68,6 +68,40 @@ async def letzte_anruf_ergebnisse(
     return [row[0] == "completed" for row in res.all()]
 
 
+async def offene_qsos(
+    session: AsyncSession, *, minuten: int = 10,
+) -> list[dict]:
+    """Abbrueche der letzten Minuten, bei denen ein Rapport vorlag.
+
+    Nur diese koennen fortgesetzt werden: Ohne erhaltenen Rapport fehlte
+    dem Logeintrag die Angabe, und es waere kein gueltiges QSO.
+    """
+    grenze = datetime.now(UTC) - timedelta(minutes=minuten)
+    res = await session.execute(
+        select(
+            PickAttempt.target_call, PickAttempt.target_grid,
+            PickAttempt.snr_db, PickAttempt.our_snr_received,
+            PickAttempt.band, PickAttempt.freq_offset_hz, PickAttempt.ts,
+        )
+        .where(PickAttempt.pick_kind == "cq")
+        .where(PickAttempt.outcome != "completed")
+        .where(PickAttempt.our_snr_received.isnot(None))
+        .where(PickAttempt.ts >= grenze)
+        .order_by(PickAttempt.ts.asc())
+    )
+    offen: list[dict] = []
+    for call, grid, snr, our_snr, band, freq, ts in res.all():
+        if not call:
+            continue
+        offen.append({
+            "their_call": call, "their_grid": grid, "their_snr": snr,
+            "our_snr_received": our_snr, "their_snr_at_us": snr,
+            "band": band, "freq_offset_hz": freq, "started": ts,
+            "from_cq_fallback": False, "_abbruch": ts,
+        })
+    return offen
+
+
 async def fehlversuche_je_call(
     session: AsyncSession, *, stunden: int = 6,
 ) -> dict[str, tuple[int, datetime]]:
