@@ -30,6 +30,10 @@ def _o(tmp_path, vorhandene=None):
         _filter_drops_path = tmp_path / "filter_drops.json"
         _filter_drops_tag = ""
         _filter_drops_letzte_sicherung = 0.0
+        # Seit v0.132.0 schreibt derselbe Takt zusaetzlich eine Tageszeile
+        # in die Datenbank. Hier aus: geprueft wird die JSON-Datei, die den
+        # Neustart ueberbruecken muss.
+        db_enabled = False
         _restore_filter_drops = orch_mod.Orchestrator._restore_filter_drops
         _persist_filter_drops = orch_mod.Orchestrator._persist_filter_drops
 
