@@ -359,6 +359,20 @@ Additional modes:
   `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
   `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
+- **MUF world map as a map layer (since v0.137.0):** propagation data existed
+  only as point-to-point values so far (`PathPrediction`, twenty target grids
+  every fifteen minutes) — twenty paths cannot colour an area. The same
+  project (prop.kc2g.com) renders an hourly world map; its SVG embeds the
+  field as a PNG in equirectangular projection (2732 x 1366, exactly 2:1),
+  which drops onto a Leaflet image overlay spanning [-90,-180]..[90,180] with
+  no reprojection. `integrations/muf_map.py` extracts it,
+  `/api/propagation/muf-map.png` serves it, `/api/propagation/muf-map` reports
+  its age. Fetching is **lazy** (only once the layer is switched on) and at
+  most hourly — the service is run for free and recomputes only hourly. After
+  a failure a five-minute hold applies, otherwise every map view during an
+  outage would trigger another attempt. The cache lives on disk and survives a
+  restart; its age is shown next to the toggle, because a stale map looks
+  exactly like a current one.
 - **`active_hour` with two sources (A/B since v0.136.0):** the hour tier asks
   whether the current UTC hour is worth it for the caller's continent. Arm A
   uses the top-50 % hours from the QSO table — its denominator is

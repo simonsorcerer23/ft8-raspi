@@ -11,6 +11,7 @@
   let el;
   let map;
   let stationLayer, workedArcLayer, liveArcLayer, dxLayer, locLayer, heatLayer, gridLayer, terminatorLayer, coverageLayer;
+  let mufLayer, mufOverlay;
   let operatorMarker;
 
   // Layer-toggle state
@@ -22,6 +23,9 @@
   let showGrid = $state(true);            // Maidenhead-Locator-Raster
   let showTerminator = $state(true);      // Day/Night-Terminator (Gray-Line)
   let showCoverage = $state(false);        // Coverage-Envelope-Polygon aus PSK-Reporter
+  let showMuf = $state(false);             // MUF-Weltkarte (prop.kc2g.com) als Bildebene
+  let mufOpacity = $state(55);             // Prozent — darunter muss die Karte lesbar bleiben
+  let mufStand = $state(null);             // { verfuegbar, stand, alter_s, veraltet }
   let coverageHours = $state(24);          // Time-Window für Coverage-Aggregat
   let coverageBand = $state('');           // '' = alle Bänder; sonst '20m' etc.
 
@@ -227,6 +231,10 @@
     gridLayer = L.layerGroup();
     terminatorLayer = L.layerGroup();
     coverageLayer = L.layerGroup();
+    mufLayer = L.layerGroup();
+    map.createPane('mufPane');
+    map.getPane('mufPane').style.zIndex = 250;   // tilePane 200 < hier < overlayPane 400
+    map.getPane('mufPane').style.pointerEvents = 'none';
     map.on('zoomend moveend', renderGrid);
 
     mapStore.refresh();
@@ -265,6 +273,38 @@
     else terminatorLayer.remove();
     renderTerminator();
   });
+  $effect(() => {
+    if (!mufLayer) return;
+    if (showMuf) { mufLayer.addTo(map); renderMuf(); }
+    else { mufLayer.remove(); mufLayer.clearLayers(); mufOverlay = null; }
+  });
+  $effect(() => {
+    // Deckkraft getrennt vom Ein/Aus, sonst wuerde jede Schieberegung
+    // das Bild neu laden.
+    if (mufOverlay) mufOverlay.setOpacity(mufOpacity / 100);
+  });
+
+  async function renderMuf() {
+    if (!showMuf || !mufLayer) return;
+    try {
+      mufStand = await api.get('/propagation/muf-map');
+    } catch {
+      mufStand = { verfuegbar: false };
+    }
+    mufLayer.clearLayers();
+    mufOverlay = null;
+    if (!mufStand?.verfuegbar) return;
+    // Der Zeitstempel im Pfad umgeht den Browser-Cache, wenn die Vorhersage
+    // neu gerechnet wurde — ohne ihn bliebe das alte Bild bis zu 15 Minuten
+    // stehen, obwohl der Stand daneben schon den neuen zeigt.
+    const marke = encodeURIComponent(mufStand.stand || '');
+    mufOverlay = L.imageOverlay(
+      `/api/propagation/muf-map.png?v=${marke}`,
+      [[-90, -180], [90, 180]],
+      { opacity: mufOpacity / 100, pane: 'mufPane', interactive: false },
+    ).addTo(mufLayer);
+  }
+
   $effect(() => {
     if (!coverageLayer) return;
     if (showCoverage) coverageLayer.addTo(map);
@@ -526,6 +566,24 @@
     <label><input type="checkbox" bind:checked={showCoverage}/>
       {t('map.coverage')}
     </label>
+    <label><input type="checkbox" bind:checked={showMuf}/>
+      {t('map.muf')}
+    </label>
+    {#if showMuf}
+      <label class="inline-filter">
+        {t('map.muf_opacity')}
+        <input type="range" min="20" max="90" step="5" bind:value={mufOpacity}/>
+      </label>
+      <span class="muf-stand" class:stale={mufStand?.veraltet}>
+        {#if !mufStand}
+          {t('map.muf_loading')}
+        {:else if !mufStand.verfuegbar}
+          {t('map.muf_unavailable')}
+        {:else}
+          {t('map.muf_age', { min: Math.round((mufStand.alter_s ?? 0) / 60) })}
+        {/if}
+      </span>
+    {/if}
     {#if showCoverage}
       <label class="inline-filter">
         {t('map.period')}
@@ -636,6 +694,11 @@
   }
   .layers label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
   .layers .inline-filter { font-size: 0.75rem; color: #94a3b8; gap: 0.2rem; }
+  .muf-stand { font-size: 0.7rem; color: #94a3b8; align-self: center; }
+  /* Veraltet heisst: aelter als die stuendliche Neurechnung. Eine alte
+     Karte sieht aus wie eine aktuelle — ohne Kennzeichnung faellt das
+     niemandem auf. */
+  .muf-stand.stale { color: #fbbf24; }
   .layers .inline-filter select {
     background: #0b1220; color: var(--fg); border: 1px solid #334155;
     border-radius: 3px; padding: 0.1rem 0.2rem; font-size: 0.75rem;

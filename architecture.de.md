@@ -359,6 +359,22 @@ Zusätzliche Modi:
   fiele er mit dem des Fernziel-Gates zusammen und beide Effekte waeren
   nicht trennbar. Auswertung: Abschnitt „Stunden-Tier" in
   `scripts/qso_bilanz.py`, Spalte `pick_attempt.zellen_arm`.
+- **MUF-Weltkarte als Kartenebene (seit v0.137.0):** Die Station holte
+  Ausbreitungsdaten bisher nur als Punkt-zu-Punkt-Werte (`PathPrediction`,
+  zwanzig Zielfelder alle fuenfzehn Minuten) — aus zwanzig Strecken laesst
+  sich keine Flaeche einfaerben. Dasselbe Projekt (prop.kc2g.com) rendert
+  stuendlich eine Weltkarte; in deren SVG steckt die Flaeche als
+  eingebettetes PNG in gleichabstaendiger Zylinderprojektion (2732 x 1366,
+  exakt 2:1), das ohne Umprojektion als Leaflet-Bildebene ueber
+  [-90,-180]..[90,180] passt. `integrations/muf_map.py` schneidet es heraus,
+  `/api/propagation/muf-map.png` liefert es aus, `/api/propagation/muf-map`
+  den Stand. Geladen wird **traege** (erst beim Einschalten der Ebene) und
+  hoechstens stuendlich — der Dienst wird kostenlos betrieben, und die
+  Vorhersage wird ohnehin nur stuendlich gerechnet. Nach einem Fehlschlag
+  gilt eine Sperrfrist von fuenf Minuten, sonst loeste jeder Kartenaufruf
+  waehrend einer Stoerung einen neuen Versuch aus. Der Zwischenspeicher
+  liegt auf Platte und ueberlebt einen Neustart; sein Alter steht neben dem
+  Umschalter, weil eine veraltete Karte genauso aussieht wie eine aktuelle.
 - **Konservative Hunt-Gates:** vor dem Tier-Scoring werden schwache einzelne
   Routine-CQs uebersprungen, wenn sie keinen Award-/Kontextwert und kein gutes
   Decode-/PSK-SNR haben. Nach einer schlechten Hunt-Serie geht der Picker
