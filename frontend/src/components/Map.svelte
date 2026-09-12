@@ -12,6 +12,7 @@
   let map;
   let stationLayer, workedArcLayer, liveArcLayer, dxLayer, locLayer, heatLayer, gridLayer, terminatorLayer, coverageLayer;
   let mufLayer, mufOverlay;
+  let mufBlobUrl = null;      // muss beim Wechsel freigegeben werden
   let operatorMarker;
 
   // Layer-toggle state
@@ -276,7 +277,7 @@
   $effect(() => {
     if (!mufLayer) return;
     if (showMuf) { mufLayer.addTo(map); renderMuf(); }
-    else { mufLayer.remove(); mufLayer.clearLayers(); mufOverlay = null; }
+    else { mufLayer.remove(); mufLayer.clearLayers(); mufOverlay = null; freeMufUrl(); }
   });
   $effect(() => {
     // Deckkraft getrennt vom Ein/Aus, sonst wuerde jede Schieberegung
@@ -294,15 +295,28 @@
     mufLayer.clearLayers();
     mufOverlay = null;
     if (!mufStand?.verfuegbar) return;
-    // Der Zeitstempel im Pfad umgeht den Browser-Cache, wenn die Vorhersage
-    // neu gerechnet wurde — ohne ihn bliebe das alte Bild bis zu 15 Minuten
-    // stehen, obwohl der Stand daneben schon den neuen zeigt.
-    const marke = encodeURIComponent(mufStand.stand || '');
+    // Das Bild liegt hinter der Token-Pruefung, und Leaflets ImageOverlay
+    // benutzt ein <img> — das kann keinen Authorization-Header setzen und
+    // bekaeme 401. Also selbst holen und als blob: weiterreichen.
+    let url;
+    try {
+      url = await api.blobUrl('/propagation/muf-map.png');
+    } catch {
+      mufStand = { verfuegbar: false };
+      return;
+    }
+    if (!showMuf) { URL.revokeObjectURL(url); return; }  // inzwischen abgeschaltet
+    freeMufUrl();
+    mufBlobUrl = url;
     mufOverlay = L.imageOverlay(
-      `/api/propagation/muf-map.png?v=${marke}`,
+      url,
       [[-90, -180], [90, 180]],
       { opacity: mufOpacity / 100, pane: 'mufPane', interactive: false },
     ).addTo(mufLayer);
+  }
+
+  function freeMufUrl() {
+    if (mufBlobUrl) { URL.revokeObjectURL(mufBlobUrl); mufBlobUrl = null; }
   }
 
   $effect(() => {
