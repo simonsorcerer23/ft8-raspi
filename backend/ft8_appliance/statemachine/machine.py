@@ -16,7 +16,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal, TypeGuard
+from typing import TYPE_CHECKING, ClassVar, Literal, TypeGuard
 
 from .. import i18n as _i18n
 from ..util.callsign import base_call
@@ -1590,6 +1590,42 @@ class StateMachine:
         # gueltig konfigurierbar, siehe Hinweis an qso_report_extra_resends.
         return max(0, min(3, limit))
 
+    # Wunschlisten-Stationen: Sperrfrist durch diesen Teiler, aber nie unter
+    # der Untergrenze. Zwei Minuten reichen, damit wir nicht in jedem Slot
+    # desselben Pile-Ups erneut rufen, und sind kurz genug, dass ein zweiter
+    # CQ-Ruf wenige Minuten spaeter wieder erreichbar ist.
+    _WATCHLIST_COOLDOWN_TEILER: ClassVar[float] = 4.0
+    _WATCHLIST_COOLDOWN_MIN_S: ClassVar[float] = 120.0
+
+    def _cooldown_mit_wunschliste(self, their_call: str, cooldown_s: float) -> float:
+        """Kuerzt die Sperrfrist fuer Stationen von der Wunschliste.
+
+        Wer dort steht, ist genau die Station, auf die wir warten — eine
+        halbe Stunde Sperre laeuft dem Sinn der Liste zuwider. Am 2026-09-06
+        rief V51WH (Namibia) um 21:02 CQ, wir brachen den Versuch ab, und als
+        er um 21:19 erneut rief, sass er noch in der Frist: 13 Decodes, ein
+        einziger Anruf, kein QSO. Der Pile-Up-Filter und das Fernziel-Gate
+        nehmen die Wunschliste laengst aus, der Cooldown tat es als einziger
+        nicht.
+
+        Ganz ohne Sperre soll es trotzdem nicht sein, sonst rufen wir
+        dieselbe Station im selben Pile-Up in jedem Slot erneut — daher der
+        Teiler mit Untergrenze statt einer Ausnahme.
+        """
+        if not _in_watchlist(their_call, self.ctx.watchlist_calls):
+            return cooldown_s
+        gekuerzt = max(
+            self._WATCHLIST_COOLDOWN_MIN_S,
+            cooldown_s / self._WATCHLIST_COOLDOWN_TEILER,
+        )
+        if gekuerzt >= cooldown_s:
+            return cooldown_s
+        log.info(
+            "Wunschliste: Sperrfrist fuer %s auf %.0f s gekuerzt "
+            "(regulaer waeren %.0f s)", their_call, gekuerzt, cooldown_s,
+        )
+        return gekuerzt
+
     def _bail_qso_with_cooldown(self, their_call: str, reason: str) -> None:
         """Abbrechen eines QSO-Versuchs + Cooldown-Eintrag fuer den Partner.
 
@@ -1624,6 +1660,7 @@ class StateMachine:
                 max(0.0, cooldown_s),
                 max(0.0, self.qso_failed_cooldown_max_s),
             )
+            cooldown_s = self._cooldown_mit_wunschliste(their_call, cooldown_s)
             cooldown_until = datetime.now(UTC).timestamp() + cooldown_s
             self.ctx.recent_until[their_call] = cooldown_until
             log.debug(
