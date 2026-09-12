@@ -67,6 +67,8 @@ def _stub(operators: list, active: int = 0) -> SimpleNamespace:
         ),
         _UPLOAD_MAX_ATTEMPTS=Orchestrator._UPLOAD_MAX_ATTEMPTS,
         _upload_reject_is_hard=Orchestrator._upload_reject_is_hard,
+        _upload_reject_ist_dupe=Orchestrator._upload_reject_ist_dupe,
+        _BULK_DUPE_NACHFAHREN_MAX=Orchestrator._BULK_DUPE_NACHFAHREN_MAX,
         _alert_upload_giveup=lambda *a, **kw: None,
         _alert_upload_giveup_many=lambda *a, **kw: None,
         _orphan_upload_warned=set(),
@@ -89,6 +91,7 @@ def _stub(operators: list, active: int = 0) -> SimpleNamespace:
     stub._clublog_sweep_for_operator = partial(
         Orchestrator._clublog_sweep_for_operator, stub,
     )
+    stub._clublog_einzelsweep = partial(Orchestrator._clublog_einzelsweep, stub)
     return stub
 
 
@@ -385,3 +388,84 @@ async def test_delete_operator_reports_orphaned_qsos(tmp_path) -> None:
     async with session_scope() as s:
         left = list((await s.execute(select(Qso.call))).scalars())
     assert sorted(left) == ["K1A", "K1B"]  # Zeilen bleiben erhalten
+
+
+# ============================================ Dupe in der Bulk-Charge
+
+
+@pytest.mark.asyncio
+async def test_bulk_dupe_reisst_die_charge_nicht_mit(tmp_path, monkeypatch) -> None:
+    """Ein Dupe betrifft EIN QSO, nie die ganze Charge.
+
+    Bis 2026-09-12 stand "duplicate" unter den harten Rejects, und ein
+    harter Reject markiert im Bulk-Pfad ALLE QSOs der Charge als
+    hochgeladen. Eine Charge, die an einem einzigen bereits vorhandenen
+    QSO scheitert, haette damit jedes andere QSO still verloren.
+    """
+    init_engine(tmp_path / "qso.sqlite")
+    await create_all(default_user_callsign="DK9XR")
+    await _seed([
+        {"call": f"K{i}DUPE", "user_callsign": "DK9XR"} for i in range(6)
+    ])
+
+    from ft8_appliance.integrations import clublog
+
+    async def bulk_meldet_dupe(*a, **kw):
+        raise clublog.ClubLogError("ClubLog rejected: Dupe")
+
+    async def einzeln(email, pw, key, my_call, qso):
+        if qso.call == "K0DUPE":
+            raise clublog.ClubLogError("ClubLog rejected: Dupe")
+        # Alle uebrigen kommen gerade nicht durch — sie muessen liegen
+        # bleiben statt als erledigt zu gelten.
+        raise clublog.ClubLogError("could not reach login server")
+
+    monkeypatch.setattr(clublog, "bulk_upload", bulk_meldet_dupe)
+    monkeypatch.setattr(clublog, "upload_qso", einzeln)
+    _echter_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda *a, **kw: _echter_sleep(0))
+
+    stub = _stub([_operator("DK9XR", clublog=True)])
+    await stub._clublog_sweep_for_operator(
+        "dk9xr@example.com", "pw", "key-DK9XR", "DK9XR", bulk_threshold=5,
+    )
+
+    async with session_scope() as s:
+        erledigt = sorted((await s.execute(
+            select(Qso.call).where(Qso.clublog_uploaded == True)  # noqa: E712
+        )).scalars())
+    assert erledigt == ["K0DUPE"], erledigt
+
+
+@pytest.mark.asyncio
+async def test_bulk_dupe_zaehlt_den_versuch_nicht_doppelt(tmp_path, monkeypatch) -> None:
+    """Der Bulk-Block hat den Zaehler schon gestellt; das Nachfahren darf
+    ihn nicht ein zweites Mal hochzaehlen, sonst rennt die Charge in den
+    halben Versuchen gegen den Deckel."""
+    init_engine(tmp_path / "qso.sqlite")
+    await create_all(default_user_callsign="DK9XR")
+    await _seed([
+        {"call": f"K{i}CNT", "user_callsign": "DK9XR"} for i in range(6)
+    ])
+
+    from ft8_appliance.integrations import clublog
+
+    async def bulk_meldet_dupe(*a, **kw):
+        raise clublog.ClubLogError("Dupe")
+
+    async def einzeln(email, pw, key, my_call, qso):
+        raise clublog.ClubLogError("could not reach login server")
+
+    monkeypatch.setattr(clublog, "bulk_upload", bulk_meldet_dupe)
+    monkeypatch.setattr(clublog, "upload_qso", einzeln)
+    _echter_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda *a, **kw: _echter_sleep(0))
+
+    stub = _stub([_operator("DK9XR", clublog=True)])
+    await stub._clublog_sweep_for_operator(
+        "dk9xr@example.com", "pw", "key-DK9XR", "DK9XR", bulk_threshold=5,
+    )
+
+    async with session_scope() as s:
+        versuche = list((await s.execute(select(Qso.clublog_upload_attempts))).scalars())
+    assert versuche == [1] * 6, versuche
