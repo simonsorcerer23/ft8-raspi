@@ -117,8 +117,13 @@ async def upload_qso(
       - "QSO OK"        → ebenfalls Erfolg (Doku-Variante)
       - "Updated QSO"   → existierender QSO wurde aktualisiert (Erfolg)
       - "QSO Modified"  → ClubLog hat Korrekturen vorgenommen (Erfolg)
-      - "Duplicate"     → schon im Log (kein Fehler, idempotent)
-      - "QSO Duplicate" → dito (Doku-Variante)
+      - "Dupe"          → schon im Log (kein Fehler, idempotent). Das ist
+        der Wortlaut, den ClubLog live schickt (beobachtet 2026-09-12);
+        die Doku-Schreibweise "Duplicate" kam nie an. Bis dahin fehlte er
+        hier, der Upload galt als Fehler und wurde stuendlich wiederholt —
+        zwei QSOs kamen so auf 12 Versuche gegen eine Wand.
+      - "Duplicate"     → Doku-Variante, weiter akzeptiert
+      - "QSO Duplicate" → dito
       - Anderer Text    → Error (ClubLogError) — Drain-Loop entscheidet
         anhand des Wortlauts ob hard-reject (auth/login/bad adif) oder
         soft-defer (Netz/Throttle).
@@ -151,7 +156,9 @@ async def upload_qso(
         "QSO OK",
         "UPDATED QSO",   # existierender Eintrag wurde geupdated
         "QSO MODIFIED",
-        "DUPLICATE",
+        "DUPE",          # live 2026-09-12 woertlich beobachtet
+        "QSO DUPE",
+        "DUPLICATE",     # kein Praefix von "DUPE" — beide noetig
         "QSO DUPLICATE",
     )
     # Nur startswith, KEIN Substring-Match: "OK" steckt auch in "LOGBOOK",

@@ -302,3 +302,23 @@ async def test_bulk_upload_http_500_raises(monkeypatch):
     qsos = [_make_qso()]
     with pytest.raises(ClubLogError, match="HTTP 500"):
         await bulk_upload("me@example.com", "pw", "key", "DO3XR", qsos)
+
+
+async def test_upload_ok_dupe_body(monkeypatch):
+    """Regression 2026-09-12: ClubLog antwortet woertlich "Dupe" — nicht
+    "Duplicate", wie die Doku nahelegt. Der Marker traf nie, der Upload
+    galt als Fehler und wurde stuendlich wiederholt (12 Versuche fuer
+    RA3GZ und RU3ACA), bis der Versuchsdeckel ihn faelschlich als
+    "aufgegeben" gemeldet haette."""
+    def handler(req):
+        return httpx.Response(200, text="Dupe")
+    _patch_httpx(monkeypatch, handler)
+    await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())
+
+
+async def test_upload_ok_qso_dupe_body(monkeypatch):
+    """Praefix-Variante mit QSO-Vorsatz."""
+    def handler(req):
+        return httpx.Response(200, text="QSO Dupe, no changes")
+    _patch_httpx(monkeypatch, handler)
+    await upload_qso("me@example.com", "pw", "key", "DO3XR", _make_qso())

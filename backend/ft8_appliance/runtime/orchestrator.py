@@ -5811,7 +5811,11 @@ class Orchestrator:
                             # transiente/mehrdeutige Rejects erneut versuchen
                             # (Ceiling als Backstop). Verhindert stillen
                             # Upload-Verlust bei z.B. Rate-Limit.
-                            if self._upload_reject_is_hard(str(exc)):
+                            if self._upload_reject_ist_dupe(str(exc)):
+                                log.info("QRZ: %s liegt dort bereits — erledigt",
+                                         qso.call)
+                                qso.qrz_uploaded = True
+                            elif self._upload_reject_is_hard(str(exc)):
                                 log.warning("QRZ hard-reject %s (%s) — won't retry",
                                             qso.call, exc)
                                 qso.qrz_uploaded = True
@@ -5912,7 +5916,7 @@ class Orchestrator:
 
         from ..db import session_scope
         from ..db.models import Qso
-        from ..integrations.clublog import ClubLogError, bulk_upload, upload_qso
+        from ..integrations.clublog import ClubLogError, bulk_upload
 
         async with session_scope() as s:
             now = datetime.now(UTC)
@@ -5951,7 +5955,25 @@ class Orchestrator:
                     # Charge aufgeben; sonst erneut versuchen (Ceiling
                     # je QSO). Fixt "could not reach login server" →
                     # frueher faelschlich hart → ganze Charge verloren.
-                    if self._upload_reject_is_hard(str(exc)):
+                    # v0.123.0 — ein Dupe gilt fuer EIN QSO, nie fuer die
+                    # Charge. Frueher stand "duplicate" unter den harten
+                    # Rejects: eine Charge, die an einem einzigen bereits
+                    # vorhandenen QSO scheitert, waere komplett als
+                    # hochgeladen verbucht worden — stiller Verlust aller
+                    # uebrigen. Stattdessen einzeln nachfahren, dann zeigt
+                    # sich der Schuldige von selbst.
+                    if self._upload_reject_ist_dupe(str(exc)):
+                        nachfahren = eligible[:self._BULK_DUPE_NACHFAHREN_MAX]
+                        log.info(
+                            "ClubLog bulk: Dupe in der Charge (%s) — %d von %d "
+                            "QSOs werden einzeln nachgefahren",
+                            exc, len(nachfahren), len(eligible),
+                        )
+                        await self._clublog_einzelsweep(
+                            nachfahren, email, app_pw, api_key, my_call, now,
+                            zaehle_versuch=False,
+                        )
+                    elif self._upload_reject_is_hard(str(exc)):
                         log.warning("ClubLog bulk hard-reject (%s) — alle %d won't-retry",
                                     exc, len(eligible))
                         for qso in eligible:
@@ -5985,34 +6007,67 @@ class Orchestrator:
                 # realtime.php (Michael's Use-Case: "real-time,
                 # single QSO submissions"). Max 4 pro Sweep =
                 # max 4 req/10 min = sehr human.
-                for qso in eligible:
-                    qso.clublog_upload_attempts += 1
-                    qso.clublog_last_attempt_at = now
-                    try:
-                        await upload_qso(email, app_pw, api_key, my_call, qso)
-                    except ClubLogError as exc:
-                        if self._upload_reject_is_hard(str(exc)):
-                            log.warning("ClubLog hard-reject %s (%s) — won't retry",
-                                        qso.call, exc)
-                            qso.clublog_uploaded = True
-                        elif qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
-                            log.error("ClubLog: %s nach %d Versuchen aufgegeben (%s)",
-                                      qso.call, qso.clublog_upload_attempts, exc)
-                            qso.clublog_uploaded = True
-                            self._alert_upload_giveup("ClubLog", qso.call)
-                        else:
-                            log.info("ClubLog deferred for %s: %s (Versuch %d)",
-                                     qso.call, exc, qso.clublog_upload_attempts)
-                    except Exception as exc:
-                        log.info("ClubLog upload deferred for %s: %s",
-                                 qso.call, exc)
-                    else:
-                        qso.clublog_uploaded = True
-                        log.info("ClubLog uploaded QSO %s", qso.call)
-                    # Throttle zwischen realtime-Requests im Sweep:
-                    # 2 s Abstand damit wir auch bei 4 QSOs nicht
-                    # innerhalb einer Sekunde 4 Requests schiessen.
-                    await asyncio.sleep(2.0)
+                await self._clublog_einzelsweep(
+                    eligible, email, app_pw, api_key, my_call, now,
+                    zaehle_versuch=True,
+                )
+
+    _BULK_DUPE_NACHFAHREN_MAX: typing.ClassVar[int] = 10
+
+    async def _clublog_einzelsweep(
+        self,
+        qsos: list,
+        email: str,
+        app_pw: str,
+        api_key: str,
+        my_call: str,
+        now,
+        *,
+        zaehle_versuch: bool,
+    ) -> None:
+        """Laedt QSOs einzeln durch realtime.php hoch.
+
+        Zwei Aufrufer: der regulaere Realtime-Pfad (wenige offene QSOs) und
+        der Bulk-Pfad, wenn seine Charge an einem Dupe gescheitert ist —
+        dann muss sich zeigen, WELCHES QSO der Dupe war, statt die ganze
+        Charge abzuschreiben. Im zweiten Fall ist der Versuchszaehler schon
+        gestellt, deshalb ``zaehle_versuch=False``.
+        """
+        from ..integrations.clublog import ClubLogError, upload_qso
+
+        for qso in qsos:
+            if zaehle_versuch:
+                qso.clublog_upload_attempts += 1
+                qso.clublog_last_attempt_at = now
+            try:
+                await upload_qso(email, app_pw, api_key, my_call, qso)
+            except ClubLogError as exc:
+                if self._upload_reject_ist_dupe(str(exc)):
+                    log.info("ClubLog: %s liegt dort bereits — erledigt",
+                             qso.call)
+                    qso.clublog_uploaded = True
+                elif self._upload_reject_is_hard(str(exc)):
+                    log.warning("ClubLog hard-reject %s (%s) — won't retry",
+                                qso.call, exc)
+                    qso.clublog_uploaded = True
+                elif qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                    log.error("ClubLog: %s nach %d Versuchen aufgegeben (%s)",
+                              qso.call, qso.clublog_upload_attempts, exc)
+                    qso.clublog_uploaded = True
+                    self._alert_upload_giveup("ClubLog", qso.call)
+                else:
+                    log.info("ClubLog deferred for %s: %s (Versuch %d)",
+                             qso.call, exc, qso.clublog_upload_attempts)
+            except Exception as exc:
+                log.info("ClubLog upload deferred for %s: %s",
+                         qso.call, exc)
+            else:
+                qso.clublog_uploaded = True
+                log.info("ClubLog uploaded QSO %s", qso.call)
+            # Throttle zwischen realtime-Requests im Sweep:
+            # 2 s Abstand damit wir auch bei 4 QSOs nicht
+            # innerhalb einer Sekunde 4 Requests schiessen.
+            await asyncio.sleep(2.0)
 
     async def _gps_country_detect_loop(self) -> None:
         """v0.22.0 — GPS-based DX-Operating-Country Suggestion + Mismatch-Warnung.
@@ -8207,8 +8262,19 @@ class Orchestrator:
     # QRZ-Sweep alle 5 min, ClubLog alle 10 min → 4 = QRZ ~20 min / CL ~40 min.
     _DRAIN_FAIL_ALERT_THRESHOLD: typing.ClassVar[int] = 4
 
+    # v0.123.0 — Dupe-Marker sind KEINE Fehler: das QSO liegt bereits
+    # drueben, der Upload hat sein Ziel also erreicht. Frueher standen
+    # "duplicate"/"already" in _HARD_REJECT_MARKERS; ClubLog antwortet
+    # aber woertlich "Dupe", worauf kein einziger Marker passte — zwei
+    # QSOs liefen so 12 Wiederholungen lang gegen die Wand (2026-09-12).
+    # Getrennt auch deshalb, weil der Bulk-Pfad einen harten Reject auf
+    # die GANZE Charge anwendet; ein Dupe gilt nie fuer die Charge.
+    _DUPE_MARKERS: typing.ClassVar[tuple[str, ...]] = (
+        "dupe", "duplicate", "already logged", "already uploaded",
+        "already in the log",
+    )
     _HARD_REJECT_MARKERS: typing.ClassVar[tuple[str, ...]] = (
-        "duplicate", "already", "401", "403", "authentication",
+        "401", "403", "authentication",
         "bad password", "invalid adif", "invalid api", "invalid key",
         "not authorized", "invalid call", "invalid date",
     )
@@ -8217,6 +8283,17 @@ class Orchestrator:
         "timed out", "502", "503", "504", "unavailable", "overload",
         "too many", "could not reach", "connection", "reset", "network",
     )
+
+    @classmethod
+    def _upload_reject_ist_dupe(cls, msg: str) -> bool:
+        """True wenn die Gegenstelle meldet, das QSO liege bereits vor.
+
+        Das ist ein Erfolg, kein Fehler — nur eben einer, den wir nicht
+        selbst verursacht haben. Transiente Marker gewinnen auch hier."""
+        m = (msg or "").lower()
+        if any(t in m for t in cls._TRANSIENT_MARKERS):
+            return False
+        return any(d in m for d in cls._DUPE_MARKERS)
 
     @classmethod
     def _upload_reject_is_hard(cls, msg: str) -> bool:
