@@ -11,7 +11,8 @@
 set -euo pipefail
 
 TGZ="${1:?Backup-Archiv angeben: ./scripts/restore-appliance.sh <backup.tgz> [host]}"
-HOST="${2:-ft8}"
+# s. backup-appliance.sh: "ft8" ist der alte, tote Knoten.
+HOST="${2:-ft8-pi5}"
 [ -f "$TGZ" ] || { echo "Archiv nicht gefunden: $TGZ"; exit 1; }
 
 WORK="$(mktemp -d)"

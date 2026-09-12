@@ -26,7 +26,11 @@
 # Default-Ziel liegt ausserhalb des Repos (Secrets gehoeren nicht nach Git).
 set -euo pipefail
 
-HOST="${1:-ft8}"
+# Der Tailscale-Name "ft8" zeigt seit dem Umzug auf den Pi 5 noch immer
+# auf den alten, toten Knoten (100.96.43.23, seit Tagen offline) — ein
+# Aufruf ohne Argument lief dort still ins Timeout. Der laufende Pi
+# heisst im Tailnet "ft8-pi5" (2026-09-12).
+HOST="${1:-ft8-pi5}"
 DEST_BASE="${2:-$HOME/.config/codex/secrets/ft8-backup}"
 STAMP="$(date +%Y-%m-%d_%H%M)"
 DEST="${DEST_BASE}/${STAMP}"
