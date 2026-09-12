@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.123.0 — 2026-09-12
+- fix: ClubLog sagt "Dupe", wir suchten "duplicate"
+
 ## v0.122.0 — 2026-09-12
 - fix: abgebrochene QSOs bleiben ueber einen Neustart fortsetzbar
 
