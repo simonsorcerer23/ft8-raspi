@@ -231,6 +231,18 @@ install -m 644 "${APP_DIR}/deploy/systemd/ft8-hostapd.service"    /etc/systemd/s
 install -m 644 "${RENDER_DIR}/systemd/ft8-self-update.service"   /etc/systemd/system/
 install -m 644 "${RENDER_DIR}/systemd/ft8-self-update.timer"     /etc/systemd/system/
 
+# Journal dauerhaft auf die Platte. Raspberry Pi OS setzt per Drop-in
+# Storage=volatile (fuer SD-Karten gedacht); auf einem Pi, der von NVMe
+# bootet, kostet das nach jedem Neustart saemtliche Logs. Details stehen in
+# der Datei. Nur wenn das Wurzeldateisystem nicht selbst fluechtig ist.
+if findmnt -no FSTYPE / | grep -qvE "^(tmpfs|overlay)$"; then
+    install -d -m 755 /etc/systemd/journald.conf.d
+    install -m 644 "${APP_DIR}/deploy/systemd-dropins/99-ft8-journal-persistent.conf" \
+        /etc/systemd/journald.conf.d/99-ft8-journal-persistent.conf
+    systemctl restart systemd-journald || true
+    journalctl --flush >/dev/null 2>&1 || true
+fi
+
 # Sudoers-Snippet für Self-Update + Backend-trigger des Self-Update-Service.
 # Scope ist absichtlich minimal: nur 4 spezifische systemctl-Befehle.
 install -m 440 "${RENDER_DIR}/sudoers.d/ft8-self-update"             /etc/sudoers.d/ft8-self-update
