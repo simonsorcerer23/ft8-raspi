@@ -7282,6 +7282,11 @@ class Orchestrator:
             # dass etwas fehlt.
             "gearbeitete_calls": _n(getattr(c, "worked", None)),
             "soft_blacklist": _n(getattr(c, "soft_blacklist", None)),
+            # Restlaufzeit der strengen Auswahl in Minuten, 0 = aus.
+            # Ohne diese Zahl war von aussen nicht zu sehen, ob sie je greift.
+            "strenge_auswahl_min": max(0.0, round(
+                (getattr(c, "hunt_strict_until", 0.0)
+                 - datetime.now(UTC).timestamp()) / 60.0, 1)),
             "wunschliste": _n(getattr(c, "watchlist_calls", None)),
             "kontinent_quoten": _n(getattr(c, "continent_success", None)),
             # gelernt bzw. abgerufen, beginnt nach einem Neustart leer
