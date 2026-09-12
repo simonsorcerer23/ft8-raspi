@@ -2357,6 +2357,39 @@ class Orchestrator:
             tmp.replace(self._filter_drops_path)
         except Exception as exc:
             log.debug("Filterzaehler nicht geschrieben: %s", exc)
+        # Zusaetzlich als Tageszeile in die Datenbank. Die JSON-Datei haelt
+        # nur den laufenden Tag; ohne diese Historie laesst sich nicht
+        # beurteilen, ob eine Stufe grundsaetzlich nie greift oder ob es an
+        # diesem einen Tag lag. Einmal je Minute denselben Stand schreiben
+        # heisst: der Wert ueberlebt den Datumswechsel auch dann, wenn der
+        # Dienst genau dabei neu startet.
+        if self.db_enabled:
+            try:
+                asyncio.create_task(
+                    self._persist_filter_drops_tag(heute, dict(werte))
+                )
+            except Exception:
+                pass
+
+    async def _persist_filter_drops_tag(
+        self, tag: str, werte: dict[str, int],
+    ) -> None:
+        """Fail-soft — eine Messreihe darf den Betrieb nie kosten."""
+        try:
+            from sqlalchemy.dialects.sqlite import insert
+
+            from ..db.models import FilterDropDaily
+            async with session_scope() as s:
+                for stufe, anzahl in werte.items():
+                    stmt = insert(FilterDropDaily).values(
+                        tag=tag, stufe=str(stufe), anzahl=int(anzahl),
+                    )
+                    await s.execute(stmt.on_conflict_do_update(
+                        index_elements=["tag", "stufe"],
+                        set_={"anzahl": int(anzahl)},
+                    ))
+        except Exception as exc:
+            log.debug("Filterzaehler-Tageszeile nicht gespeichert: %s", exc)
 
     def _restore_psk_cache(self) -> None:
         """Die zuletzt abgerufene PSK-Liste beim Start zurueckholen.
