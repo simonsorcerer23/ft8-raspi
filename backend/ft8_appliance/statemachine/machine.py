@@ -2102,13 +2102,34 @@ class StateMachine:
         Fernzielen durch — dort ist die Entfernung also kein Ausschluss,
         sondern hoechstens ein Rangkriterium.
 
-        Ausgenommen ist alles, was uns etwas bringt: neues DXCC, neues Grid,
-        Marine, Buddy, Grayline (``_is_award_or_context_pick``). Und ohne
-        bekannte Entfernung wird nie gesperrt — im Zweifel rufen wir an.
+        **Ausgenommen ist nur, was wirklich selten ist:** ein neues DXCC,
+        eine Marine-Station, ein Eintrag auf der Wunschliste.
+
+        Urspruenglich stand hier ``_is_award_or_context_pick`` — also auch
+        ein neues Grid-Feld, Grayline und die Tageszeit-Statistik. Damit
+        griff das Gate in der Nacht vom 11. auf den 12.9. **kein einziges
+        Mal**: Zwoelf Fernziele im aktiven Arm, alle durchgelassen.
+
+        Der Grund war das Grid. Von sieben Fernzielen jener Nacht hatten
+        sechs ein neues Grid-Feld — kein Wunder bei 123 gearbeiteten
+        Feldern auf 206 QSOs: Mehr als jedes zweite QSO bringt eines, bei
+        DX ist es praktisch garantiert. Die Ausnahme hat damit die Regel
+        aufgefressen.
+
+        Ein neues DXCC ist etwas anderes. Weltweit gibt es rund 340
+        Entitaeten, und sie sind das eigentliche Sammelziel — selten genug,
+        dass sich ein Anruf mit geringer Aussicht lohnt. Ein Grid bei 1,3 %
+        Erfolgsquote nicht: Man bekommt es ja nur mit dem QSO, im Mittel
+        also alle siebenundsiebzig Anrufe eines.
+
+        Ohne bekannte Entfernung wird nie gesperrt — im Zweifel rufen wir an.
         """
         if not (self.ctx.hunt_sole_dx_gate and self.ctx.hunt_sole_dx_arm):
             return False
-        if self._is_award_or_context_pick(d):
+        norm = (d.call_from or "").upper()
+        if norm in self.ctx.new_dxcc_calls or norm in self.ctx.marine_calls:
+            return False
+        if _in_watchlist(d.call_from, self.ctx.watchlist_calls):
             return False
         km = self._decode_distance_km(d)
         return km is not None and km >= self.ctx.hunt_sole_dx_km
