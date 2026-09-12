@@ -39,6 +39,15 @@
   let needsSetup = $state(false);
   // v0.37.0 — Token-Auth-Gate. Optimistisch authed wenn ein Token da ist;
   // ein 401 (via 'ft8-auth-required'-Event aus api.js) klappt das Gate auf.
+  //
+  // 2026-09-12: Ohne gespeicherten Token erschien die Maske auch dort, wo
+  // der Server gar keinen verlangt — auf dem Pi selbst und durch einen
+  // SSH-Tunnel, denn Anfragen von localhost laesst die Middleware
+  // absichtlich durch (auth.py: "Localhost is trusted"). Die Oberflaeche
+  // machte diese Ausnahme zunichte und verlangte ein Passwort, das an der
+  // Stelle keine Rolle spielt. Jetzt fragen wir einmal nach, bevor wir
+  // sperren: Geht ein geschuetzter Aufruf ohne Token durch, bleibt das
+  // Gate zu.
   let authed = $state(!!getToken());
   let _detachers = [];
   function startBoot() {
@@ -85,6 +94,12 @@
   onMount(() => {
     const onAuthRequired = () => { authed = false; stopBoot(); };
     window.addEventListener('ft8-auth-required', onAuthRequired);
+    // Server ohne Token-Pflicht (oder localhost): Maske ueberspringen.
+    if (!authed) {
+      api.status()
+        .then(() => { if (!authed) handleAuthed(); })
+        .catch(() => { /* 401 erwartet — Maske bleibt */ });
+    }
     (async () => {
       needsSetup = await checkSetup();
       if (authed) startBoot();
