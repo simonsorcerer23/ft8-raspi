@@ -5424,6 +5424,15 @@ class Orchestrator:
 
     # Referenzrichtungen fuer die Ausbreitungsvorhersage. Bewusst eine
     # Handvoll statt je Anruf: Der Dienst wird kostenlos betrieben.
+    #
+    # Diese acht decken die Kontinente ab — gut fuer die Frage "wohin
+    # kommen wir ueberhaupt durch". Fuer die andere Frage, wie weit FT8
+    # ueber die vorhergesagte MUF traegt, taugen sie schlecht: Sie zeigen
+    # dorthin, wo wir selten gehoert werden. Von 6026 Empfangsberichten
+    # liessen sich am 2026-09-12 nur 636 einer Vorhersage zuordnen, weil
+    # die restlichen aus Feldern kamen, die hier nicht vorkommen (JN, JO,
+    # KP, KN, IM, IN, JP — zusammen ueber die Haelfte aller Berichte).
+    # Deshalb kommen unten die tatsaechlichen Empfangsfelder dazu.
     _PFAD_REFERENZEN: typing.ClassVar[tuple[tuple[str, str], ...]] = (
         ("EU-West",   "IO91"),   # London
         ("EU-Ost",    "KO85"),   # Moskau
@@ -5434,6 +5443,48 @@ class Orchestrator:
         ("AF",        "KG33"),   # Nairobi
         ("OC",        "QF56"),   # Sydney
     )
+
+    # So viele der haeufigsten Empfangsfelder kommen zusaetzlich dran.
+    # Zehn Felder deckten am 2026-09-12 achtzig Prozent aller Berichte ab;
+    # mit acht festen Richtungen sind das hoechstens achtzehn Abfragen je
+    # Stundenlauf, was gegenueber einem kostenlos betriebenen Dienst
+    # vertretbar bleibt.
+    _PFAD_EMPFANGSFELDER_MAX: typing.ClassVar[int] = 10
+
+    async def _haeufigste_empfangsfelder(self) -> list[str]:
+        """Die Grid-Felder, aus denen uns zuletzt am meisten gehoert haben.
+
+        Gibt Mittelfelder wie "JN55" zurueck — der Vorhersagedienst braucht
+        einen konkreten Locator, das Feld allein reicht ihm nicht. Genommen
+        wird der jeweils haeufigste echte Locator aus dem Feld, damit der
+        Punkt tatsaechlich dort liegt, wo jemand zuhoert, statt in der
+        Feldmitte im Meer.
+        """
+        from sqlalchemy import func, select
+
+        from ..db import session_scope
+        from ..db.models import PskReporterIn
+        try:
+            async with session_scope() as s:
+                rows = (await s.execute(
+                    select(PskReporterIn.rx_grid, func.count().label("n"))
+                    .where(PskReporterIn.rx_grid.isnot(None))
+                    .group_by(PskReporterIn.rx_grid)
+                    .order_by(func.count().desc())
+                    .limit(400)
+                )).all()
+        except Exception as exc:
+            log.debug("Empfangsfelder nicht ermittelbar: %s", exc)
+            return []
+        gesehen: dict[str, str] = {}
+        for grid, _n in rows:
+            g = (grid or "").strip().upper()
+            if len(g) < 4:
+                continue
+            gesehen.setdefault(g[:2], g[:4])
+            if len(gesehen) >= self._PFAD_EMPFANGSFELDER_MAX:
+                break
+        return list(gesehen.values())
 
     async def _pfad_vorhersage_loop(self) -> None:
         """MUF und LUF fuer ein paar Referenzrichtungen mitschreiben.
@@ -5474,7 +5525,14 @@ class Orchestrator:
                 lauf = await asyncio.to_thread(self._hole_lauf_id)
                 if lauf is not None and lauf != letzter_lauf:
                     letzter_lauf = lauf
-                    for _name, ziel in self._PFAD_REFERENZEN:
+                    ziele = [z for _n, z in self._PFAD_REFERENZEN]
+                    # Dazu die Felder, aus denen uns wirklich jemand hoert —
+                    # ohne sie bleibt der groesste Teil der Empfangsberichte
+                    # ohne Vorhersage und damit fuer die Auswertung verloren.
+                    for z in await self._haeufigste_empfangsfelder():
+                        if z not in ziele:
+                            ziele.append(z)
+                    for ziel in ziele:
                         werte = await asyncio.to_thread(
                             self._hole_pfad_vorhersage, mein_grid, ziel
                         )
