@@ -645,6 +645,9 @@ class Orchestrator:
     # Wann zuletzt ein Upload-Stau gemeldet wurde (Wandzeit, ueberlebt
     # den Neustart — s. _upload_stau_waechter_loop).
     _upload_stau_gemeldet_at: float = field(default=0.0, init=False)
+    # Wann der Wartungslauf zuletzt durch war (Wandzeit, ueberlebt den
+    # Neustart — s. _maintenance_loop).
+    _maintenance_at: float = field(default=0.0, init=False)
     _swr_log_at: float = field(default=0.0, init=False)
     _swr_log_wert: float | None = field(default=None, init=False)
     # Gewuerfelter A/B-Arm des Fernziel-Gates, je Zeitblock einmal gezogen.
@@ -7040,9 +7043,11 @@ class Orchestrator:
                 self._qrz_sync_at = float(data.get("qrz_sync_at") or 0.0)
                 self._upload_stau_gemeldet_at = float(
                     data.get("upload_stau_gemeldet_at") or 0.0)
+                self._maintenance_at = float(data.get("maintenance_at") or 0.0)
             except Exception:
                 self._qrz_sync_at = 0.0
                 self._upload_stau_gemeldet_at = 0.0
+                self._maintenance_at = 0.0
             # tx_power_w: Sebastian 2026-05-24 — jetzt im runtime_state
             # statt in operator.default_power_w (siehe handle_tx_power).
             persisted_pwr = data.get("tx_power_w")
@@ -7133,6 +7138,9 @@ class Orchestrator:
                     # Neustart von vorn.
                     "upload_stau_gemeldet_at": round(
                         self._upload_stau_gemeldet_at, 0),
+                    # Ohne diesen Wert lief die "taegliche" Wartung fuenf
+                    # Minuten nach jedem Neustart erneut.
+                    "maintenance_at": round(self._maintenance_at, 0),
                 }),
                 encoding="utf-8",
             )
@@ -8600,13 +8608,29 @@ class Orchestrator:
 
     async def _maintenance_loop(self) -> None:
         """Taeglich: alte Telemetrie prunen (DATA-M1) + QSO-DB sichern
-        (DATA-C3). Erster Lauf 5 min nach Start (nicht im Boot-Stress)."""
+        (DATA-C3). Erster Lauf 5 min nach Start (nicht im Boot-Stress).
+
+        Der Zeitpunkt des letzten Laufs steht seit 2026-09-12 in
+        runtime_state. Vorher begann die Frist bei jedem Start neu, und
+        "taeglich" hiess in Wahrheit "fuenf Minuten nach jedem Start": in
+        sieben Tagen 49 Laeufe statt sieben. Das kostete nicht nur rund
+        1,7 GB Schreiblast auf der NVMe statt 238 MB — es machte vor allem
+        ``_DB_BACKUP_KEEP`` sinnlos. Die sieben aufbewahrten Sicherungen
+        deckten am 12.09. zusammen zwei Stunden und 55 Minuten ab, alle vom
+        selben Vormittag, statt der gemeinten Woche.
+        """
         from datetime import timedelta
 
         from ..db import repository, session_scope
         from ..db.session import backup_database
         await asyncio.sleep(300)
         while True:
+            rest = self._MAINTENANCE_INTERVAL_S - (time.time() - self._maintenance_at)
+            if self._maintenance_at > 0 and rest > 0:
+                log.info("Wartung: letzter Lauf vor %.1f h, naechster in %.1f h",
+                         (time.time() - self._maintenance_at) / 3600, rest / 3600)
+                await asyncio.sleep(min(rest, float(self._MAINTENANCE_INTERVAL_S)))
+                continue
             try:
                 cutoff = datetime.now(UTC) - timedelta(days=self._TELEMETRY_RETENTION_DAYS)
                 async with session_scope() as s:
@@ -8618,6 +8642,8 @@ class Orchestrator:
                 dest = await backup_database(keep=self._DB_BACKUP_KEEP)
                 if dest is not None:
                     log.info("Wartung: QSO-DB gesichert → %s", dest)
+                self._maintenance_at = time.time()
+                self._maybe_persist_runtime_state(force=True)
             except Exception as exc:  # noqa: BLE001 — Wartung darf nie crashen
                 log.warning("Wartungslauf fehlgeschlagen: %s", exc)
             await asyncio.sleep(self._MAINTENANCE_INTERVAL_S)
