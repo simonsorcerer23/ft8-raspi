@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.132.0 — 2026-09-12
+- feat: Filterstufen bekommen eine Tageshistorie
+- test: Rauchtest fuer die Bilanz — 16 Abschnitte, vorher ungetestet
+
 ## v0.131.0 — 2026-09-12
 - fix: Rauschreihe mass den Wert, der bei diesem Rig kaputt ist
 
