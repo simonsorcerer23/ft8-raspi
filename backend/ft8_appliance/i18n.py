@@ -211,6 +211,12 @@ _DE: dict[str, str] = {
         "QSO bleibt lokal im Log + ADIF — bei Bedarf manuell hochladen."
     ),
     "push.upload_giveup_title": "⚠️ Upload aufgegeben",
+    "push.upload_stau_title": "⚠️ Uploads bleiben liegen",
+    "push.upload_stau_msg": (
+        "{n} QSO(s) sind seit ueber {stunden} Stunden nicht bei {service} "
+        "angekommen, aeltestes: {call}. Die Uploads laufen weiter, kommen "
+        "aber nicht durch — Logbuch pruefen."
+    ),
     "push.upload_giveup_many_msg": (
         "{service}-Upload fuer {n} QSOs nach {attempts} Versuchen aufgegeben: "
         "{calls}. QSOs bleiben lokal im Log + ADIF — bei Bedarf manuell hochladen."
@@ -414,6 +420,12 @@ _EN: dict[str, str] = {
         "QSO stays local in the log + ADIF — upload manually if needed."
     ),
     "push.upload_giveup_title": "⚠️ Upload given up",
+    "push.upload_stau_title": "⚠️ Uploads are piling up",
+    "push.upload_stau_msg": (
+        "{n} QSO(s) have not reached {service} for over {stunden} hours, "
+        "oldest: {call}. The uploads keep running but do not get through — "
+        "check the logbook."
+    ),
     "push.upload_giveup_many_msg": (
         "{service} upload for {n} QSOs given up after {attempts} attempts: "
         "{calls}. QSOs stay local in the log + ADIF — upload manually if needed."
