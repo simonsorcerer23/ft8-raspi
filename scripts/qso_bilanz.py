@@ -132,6 +132,15 @@ def urteil(k_a: int, n_a: int, k_b: int, n_b: int) -> str:
         return "zu wenig"
     p_a, p_b = k_a / n_a, k_b / n_b
     p_gesamt = (k_a + k_b) / (n_a + n_b)
+    # Der z-Test naehert die Binomialverteilung durch die Normalverteilung.
+    # Das traegt erst, wenn in jeder Zelle rund fuenf Faelle erwartet werden
+    # (Faustregel n*p >= 5 und n*(1-p) >= 5). Darunter liefert die Formel
+    # zwar eine Zahl, aber keine Aussage: Am 12.09. stand an einem A/B mit
+    # 6 von 13 gegen 3 von 21 ein "z=-2,05 echt" — bei drei Erfolgen im
+    # zweiten Arm. Genau der Scheinbefund, den diese Spalte verhindern soll.
+    for _n in (n_a, n_b):
+        if _n * p_gesamt < 5 or _n * (1 - p_gesamt) < 5:
+            return "zu wenig"
     nenner = p_gesamt * (1 - p_gesamt) * (1 / n_a + 1 / n_b)
     if nenner <= 0:
         return "zu wenig"
@@ -380,8 +389,8 @@ def main() -> int:
         tabelle(zeilen, ("Quelle", "Anrufe", "fertig", "Quote"))
         if len(zeilen) == 2:
             a, b = zeilen
-            print("   ", urteil(int(b[2]), int(b[1]), int(a[2]), int(a[1]),
-                                "Zellen-Quote besser als Stundenliste"))
+            print("    Zellen-Quote gegen Stundenliste:",
+                  urteil(int(b[2]), int(b[1]), int(a[2]), int(a[1])))
         print("    Die alte Liste zaehlt, wann wir QSOs hatten — ihr Nenner sind")
         print("    Erfolge. Die Zellen-Quote setzt Abschluesse ins Verhaeltnis zu")
         print("    Anrufen derselben Stunde und desselben Kontinents.")

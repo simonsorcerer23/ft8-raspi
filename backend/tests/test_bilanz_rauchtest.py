@@ -51,6 +51,13 @@ def _baue_db(pfad: Path) -> None:
                 bail_reason=None if i % 3 == 0 else "went_silent",
                 winning_tier="sole" if i % 2 else "psk_heard_us",
                 n_candidates=1 + i % 3, freq_offset_hz=300 + i * 90,
+                # Beide A/B-Arme belegen, sonst laeuft der Vergleichszweig
+                # nie durch — der Rauchtest sah bis 2026-09-12 nur die
+                # Ueberschrift und liess einen Aufruf mit falscher
+                # Argumentzahl durch, der in der echten Bilanz abstuerzte.
+                pick_kind="cq", continent="EU" if i % 2 else "NA",
+                zellen_arm=bool(i % 2), fern_gate=bool(i % 3),
+                pre_decode=bool(i % 2), tx_offset_s=0.05 * i,
             ))
         # Der Decode muss VOR dem Anruf liegen — die Bilanz ordnet die
         # Audiofrequenz ueber das letzte Signal vor dem Versuch zu.
@@ -167,8 +174,14 @@ def test_abschnitte_mit_daten_bleiben_nicht_leer(ausgabe):
 
 
 def test_signifikanzspalte_erscheint(ausgabe):
-    """Ohne sie liest man Rauschen als Befund."""
-    assert "Rauschen" in ausgabe or "z=" in ausgabe
+    """Ohne sie liest man Rauschen als Befund.
+
+    "zu wenig" zaehlt mit: Seit dem 12.09. sagt urteil() das, wenn die
+    Normalapproximation nicht traegt (unter fuenf erwarteten Faellen je
+    Zelle). Das IST die Spalte — nur ehrlicher als eine Zahl, die dort
+    nichts bedeutet. Die Rechnung selbst deckt test_bilanz_signifikanz.
+    """
+    assert "Rauschen" in ausgabe or "z=" in ausgabe or "zu wenig" in ausgabe
 
 
 def test_stufen_ohne_treffer_werden_benannt(ausgabe):

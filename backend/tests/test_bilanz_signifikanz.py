@@ -55,3 +55,23 @@ def test_n_fuer_nachweis_waechst_wenn_der_unterschied_kleiner_wird():
 
 def test_n_fuer_nachweis_ohne_unterschied():
     assert qb.n_fuer_nachweis(0.17, 0.17) is None
+
+
+def test_zu_kleine_zellen_liefern_kein_urteil() -> None:
+    """Der z-Test naehert die Binomial- durch die Normalverteilung.
+
+    Das traegt erst ab rund fuenf erwarteten Faellen je Zelle. Darunter
+    rechnet die Formel weiter und liefert eine Zahl, die nichts bedeutet:
+    Am 12.09. stand an einem frisch gestarteten A/B "z=-2,05 echt" — bei
+    sechs von dreizehn gegen drei von einundzwanzig Anrufen. Genau der
+    Scheinbefund, den diese Spalte verhindern soll.
+    """
+    assert qb.urteil(6, 13, 3, 21) == "zu wenig"
+    assert qb.urteil(0, 25, 4, 50) == "zu wenig"
+    assert qb.urteil(1, 8, 1, 9) == "zu wenig"
+
+
+def test_grosse_stichproben_werden_weiter_beurteilt() -> None:
+    """Die Schranke darf echte Befunde nicht mitnehmen."""
+    assert "z=" in qb.urteil(200, 1000, 150, 1000)
+    assert "z=" in qb.urteil(80, 381, 60, 389)
