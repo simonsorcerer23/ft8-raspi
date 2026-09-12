@@ -166,12 +166,22 @@ class SolarLog(Base):
 
 # ---------------------------------------------------------------------------
 class BandNoise(Base):
-    """Rauschpegel im Empfang — das S-Meter zwischen den Aussendungen.
+    """Rauschpegel im Empfang, gemessen zwischen den Aussendungen.
 
     Die fehlende Groesse fuer "wie gut ist das Band gerade wirklich". Die
     Zahl der Decodes misst die Aktivitaet, nicht die Stoerung; bei hohem
     Rauschen sind schwache Signale chancenlos, und genau die machen den
     Grossteil unserer Anrufe aus.
+
+    ``s_meter_db`` ist beim IC-7300 unbrauchbar: ueber hamlib kommt ein
+    fester Wert zurueck, nicht der Rauschflur. Nachgemessen am 2026-09-12 —
+    275 Messungen ueber sechs Stunden, jede einzelne exakt -54 dB. Der
+    Orchestrator wusste das laengst und zog den RX-Pegel an anderer Stelle
+    schon aus dem ALSA-Strom; diese Tabelle schrieb trotzdem das S-Meter
+    mit. Deshalb ``rx_audio_dbfs`` daneben: derselbe Zeitpunkt, aber der
+    Wert, der sich tatsaechlich bewegt (gemessen -5,8 bis -8,4 dBFS). Die
+    Spalte bleibt optional, weil andere Rigs ein brauchbares S-Meter
+    liefern koennen und die alten Zeilen keinen Wert dafuer haben.
     """
 
     __tablename__ = "band_noise"
@@ -181,6 +191,8 @@ class BandNoise(Base):
     band: Mapped[str] = mapped_column(String, index=True)
     freq_hz: Mapped[int] = mapped_column(Integer)
     s_meter_db: Mapped[int] = mapped_column(Integer)
+    # Der belastbare Wert (s. Klassendoku). NULL in Zeilen vor v0.131.0.
+    rx_audio_dbfs: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 # ---------------------------------------------------------------------------
