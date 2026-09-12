@@ -8376,6 +8376,12 @@ class Orchestrator:
                 pass
 
     # ----------------------------------------------- Waechter: Upload-Stau
+    # Sechs Stunden, nachgemessen an 219 hochgeladenen QSOs (2026-09-12):
+    # Median 5,4 Minuten vom QSO-Ende bis zum gelungenen Upload, 90 % unter
+    # zehn Minuten. Die einzigen Ueberschreitungen stammen vom 2026-09-08,
+    # als der Pi 4B ausfiel und die QSOs bis zum Umzug auf den Pi 5 lagen —
+    # da waere die Meldung richtig gewesen. Zwischen Normalbetrieb und
+    # Schwelle liegt damit Faktor 66; naeher heranzugehen brächte nichts.
     _UPLOAD_STAU_STUNDEN: typing.ClassVar[float] = 6.0
     _UPLOAD_STAU_PRUEF_S: typing.ClassVar[float] = 1800.0
     _UPLOAD_STAU_MELDE_ABSTAND_S: typing.ClassVar[float] = 86400.0
