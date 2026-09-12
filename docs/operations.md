@@ -222,10 +222,21 @@ sehen, deshalb gibt es die zweite.
 
 ## Der Hotspot kommt nicht von selbst zurück
 
-Findet die Station für `network.fallback_delay_s` weder WLAN noch Kabel,
-öffnet sie ihren eigenen Zugangspunkt (`ft8-hotspot`). Das ist gewollt und
-funktioniert — geprüft am 2026-09-12: hostapd fährt den AP mit der
-vorhandenen `/etc/hostapd/ft8-ap.conf` sauber hoch.
+Findet die Station weder WLAN noch Kabel, öffnet sie ihren eigenen
+Zugangspunkt (`ft8-hotspot`). Das ist gewollt und funktioniert — geprüft am
+2026-09-12: hostapd fährt den AP mit der vorhandenen
+`/etc/hostapd/ft8-ap.conf` sauber hoch.
+
+**Wie schnell, hängt davon ab, ob sie vorher schon Netz hatte:**
+
+| Lage | Frist | Warum |
+|---|---|---|
+| Start ohne Netz | `network.fallback_delay_s` (hier 60 s) | Das ist der Feldeinsatz — die Station soll zügig erreichbar sein |
+| Aussetzer im laufenden Betrieb | 10 Minuten | Ein Router-Neustart dauert gut eine Minute; dafür in den Hotspot zu wechseln und dort eine Viertelstunde zu bleiben, wäre Unfug |
+
+Wer mit laufender Station wegfährt, bekommt den Hotspot also nach zehn
+Minuten statt nach einer. Zum Vergleich: In den vierzehn Tagen vor dem
+12.09.2026 hat das WLAN hier kein einziges Mal ausgesetzt.
 
 **Seit v0.126.0 kommt sie von selbst zurück.** Nach 15 Minuten im
 Hotspot-Betrieb schaltet sie ihn kurz ab und sieht nach, ob wieder ein Netz

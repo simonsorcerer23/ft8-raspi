@@ -34,6 +34,12 @@ def _stub(*, upstream: bool, ap_active: bool = False, delay: int = 60) -> Simple
         # abgesichert bleibt, dass sie beim ersten Tick nur die Uhr stellt.
         _ap_aktiv_seit=None,
         _ap_rueckkehr_fehlversuche=0,
+        # False = wie nach einem Start ohne Netz. Damit gilt hier weiter
+        # die kurze fallback_delay_s, die diese Tests pruefen; ein
+        # Aussetzer im laufenden Betrieb hat seit v0.126.0 eine eigene,
+        # laengere Frist (s. test_ap_rueckkehr.py).
+        _ap_hatte_upstream=False,
+        _AP_BETRIEB_FRIST_S=Orchestrator._AP_BETRIEB_FRIST_S,
         _AP_RUECKKEHR_NACH_S=Orchestrator._AP_RUECKKEHR_NACH_S,
         _AP_WLAN_GNADENFRIST_S=Orchestrator._AP_WLAN_GNADENFRIST_S,
         _AP_RUECKKEHR_MAX_S=Orchestrator._AP_RUECKKEHR_MAX_S,
