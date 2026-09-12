@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.122.0 — 2026-09-12
+- fix: abgebrochene QSOs bleiben ueber einen Neustart fortsetzbar
+
 ## v0.121.0 — 2026-09-12
 - fix: QRZ-Logbuchabgleich lief 81-mal in 48 Stunden statt zweimal
 
