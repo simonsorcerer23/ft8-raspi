@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.136.0 — 2026-09-12
+- feat: Stunden-Tier aus der Anruf-Telemetrie statt aus der QSO-Tabelle
+- fix: aeltere DB-Kopien rissen die Bilanz ab
+- docs: Ueberlagerung erklaert die Decoder-Verluste nicht
+- docs: Docstring-Kopfzeile sagte weiter synchronous=NORMAL
+
 ## v0.135.0 — 2026-09-12
 - fix: Grayline aus dem Grid statt aus der Landesmitte; ALC-Regler meldet sich
 - fix: kein voller Cooldown nach picked_another
