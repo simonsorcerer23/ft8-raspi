@@ -146,6 +146,83 @@ def main() -> int:
         "group by 1 order by 1", (seit,)
     ).fetchall(), ("Lage", "Versuche", "fertig", "Quote"))
 
+    print("\n=== FT8-MUF: wie weit ueber die Vorhersage traegt FT8? ===")
+    # Jede Referenzrichtung deckt ein Grid-Feld-Gebiet ab; die Zuordnung
+    # ist grob, reicht aber fuer die Frage "offen oder zu".
+    zeilen = con.execute(
+        "with paare as ("
+        "  select r.snr_db,"
+        "         14.074 / nullif(max(p.muf_sp, p.muf_lp), 0) as ueber_muf"
+        "  from psk_reporter_in r"
+        "  join path_prediction p"
+        "    on substr(upper(p.ziel_grid),1,2) = substr(upper(r.rx_grid),1,2)"
+        # 0,0105 Tage = gut 15 Minuten, der Takt der Vorhersage-Abfrage
+        "   and abs(julianday(p.ts) - julianday(r.ts)) < 0.0105"
+        "  where r.ts > datetime('now',?) and r.snr_db is not null)"
+        " select case when ueber_muf <= 0.8 then '1 klar unter der MUF'"
+        "             when ueber_muf <= 1.0 then '2 knapp unter'"
+        "             when ueber_muf <= 1.3 then '3 bis 30 % darueber'"
+        "             when ueber_muf <= 1.8 then '4 bis 80 % darueber'"
+        "             else '5 mehr als 80 % darueber' end as lage,"
+        "        count(*), round(avg(snr_db),1), min(snr_db)"
+        " from paare group by 1 order by 1", (seit,)
+    ).fetchall()
+    if zeilen:
+        tabelle(zeilen, ("Arbeitsfrequenz zur MUF", "Berichte", "SNR im Mittel", "schwaechster"))
+        print("    Die klassische MUF gilt fuer SSB-taugliche Signale; FT8")
+        print("    arbeitet rund 20 dB darunter. Wo die Berichte aufhoeren,")
+        print("    liegt die praktische Grenze — das ist die gesuchte FT8-MUF.")
+    else:
+        print("    (noch keine ueberlappenden Messungen — Daten sammeln sich)")
+
+    print("\n=== Kommen wir an? Empfangsberichte ueber unser eigenes Signal ===")
+    zeilen = con.execute(
+        "select case substr(upper(rx_grid),1,2) "
+        "         when 'FN' then 'Nordamerika Ost' when 'EN' then 'Nordamerika Ost' "
+        "         when 'EM' then 'Nordamerika Ost' when 'FM' then 'Nordamerika Ost' "
+        "         when 'DM' then 'Nordamerika West' when 'CN' then 'Nordamerika West' "
+        "         when 'DN' then 'Nordamerika West' "
+        "         when 'JO' then 'Europa' when 'JN' then 'Europa' when 'IO' then 'Europa' "
+        "         when 'IN' then 'Europa' when 'KO' then 'Europa' when 'KN' then 'Europa' "
+        "         when 'KP' then 'Skandinavien' when 'JP' then 'Skandinavien' "
+        "         else 'uebrige Welt' end as region, "
+        "  count(*), count(distinct rx_call), round(avg(snr_db),1), min(snr_db) "
+        "from psk_reporter_in where rx_grid is not null and ts > datetime('now',?) "
+        "group by 1 order by 2 desc", (seit,)
+    ).fetchall()
+    if zeilen:
+        tabelle(zeilen, ("Region", "Berichte", "Stationen", "SNR im Mittel", "bester"))
+        print("    Das sind Meldungen ANDERER ueber unser Signal — die einzige")
+        print("    direkte Evidenz, dass wir irgendwo ankommen. Bei eigenen")
+        print("    Decodes kennt man die Sendeleistung der Gegenseite nicht.")
+    else:
+        print("    (noch keine Empfangsberichte gespeichert)")
+
+    print("\n=== Ausbreitung oder Konkurrenz? ===")
+    zeilen = con.execute(
+        "with gehoert as ("
+        "  select strftime('%H', ts) as h, count(*) as berichte"
+        "  from psk_reporter_in"
+        "  where substr(upper(rx_grid),1,2) in ('FN','EN','EM','DM','CN','DN','FM')"
+        "    and ts > datetime('now',?) group by 1),"
+        "gerufen as ("
+        "  select strftime('%H', ts) as h, count(*) as anrufe,"
+        "         sum(outcome='completed') as qsos"
+        "  from pick_attempt where pick_kind='cq' and continent='NA'"
+        "    and ts > datetime('now',?) group by 1)"
+        " select g.h, ifnull(h.berichte,0), g.anrufe, g.qsos,"
+        "        round(100.0*g.qsos/g.anrufe,0)||' %'"
+        " from gerufen g left join gehoert h on h.h=g.h"
+        " where g.anrufe >= 3 order by g.h", (seit, seit)
+    ).fetchall()
+    if zeilen:
+        tabelle(zeilen, ("Stunde UTC", "hoeren uns", "Anrufe NA", "QSOs", "Quote"))
+        print("    Hohe Berichtszahl bei niedriger Quote heisst: Der Weg steht,")
+        print("    aber wir setzen uns im Pile-Up nicht durch. Dagegen hilft")
+        print("    keine Ausbreitungsvorhersage, sondern Zielauswahl.")
+    else:
+        print("    (zu wenige Daten)")
+
     print("\n=== Fernziel-Gate: bringt CQ-Rufen mehr als ein 2-%-Anruf? (A/B) ===")
     zeilen = con.execute(
         "select case when fern_gate=1 then 'Gate an' else 'Gate aus' end, "
