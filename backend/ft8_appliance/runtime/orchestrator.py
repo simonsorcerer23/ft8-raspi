@@ -642,6 +642,9 @@ class Orchestrator:
     # Zeitpunkt des letzten QRZ-Logbuchabgleichs (Unix-Zeit), ueber
     # runtime_state gesichert — s. _qrz_logbook_sync_loop.
     _qrz_sync_at: float = field(default=0.0, init=False)
+    # Wann zuletzt ein Upload-Stau gemeldet wurde (Wandzeit, ueberlebt
+    # den Neustart — s. _upload_stau_waechter_loop).
+    _upload_stau_gemeldet_at: float = field(default=0.0, init=False)
     _swr_log_at: float = field(default=0.0, init=False)
     _swr_log_wert: float | None = field(default=None, init=False)
     # Gewuerfelter A/B-Arm des Fernziel-Gates, je Zeitblock einmal gezogen.
@@ -971,6 +974,7 @@ class Orchestrator:
         if self.config.operating.mode_watchdog_min > 0:
             self._spawn(self._mode_watchdog_loop(), name="mode-watchdog")
             self._spawn(self._sperr_waechter_loop(), name="sperr-waechter")
+            self._spawn(self._upload_stau_waechter_loop(), name="upload-stau-waechter")
         self._spawn(self._daily_summary_loop(), name="daily-summary")
         self._spawn(self._continent_prior_loop(), name="continent-prior")
         self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
@@ -7034,8 +7038,11 @@ class Orchestrator:
             # Stunden statt zweimal, jedes Mal ueber 8000 Datensaetze.
             try:
                 self._qrz_sync_at = float(data.get("qrz_sync_at") or 0.0)
+                self._upload_stau_gemeldet_at = float(
+                    data.get("upload_stau_gemeldet_at") or 0.0)
             except Exception:
                 self._qrz_sync_at = 0.0
+                self._upload_stau_gemeldet_at = 0.0
             # tx_power_w: Sebastian 2026-05-24 — jetzt im runtime_state
             # statt in operator.default_power_w (siehe handle_tx_power).
             persisted_pwr = data.get("tx_power_w")
@@ -7121,6 +7128,11 @@ class Orchestrator:
                     # Wert lief der 24-Stunden-Abgleich nach jedem Neustart
                     # neu — 81-mal in 48 Stunden statt zweimal.
                     "qrz_sync_at": round(self._qrz_sync_at, 0),
+                    # Wann zuletzt ein Upload-Stau gemeldet wurde. Ohne
+                    # diesen Wert begaenne die Meldefrist nach jedem
+                    # Neustart von vorn.
+                    "upload_stau_gemeldet_at": round(
+                        self._upload_stau_gemeldet_at, 0),
                 }),
                 encoding="utf-8",
             )
@@ -8362,6 +8374,108 @@ class Orchestrator:
                 ))
             except Exception:
                 pass
+
+    # ----------------------------------------------- Waechter: Upload-Stau
+    _UPLOAD_STAU_STUNDEN: typing.ClassVar[float] = 6.0
+    _UPLOAD_STAU_PRUEF_S: typing.ClassVar[float] = 1800.0
+    _UPLOAD_STAU_MELDE_ABSTAND_S: typing.ClassVar[float] = 86400.0
+
+    async def _upload_stau_waechter_loop(self) -> None:
+        """Meldet QSOs, die es nicht ins Logbuch schaffen.
+
+        Der bestehende Drain-Waechter zaehlt abgestuerzte Schleifen. Der
+        zaehlt nur, was wirklich wirft — und laesst damit genau den Fall
+        durch, der am 2026-09-12 auffiel: ClubLog lehnte zwei QSOs mit
+        "Dupe" ab, die Schleife lief sauber weiter, zwoelf Versuche lang,
+        dreizehn Stunden ohne ein Wort. Aufgefallen ist das beim Nachsehen,
+        nicht durch eine Meldung.
+
+        Dieser Waechter fragt deshalb nicht nach Abstuerzen, sondern nach
+        dem Ergebnis: liegt ein QSO laenger als ``_UPLOAD_STAU_STUNDEN``
+        unerledigt? Sein Gedaechtnis steht in runtime_state, sonst begaenne
+        die Frist nach jedem Neustart von vorn — bei einem Median von
+        zwanzig Minuten zwischen zwei Starts waere das so gut wie kein
+        Gedaechtnis.
+
+        QSOs ohne zustaendigen Operator oder ohne hinterlegte Zugangsdaten
+        bleiben ausgenommen: die liegen absichtlich.
+        """
+        while True:
+            try:
+                await self._pruefe_upload_stau()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("Upload-Stau-Waechter: %s", exc)
+            await asyncio.sleep(self._UPLOAD_STAU_PRUEF_S)
+
+    async def _pruefe_upload_stau(self) -> None:
+        from datetime import UTC, datetime
+
+        from sqlalchemy import or_, select
+
+        from ..db import session_scope
+        from ..db.models import Qso
+
+        if self.config.demo_mode:
+            return
+        jetzt = datetime.now(UTC)
+        grenze_s = self._UPLOAD_STAU_STUNDEN * 3600.0
+
+        async with session_scope() as s:
+            rows = list((await s.execute(
+                select(Qso)
+                .where(or_(Qso.qrz_uploaded == False,  # noqa: E712
+                           Qso.clublog_uploaded == False))  # noqa: E712
+                .order_by(Qso.qso_start.asc())
+            )).scalars())
+
+            stau: dict[str, list] = {"QRZ": [], "ClubLog": []}
+            for qso in rows:
+                start = _as_utc(qso.qso_start)
+                if start is None or (jetzt - start).total_seconds() < grenze_s:
+                    continue
+                op = self._operator_for_qso(qso)
+                if op is None:
+                    continue  # verwaist — liegt absichtlich
+                if not qso.qrz_uploaded and op.qrz_key_for(qso.station_callsign):
+                    stau["QRZ"].append(qso)
+                if not qso.clublog_uploaded and op.clublog_email \
+                        and op.clublog_app_password and op.clublog_api_key:
+                    stau["ClubLog"].append(qso)
+
+            betroffen = {k: v for k, v in stau.items() if v}
+            if not betroffen:
+                return
+
+            for service, qsos in betroffen.items():
+                log.warning(
+                    "Upload-Stau: %d QSO(s) seit ueber %.0f h nicht bei %s "
+                    "(aeltestes %s)",
+                    len(qsos), self._UPLOAD_STAU_STUNDEN, service, qsos[0].call,
+                )
+
+            # Push nur einmal je Tag — der Stau loest sich nicht in Minuten.
+            if (time.time() - self._upload_stau_gemeldet_at
+                    < self._UPLOAD_STAU_MELDE_ABSTAND_S):
+                return
+            ntfy = self.integrations.ntfy
+            if ntfy is None or not ntfy.enabled:
+                return
+            self._upload_stau_gemeldet_at = time.time()
+            self._maybe_persist_runtime_state(force=True)
+            service, qsos = next(iter(betroffen.items()))
+            try:
+                await ntfy.notify(
+                    _t("push.upload_stau_msg",
+                       n=len(qsos), stunden=int(self._UPLOAD_STAU_STUNDEN),
+                       service=service, call=qsos[0].call),
+                    title=_t("push.upload_stau_title"),
+                    priority="default",
+                    tags=["warning"],
+                )
+            except Exception as exc:
+                log.warning("Upload-Stau-Push fehlgeschlagen: %s", exc)
 
     def _alert_upload_giveup(self, service: str, call: str | None) -> None:
         if self.integrations.ntfy and self.integrations.ntfy.enabled:
