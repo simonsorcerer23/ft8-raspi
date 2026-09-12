@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.116.0 — 2026-09-12
+- fix: Grid-Ausnahme fraß das Fernziel-Gate, Vorab-Decode gemessen wirkungslos
+
 ## v0.115.0 — 2026-09-11
 - feat: Waechter gegen dauerhaft haengende Sendesperre
 
