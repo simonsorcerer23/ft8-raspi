@@ -8393,9 +8393,10 @@ class Orchestrator:
         Dieser Waechter fragt deshalb nicht nach Abstuerzen, sondern nach
         dem Ergebnis: liegt ein QSO laenger als ``_UPLOAD_STAU_STUNDEN``
         unerledigt? Sein Gedaechtnis steht in runtime_state, sonst begaenne
-        die Frist nach jedem Neustart von vorn — bei einem Median von
-        zwanzig Minuten zwischen zwei Starts waere das so gut wie kein
-        Gedaechtnis.
+        die Frist nach jedem Neustart von vorn. In der Woche vor dem
+        2026-09-12 lagen zwischen zwei Starts im Median zwanzig Minuten —
+        das waren sechzig saubere Deploys, kein einziger Absturz, aber die
+        Frist haette es genauso oft zurueckgesetzt.
 
         QSOs ohne zustaendigen Operator oder ohne hinterlegte Zugangsdaten
         bleiben ausgenommen: die liegen absichtlich.

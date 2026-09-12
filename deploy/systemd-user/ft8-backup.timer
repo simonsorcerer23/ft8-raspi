@@ -1,0 +1,13 @@
+[Unit]
+Description=Taeglich die FT8-Appliance sichern
+
+[Timer]
+# Taeglich, aber nicht auf die Minute genau — und nachgeholt, wenn der
+# Rechner zur eigentlichen Zeit aus war. Ohne Persistent=true faellt die
+# Sicherung genau an den Tagen aus, an denen der Rechner spaeter angeht.
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target

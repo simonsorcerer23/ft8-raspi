@@ -1,0 +1,14 @@
+[Unit]
+Description=Sicherung der FT8-Appliance (Konfiguration, Zugangsdaten, QSO-Datenbank)
+Documentation=file:scripts/backup-appliance.sh
+# Ohne Netz kommt das Skript nicht an den Pi — dann lieber gar nicht starten.
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Pfad anpassen, falls das Repo woanders liegt.
+ExecStart=%h/Dokumente/GitHub/ft8-raspi/scripts/backup-appliance.sh
+# Der Pi kann aus sein oder schlafen; ein Fehlschlag ist kein Drama,
+# der Timer versucht es am naechsten Tag wieder.
+SuccessExitStatus=0 1
+Nice=10

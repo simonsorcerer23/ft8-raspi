@@ -7,6 +7,22 @@
 #
 #   ./scripts/backup-appliance.sh [HOST] [ZIELVERZEICHNIS]
 #
+# Von Hand angestossen heisst: laeuft, wenn jemand daran denkt. Am
+# 2026-09-12 lag die letzte Sicherung zwei Tage zurueck, und in diesen
+# zwei Tagen waren 144 der 221 QSOs entstanden — 65 % des Logbuchs
+# ungesichert, ausgerechnet aus den aktivsten Tagen. Fuer einen taeglichen
+# Lauf liegen fertige User-Units bereit:
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/systemd-user/ft8-backup.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now ft8-backup.timer
+#
+# Sie laufen als Benutzer, brauchen kein root und holen einen verpassten
+# Tag nach (Persistent=true). Der Rechner muss dafuer laufen — wer die
+# Sicherung unabhaengig davon will, legt den Timer auf den Pi und schiebt
+# das Archiv von dort weg.
+#
 # Default-Ziel liegt ausserhalb des Repos (Secrets gehoeren nicht nach Git).
 set -euo pipefail
 
@@ -66,5 +82,38 @@ for f in etc/ft8-appliance/config.yaml var/lib/ft8-appliance/runtime_state.json 
 done
 WLAN=$(grep -c "system-connections/.*\.nmconnection" <<<"$LIST" || true)
 echo "   WLAN-Profile: ${WLAN}"
+
+# Vorhanden ist nicht dasselbe wie heil. qso.sqlite wird im laufenden
+# Betrieb weggeschrieben, waehrend tar sie liest — Hauptdatei und WAL
+# stammen also aus zwei verschiedenen Augenblicken. Meist traegt SQLite
+# das beim Oeffnen zusammen, aber "meist" ist fuer ein Backup zu wenig.
+# Am 2026-09-12 war die Kopie nachweislich in Ordnung; geprueft wird es
+# ab jetzt bei jedem Lauf, denn ein Backup faellt sonst erst an dem Tag
+# auf, an dem man es braucht.
+if [ "$FAIL" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
+    PRUEF_DIR="$(mktemp -d)"
+    trap 'rm -rf "$PRUEF_DIR"' EXIT
+    if tar xzf "${DEST}/ft8-backup.tgz" -C "$PRUEF_DIR" \
+            var/lib/ft8-appliance/ 2>/dev/null; then
+        python3 - "$PRUEF_DIR/var/lib/ft8-appliance/qso.sqlite" <<'PY'
+import sqlite3, sys
+try:
+    con = sqlite3.connect(sys.argv[1])
+    ergebnis = con.execute("pragma integrity_check").fetchone()[0]
+    n = con.execute("select count(*) from qso").fetchone()[0]
+    con.close()
+except Exception as exc:
+    print(f"   FEHLER qso.sqlite nicht lesbar: {exc}")
+    raise SystemExit(1)
+if ergebnis != "ok":
+    print(f"   DEFEKT qso.sqlite: {ergebnis}")
+    raise SystemExit(1)
+print(f"   ok   qso.sqlite ist heil ({n} QSOs)")
+PY
+        [ $? -eq 0 ] || FAIL=1
+    else
+        echo "   WARNUNG qso.sqlite liess sich zur Pruefung nicht entpacken"
+    fi
+fi
 echo "== $(du -h "${DEST}/ft8-backup.tgz" | cut -f1) in ${DEST}/ft8-backup.tgz"
 [ "$FAIL" -eq 0 ] || { echo "!! Backup unvollstaendig"; exit 1; }
