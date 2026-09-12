@@ -47,6 +47,27 @@ def _load_data() -> dict[str, int]:
 _RARITY_TABLE: Final[dict[str, int]] = _load_data()
 
 
+def rarity_for_entity(primary_prefix: str | None) -> int:
+    """Rarity-Score ueber das cty-Entitaetskuerzel (z.B. ``FT/w``).
+
+    Die Tabelle in ``data/dxcc_rarity.json`` benutzt genau diese Kuerzel —
+    sie stammt aus derselben Quelle wie cty.dat. ``rarity_for`` durchsucht
+    sie aber mit Rufzeichen-Praefixen, und die beiden Namensraeume decken
+    sich nicht ueberall: Ein Eintrag wie ``FT/w`` (Crozet, 97) ist ueber
+    kein reales Rufzeichen erreichbar, denn Crozet funkt als FT8WW. Am
+    2026-09-12 fielen so fuenf der seltensten Eintraege durch — Crozet,
+    Glorioso, Juan de Nova, Tromelin und Bouvet lieferten alle 0, also
+    denselben Wert wie eine Nachbarstation aus Deutschland.
+
+    Umgekehrt findet der Praefix-Weg Eintraege, die cty.dat nicht als
+    eigene Entitaet fuehrt (BS7H). Deshalb ersetzt diese Funktion den
+    alten Weg nicht, sondern ergaenzt ihn; der Aufrufer nimmt das Maximum.
+    """
+    if not primary_prefix:
+        return 0
+    return _RARITY_TABLE.get(primary_prefix.upper().strip(), 0)
+
+
 def rarity_for(call_or_prefix: str) -> int:
     """Rarity-Score 0..100 für ein Call oder Prefix. 0 = common.
 
