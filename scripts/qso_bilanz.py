@@ -470,6 +470,45 @@ def main() -> int:
     else:
         print("    (noch keine Tageszeilen — die Historie laeuft seit v0.132.0)")
 
+    print("\n=== Ersatz fuer den fehlenden Empfangsbeleg ===")
+    # Der eigene Beleg ("diese Station hat uns gehoert") ist der beste
+    # bekannte Hinweis, fehlt aber bei zwei Dritteln der Ziele. Die Frage:
+    # Taugt es als Ersatz, wenn uns *irgendjemand* aus dem Gebiet des Ziels
+    # hoert? Am 2026-09-12 trennte das ohne eigenen Beleg 22,2 % von 14,0 %
+    # (z = +2,61) — staerker belegt als der eigene Beleg selbst.
+    zeilen = con.execute(
+        "with ziel as ("
+        "  select p.ts, p.outcome, p.psk_heard_us,"
+        "         (select substr(upper(d.grid),1,2) from decode d"
+        "           where d.call_from = p.target_call and d.ts <= p.ts"
+        "             and d.grid is not null order by d.ts desc limit 1) feld"
+        "  from pick_attempt p where p.ts > datetime('now',?)),"
+        "mit as ("
+        "  select z.*, (select count(*) from psk_reporter_in r"
+        # 0,0208 Tage = eine halbe Stunde. Kuerzer waere sauberer, aber die
+        # Berichte kommen in Schueben — ein zu enges Fenster verliert sie.
+        "      where substr(upper(r.rx_grid),1,2) = z.feld"
+        "        and abs(julianday(r.ts) - julianday(z.ts)) < 0.0208) > 0 nachbar"
+        "  from ziel z where z.feld is not null)"
+        " select case when psk_heard_us=1 then 'eigener Beleg' else 'ohne eigenen' end,"
+        "        case when nachbar then 'Nachbar hoert uns' else 'kein Nachbar' end,"
+        "        count(*), round(100.0*sum(outcome='completed')/count(*),1)||' %',"
+        "        sum(outcome='completed')"
+        " from mit group by 1, 2 order by 1 desc, 2",
+        (seit,),
+    ).fetchall()
+    if zeilen:
+        tabelle([(z[0], z[1], z[2], z[3]) for z in zeilen],
+                ("eigener Beleg", "Nachbarschaft", "Versuche", "Abschluss"))
+        # Das Urteil gehoert nur zu den Faellen OHNE eigenen Beleg — dort
+        # ist die Frage offen, mit eigenem Beleg braucht es keinen Ersatz.
+        ohne = {z[1]: z for z in zeilen if z[0] == "ohne eigenen"}
+        ja, nein = ohne.get("Nachbar hoert uns"), ohne.get("kein Nachbar")
+        if ja and nein:
+            print(f"    Ohne eigenen Beleg: {urteil(ja[4], ja[2], nein[4], nein[2])}")
+            print("    Traegt das, ist es ein Hinweis fuer genau die Ziele, bei")
+            print("    denen bisher gar keiner vorlag — also fuer die Mehrheit.")
+
     print("\n=== Umgebung: erklaert sie, wann es laeuft und wann nicht? ===")
     # Drei Messreihen liefen bis zum 2026-09-12 ohne einen einzigen Leser:
     # band_noise, solar_log und swr_log wurden geschrieben, neunzig Tage
