@@ -5264,9 +5264,6 @@ class Orchestrator:
         Minuten, also gut dreissig Abfragen je Stunde, mit Pausen
         dazwischen. Faellt der Dienst aus, faellt nur diese Beobachtung aus.
         """
-        import urllib.parse
-        import urllib.request
-
         mein_grid = (self.config.operator.default_locator
                      or self.state_machine.ctx.my_grid or "")[:6]
         if not mein_grid:
