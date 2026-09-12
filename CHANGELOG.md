@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.121.0 — 2026-09-12
+- fix: QRZ-Logbuchabgleich lief 81-mal in 48 Stunden statt zweimal
+
 ## v0.120.0 — 2026-09-12
 - fix: Strict-Modus und Fehlschlag-Eskalation ueberleben den Neustart
 - fix: hamqsl-Abruf am gemessenen Stundenrhythmus statt am geratenen
