@@ -72,7 +72,7 @@ def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
       * busy_timeout=30s: ein kurzzeitiger Lock wartet statt sofort
         "database is locked" zu werfen (das fuetterte den stillen
         QSO-Verlust in _do_log_qso).
-      * synchronous=NORMAL: SD-karten-freundlich + unter WAL crash-safe.
+      * synchronous=FULL (seit 2026-09-12; vorher NORMAL fuer SD-Karten).
     """
     global _engine, _sessionmaker, _db_path
     is_memory = db_path is None or str(db_path) == ":memory:"
@@ -92,7 +92,14 @@ def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
             cur = dbapi_conn.cursor()
             try:
                 cur.execute("PRAGMA journal_mode=WAL")
-                cur.execute("PRAGMA synchronous=NORMAL")
+                # FULL statt NORMAL seit 2026-09-12. NORMAL war "SD-karten-
+                # freundlich"; der Pi bootet seit dem 09.09. von NVMe, wo der
+                # Unterschied nicht messbar ist. Unter WAL heisst NORMAL: nach
+                # einem Stromausfall koennen die letzten committeten
+                # Transaktionen fehlen (DB bleibt konsistent). FULL schliesst
+                # das aus. Nachgestellt mit kill -9: beide Modi halten, aber
+                # nur FULL deckt auch den verlorenen OS-Cache ab.
+                cur.execute("PRAGMA synchronous=FULL")
                 cur.execute("PRAGMA busy_timeout=30000")
             finally:
                 cur.close()

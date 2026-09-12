@@ -355,7 +355,7 @@ Additional modes:
 - **20-tier hunting picker** (configurable priority order,
   `OperatingConfig.hunt_priority`, drag-and-drop in the UI): lexicographic
   scoring across tiers such as `not_bad_reputation`, `not_in_pileup`,
-  `tail_end_target`, `grayline`, `band_open`, `buddy_seen`, `new_dxcc(_band)`,
+  `tail_end_target`, `grayline` (coordinates since v0.135.0 from the decode's grid, falling back to the cty.dat entity centre — which sat a median 1130 km off for North America), `band_open`, `buddy_seen`, `new_dxcc(_band)`,
   `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
   `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
@@ -456,7 +456,7 @@ Additional modes:
 
 **Data safety (audit 2026-05-30):** the irreplaceable log data is protected several ways over:
 - **Atomic config writes** (`util/atomicfile.py`): tmp + `fsync(file)` + `fsync(dir)` + rename, `.bak` snapshot, `0600`, process-wide write lock against concurrent writers. `PUT /api/config` no longer flattens operators/secrets (`preserve_secrets`: "empty = keep").
-- **SQLite robust:** WAL + `synchronous=NORMAL` + `busy_timeout=30s` (eliminates "database is locked" between QSO insert and upload drains).
+- **SQLite robust:** WAL + `synchronous=FULL` (since v0.135.0; NORMAL before, chosen for SD cards — the Pi boots from NVMe) + `busy_timeout=30s` (eliminates "database is locked" between QSO insert and upload drains).
 - **QSO spill:** if the DB write of a completed QSO fails (full SD/lock/corruption) → backup to `unlogged_qsos.jsonl` + ntfy alarm, automatic retry on the next success/start. **No silent QSO loss.**
 - **Daily DB backup** (`VACUUM INTO`, rotation 7) + **telemetry retention** (decode/pick_attempt/heard/swr/psk to 90 days; `qso` never).
 
