@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.137.3 — 2026-09-12
+- fix: Anmeldemaske erschien auch dort, wo der Server keinen Token verlangt
+
 ## v0.137.2 — 2026-09-12
 - fix: Deckkraft-Regler der MUF-Ebene war wirkungslos
 
