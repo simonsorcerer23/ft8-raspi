@@ -139,3 +139,75 @@ async def test_netz_wieder_da_setzt_den_pendelschutz_zurueck(kein_warten):
     await stub._ap_fallback_tick()
     assert stub._ap_rueckkehr_fehlversuche == 0
     assert stub._ap_aktiv_seit is None
+
+
+# ============================== Wie schnell kommt der Hotspot ueberhaupt?
+
+
+def _watchdog_stub(*, hatte_upstream: bool, delay: int = 60) -> SimpleNamespace:
+    geschaltet: list[bool] = []
+
+    async def ap_aktiv_f():
+        return False
+
+    async def upstream_f():
+        return False
+
+    async def set_ap(an: bool):
+        geschaltet.append(an)
+
+    stub = SimpleNamespace(
+        config=SimpleNamespace(network=SimpleNamespace(fallback_delay_s=delay)),
+        _AP_BETRIEB_FRIST_S=Orchestrator._AP_BETRIEB_FRIST_S,
+        _ap_hatte_upstream=hatte_upstream,
+        _ap_fallback_offline_since=None,
+        _ap_aktiv_seit=None,
+        _ap_rueckkehr_fehlversuche=0,
+        ap_fallback_is_active=ap_aktiv_f,
+        _has_upstream_connection=upstream_f,
+        set_ap_fallback=set_ap,
+    )
+    stub._geschaltet = geschaltet
+    stub._ap_fallback_tick = lambda: Orchestrator._ap_fallback_tick(stub)
+    return stub
+
+
+@pytest.mark.asyncio
+async def test_start_ohne_netz_oeffnet_den_hotspot_schnell():
+    """Der Feldeinsatz: die Station geht irgendwo an, wo kein bekanntes
+    Netz ist. Hier soll der Hotspot zuegig kommen."""
+    stub = _watchdog_stub(hatte_upstream=False, delay=60)
+    await stub._ap_fallback_tick()                    # merkt sich den Beginn
+    stub._ap_fallback_offline_since -= 61.0           # 61 s spaeter
+    await stub._ap_fallback_tick()
+    assert stub._geschaltet == [True]
+
+
+@pytest.mark.asyncio
+async def test_aussetzer_im_betrieb_loest_nicht_gleich_aus():
+    """Ein Router-Neustart dauert gut eine Minute. Danach den Hotspot zu
+    oeffnen und eine Viertelstunde dort zu bleiben, waere Unfug."""
+    stub = _watchdog_stub(hatte_upstream=True, delay=60)
+    await stub._ap_fallback_tick()
+    stub._ap_fallback_offline_since -= 300.0          # fuenf Minuten weg
+    await stub._ap_fallback_tick()
+    assert stub._geschaltet == [], "nach fuenf Minuten Aussetzer noch nichts"
+
+
+@pytest.mark.asyncio
+async def test_laengerer_ausfall_im_betrieb_oeffnet_ihn_doch():
+    """Wer mit laufender Station wegfaehrt, soll den Hotspot bekommen —
+    nur eben nicht nach einer Minute."""
+    stub = _watchdog_stub(hatte_upstream=True, delay=60)
+    await stub._ap_fallback_tick()
+    stub._ap_fallback_offline_since -= 601.0
+    await stub._ap_fallback_tick()
+    assert stub._geschaltet == [True]
+
+
+@pytest.mark.asyncio
+async def test_erstes_netz_schaltet_auf_die_lange_frist_um(kein_warten):
+    stub = _stub(ap_aktiv=False, upstream=[True])
+    stub._ap_hatte_upstream = False
+    await stub._ap_fallback_tick()
+    assert stub._ap_hatte_upstream is True

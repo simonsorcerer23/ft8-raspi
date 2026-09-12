@@ -8609,6 +8609,19 @@ class Orchestrator:
     # decken beides ab, ohne dass die Station lange ganz ohne Zugang ist.
     _AP_WLAN_GNADENFRIST_S: typing.ClassVar[float] = 90.0
     _AP_RUECKKEHR_MAX_S: typing.ClassVar[float] = 4 * 3600.0
+    # Hatte die Station in dieser Sitzung schon einmal Netz? Absichtlich nur
+    # im Arbeitsspeicher: nach einem Neustart soll wieder die kurze Frist
+    # gelten — ein Start ohne Netz ist der Feldeinsatz, da will man den
+    # Hotspot sofort.
+    _ap_hatte_upstream: bool = field(default=False, init=False)
+    # Faellt das Netz im laufenden Betrieb aus, ist das meist voruebergehend
+    # (Router-Neustart, Stoerung). fallback_delay_s steht auf 60 s — damit
+    # waere der Hotspot nach gut einer Minute da und nach der neuen Regel
+    # eine Viertelstunde geblieben, wegen eines Aussetzers, der sich von
+    # selbst erledigt. In vierzehn Tagen hat das WLAN hier kein einziges Mal
+    # ausgesetzt (2026-09-12), die kurze Frist ist also reine Vorsicht am
+    # falschen Ende.
+    _AP_BETRIEB_FRIST_S: typing.ClassVar[float] = 600.0
 
     async def _ap_fallback_tick(self) -> None:
         now = time.monotonic()
@@ -8620,11 +8633,18 @@ class Orchestrator:
             self._ap_fallback_offline_since = None
             self._ap_aktiv_seit = None
             self._ap_rueckkehr_fehlversuche = 0
+            self._ap_hatte_upstream = True
             return
-        delay = float(self.config.network.fallback_delay_s)
+        # Start ohne Netz → kurze Frist (Feldeinsatz). Aussetzer im Betrieb
+        # → abwarten, der kommt meist von selbst zurueck.
+        delay = (self._AP_BETRIEB_FRIST_S if self._ap_hatte_upstream
+                 else float(self.config.network.fallback_delay_s))
         if self._ap_fallback_offline_since is None:
             self._ap_fallback_offline_since = now
-            log.info("ap-fallback watchdog: kein Upstream — AP in %.0f s, falls das so bleibt", delay)
+            log.info("ap-fallback watchdog: kein Upstream — AP in %.0f s, "
+                     "falls das so bleibt (%s)", delay,
+                     "Aussetzer im Betrieb" if self._ap_hatte_upstream
+                     else "Start ohne Netz")
             return
         if now - self._ap_fallback_offline_since < delay:
             return
