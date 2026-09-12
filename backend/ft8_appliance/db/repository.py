@@ -8,7 +8,7 @@ handful of helpers that show up in more than one place.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +48,56 @@ async def insert_decode(session: AsyncSession, **fields: object) -> Decode:
     session.add(row)
     await session.flush()
     return row
+
+
+async def letzte_anruf_ergebnisse(
+    session: AsyncSession, *, limit: int = 20,
+) -> list[bool]:
+    """Die Ausgaenge der letzten eigenen Anrufe, neueste zuerst.
+
+    Fuer den Strict-Modus, dessen Fenster sonst jeden Neustart neu gefuellt
+    werden muesste — bei 40 Neustarts auf 494 Anrufe wird es nie voll.
+    """
+    res = await session.execute(
+        select(PickAttempt.outcome)
+        .where(PickAttempt.pick_kind == "cq")
+        .where(PickAttempt.outcome.isnot(None))
+        .order_by(PickAttempt.ts.desc())
+        .limit(limit)
+    )
+    return [row[0] == "completed" for row in res.all()]
+
+
+async def fehlversuche_je_call(
+    session: AsyncSession, *, stunden: int = 6,
+) -> dict[str, tuple[int, datetime]]:
+    """Fehlgeschlagene Anrufe je Rufzeichen seit dem letzten Erfolg.
+
+    Fuer die Eskalation des Fehlschlag-Cooldowns, die sonst jeden Neustart
+    bei null beginnt. Nur Versuche nach dem letzten erfolgreichen QSO mit
+    derselben Station zaehlen — ein gegluecktes QSO loescht die Historie,
+    genau wie im laufenden Betrieb.
+
+    Rueckgabe: ``{Rufzeichen: (Anzahl, letzter Versuch)}``.
+    """
+    grenze = datetime.now(UTC) - timedelta(hours=stunden)
+    res = await session.execute(
+        select(PickAttempt.target_call, PickAttempt.outcome, PickAttempt.ts)
+        .where(PickAttempt.pick_kind == "cq")
+        .where(PickAttempt.ts >= grenze)
+        .order_by(PickAttempt.ts.asc())
+    )
+    stand: dict[str, tuple[int, datetime]] = {}
+    for call, ausgang, ts in res.all():
+        if not call:
+            continue
+        key = call.upper()
+        if ausgang == "completed":
+            stand.pop(key, None)          # Erfolg loescht die Serie
+            continue
+        n = stand.get(key, (0, ts))[0]
+        stand[key] = (n + 1, ts)
+    return stand
 
 
 async def merge_heard_report(

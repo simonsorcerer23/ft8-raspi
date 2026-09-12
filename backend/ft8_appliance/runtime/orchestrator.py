@@ -871,6 +871,8 @@ class Orchestrator:
         # jedem Update jede gerade gearbeitete Station wieder freigegeben.
         await self._restore_qso_cooldowns()
         await self._restore_slot_parity()
+        await self._restore_hunt_outcomes()
+        await self._restore_fehlversuche()
         self._restore_psk_cache()
         self._restore_filter_drops()
         bm = self.config.operating.boot_mode
@@ -2433,6 +2435,96 @@ class Orchestrator:
         if gelernt:
             log.info("Slot-Paritaeten aus den Decodes wiederhergestellt: %d Rufzeichen "
                      "(aus %d beobachteten)", gelernt, len(stimmen))
+
+    async def _restore_fehlversuche(self) -> None:
+        """Fehlschlag-Cooldown und seine Eskalation zurueckholen.
+
+        Nach einem erfolglosen Anruf bekommt die Station eine Sperrfrist —
+        ``qso_failed_cooldown_min`` (15), bei Wiederholung mal
+        ``qso_failed_cooldown_repeat_multiplier`` (1,7), gedeckelt auf
+        ``qso_failed_cooldown_max_min`` (60). Sechs Versuche sollten sich
+        damit ueber rund dreieinhalb Stunden verteilen.
+
+        Beide Groessen — die laufende Sperre und der Zaehler, der sie
+        eskaliert — lebten nur im Arbeitsspeicher. Bei einem Neustart alle
+        gut siebzig Minuten kam die Eskalation nie ueber die zweite Stufe
+        hinaus. Messbare Folge am 2026-09-12: UT7UJ sechsmal vergeblich
+        angerufen **in zwei Stunden**, EH2PDA fuenfmal in zweieinhalb,
+        VE3ARF viermal in weniger als zwei.
+
+        Fuenfter Fall derselben Art nach Erfolgs-Cooldown, Slot-Paritaeten,
+        PSK-Liste und den Anrufergebnissen des Strict-Modus.
+        """
+        op = self.config.operating
+        try:
+            basis_s = float(getattr(op, "qso_failed_cooldown_min", 15)) * 60.0
+            faktor = float(getattr(op, "qso_failed_cooldown_repeat_multiplier", 1.7))
+            deckel_s = float(getattr(op, "qso_failed_cooldown_max_min", 60)) * 60.0
+        except Exception:
+            return
+        if basis_s <= 0:
+            return
+        try:
+            async with session_scope() as s:
+                stand = await repository.fehlversuche_je_call(s, stunden=6)
+        except Exception as exc:
+            log.warning("Fehlversuche nicht wiederherstellbar: %s", exc)
+            return
+        if not stand:
+            return
+        ctx = self.state_machine.ctx
+        jetzt = datetime.now(UTC).timestamp()
+        gesetzt = 0
+        for call, (anzahl, letzter) in stand.items():
+            ctx.failed_attempt_counts[call] = anzahl
+            dauer = min(basis_s * (faktor ** max(0, anzahl - 1)), deckel_s)
+            if letzter.tzinfo is None:
+                letzter = letzter.replace(tzinfo=UTC)
+            bis = letzter.timestamp() + dauer
+            if bis > jetzt:
+                ctx.recent_until[call] = bis
+                gesetzt += 1
+        log.info("Fehlversuche wiederhergestellt: %d Rufzeichen, davon %d noch "
+                 "in der Sperrfrist", len(stand), gesetzt)
+
+    async def _restore_hunt_outcomes(self) -> None:
+        """Die letzten Anrufergebnisse aus der Telemetrie zurueckholen.
+
+        Der Strict-Modus soll nach einer schlechten Serie vorsichtiger
+        werden: Bleiben in ``hunt_poor_run_window`` Versuchen weniger als
+        ``hunt_poor_run_min_successes`` erfolgreich, verlangt er fuer einige
+        Minuten mehr Evidenz. Die Liste der Ergebnisse lebte aber nur im
+        Arbeitsspeicher, und der Code steigt vorher aus::
+
+            if len(outcomes) < window:
+                return
+
+        Nach jedem Neustart faengt die Zaehlung also bei null an — und
+        Neustarts sind Alltag. Gemessen ueber 48 Stunden: **40 Neustarts
+        gegen 494 Anrufe, im Mittel 12,3 je Intervall.** Das Fenster von
+        zwanzig wurde damit so gut wie nie voll, und der Strict-Modus hat in
+        zwei Tagen kein einziges Mal gegriffen.
+
+        Vierter Fall derselben Art nach Erfolgs-Cooldown, Slot-Paritaeten
+        und PSK-Liste — beim Aufraeumen am 2026-09-11 uebersehen.
+        """
+        try:
+            fenster = max(1, int(self.config.operating.hunt_poor_run_window))
+        except Exception:
+            return
+        try:
+            async with session_scope() as s:
+                zeilen = await repository.letzte_anruf_ergebnisse(s, limit=fenster)
+        except Exception as exc:
+            log.warning("Anrufergebnisse nicht wiederherstellbar: %s", exc)
+            return
+        if not zeilen:
+            return
+        # Aelteste zuerst — die Liste wird hinten angehaengt.
+        self.state_machine.ctx.hunt_recent_outcomes = list(reversed(zeilen))
+        erfolge = sum(1 for ok in zeilen if ok)
+        log.info("Anrufergebnisse wiederhergestellt: %d Eintraege, %d erfolgreich",
+                 len(zeilen), erfolge)
 
     async def _restore_qso_cooldowns(self) -> None:
         """``worked_until`` nach einem Neustart aus dem Logbuch fuellen.
