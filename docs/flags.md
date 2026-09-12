@@ -298,9 +298,22 @@ dort aussichtsreicher, als ins Leere zu rufen.
 Fernzielen durch — dort ist die Entfernung kein Ausschluss, höchstens ein
 Rangkriterium.
 
-**Ausgenommen** ist alles, was uns etwas bringt: neues DXCC, neues Grid,
-Marine, Buddy, Grayline (`_is_award_or_context_pick`). Und ohne bekannte
-Entfernung wird nie gesperrt — im Zweifel rufen wir an.
+**Ausgenommen** ist nur, was wirklich selten ist: ein neues DXCC, eine
+Marine-Station, ein Eintrag auf der Wunschliste. Ohne bekannte Entfernung
+wird nie gesperrt — im Zweifel rufen wir an.
+
+Anfangs stand dort `_is_award_or_context_pick`, also auch ein neues
+Grid-Feld, Grayline und die Tageszeit-Statistik. Damit griff das Gate in
+der ersten Nacht **kein einziges Mal**: zwölf Fernziele im aktiven Arm,
+alle durchgelassen. Schuld war das Grid — von sieben Fernzielen jener
+Nacht hatten sechs ein neues Feld. Kein Wunder bei 123 gearbeiteten
+Feldern auf 206 QSOs: Mehr als jedes zweite QSO bringt eines, bei DX ist
+es praktisch garantiert. Die Ausnahme hatte die Regel aufgefressen.
+
+Ein neues DXCC ist etwas anderes: rund 340 Entitäten weltweit, das
+eigentliche Sammelziel, selten genug für einen Anruf mit geringer
+Aussicht. Ein Grid bei 1,3 % Erfolgsquote nicht — man bekommt es ja nur
+mit dem QSO, im Mittel also alle 77 Anrufe eines.
 
 `hunt_sole_dx_km` (Vorgabe 4000) setzt die Schwelle. Sie ist **nicht** scharf
 gemessen: Die Daten sagen nur, dass es irgendwo zwischen 2000 und 4000 km
@@ -347,7 +360,24 @@ from pick_attempt where fern_gate is not null group by 1;
 bringt. Plausibel, aber unbewiesen — genau dafür ist der A/B da. Sicher ist
 nur, dass die Alternative bei 2 % liegt.
 
-### `decoder_pre_decode` (2026-09-11, Vorgabe aus)
+### `decoder_pre_decode` (2026-09-11, Vorgabe aus — **gemessen wirkungslos**)
+
+> **Ergebnis der A/B-Messung vom 11./12.9.: abgeschaltet.** Der Umbau tut,
+> was er soll (Sendeversatz 0,05 s statt 0,995 s, 98 % der Aussendungen
+> unter 0,1 s), aber das ändert nichts am Erfolg: Wer geantwortet hat,
+> bekam im Mittel einen Anruf mit 0,856 s Versatz, wer nicht antwortete,
+> mit 0,767 s — der Unterschied geht in die falsche Richtung. In diesem
+> Bereich ist Pünktlichkeit keine wirksame Größe; FT8 sucht ±2,5 s.
+>
+> **Er kostet sogar.** Dem frühen Durchgang fehlen die letzten 1,3 s, und
+> nach den Filtern bleibt ihm fast immer nur ein Kandidat: 1,06 statt 1,28
+> je Anruf, 94 % statt 78 % ohne jede Alternative. Auswahl ist aber das
+> Wertvollste, was der Picker hat — mit zwei oder mehr Kandidaten liegt
+> die Abschlussquote bei 39,1 %, mit einem bei 17,8 %.
+>
+> Der Schalter bleibt für spätere Versuche, steht aber auf aus.
+
+
 
 Der Decoder beginnt sonst erst an der Slot-Grenze und braucht 0,5–1,0 s.
 Die Sendung geht dadurch im Mittel **1,07 s** nach der Grenze raus, während

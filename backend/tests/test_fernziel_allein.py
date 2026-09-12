@@ -287,3 +287,56 @@ def test_ohne_gate_bliebe_der_zaehler_stehen():
 
     assert sm.ctx.idle_slots_without_pick == 0
     assert sm.state is not State.IDLE
+
+
+# ------------------------- was die Ausnahme darf und was nicht (12.9.)
+def test_neues_grid_hebelt_das_gate_nicht_mehr_aus():
+    """Der Fehler der Nacht vom 11. auf den 12.9.: Das Gate griff kein
+    einziges Mal, zwoelf Fernziele im aktiven Arm gingen durch.
+
+    Ursache war die Ausnahme fuer neue Grid-Felder. Von sieben Fernzielen
+    jener Nacht hatten sechs ein neues Grid — kein Wunder bei 123
+    gearbeiteten Feldern auf 206 QSOs. Bei DX ist ein neues Grid praktisch
+    garantiert, die Ausnahme frass also die Regel."""
+    sm = _sm()
+    sm.ctx.worked_grids = set()          # jedes Grid ist neu
+    sm.ctx.worked_grid_band = set()
+
+    assert sm._ist_aussichtsloses_fernziel(FERN) is True
+
+
+def test_neues_dxcc_geht_weiterhin_durch():
+    """Rund 340 Entitaeten weltweit, das eigentliche Sammelziel — selten
+    genug, dass sich ein Anruf mit geringer Aussicht lohnt."""
+    sm = _sm()
+    sm.ctx.new_dxcc_calls = {"W3ABC"}
+
+    assert sm._ist_aussichtsloses_fernziel(FERN) is False
+
+
+def test_marine_geht_weiterhin_durch():
+    sm = _sm()
+    sm.ctx.marine_calls = {"W3ABC"}
+
+    assert sm._ist_aussichtsloses_fernziel(FERN) is False
+
+
+def test_wunschliste_uebersteuert_das_gate():
+    """Wer dort steht, ist eine bewusste Entscheidung des Operators — eine
+    angekuendigte DXpedition darf nicht an einer Statistik scheitern."""
+    sm = _sm()
+    sm.ctx.watchlist_calls = {"W3ABC"}
+
+    assert sm._ist_aussichtsloses_fernziel(FERN) is False
+
+
+def test_grayline_hebelt_das_gate_nicht_mehr_aus():
+    """Grayline und Tageszeit sind Ausbreitungs-Heuristiken, keine
+    Seltenheit — und nachts trafen sie auf fast jedes Fernziel zu."""
+    import inspect
+    q = inspect.getsource(StateMachine._ist_aussichtsloses_fernziel)
+    # Nur den Code pruefen — im Docstring steht der alte Name bewusst
+    # weiter, als Erklaerung des Fehlers.
+    code = q.split('"""', 2)[-1]
+    assert "_is_award_or_context_pick" not in code
+    assert "new_dxcc_calls" in code
