@@ -137,6 +137,7 @@ ERWARTETE_ABSCHNITTE = (
     "Bandrand",
     "Filterstufen ueber die Tage",
     "Umgebung",
+    "Ersatz fuer den fehlenden Empfangsbeleg",
 )
 
 
@@ -206,3 +207,30 @@ def test_umgebung_sagt_wann_die_daten_reichen(ausgabe):
     abschnitt = ausgabe.split("=== Umgebung")[1]
     assert "zu wenige" in abschnitt or "auswertbar" in abschnitt
     assert "Ballast" in abschnitt
+
+
+def test_ersatzbeleg_wird_bewertet(ausgabe):
+    """Der eigene Empfangsbeleg fehlt bei zwei Dritteln der Ziele. Ob es
+    als Ersatz taugt, wenn uns jemand anderes aus derselben Gegend hoert,
+    ist die aussichtsreichste offene Frage — sie gehoert in jede Bilanz."""
+    abschnitt = ausgabe.split("=== Ersatz fuer den fehlenden")[1]
+    assert "ohne eigenen" in abschnitt
+    assert "Nachbar" in abschnitt
+
+
+def test_ersatzbeleg_urteilt_nur_ohne_eigenen(ausgabe):
+    """Mit eigenem Beleg braucht es keinen Ersatz — ein Urteil ueber alle
+    Faelle zusammen wuerde den Effekt verwaessern.
+
+    GRENZE dieses Tests: Er prueft die Beschriftung und dass ueberhaupt
+    ein Urteil faellt, nicht die Auswahl dahinter. Eine Mutationsprobe,
+    die das Urteil ueber alle Faelle statt nur ueber die ohne eigenen
+    Beleg rechnet, rutscht hier durch (nachgewiesen 2026-09-12). Mit den
+    zwoelf Datensaetzen des Rauchtests laesst sich das nicht trennen —
+    die Statistik meldet dann ohnehin "zu wenig". Wer die Auswahl
+    absichern will, braucht einen eigenen Test auf der Logik, nicht auf
+    der Ausgabe."""
+    abschnitt = ausgabe.split("=== Ersatz fuer den fehlenden")[1]
+    if "Ohne eigenen Beleg:" in abschnitt:
+        zeile = [z for z in abschnitt.split("\n") if "Ohne eigenen Beleg:" in z][0]
+        assert any(w in zeile for w in ("Rauschen", "echt", "sicher", "zu wenig"))
