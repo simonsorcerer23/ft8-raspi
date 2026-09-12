@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.137.0 — 2026-09-12
+- feat: MUF-Weltkarte als Kartenebene
+
 ## v0.136.0 — 2026-09-12
 - feat: Stunden-Tier aus der Anruf-Telemetrie statt aus der QSO-Tabelle
 - fix: aeltere DB-Kopien rissen die Bilanz ab
