@@ -5171,16 +5171,17 @@ class Orchestrator:
     async def _solar_refresh_loop(self) -> None:
         """v0.14.0 — Periodischer hamqsl-Refresh fuer Band-Conditions.
 
-        hamqsl-Cache hat 30 min TTL (siehe HamQslClient.cache_ttl_s) →
-        wir poll'en alle 30 min damit ctx.band_conditions_day/night
-        aktuell bleibt fuer den `band_open`-Tier.
+        hamqsl.com stempelt seine Daten stuendlich — nachgemessen am
+        2026-09-12 (03:28 → 04:28 GMT). Der fruehere Halbstundentakt holte
+        also zweimal je Stunde dieselben Zahlen; der Wert stand ohnehin nur
+        im `band_open`-Tier und in der Anzeige.
         """
         await asyncio.sleep(5)  # Boot-grace
         while True:
             try:
                 hamqsl = self.integrations.hamqsl
                 if hamqsl is None or not hamqsl.enabled:
-                    await asyncio.sleep(1800)
+                    await asyncio.sleep(3600)
                     continue
                 sd = await hamqsl.solar()
                 if sd is not None:
@@ -5200,7 +5201,7 @@ class Orchestrator:
                 raise
             except Exception as exc:
                 log.warning("solar-refresh hiccup: %s", exc)
-            await asyncio.sleep(1800)
+            await asyncio.sleep(3600)
 
     async def _persist_solar(self, sd) -> None:
         """Die Ausbreitungsbedingungen in die Historie schreiben.

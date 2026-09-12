@@ -41,7 +41,10 @@ class HamQslClient(Integration):
         *,
         enabled: bool = True,
         timeout: float = 5.0,
-        cache_ttl_s: float = 1800.0,
+        # Nachgemessen am 2026-09-12: hamqsl.com stempelt die Daten
+        # stuendlich (03:28 -> 04:28 GMT). Halbstuendlich abzufragen
+        # holte zweimal je Stunde dieselben Zahlen.
+        cache_ttl_s: float = 3600.0,
     ) -> None:
         super().__init__(
             enabled=enabled,
