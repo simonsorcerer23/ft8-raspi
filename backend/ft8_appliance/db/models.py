@@ -203,13 +203,19 @@ class BandNoise(Base):
     und am 2026-09-13 nochmal direkt am Geraet: 45 Abfragen ueber 90
     Sekunden bei vollem Band, alle 0.
 
-    Es liegt NICHT an hamlib. Deren Fehlerbericht zum IC-7300 (Issue 373)
-    listet mehrere falsche Befehlscodes, haelt aber ausdruecklich fest,
-    dass RAWSTR funktioniert; er ist geschlossen. Ueber dieselbe Anbindung
-    kommen Frequenz, Betriebsart, Betriebsspannung und die Reglerstellungen
-    einwandfrei. Es betrifft allein diese eine Abfrage, und die Ursache
-    liegt vermutlich am Geraet — ungeklaert, weil der Wert ohnehin nichts
-    beitraegt. Der
+    Das Geraet selbst meldet die Null. Am 2026-09-13 wurde der CI-V-Verkehr
+    des laufenden rigctld mitgeschnitten::
+
+        Frage:   fe fe 94 e0 15 02 fd
+        Antwort: fe fe e0 94 15 02 00 00 fd
+
+    Der Befehl ist der richtige (15 02 = S-Meter), die Adresse stimmt, das
+    Geraet antwortet — mit 00 00. Im selben Mitschnitt kommen Frequenz und
+    Betriebsart korrekt zurueck. Es liegt also weder an dieser Software noch
+    an hamlib: Deren Fehlerbericht zum IC-7300 (Issue 373) listet mehrere
+    falsche Befehlscodes, haelt aber ausdruecklich fest, dass RAWSTR
+    funktioniert, und ist geschlossen. Softwareseitig ist hier nichts zu
+    holen; bliebe die Firmware des Geraets. Der
     Orchestrator wusste das laengst und zog den RX-Pegel an anderer Stelle
     schon aus dem ALSA-Strom; diese Tabelle schrieb trotzdem das S-Meter
     mit. Deshalb ``rx_audio_dbfs`` daneben: derselbe Zeitpunkt, aber der
