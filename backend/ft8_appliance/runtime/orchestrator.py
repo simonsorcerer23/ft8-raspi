@@ -8484,10 +8484,7 @@ class Orchestrator:
             # bliebe sie auf "gescheitert" stehen, obwohl das QSO im Log
             # steht (vier Faelle in der ersten Woche).
             try:
-                asyncio.create_task(self._log_pick_attempt(call, "completed"))
-                asyncio.create_task(
-                    self._stemple_versuch_nach(call, datetime.now(UTC))
-                )
+                asyncio.create_task(self._telemetrie_erfolg(call))
             except Exception:
                 pass
             # Cooldown registrieren — Hunting-Picker überspringt diesen
@@ -9293,6 +9290,24 @@ class Orchestrator:
         except Exception as exc:
             log.warning("reputation bail-update failed for %s: %s", call, exc)
         await self._log_pick_attempt(call, "bailed", bail_reason=reason)
+
+    async def _telemetrie_erfolg(self, call: str | None) -> None:
+        """Die beiden Telemetrie-Schritte eines erfolgreichen QSOs, NACHEINANDER.
+
+        Als zwei getrennte Tasks gestartet lieferten sie sich ein Rennen:
+        Lief _stemple_versuch_nach zuerst, sah es nur die alte bailed-Zeile,
+        fand keinen gebuchten Erfolg und korrigierte sie — und gleich darauf
+        schrieb _log_pick_attempt die eigentliche completed-Zeile dazu. Ein
+        QSO stand dann mit zwei Erfolgen in der Telemetrie und trieb die
+        Quote nach oben. Am 2026-09-13 in sechs Stunden dreimal passiert
+        (YO6LM, CS7BMX, EA5D), schlimmer als der Fehler, den der Eingriff
+        beheben sollte.
+
+        Erst die regulaere Zeile, dann die Korrektur: Sie findet den frisch
+        gebuchten Erfolg und laesst die Finger davon.
+        """
+        await self._log_pick_attempt(call, "completed")
+        await self._stemple_versuch_nach(call, datetime.now(UTC))
 
     _NACHSTEMPEL_FENSTER_S = 900.0
     """Wie weit zurueck ein Versuch zu einem QSO gehoeren kann."""
