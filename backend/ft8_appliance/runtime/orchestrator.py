@@ -3168,21 +3168,11 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
-        actions = [
-            (
-                f"http, {_t('push.act_back_to_power', watts=expected_w)}, "
-                f"http://{host}:8000/api/control/tx-power, "
-                "method=POST, headers.content-type=application/json, "
-                f'body={{"watts":{expected_w}}}'
-            ),
-        ]
         await ntfy.notify(
             _t("push.power_tamper_msg", rig=rig_w, expected=expected_w),
             title=_t("push.tamper_settings_title"),
             priority="default",
             tags=["warning"],
-            actions=self._tok_actions(actions),
         )
 
     async def _notify_mode_tamper(self, rig_mode: str, expected_mode: str) -> None:
@@ -3190,21 +3180,11 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
-        actions = [
-            (
-                f"http, {_t('push.act_back_to_mode', mode=expected_mode)}, "
-                f"http://{host}:8000/api/control/set-mode, "
-                "method=POST, headers.content-type=application/json, "
-                f'body={{"mode":"{expected_mode}"}}'
-            ),
-        ]
         await ntfy.notify(
             _t("push.mode_tamper_msg", rig=rig_mode, expected=expected_mode),
             title=_t("push.tamper_mode_title"),
             priority="high",
             tags=["warning"],
-            actions=self._tok_actions(actions),
         )
 
     async def _notify_cq_idle_timeout(self, cq_count: int, elapsed_min: float) -> None:
@@ -3214,21 +3194,11 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
-        actions = [
-            (f"http, {_t('push.act_stop_cq')}, http://{host}:8000/api/control/stop, method=POST"),
-            (
-                f"http, {_t('push.act_to_hunting')}, http://{host}:8000/api/control/auto-answer, "
-                "method=POST, headers.content-type=application/json, "
-                'body={"enabled":true}'
-            ),
-        ]
         await ntfy.notify(
             _t("push.cq_idle_msg", min=f"{elapsed_min:.0f}", count=cq_count),
             title=_t("push.cq_idle_title"),
             priority="default",
             tags=["warning"],
-            actions=self._tok_actions(actions),
         )
 
     async def _notify_bandwidth_tamper(self, rig_bw: int, expected_bw: int) -> None:
@@ -5004,15 +4974,6 @@ class Orchestrator:
         if ntfy is None or not ntfy.enabled:
             return
         delta = actual_hz - expected_hz
-        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
-        actions = [
-            (
-                f"http, {_t('push.act_back_to_band', band=band.name)}, "
-                f"http://{host}:8000/api/control/set-freq, method=POST, "
-                "headers.content-type=application/json, "
-                f'body={{"freq_hz":{expected_hz}}}'
-            ),
-        ]
         await ntfy.notify(
             _t(
                 "push.freq_tamper_msg",
@@ -5022,7 +4983,6 @@ class Orchestrator:
             title=_t("push.freq_tamper_title"),
             priority="high",
             tags=["warning"],
-            actions=self._tok_actions(actions),
         )
 
     def _frequency_tamper_ready(
@@ -5076,32 +5036,23 @@ class Orchestrator:
         return True
 
     async def _send_mode_alert(self, ntfy, message: str, target_mode: str) -> None:
-        """Schickt einen Mode-Alert mit Action-Buttons (Hunt/CQ-Start).
+        """Meldet, dass der Auto-Modus nicht laeuft.
 
-        ``target_mode`` ist nur für die Action-URLs relevant (welche
-        Buttons wir anbieten). Der Titel zeigt einheitlich „Auto-Modus
-        inaktiv" — Sebastian-Feedback: „off-Modus inaktiv" liest sich
-        widersprüchlich, der User-mentale Begriff ist „Auto-Modus".
+        Der Titel zeigt einheitlich „Auto-Modus inaktiv" — Sebastian-
+        Feedback: „off-Modus inaktiv" liest sich widerspruechlich, der
+        gedankliche Begriff ist „Auto-Modus".
+
+        ``target_mode`` steuerte frueher, welche Aktionsknoepfe die Meldung
+        bekam. Die Knoepfe sind seit v0.141.0 weg (s. web/auth); der
+        Parameter bleibt, weil die Aufrufer ihn setzen und er den Anlass
+        beschreibt.
         """
         host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
-        # ntfy-Action-Format: "http, <label>, <url>, method=POST, body=<json>"
-        actions = [
-            (
-                f"http, {_t('push.act_start_hunting')}, http://{host}:8000/api/control/auto-answer, "
-                'method=POST, headers.content-type=application/json, '
-                'body={"enabled":true}'
-            ),
-            (
-                f"http, {_t('push.act_start_cq')}, http://{host}:8000/api/control/cq, "
-                "method=POST"
-            ),
-        ]
         await ntfy.notify(
             message,
             title=_t("push.mode_alert_title", host=host),
             priority="high",
             tags=["warning"],
-            actions=self._tok_actions(actions),
         )
 
     async def _daily_summary_loop(self) -> None:
@@ -7187,19 +7138,11 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
-        actions = [
-            (
-                f"http, {_t('push.act_unlock')}, "
-                f"http://{host}:8000/api/control/reset-lock, method=POST"
-            ),
-        ]
         await ntfy.notify(
             _t("push.swr_runaway_msg", swr=f"{swr:.2f}", hard=f"{hard:.2f}"),
             title=_t("push.swr_runaway_title"),
             priority="high",
             tags=["rotating_light"],
-            actions=self._tok_actions(actions),
         )
 
     async def _notify_swr_warn(self, swr: float, warn: float, hard: float) -> None:
@@ -8567,22 +8510,6 @@ class Orchestrator:
             # Action-Buttons damit Dad nach jedem QSO direkt vom
             # Lockscreen aus den Modus wechseln kann ohne in die
             # Web-UI rein zu müssen. Tap = HTTP POST gegen Pi-Tailnet.
-            host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
-            actions = [
-                (
-                    f"http, {_t('push.act_stop')}, http://{host}:8000/api/control/stop, "
-                    "method=POST"
-                ),
-                (
-                    f"http, {_t('push.act_hunting')}, http://{host}:8000/api/control/auto-answer, "
-                    "method=POST, headers.content-type=application/json, "
-                    'body={"enabled":true}'
-                ),
-                (
-                    f"http, {_t('push.act_cq')}, http://{host}:8000/api/control/cq, "
-                    "method=POST"
-                ),
-            ]
             # Sebastian v0.4.6: Mode mit in den Push damit auf einen
             # Blick erkennbar ist ob FT8 oder FT4. Format: "DK9XR 15m
             # FT4 IO91" — Mode zwischen Band und Grid einsortiert.
@@ -8592,7 +8519,6 @@ class Orchestrator:
                 title=title,
                 priority="high" if is_new_dxcc else "default",
                 tags=["radio", "new"] if is_new_dxcc else ["radio"],
-                actions=self._tok_actions(actions),
                 flag=qso_flag,
             ))
         if not self.db_enabled:
@@ -9126,21 +9052,6 @@ class Orchestrator:
             except Exception as exc:  # noqa: BLE001 — Wartung darf nie crashen
                 log.warning("Wartungslauf fehlgeschlagen: %s", exc)
             await asyncio.sleep(self._MAINTENANCE_INTERVAL_S)
-
-    def _tok_actions(self, actions: list[str]) -> list[str]:
-        """v0.37.0 — haengt den ntfy_action_token als ?token= an die
-        /api/control/-URLs der ntfy-Lockscreen-Buttons, damit sie trotz
-        API-Auth funktionieren. Der eng begrenzte Action-Token erlaubt nur
-        operative Toggles (siehe web/auth.ACTION_PATHS), keine Secrets/
-        Shutdown — selbst wenn das ntfy-Topic mitgelesen wird."""
-        atok = self.config.ntfy_action_token
-        if not atok:
-            return actions
-        import re
-        out = []
-        for a in actions:
-            out.append(re.sub(r"(/api/control/[a-z-]+)", r"\1?token=" + atok, a))
-        return out
 
     # ------------------------------------------------------------------ v0.36.0 QSO-Spill
     @staticmethod
@@ -9807,10 +9718,6 @@ class Orchestrator:
         # priority=urgent damit das Handy klingelt auch bei stumm-Modus.
         ntfy = self.integrations.ntfy
         if ntfy and ntfy.enabled:
-            host = self.config.operating.public_hostname or socket.gethostname() or "ft8"
-            actions = [
-                f"http, {_t('push.act_release_lock')}, http://{host}:8000/api/control/reset-lock, method=POST, clear=true",
-            ]
             # Tags fürs Symbol — warning fürs Allgemeine, antenna-Symbol
             # wenn SWR der Auslöser war (häufigster Lock-Grund).
             tags = ["warning"]
@@ -9825,7 +9732,6 @@ class Orchestrator:
                     ),
                     priority="urgent",
                     tags=tags,
-                    actions=self._tok_actions(actions),
                 )
             except Exception as exc:
                 log.warning("tx_locked ntfy push failed: %s", exc)

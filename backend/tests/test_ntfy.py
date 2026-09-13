@@ -69,30 +69,23 @@ def test_body_bleibt_zeichenkette():
     assert a["headers"]["content-type"] == "application/json"
 
 
-def test_alle_aktions_strings_des_orchestrators_ergeben_gueltiges_json():
-    """Jeder Knopf, den der Orchestrator baut, muss ntfy-tauglich sein.
+def test_orchestrator_baut_keine_aktionsknoepfe_mehr():
+    """Seit 2026-09-13 verschickt die Station Meldungen ohne Knoepfe.
 
-    Prueft die echten Formatvorlagen aus orchestrator.py: Nach dem Zerlegen
-    darf kein Wert einen Typ haben, den ntfy an dieser Stelle ablehnt —
-    clear/method als das, was sie sind, und alles JSON-serialisierbar.
+    Die Knoepfe trugen den Steuer-Token als Klartext in der Adresse, und
+    das ntfy-Topic (``ft8-dk9xr``) liegt auf einem oeffentlichen Dienst,
+    wo jeder jedes Topic abonnieren kann. Benutzt wurden sie nie — in den
+    Aufzeichnungen kein einziger Aufruf.
+
+    Der Test sperrt den Weg zurueck: Taucht wieder eine Aktions-Vorlage
+    im Orchestrator auf, faellt er.
     """
-    import json
     import pathlib
     import re
 
     import ft8_appliance.runtime.orchestrator as _orch
-    from ft8_appliance.integrations.ntfy import _parse_action
 
     src = pathlib.Path(_orch.__file__).read_text()
-    # f-String-Platzhalter durch Beispielwerte ersetzen, damit echte
-    # Aktions-Strings entstehen.
-    roh = re.findall(r'"(http, [^"]+)"', src) + re.findall(r"'(http, [^']+)'", src)
-    assert roh, "keine Aktions-Vorlagen gefunden — Test veraltet?"
-    for vorlage in roh:
-        s = re.sub(r"\{[^{}]*\}", "X", vorlage.replace("{{", "{").replace("}}", "}"))
-        a = _parse_action(s)
-        if a is None:
-            continue
-        json.dumps(a)  # muss serialisierbar sein
-        assert "clear" not in a or isinstance(a["clear"], bool), s
-        assert isinstance(a.get("method", ""), str), s
+    vorlagen = re.findall(r'"(http, [^"]+)"', src) + re.findall(r"'(http, [^']+)'", src)
+    assert not vorlagen, f"Aktions-Vorlagen wieder da: {vorlagen[:3]}"
+    assert "_tok_actions" not in src, "Token-Anhaengsel wieder da"

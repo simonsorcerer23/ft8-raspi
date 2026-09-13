@@ -996,6 +996,11 @@ class AppConfig(BaseModel):
     # localhost (127.0.0.1/::1) umgeht die Auth komplett (wer auf dem Pi
     # ist, hat eh via SSH vollen Zugriff — und self-update lebt dort).
     api_token: str | None = None
+    # 2026-09-13 ausser Dienst: Das Feld bleibt, damit bestehende
+    # config.yaml-Dateien weiter laden; gelesen wird es nirgends mehr, und
+    # beim Start wird ein vorhandener Wert geloescht. Grund: Er steckte in
+    # den Aktionsknoepfen der ntfy-Meldungen und lag damit im Klartext auf
+    # einem oeffentlichen Topic, dessen Name sich aus dem Rufzeichen ergibt.
     ntfy_action_token: str | None = None
 
     @model_validator(mode="before")

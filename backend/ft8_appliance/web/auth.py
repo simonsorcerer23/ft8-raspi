@@ -13,10 +13,15 @@ an ASGI middleware:
   * Everything under ``/api`` requires the **master token** (``api_token``)
     via ``Authorization: Bearer <t>`` or ``?token=<t>`` (the query form is
     needed for ``EventSource``/SSE which cannot set headers).
-  * A narrow **action token** (``ntfy_action_token``) is additionally
-    accepted, but ONLY for the operational control toggles in
-    :data:`ACTION_PATHS` — these are embedded in the ntfy lockscreen
-    buttons. It never grants config/secret/shutdown access.
+  * Bis 2026-09-13 wurde zusaetzlich ein enger **action token**
+    (``ntfy_action_token``) fuer die Steuerpfade akzeptiert; er steckte in
+    den Aktionsknoepfen der ntfy-Meldungen. Die Knoepfe sind weg, und mit
+    ihnen der Token: Das ntfy-Topic leitet sich aus dem Rufzeichen ab
+    (``ft8-dk9xr``) und liegt auf einem oeffentlichen Dienst, wo jeder
+    jedes Topic abonnieren kann — der Token stand also in jeder Meldung im
+    Klartext. Erreichbar war er nur deshalb nicht, weil die Knopf-Adresse
+    auf einen von aussen nicht aufloesbaren Hostnamen zeigte. Benutzt
+    wurden die Knoepfe nie.
   * If no ``api_token`` is configured at all, auth fails OPEN (the appliance
     stays reachable) — startup always generates one, so this is only a
     brief first-boot / misconfig safety valve, logged loudly.
@@ -32,18 +37,6 @@ from starlette.responses import JSONResponse
 
 log = logging.getLogger(__name__)
 
-# Control endpoints the narrow ntfy action token may invoke. Deliberately
-# excludes shutdown/reboot and everything outside /api/control.
-ACTION_PATHS: frozenset[str] = frozenset({
-    "/api/control/stop",
-    "/api/control/cq",
-    "/api/control/auto-answer",
-    "/api/control/reset-lock",
-    "/api/control/set-mode",
-    "/api/control/tx-power",
-    "/api/control/set-freq",
-    "/api/control/panic",
-})
 
 _LOCALHOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
 
@@ -96,7 +89,6 @@ async def auth_middleware(request: Request, call_next):
         cfg = None
 
     master = getattr(cfg, "api_token", None) if cfg else None
-    action = getattr(cfg, "ntfy_action_token", None) if cfg else None
 
     # Fail-open if unconfigured (startup always sets one — brief safety valve).
     if not master:
@@ -107,7 +99,4 @@ async def auth_middleware(request: Request, call_next):
     presented = _presented_token(request)
     if _eq(presented, master):
         return await call_next(request)
-    if _eq(presented, action) and path in ACTION_PATHS:
-        return await call_next(request)
-
     return JSONResponse(status_code=401, content={"detail": "unauthorized"})

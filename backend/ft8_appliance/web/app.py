@@ -88,9 +88,16 @@ async def _production_lifespan(app: FastAPI):
             if not cfg.api_token:
                 cfg.api_token = generate_token()
                 _tokens_generated = True
-            if not cfg.ntfy_action_token:
-                cfg.ntfy_action_token = generate_token()
+            # 2026-09-13: Der ntfy-Aktions-Token wird nicht mehr erzeugt und
+            # nicht mehr akzeptiert (s. web/auth). Ein vorhandener wird
+            # geloescht, damit er nicht in der config.yaml liegen bleibt —
+            # er stand ueber die Aktionsknoepfe im Klartext auf einem
+            # oeffentlichen ntfy-Topic.
+            if cfg.ntfy_action_token:
+                cfg.ntfy_action_token = None
                 _tokens_generated = True
+                logger.info("ntfy-Aktions-Token entfernt — die Knoepfe gibt es "
+                         "seit v0.141.0 nicht mehr")
             # Initialise the global SQLAlchemy engine + create tables.
             # create_all() is idempotent so re-running on every boot is fine.
             db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,10 +170,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         localhost (z.B. 'curl localhost:8000/api/auth/token' per SSH)."""
         from ..config import get_config
         cfg = get_config()
-        return {
-            "api_token": cfg.api_token,
-            "ntfy_action_token": cfg.ntfy_action_token,
-        }
+        return {"api_token": cfg.api_token}
 
     @app.post("/api/auth/token", include_in_schema=False)
     async def _set_auth_token(payload: dict) -> dict:
