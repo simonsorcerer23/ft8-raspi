@@ -7891,7 +7891,7 @@ class Orchestrator:
         """RX-Pegel aus dem ALSA-Capture-Strom.
 
         Workaround fuer den IC-7300/Hamlib-STRENGTH-Bug: das S-Meter des
-        Rigs kommt ueber hamlib als fester Wert zurueck und taugt als
+        Rigs steht an dieser Station konstant auf S0 und taugt als
         Rauschmass nicht. ``decode_source`` ist auf dem Pi die
         DecodePipeline mit ``slot_buffer``; auf einer Entwicklungsmaschine
         ein Closure ohne Puffer, dann liefert ``getattr`` None.
@@ -7922,9 +7922,12 @@ class Orchestrator:
 
         Gemessen wird beides: das S-Meter des Rigs und der RX-Pegel aus dem
         ALSA-Strom. Beim IC-7300 ist nur der zweite zu gebrauchen. Das
-        S-Meter kommt ueber hamlib als fester Wert zurueck — 275 Messungen
-        ueber sechs Stunden, jede exakt -54 dB (2026-09-12). Dass dieser
-        Bug existiert, stand an anderer Stelle im Orchestrator laengst im
+        S-Meter steht konstant auf S0 — 275 Messungen ueber sechs Stunden,
+        jede exakt -54 dB (2026-09-12), und am 13.09. direkt am Geraet
+        bestaetigt (45 Abfragen ueber 90 s bei vollem Band, alle 0). Nicht
+        hamlib ist schuld: Alles andere kommt ueber dieselbe Anbindung
+        korrekt an, s. Klassendoku von BandNoise. Dass der Wert nichts
+        taugt, stand an anderer Stelle im Orchestrator laengst im
         Kommentar; diese Reihe schrieb ihn trotzdem eine Nacht lang mit und
         sah dabei wie eine Messung aus.
         """

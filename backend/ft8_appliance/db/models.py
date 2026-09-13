@@ -197,9 +197,19 @@ class BandNoise(Base):
     Rauschen sind schwache Signale chancenlos, und genau die machen den
     Grossteil unserer Anrufe aus.
 
-    ``s_meter_db`` ist beim IC-7300 unbrauchbar: ueber hamlib kommt ein
-    fester Wert zurueck, nicht der Rauschflur. Nachgemessen am 2026-09-12 —
-    275 Messungen ueber sechs Stunden, jede einzelne exakt -54 dB. Der
+    ``s_meter_db`` ist an dieser Station unbrauchbar: Der Rohwert des
+    S-Meters (RAWSTR, 0..255) steht konstant auf 0, was umgerechnet -54 dB
+    ergibt — S0. Nachgemessen am 2026-09-12 (275 Messungen, alle -54 dB)
+    und am 2026-09-13 nochmal direkt am Geraet: 45 Abfragen ueber 90
+    Sekunden bei vollem Band, alle 0.
+
+    Es liegt NICHT an hamlib. Deren Fehlerbericht zum IC-7300 (Issue 373)
+    listet mehrere falsche Befehlscodes, haelt aber ausdruecklich fest,
+    dass RAWSTR funktioniert; er ist geschlossen. Ueber dieselbe Anbindung
+    kommen Frequenz, Betriebsart, Betriebsspannung und die Reglerstellungen
+    einwandfrei. Es betrifft allein diese eine Abfrage, und die Ursache
+    liegt vermutlich am Geraet — ungeklaert, weil der Wert ohnehin nichts
+    beitraegt. Der
     Orchestrator wusste das laengst und zog den RX-Pegel an anderer Stelle
     schon aus dem ALSA-Strom; diese Tabelle schrieb trotzdem das S-Meter
     mit. Deshalb ``rx_audio_dbfs`` daneben: derselbe Zeitpunkt, aber der
