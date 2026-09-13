@@ -727,6 +727,12 @@ class Orchestrator:
     # eigenem Salz — sonst faellt der Arm mit dem des Fernziel-Gates zusammen.
     _zellen_arm_slot: int = field(default=-1, init=False)
     _zellen_arm: bool = field(default=False, init=False)
+    # Letzter in config_history geschriebener Stand (maskiert), damit nicht
+    # jeder Knopfdruck eine identische Zeile erzeugt.
+    _config_stand_zuletzt: str | None = field(default=None, init=False, repr=False)
+    # Erkennung einer eingefrorenen S-Meter-Quelle, s. _s_meter_brauchbar.
+    _s_meter_letzter: int | None = field(default=None, init=False)
+    _s_meter_gleich: int = field(default=0, init=False)
     # (Slot-Index, Nachrichten) des letzten Vorab-Durchgangs — der
     # regulaere Durchgang ueberspringt sie, s. _vorab_neue_decodes.
     _vorab_verarbeitet: tuple[int, set[str]] | None = field(
@@ -2278,8 +2284,45 @@ class Orchestrator:
                 path,
                 yaml.safe_dump(d, default_flow_style=False, sort_keys=False),
             )
+            await self._merke_config_stand(d)
         except Exception as exc:
             log.warning("persist_config failed: %s", exc)
+
+    async def _merke_config_stand(self, roh: dict) -> None:
+        """Eine Zeile in die Aenderungshistorie — aber ohne Geheimnisse.
+
+        ``config_history`` war seit ihrer Anlage leer: definiert, nie
+        beschrieben. Damit liess sich nachtraeglich nicht sagen, seit wann
+        eine Einstellung gilt. Bei einem A/B ueber mehrere Tage verschiebt
+        eine Aenderung die Grundlinie, und in den Daten sieht das niemand.
+
+        Zwei Bedingungen, damit die Tabelle nutzbar bleibt:
+
+        *Ohne Geheimnisse.* In der Konfiguration stehen QRZ- und
+        ClubLog-Zugangsdaten, die API-Token der Oberflaeche und der
+        Hotspot-Schluessel. Die Datenbank wird gesichert und ausgewertet;
+        was einmal drin steht, ist aus alten Sicherungen nicht mehr zu
+        entfernen. ``config_snapshot.maskiere`` ersetzt sie vorher.
+
+        *Nur bei echter Aenderung.* Jeder Knopfdruck in der Oberflaeche
+        laeuft durch persist_config — ohne Vergleich stuende hier nach
+        einem Tag Bedienung eine vierstellige Zahl identischer Zeilen.
+        """
+        if not self.db_enabled:
+            return
+        try:
+            import yaml
+
+            from ..db.models import ConfigHistory
+            from ..util.config_snapshot import maskiere
+            text = yaml.safe_dump(maskiere(roh), default_flow_style=False, sort_keys=True)
+            if text == self._config_stand_zuletzt:
+                return
+            self._config_stand_zuletzt = text
+            async with session_scope() as s:
+                s.add(ConfigHistory(ts=datetime.now(UTC), yaml_snapshot=text))
+        except Exception as exc:
+            log.debug("Konfigurationsstand nicht gespeichert: %s", exc)
 
     def _boot_mode_from_state(self) -> str:
         """boot_mode aus den beiden Schaltern ableiten, statt ihn zu raten.
@@ -7919,6 +7962,39 @@ class Orchestrator:
         except Exception:
             pass
 
+    _S_METER_TOT_AB = 20
+    """Nach so vielen gleichen Werten in Folge gilt die Quelle als tot."""
+
+    def _s_meter_brauchbar(self, wert: int) -> int | None:
+        """Bewegt sich das S-Meter ueberhaupt?
+
+        Beim IC-7300 ueber hamlib nicht: Bis zum 2026-09-13 stand in jeder
+        der 1284 Zeilen exakt -54 dB. Eine Spalte, die immer denselben Wert
+        traegt, sieht aus wie eine Messung und ist keine — genau darauf ist
+        diese Station am 12.09. schon einmal hereingefallen.
+
+        Statt das Geraet fest zu verdrahten, merkt sich der Orchestrator,
+        wie oft der Wert in Folge gleich blieb. Ab der Schwelle schreibt er
+        NULL, sagt es einmal, und nimmt die Spalte wieder in Betrieb,
+        sobald sich etwas ruehrt. Ein Rig mit brauchbarem S-Meter verliert
+        dadurch nichts.
+        """
+        if wert == self._s_meter_letzter:
+            self._s_meter_gleich += 1
+        else:
+            if self._s_meter_gleich >= self._S_METER_TOT_AB:
+                log.info("S-Meter liefert wieder wechselnde Werte (%d dB) — "
+                         "die Spalte wird erneut gefuellt", wert)
+            self._s_meter_letzter = wert
+            self._s_meter_gleich = 1
+        if self._s_meter_gleich < self._S_METER_TOT_AB:
+            return wert
+        if self._s_meter_gleich == self._S_METER_TOT_AB:
+            log.info("S-Meter steht seit %d Messungen auf %d dB — Quelle gilt als "
+                     "tot, band_noise.s_meter_db bleibt ab jetzt leer",
+                     self._s_meter_gleich, wert)
+        return None
+
     async def _persist_rauschen(
         self, band: str, freq_hz: int, s_meter: int,
         rx_audio_dbfs: float | None = None,
@@ -7926,9 +8002,10 @@ class Orchestrator:
         """Fail-soft — eine Messreihe darf den Betrieb nie kosten."""
         try:
             from ..db.models import BandNoise
+            wert = self._s_meter_brauchbar(int(s_meter))
             async with session_scope() as s:
                 s.add(BandNoise(ts=datetime.now(UTC), band=band,
-                                freq_hz=freq_hz, s_meter_db=s_meter,
+                                freq_hz=freq_hz, s_meter_db=wert,
                                 rx_audio_dbfs=rx_audio_dbfs))
         except Exception as exc:
             log.debug("Rauschflur nicht gespeichert: %s", exc)
@@ -8395,8 +8472,19 @@ class Orchestrator:
             except Exception:
                 pass
             # v0.30.0 — Pick-Attempt-Telemetrie: erfolgreiches QSO.
+            #
+            # Zwei Faelle: Sind die Metadaten noch da, schreibt
+            # _log_pick_attempt die Zeile. Wurden sie beim Abbruch schon
+            # verbraucht — die Station gab auf, die Gegenstation meldete
+            # sich danach doch —, dann findet und korrigiert
+            # _stemple_versuch_nach die vorhandene bailed-Zeile. Ohne das
+            # bliebe sie auf "gescheitert" stehen, obwohl das QSO im Log
+            # steht (vier Faelle in der ersten Woche).
             try:
                 asyncio.create_task(self._log_pick_attempt(call, "completed"))
+                asyncio.create_task(
+                    self._stemple_versuch_nach(call, datetime.now(UTC))
+                )
             except Exception:
                 pass
             # Cooldown registrieren — Hunting-Picker überspringt diesen
@@ -9203,6 +9291,67 @@ class Orchestrator:
             log.warning("reputation bail-update failed for %s: %s", call, exc)
         await self._log_pick_attempt(call, "bailed", bail_reason=reason)
 
+    _NACHSTEMPEL_FENSTER_S = 900.0
+    """Wie weit zurueck ein Versuch zu einem QSO gehoeren kann."""
+
+    async def _stemple_versuch_nach(self, call: str | None, qso_start: datetime) -> None:
+        """Einen als gescheitert gebuchten Versuch korrigieren, wenn das QSO doch kam.
+
+        Der Ablauf, der das erzeugt: Die Station bricht ab (``went_silent``),
+        schreibt die Telemetrie-Zeile und wirft die Metadaten weg. Meldet
+        sich die Gegenstation danach doch noch und das QSO kommt zustande,
+        gibt es keinen Weg zurueck zu der Zeile — sie bleibt auf "bailed"
+        stehen. Ueber die erste Woche waren das vier von 1239 Abbruechen,
+        also 0,3 %; die Quoten verschiebt das nicht messbar, aber es macht
+        jede Einzelfallpruefung unzuverlaessig.
+
+        Korrigiert wird nur, was eindeutig ist: die juengste bailed-Zeile
+        VOR dem QSO, innerhalb des Fensters, und nur wenn fuer dasselbe
+        Rufzeichen in diesem Fenster nicht schon ein Erfolg gebucht ist.
+        Ein erneuter Anruf nach einem laengst gefahrenen QSO (Dupe) ist zu
+        Recht gescheitert und bleibt unangetastet — er liegt NACH dem QSO.
+        """
+        if not self.db_enabled:
+            return
+        key = base_call(call)
+        if not key:
+            return
+        try:
+            from sqlalchemy import select
+
+            from ..db.models import PickAttempt
+            frueh = qso_start - timedelta(seconds=self._NACHSTEMPEL_FENSTER_S)
+            async with session_scope() as s:
+                zeilen = list((await s.execute(
+                    select(PickAttempt)
+                    .where(PickAttempt.target_call == key)
+                    .where(PickAttempt.ts >= frueh)
+                    .where(PickAttempt.ts <= qso_start)
+                    .order_by(PickAttempt.ts.desc())
+                )).scalars())
+                if any(z.outcome == "completed" for z in zeilen):
+                    return          # schon korrekt gebucht
+                offen = next((z for z in zeilen if z.outcome != "completed"), None)
+                if offen is None:
+                    return
+                grund = offen.bail_reason or "bailed"   # vor dem Ueberschreiben lesen
+                # _as_utc, weil SQLite DateTime-Spalten tz-naiv zurueckgibt.
+                # Ohne das wirft die Subtraktion, der except-Block schluckt
+                # es, und das Nachstempeln greift nie — still. Genau so
+                # standen im Mai drei Wochen lang die Uploads (s. _as_utc).
+                _ts = _as_utc(offen.ts)
+                versatz = (qso_start - _ts).total_seconds()
+                offen.outcome = "completed"
+                offen.bail_reason = None
+                offen.nachgestempelt = True
+                log.info(
+                    "Versuch %s von %s stand auf '%s', das QSO kam %.0f s spaeter "
+                    "doch zustande — Telemetrie korrigiert",
+                    key, _ts.strftime("%H:%M:%S"), grund, versatz,
+                )
+        except Exception as exc:
+            log.debug("Nachstempeln fehlgeschlagen: %s", exc)
+
     async def _log_pick_attempt(
         self, call: str | None, outcome: str, *, bail_reason: str | None = None
     ) -> None:
@@ -9264,6 +9413,7 @@ class Orchestrator:
                     s,
                     ts=meta.get("ts") or datetime.now(UTC),
                     target_call=key,
+                    target_call_raw=meta.get("target_call_raw"),
                     user_callsign=self.config.operator.callsign,
                     psk_heard_us=bool(meta.get("psk_heard_us")),
                     was_worked=meta.get("was_worked"),

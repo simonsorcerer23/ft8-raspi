@@ -763,6 +763,8 @@ class StateMachine:
                     pick_kind = "to_us"
                 else:
                     pick_kind = "to_other"
+                # Das Rufzeichen wie auf dem Band — tgt ist der Basis-Call.
+                _roh_call = (best.call_from or "").upper().strip("<>") or None
                 self.ctx.hunt_attempt_meta[tgt] = {
                     "psk_heard_us": tgt in self.ctx.psk_heard_us
                     or call_u in self.ctx.psk_heard_us,
@@ -781,6 +783,7 @@ class StateMachine:
                     "pre_decode": bool(self.ctx.vorab_decode_aktiv),
                     "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
                     "zellen_arm": bool(self.ctx.zellen_arm),
+                    "target_call_raw": _roh_call,
                     "freq_offset_hz": best.freq_offset_hz,
                     "target_grid": best.grid,
                     # v0.64.0 — Picker-Diagnose + Kontext:
@@ -1485,6 +1488,7 @@ class StateMachine:
             return
         if len(self.ctx.hunt_attempt_meta) > 100:
             self.ctx.hunt_attempt_meta.clear()
+        _roh_call = (d.call_from or "").upper().strip("<>") or None
         self.ctx.hunt_attempt_meta[key] = {
             "psk_heard_us": key in self.ctx.psk_heard_us or call_u in self.ctx.psk_heard_us,
             "was_worked": call_u in self.ctx.worked or key in self.ctx.worked,
@@ -1508,6 +1512,7 @@ class StateMachine:
             # ja gerade darueber, ob wir in diesem Slot CQ rufen konnten.
             "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
             "zellen_arm": bool(self.ctx.zellen_arm),
+            "target_call_raw": _roh_call,
         }
 
     def _stamp_outcome_meta(self) -> None:
