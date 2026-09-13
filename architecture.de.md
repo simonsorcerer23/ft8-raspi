@@ -375,6 +375,19 @@ Zusätzliche Modi:
   waehrend einer Stoerung einen neuen Versuch aus. Der Zwischenspeicher
   liegt auf Platte und ueberlebt einen Neustart; sein Alter steht neben dem
   Umschalter, weil eine veraltete Karte genauso aussieht wie eine aktuelle.
+- **Push-Meldungen ohne Aktionsknoepfe (seit v0.141.0):** Die ntfy-Meldungen
+  trugen bis dahin Knoepfe (Stop, CQ, Hunting, Leistung, Band), deren
+  Adresse den engen ``ntfy_action_token`` im Klartext enthielt. Das Topic
+  leitet sich aus dem Rufzeichen ab (``ft8-dk9xr``) und liegt auf dem
+  oeffentlichen ntfy-Dienst, wo jeder jedes Topic abonnieren kann — der
+  Token stand also in jeder solchen Meldung offen. Erreichbar war er nur
+  deshalb nicht, weil die Knopf-Adresse auf einen von aussen nicht
+  aufloesbaren Hostnamen zeigte; das ist eine duenne Verteidigungslinie.
+  Genutzt wurden die Knoepfe nie (kein einziger Aufruf in den
+  Aufzeichnungen), und durch die automatische Umschaltung zwischen Hunting
+  und CQ sank der Nutzen weiter. Knoepfe, Token-Anhaengsel und der
+  Sonderpfad in der Middleware sind entfernt; ein vorhandener Token wird
+  beim Start aus der Konfiguration geloescht. Die Meldungen selbst bleiben.
 - **Konservative Hunt-Gates:** vor dem Tier-Scoring werden schwache einzelne
   Routine-CQs uebersprungen, wenn sie keinen Award-/Kontextwert und kein gutes
   Decode-/PSK-SNR haben. Nach einer schlechten Hunt-Serie geht der Picker

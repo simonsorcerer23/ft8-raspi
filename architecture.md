@@ -359,6 +359,18 @@ Additional modes:
   `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
   `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
+- **Push notifications without action buttons (since v0.141.0):** ntfy
+  messages used to carry buttons (stop, CQ, hunting, power, band) whose URL
+  embedded the narrow ``ntfy_action_token`` in clear text. The topic is
+  derived from the callsign (``ft8-dk9xr``) and lives on the public ntfy
+  service, where anyone can subscribe to any topic — so the token sat in
+  the open in every such message. It was unreachable only because the
+  button URL pointed at a hostname that does not resolve from outside,
+  which is a thin line of defence. The buttons were never used (not a
+  single call in the logs), and the automatic switch between hunting and CQ
+  made them less useful still. Buttons, token suffix and the middleware's
+  special case are gone; an existing token is deleted from the config at
+  startup. The notifications themselves stay.
 - **MUF world map as a map layer (since v0.137.0):** propagation data existed
   only as point-to-point values so far (`PathPrediction`, twenty target grids
   every fifteen minutes) — twenty paths cannot colour an area. The same

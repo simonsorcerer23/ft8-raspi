@@ -52,16 +52,26 @@ def test_wrong_token_rejected(client_authed: TestClient) -> None:
     assert r.status_code == 401
 
 
-def test_action_token_only_for_control_paths(client_authed: TestClient) -> None:
-    # Action-Token darf einen Control-Toggle (POST /api/control/stop)
-    a = client_authed.post("/api/control/stop", headers={"Authorization": f"Bearer {ACTION}"})
-    assert a.status_code != 401
-    # aber NICHT die Config lesen
-    c = client_authed.get("/api/config", headers={"Authorization": f"Bearer {ACTION}"})
-    assert c.status_code == 401
-    # und NICHT shutdown (nicht in ACTION_PATHS)
-    s = client_authed.post("/api/control/shutdown", headers={"Authorization": f"Bearer {ACTION}"})
-    assert s.status_code == 401
+def test_action_token_wird_nicht_mehr_akzeptiert(client_authed: TestClient) -> None:
+    """Der enge ntfy-Aktions-Token ist seit 2026-09-13 ausser Dienst.
+
+    Er steckte in den Aktionsknoepfen der Push-Meldungen und lag damit im
+    Klartext auf einem oeffentlichen ntfy-Topic, dessen Name sich aus dem
+    Rufzeichen ableitet (``ft8-dk9xr``) — und das Rufzeichen steht in einem
+    veroeffentlichten Blogartikel. Dass ihn niemand nutzen konnte, lag
+    allein daran, dass die Knopf-Adresse auf einen von aussen nicht
+    aufloesbaren Hostnamen zeigte. Benutzt wurden die Knoepfe nie.
+
+    Der Test haelt fest, dass er auch die Steuerpfade nicht mehr oeffnet —
+    sonst kaeme die Hintertuer bei einer spaeteren Aenderung still zurueck.
+    """
+    for pfad in ("/api/control/stop", "/api/control/cq",
+                 "/api/control/auto-answer", "/api/control/shutdown"):
+        r = client_authed.post(pfad, headers={"Authorization": f"Bearer {ACTION}"})
+        assert r.status_code == 401, f"{pfad} akzeptiert den alten Aktions-Token noch"
+    assert client_authed.get(
+        "/api/config", headers={"Authorization": f"Bearer {ACTION}"}
+    ).status_code == 401
 
 
 def test_static_spa_is_public(client_authed: TestClient) -> None:
