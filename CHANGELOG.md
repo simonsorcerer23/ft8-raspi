@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.141.0 — 2026-09-13
+- feat: Push-Meldungen ohne Aktionsknoepfe — der Steuer-Token lag offen
+
 ## v0.140.0 — 2026-09-13
 - fix: Nachstempeln buchte Erfolge doppelt — Wettlauf der beiden Telemetrie-Schritte
 - docs: das S-Meter meldet das Geraet selbst als Null — CI-V-Mitschnitt
