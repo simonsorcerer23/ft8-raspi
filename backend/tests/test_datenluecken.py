@@ -254,3 +254,59 @@ async def test_bereits_gebuchter_erfolg_wird_nicht_angefasst(db) -> None:
         zeilen = list((await s.execute(select(PickAttempt).order_by(PickAttempt.ts))).scalars())
     assert [z.outcome for z in zeilen] == ["bailed", "completed"], \
         "der erste Abbruch war echt und darf nicht mitkorrigiert werden"
+
+
+@pytest.mark.asyncio
+async def test_erfolg_wird_nicht_doppelt_gebucht(db) -> None:
+    """Die beiden Telemetrie-Schritte duerfen sich kein Rennen liefern.
+
+    Als getrennte Tasks gestartet lief _stemple_versuch_nach manchmal
+    zuerst, sah nur die alte bailed-Zeile, fand keinen gebuchten Erfolg
+    und korrigierte sie — und gleich darauf schrieb _log_pick_attempt die
+    eigentliche completed-Zeile dazu. Das QSO stand dann mit ZWEI
+    Erfolgen in der Telemetrie. Am 2026-09-13 in sechs Stunden dreimal
+    passiert, und es trieb die Quote nach oben: schlimmer als der Fehler,
+    den der Eingriff beheben sollte.
+    """
+    from sqlalchemy import select
+
+    from ft8_appliance.db.models import PickAttempt
+    from ft8_appliance.db.session import session_scope
+    from ft8_appliance.runtime.orchestrator import Orchestrator
+
+    jetzt = datetime.now(UTC)
+    async with session_scope() as s:      # der frueh abgebrochene Versuch
+        s.add(PickAttempt(
+            ts=jetzt - timedelta(seconds=300), target_call="YO6LM",
+            user_callsign="DK9XR", psk_heard_us=False,
+            outcome="bailed", bail_reason="went_silent",
+        ))
+
+    geschrieben: list[str] = []
+
+    class _O:
+        db_enabled = True
+        _NACHSTEMPEL_FENSTER_S = Orchestrator._NACHSTEMPEL_FENSTER_S
+
+        async def _log_pick_attempt(self, call, outcome, **kw):
+            """Wie im Betrieb: der zweite Pick hat eigene Metadaten."""
+            geschrieben.append(outcome)
+            async with session_scope() as s:
+                s.add(PickAttempt(
+                    ts=datetime.now(UTC) - timedelta(seconds=60),
+                    target_call=call, user_callsign="DK9XR",
+                    psk_heard_us=False, outcome=outcome,
+                ))
+
+        _stemple_versuch_nach = Orchestrator._stemple_versuch_nach
+
+    await Orchestrator._telemetrie_erfolg(_O(), "YO6LM")
+
+    async with session_scope() as s:
+        zeilen = list((await s.execute(select(PickAttempt))).scalars())
+    erfolge = [z for z in zeilen if z.outcome == "completed"]
+    assert len(erfolge) == 1, (
+        f"{len(erfolge)} Erfolge fuer ein QSO — die Quote waere zu hoch. "
+        f"Ausgaenge: {[z.outcome for z in zeilen]}"
+    )
+    assert geschrieben == ["completed"], "regulaere Zeile fehlt"
