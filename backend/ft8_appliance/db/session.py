@@ -158,10 +158,38 @@ async def _migrate_band_noise_columns(conn) -> None:
     Zeilen behalten NULL — sie enthalten ohnehin nur den konstanten Wert.
     """
     res = await conn.exec_driver_sql("PRAGMA table_info(band_noise)")
-    existing = {row[1] for row in res.fetchall()}
+    rows = res.fetchall()
+    existing = {row[1] for row in rows}
     if "rx_audio_dbfs" not in existing:
         await conn.exec_driver_sql(
             "ALTER TABLE band_noise ADD COLUMN rx_audio_dbfs FLOAT"
+        )
+    # 2026-09-13: s_meter_db darf NULL sein, sobald die Quelle als tot
+    # erkannt ist. SQLite kann NOT NULL nicht per ALTER entfernen, also
+    # bauen wir die Tabelle einmal um — nur wenn sie die alte Form hat.
+    nicht_null = any(r[1] == "s_meter_db" and r[3] for r in rows)
+    if nicht_null:
+        await conn.exec_driver_sql("ALTER TABLE band_noise RENAME TO band_noise_alt")
+        await conn.exec_driver_sql(
+            "CREATE TABLE band_noise ("
+            " id INTEGER NOT NULL PRIMARY KEY,"
+            " ts DATETIME NOT NULL,"
+            " band VARCHAR NOT NULL,"
+            " freq_hz INTEGER NOT NULL,"
+            " s_meter_db INTEGER,"
+            " rx_audio_dbfs FLOAT)"
+        )
+        await conn.exec_driver_sql(
+            "INSERT INTO band_noise (id, ts, band, freq_hz, s_meter_db, rx_audio_dbfs)"
+            " SELECT id, ts, band, freq_hz, s_meter_db,"
+            "        CASE WHEN 1=1 THEN rx_audio_dbfs END FROM band_noise_alt"
+        )
+        await conn.exec_driver_sql("DROP TABLE band_noise_alt")
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_band_noise_ts ON band_noise (ts)"
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_band_noise_band ON band_noise (band)"
         )
 
 
@@ -231,6 +259,12 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         # benutzte: Zellen-Quote aus der Anruf-Telemetrie (1) oder die
         # alte Stundenliste aus der QSO-Tabelle (0).
         "zellen_arm": "BOOLEAN",
+        # 2026-09-13 — das Rufzeichen wie auf dem Band, neben dem
+        # normalisierten target_call. Ohne das verliert jede Verknuepfung
+        # mit der QSO-Tabelle die portablen Stationen.
+        "target_call_raw": "TEXT",
+        # 2026-09-13 — nachtraeglich von "bailed" auf "completed" korrigiert.
+        "nachgestempelt": "BOOLEAN",
     }
     for name, ddl in cols.items():
         if name not in existing:

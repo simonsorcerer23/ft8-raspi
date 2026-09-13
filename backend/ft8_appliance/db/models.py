@@ -214,7 +214,11 @@ class BandNoise(Base):
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     band: Mapped[str] = mapped_column(String, index=True)
     freq_hz: Mapped[int] = mapped_column(Integer)
-    s_meter_db: Mapped[int] = mapped_column(Integer)
+    # NULL, sobald der Orchestrator die Quelle als tot erkannt hat: Ein
+    # Wert, der ueber zwanzig Messungen exakt gleich bleibt, ist keine
+    # Messung. Bis 2026-09-13 stand hier bei jeder der 1284 Zeilen -54 —
+    # eine gefuellte Spalte, die aussah wie ein Messwert und keiner war.
+    s_meter_db: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Der belastbare Wert (s. Klassendoku). NULL in Zeilen vor v0.131.0.
     rx_audio_dbfs: Mapped[float | None] = mapped_column(Float, nullable=True)
 
@@ -488,6 +492,18 @@ class PickAttempt(Base):
     # aus der Anruf-Telemetrie (True) oder die alte Stundenliste aus der
     # QSO-Tabelle (False)? Ohne die Spalte waere der Test nicht auswertbar.
     zellen_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    # 2026-09-13: das Rufzeichen so, wie es auf dem Band stand. target_call
+    # traegt den Basis-Call (LA/DM2RM -> DM2RM), weil Sperrfristen und
+    # Dupe-Erkennung ihn brauchen; das Logbuch speichert dagegen das volle.
+    # Wer beide Tabellen ueber das Rufzeichen verbindet, verlor deshalb
+    # stillschweigend jede portable Station. Jetzt steht beides da.
+    target_call_raw: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 2026-09-13: Der Versuch stand auf "bailed", das QSO kam trotzdem
+    # zustande — die Telemetrie-Zeile war beim Abbruch schon geschrieben
+    # und niemand kam darauf zurueck. Wird sie nachtraeglich korrigiert,
+    # steht das hier: sonst ersetzt eine unsichtbare Korrektur den
+    # unsichtbaren Fehler, und die Quote laesst sich nicht mehr pruefen.
+    nachgestempelt: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # 2026-09-07 A/B Antwortfrequenz: quiet | on_freq
     reply_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # Kam die Sendeentscheidung aus dem Vorab-Decode (vor der Slot-Grenze)
