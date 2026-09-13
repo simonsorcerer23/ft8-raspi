@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.139.0 — 2026-09-13
+- fix: vier Luecken in der Datenerfassung
+
 ## v0.138.0 — 2026-09-12
 - fix: Bilanz stuerzte im neuen A/B-Abschnitt ab, und urteilte bei zu duennen Daten
 
