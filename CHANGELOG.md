@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.146.0 — 2026-09-14
+- feat: Kandidatenprotokoll — jeder Kandidat eines Slots mit seinem Schicksal
+
 ## v0.145.0 — 2026-09-14
 - feat: Schwelle fuer schwache Ziele adaptiv und wertabhaengig
 
