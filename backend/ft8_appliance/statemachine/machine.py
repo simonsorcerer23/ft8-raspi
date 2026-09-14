@@ -2299,6 +2299,41 @@ class StateMachine:
             return dx or cqs
         return cqs
 
+    _SCHWACH_BONUS_DB: ClassVar[int] = 4
+    """Um so viel tiefer darf ein wertvolles Ziel liegen.
+
+    Vier Dezibel, weil die Messung dort eine Kante hat: Zwischen -17 und
+    -13 dB liegt die Abschlussquote bei rund 9,5 % und ist ueber den
+    ganzen Bereich flach; erst unter -17 dB faellt sie auf 4,4 %. Die
+    Standardschwelle von -13 dB schneidet also mitten durch einen glatten
+    Verlauf, und -17 dB ist die erste Stelle, an der sich wirklich etwas
+    aendert.
+    """
+
+    def _schwach_schwelle(self, d: DecodedMsg, grund: int) -> int:
+        """Ab welcher Signalstaerke lohnt DIESES Ziel einen Anruf?
+
+        Je wertvoller das Ziel, desto tiefer die Schwelle. Die Begruendung
+        ist ausdruecklich NICHT, dass wertvolle Ziele oefter antworten —
+        dafuer reichen die Daten nicht (schwache Ziele mit neuem DXCC:
+        drei von sechs, das ist zu wenig fuer eine Aussage). Sie ist, dass
+        ein neues DXCC mehr wert ist als ein weiteres Routine-QSO und
+        damit mehr Versuche rechtfertigt. Bei gleicher Trefferquote lohnt
+        sich der teurere Weg, wenn der Preis stimmt.
+
+        Nur eine Stufe, keine Skala: Ein feiner abgestuftes Verfahren
+        waere mit diesen Fallzahlen nicht mehr zu belegen.
+        """
+        call = (d.call_from or "").upper()
+        if not call:
+            return grund
+        wertvoll = (
+            call in self.ctx.new_dxcc_calls
+            or (d.call_from or "") in self.ctx.new_dxcc_calls
+            or self.ctx.rarity_scores.get(call, 0) >= 40
+        )
+        return grund - self._SCHWACH_BONUS_DB if wertvoll else grund
+
     def _buche_filter(self, name: str, vorher: int, nachher: int) -> int:
         """Haelt fest, wie viele Kandidaten eine Filterstufe entfernt hat."""
         if nachher < vorher:
@@ -2389,17 +2424,31 @@ class StateMachine:
             self._buche_filter("kontinent_gate", _v, len(cqs))
         # 2026-09-07: schwache Ziele nur mit PSK-Bestaetigung (Telemetrie:
         # unter -13 dB kamen 3 % zurueck, darueber 12 %).
-        if self.ctx.hunt_weak_requires_psk and self.ctx.schwach_arm:
+        if self.ctx.hunt_weak_requires_psk:
             weak = self.ctx.hunt_weak_snr_db
             _v = len(cqs)
-            cqs = [
+            uebrig = [
                 d for d in cqs
-                if d.snr_db is None or d.snr_db >= weak
+                if d.snr_db is None or d.snr_db >= self._schwach_schwelle(d, weak)
                 or (d.call_from or "").upper() in self.ctx.psk_heard_us
                 or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
                 or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
             ]
-            self._buche_filter("schwach_ohne_psk", _v, len(cqs))
+            # Adaptiv (Arm B): Der Filter greift nur, wenn danach noch
+            # etwas uebrig bleibt. Sonst waere die Entscheidung nicht
+            # "schwaches Ziel oder starkes", sondern "schwaches Ziel oder
+            # gar keins" — und dann kostet er, ohne etwas dafuer zu geben.
+            #
+            # Gemessen ueber die ganze Historie: Mit Auswahl bringt ein
+            # starkes Ziel 31,3 %, ein schwaches 9,7 % — da ist der Filter
+            # richtig. Ohne Auswahl bringt das schwache Ziel 8,4 %, und die
+            # Alternative ist null. 85 % aller Anrufe an schwache Ziele
+            # waren alternativlos; dort hat der Filter 35 QSOs gekostet.
+            if uebrig or self.ctx.schwach_arm:
+                cqs = uebrig
+                self._buche_filter("schwach_ohne_psk", _v, len(cqs))
+            else:
+                self._buche_filter("schwach_zurueckgenommen", 1, 0)
         # DT-Filter (Sebastian v0.5.4, Audit-Lücke 1 vs WSJT-X):
         # Stationen mit |dt_s| > 2.5s sind zwar decodebar (FT8-Decoder
         # toleriert mehr), aber ihr eigenes RX-Fenster ist schon zu

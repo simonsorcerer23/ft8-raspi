@@ -199,8 +199,10 @@ def test_filter_greift_nur_im_eigenen_arm() -> None:
     from pathlib import Path
     quelle = (Path(__file__).resolve().parents[1] / "ft8_appliance"
               / "statemachine" / "machine.py").read_text()
-    assert "if self.ctx.hunt_weak_requires_psk and self.ctx.schwach_arm:" in quelle, \
-        "Filter haengt nicht am A/B-Arm — der Test misst dann nichts"
+    assert "if uebrig or self.ctx.schwach_arm:" in quelle, \
+        "der Filter greift nicht mehr adaptiv — der A/B misst dann nichts"
+    assert "schwach_zurueckgenommen" in quelle, \
+        "die Ruecknahme wird nicht gezaehlt, also ist sie unsichtbar"
 
 
 def test_schwach_arm_hat_sinnvollen_grundzustand() -> None:
