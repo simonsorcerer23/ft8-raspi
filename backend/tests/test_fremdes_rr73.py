@@ -16,7 +16,13 @@ from datetime import UTC, datetime
 from ft8_appliance.statemachine.machine import (
     _find_closing, _find_report_from_them, _hashed_match, _ist_standard_call,
 )
-from ft8_appliance.statemachine.states import DecodedMsg
+from ft8_appliance.statemachine import (
+    DecodedMsg,
+    GuardLimits,
+    HardwareState,
+    MachineContext,
+    StateMachine,
+)
 
 
 def _d(call_from: str, call_to: str | None, message: str) -> DecodedMsg:
@@ -90,3 +96,65 @@ def test_hashed_match_direkt() -> None:
     assert _hashed_match(None, "DK9XR") is False
     assert _hashed_match("W1AW", "DK9XR") is False
     assert _hashed_match("W1AW", "DK9XR/P") is False, "fremder Call ist keine Wildcard"
+
+
+# ------------------------------------------------- Plausibilitaetssperre
+
+def _sm() -> StateMachine:
+    return StateMachine(ctx=MachineContext(callsign="DK9XR", my_grid="JN58td"),
+                        limits=GuardLimits())
+
+
+def _hw() -> HardwareState:
+    return HardwareState(gps_fix_mode=3, time_offset_s=0.01, swr=1.3,
+                         alc_pct=0, battery_v=13.4, cpu_temp_c=55.0)
+
+
+def test_ohne_antwort_an_uns_wird_nicht_geloggt() -> None:
+    """Die zweite Verteidigungslinie: Selbst wenn ein Abschluss
+    faelschlich als unserer gilt, verhindert die Sperre den Logeintrag.
+
+    Nachgestellt ist der Ablauf vom 13.09.: Wir antworten auf ein CQ,
+    die Station sendet nie an uns, aber ein Closing erreicht uns.
+    """
+    sm, hw = _sm(), _hw()
+    cq = _d("SM0FVI/3", None, "CQ SM0FVI/3")
+    sm.on_user_reply_to(hw, cq)
+    sm.drain_actions()
+    assert sm.qso is not None and sm.qso.partner_hat_uns_gerufen is False
+
+    # Ein Abschluss, der an einen Dritten ging — hier bewusst so gebaut,
+    # dass er die Sperre erreicht, falls die Rufzeichenpruefung versagt.
+    sm.qso.partner_hat_uns_gerufen = False
+    sm._emit_log_qso(hw)
+    assert not any(a.kind == "LOG_QSO" for a in sm.drain_actions()), \
+        "ohne eine einzige Sendung an uns darf nichts ins Log"
+
+
+def test_mit_antwort_an_uns_wird_geloggt() -> None:
+    sm, hw = _sm(), _hw()
+    sm.on_user_reply_to(hw, _d("W1AW", None, "CQ W1AW"))
+    sm.drain_actions()
+    sm.on_decodes(hw, [_d("W1AW", "DK9XR", "DK9XR W1AW -12")])
+    sm.drain_actions()
+    assert sm.qso is not None and sm.qso.partner_hat_uns_gerufen is True
+
+
+def test_flag_ueberlebt_slots_ohne_decode() -> None:
+    """Einmal an uns gesendet reicht — der Abschluss kommt oft Slots spaeter."""
+    sm, hw = _sm(), _hw()
+    sm.on_user_reply_to(hw, _d("W1AW", None, "CQ W1AW"))
+    sm.drain_actions()
+    sm.on_decodes(hw, [_d("W1AW", "DK9XR", "DK9XR W1AW -12")])
+    sm.drain_actions()
+    sm.on_decodes(hw, [_d("DL1ABC", "DL2XYZ", "DL2XYZ DL1ABC 73")])
+    assert sm.qso is not None and sm.qso.partner_hat_uns_gerufen is True
+
+
+def test_fremde_station_setzt_das_flag_nicht() -> None:
+    sm, hw = _sm(), _hw()
+    sm.on_user_reply_to(hw, _d("W1AW", None, "CQ W1AW"))
+    sm.drain_actions()
+    sm.on_decodes(hw, [_d("DL1ABC", "DK9XR", "DK9XR DL1ABC -12")])
+    assert sm.qso is not None and sm.qso.partner_hat_uns_gerufen is False, \
+        "ein Anruf von jemand anderem belegt dieses QSO nicht"

@@ -71,6 +71,9 @@ class QsoContext:
 
     their_call: str
     from_cq_fallback: bool = False   # 2026-09-07: QSO entstand aus dem CQ-Fallback
+    # Hat die Gegenstation im Verlauf jemals an UNSER Rufzeichen gesendet?
+    # Ohne das ist ein Abschluss nicht belegt — siehe _emit_log_qso.
+    partner_hat_uns_gerufen: bool = False
     their_grid: str | None = None
     their_snr: int | None = None  # snr we send them (= rst_sent fuer Log)
     our_snr_received: int | None = None  # snr they send us (= rst_rcvd fuer Log)

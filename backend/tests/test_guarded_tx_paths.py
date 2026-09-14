@@ -44,6 +44,11 @@ def _with_qso(sm: StateMachine) -> StateMachine:
     sm.qso = QsoContext(
         their_call="W1AW", their_grid="FN31", band="20m",
         freq_offset_hz=1500, their_snr=-10, our_snr_received=-15,
+        # Ein QSO kurz vor dem Abschluss hat immer eine Antwort an uns
+        # gesehen — our_snr_received oben ist genau die. Seit der
+        # Plausibilitaetssperre (2026-09-14) muss die Attrappe das auch
+        # sagen, sonst prueft sie einen Zustand, den es nicht gibt.
+        partner_hat_uns_gerufen=True,
     )
     return sm
 

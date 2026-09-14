@@ -294,6 +294,7 @@ def test_log_qso_carries_station_and_operator_calls():
         their_call="EA4XYZ", their_grid="IM98",
         band="15m", freq_offset_hz=1500,
         their_snr=-10, our_snr_received=-15,
+        partner_hat_uns_gerufen=True,   # siehe Plausibilitaetssperre
     )
     from ft8_appliance.statemachine.guards import HardwareState
     sm._emit_log_qso(HardwareState())  # Defaults = alle Guards gruen
