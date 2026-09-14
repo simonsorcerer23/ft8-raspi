@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.151.1 — 2026-09-14
+- fix: rigctld-Neustart durch den Envfile-Sync nur, wenn die Station nichts sendet
+
 ## v0.151.0 — 2026-09-14
 - feat: Yaesu FT-817/818 am Digirig Mobile als Rig — vorbereitet ohne Geraet
 
