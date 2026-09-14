@@ -145,6 +145,13 @@ prevents its own review, because the dropped candidates are never called.
 The balance sheet compares QSOs per hour across both arms and recomputes the
 wait time on silent partners from the stored decodes.
 
+On top of that a **rule register** (`ft8_appliance/analyse/regelregister.py`):
+every filter stage with its claim, its evidence including date and sample
+size, how to re-check it, and a 90-day expiry. Rules that estimate a success
+chance count as unproven after that until someone has re-measured. On the
+first of each month the appliance pushes what the data supports: control arm
+vs. rules, expired rules, yield per operating hour.
+
 This is what keeps the feature list honest. Measured results that changed the
 code:
 

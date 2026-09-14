@@ -40,14 +40,18 @@ Zwei Fallen, in die eine Auswertung sonst laeuft:
 from __future__ import annotations
 
 import argparse
-import math
-import statistics
 import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# Statistik und Regelregister kommen aus dem Backend-Paket — eine Formel,
+# ein Register, kein zweiter Namensraum. Nur Standardbibliothek dort.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+from ft8_appliance.analyse.regelregister import REGELN, stufen as _register_stufen, ueberfaellige  # noqa: E402
+from ft8_appliance.analyse.stochastik import n_fuer_nachweis, urteil, urteil_rate  # noqa: E402
 
 PI = "sebastian@100.77.48.117"
 FERN = "/var/lib/ft8-appliance/qso.sqlite"
@@ -116,84 +120,7 @@ def tabelle(zeilen: list[tuple], kopf: tuple[str, ...]) -> None:
 # Alle Stufen, die die Zustandsmaschine kennt. Ohne diese Liste faellt eine
 # Stufe ohne jeden Treffer gar nicht auf — sie fehlt dann einfach in der
 # Tabelle und sieht aus wie nicht vorhanden.
-ALLE_FILTERSTUFEN = {
-    "bandrand", "cooldown", "dt_fenster", "einzelner_schwacher_cq",
-    "fernziel_allein", "kontinent_gate", "pile_up", "schon_gearbeitet",
-    "schwach_ohne_psk", "slot_paritaet", "snr_floor", "soft_blacklist",
-    "strict_modus",
-}
-
-
-def urteil(k_a: int, n_a: int, k_b: int, n_b: int) -> str:
-    """Ist der Unterschied zweier Quoten echt oder Rauschen?
-
-    Zweiseitiger z-Test auf zwei Anteile, ohne scipy (auf dem Pi nicht
-    installiert). Rueckgabe ist eine kurze Klartextspalte fuer die Tabellen.
-
-    Warum das hier steht: Wir haben mehrfach Quoten verglichen und ueber
-    Unterschiede von fuenf Prozentpunkten geredet, ohne nachzurechnen, ob sie
-    ueberhaupt vom Zufall zu unterscheiden sind. Beim Bandrand-Filter waren es
-    11,9 % gegen 17,0 % bei n=59 — das sieht nach einem Befund aus und ist
-    keiner (z = -1,05). Ohne diese Spalte optimiert man irgendwann Rauschen.
-    """
-    if n_a < 1 or n_b < 1:
-        return "zu wenig"
-    p_a, p_b = k_a / n_a, k_b / n_b
-    p_gesamt = (k_a + k_b) / (n_a + n_b)
-    # Der z-Test naehert die Binomialverteilung durch die Normalverteilung.
-    # Das traegt erst, wenn in jeder Zelle rund fuenf Faelle erwartet werden
-    # (Faustregel n*p >= 5 und n*(1-p) >= 5). Darunter liefert die Formel
-    # zwar eine Zahl, aber keine Aussage: Am 12.09. stand an einem A/B mit
-    # 6 von 13 gegen 3 von 21 ein "z=-2,05 echt" — bei drei Erfolgen im
-    # zweiten Arm. Genau der Scheinbefund, den diese Spalte verhindern soll.
-    for _n in (n_a, n_b):
-        if _n * p_gesamt < 5 or _n * (1 - p_gesamt) < 5:
-            return "zu wenig"
-    nenner = p_gesamt * (1 - p_gesamt) * (1 / n_a + 1 / n_b)
-    if nenner <= 0:
-        return "zu wenig"
-    z = (p_a - p_b) / math.sqrt(nenner)
-    # NormalDist statt scipy: zweiseitiger p-Wert aus der Standardnormalen.
-    p_wert = 2 * (1 - statistics.NormalDist().cdf(abs(z)))
-    if p_wert < 0.01:
-        return f"z={z:+.2f} sicher"
-    if p_wert < 0.05:
-        return f"z={z:+.2f} echt"
-    return f"z={z:+.2f} Rauschen"
-
-
-def urteil_rate(k_a: int, t_a: float, k_b: int, t_b: float) -> str:
-    """Zwei Poisson-Raten (Ereignisse je Zeit) vergleichen.
-
-    Fuer QSOs je Stunde in zwei Armen. z aus der Differenz der Raten und
-    der Summe ihrer Varianzen (k/t^2). Unter fuenf Ereignissen je Arm
-    keine Aussage — die Normalnaeherung traegt dort nicht.
-    """
-    if min(k_a, k_b) < 5 or t_a <= 0 or t_b <= 0:
-        return "zu wenig"
-    r_a, r_b = k_a / t_a, k_b / t_b
-    se = math.sqrt(k_a / t_a ** 2 + k_b / t_b ** 2)
-    if se == 0:
-        return "?"
-    z = (r_a - r_b) / se
-    if abs(z) >= 2.58:
-        return f"echt (z={z:+.1f})"
-    if abs(z) >= 1.96:
-        return f"wahrscheinlich (z={z:+.1f})"
-    return f"Rauschen (z={z:+.1f})"
-
-
-def n_fuer_nachweis(p_erwartet: float, p_referenz: float) -> int | None:
-    """Wie viele Beobachtungen braeuchte es, damit dieser Unterschied
-    nachweisbar waere? Beantwortet die Frage "noch warten oder nie?"."""
-    if not 0 < p_erwartet < 1 or not 0 < p_referenz < 1:
-        return None
-    unterschied = abs(p_erwartet - p_referenz)
-    if unterschied < 1e-9:
-        return None
-    # z=1,96 fuer 5 %; Referenzquote als Streuungsschaetzer.
-    return int(math.ceil(
-        (1.96 ** 2) * p_referenz * (1 - p_referenz) / unterschied ** 2))
+ALLE_FILTERSTUFEN = _register_stufen()
 
 
 def main() -> int:
@@ -704,6 +631,28 @@ def main() -> int:
         print("    Kontrolle). Unter fuenf QSOs je Arm sagt die Zeile nichts.")
     else:
         print("    (Spalte kontroll_arm oder Tabelle state_time_daily fehlt — vor v0.148.0)")
+
+    print("\n=== Regelregister: welche Regel braucht einen frischen Beleg? ===")
+    # Jede Chancen-Regel traegt den Beleg, mit dem sie eingefuehrt wurde,
+    # und ein Verfallsdatum (90 Tage). Danach gilt sie als unbelegt, bis
+    # jemand nachgemessen und das Datum gesetzt hat. Das ist der Zwang,
+    # der fehlte: Der SNR-Floor stammt vom Mai, das Pile-Up-Gate hat nie
+    # einen Beleg gehabt. Technische Gates und Sperren verfallen nicht.
+    from datetime import UTC as _UTC, datetime as _dtm
+    heute = _dtm.now(_UTC).date()
+    zeilen = []
+    for r in sorted(REGELN, key=lambda r: (r.art != "chance", r.stufe)):
+        alter = f"{(heute - r.beleg_datum).days} d" if r.beleg_datum else "nie belegt"
+        status = ("UEBERFAELLIG" if r.ueberfaellig(heute)
+                  else ("verfaellt nicht" if r.art != "chance" else "gueltig"))
+        zeilen.append((r.stufe, r.art, str(r.beleg_datum or "-"), alter, status))
+    tabelle(zeilen, ("Stufe", "Art", "Beleg vom", "Alter", "Status"))
+    faellig = ueberfaellige(heute)
+    if faellig:
+        print(f"    {len(faellig)} Regel(n) ohne gueltigen Beleg. Nachmessen heisst:")
+        for r in faellig:
+            print(f"      {r.stufe}: {r.pruefung}")
+        print("    Danach beleg_datum im Register setzen (ft8_appliance/analyse/regelregister.py).")
 
     print("\n=== Umentscheiden: lohnt der Wechsel zu einem anderen Ziel? ===")
     # Gemessen 2026-09-12 ueber 448 Faelle: Der Wechsel ging genauso oft zu

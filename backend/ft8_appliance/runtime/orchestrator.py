@@ -1089,6 +1089,7 @@ class Orchestrator:
             self._spawn(self._sperr_waechter_loop(), name="sperr-waechter")
             self._spawn(self._upload_stau_waechter_loop(), name="upload-stau-waechter")
         self._spawn(self._daily_summary_loop(), name="daily-summary")
+        self._spawn(self._monats_pruefung_loop(), name="monats-pruefung")
         self._spawn(self._continent_prior_loop(), name="continent-prior")
         self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
         if (
@@ -5301,6 +5302,107 @@ class Orchestrator:
                 except Exception as exc:
                     log.warning("daily summary failed: %s", exc)
             await asyncio.sleep(60.0)  # alle 60 s checken
+
+    # ------------------------------------------------------ Monatspruefung
+    _MONATSBERICHT_TAGE: typing.ClassVar[int] = 30
+
+    def _monatsbericht_stempel(self) -> Path:
+        """Welcher Monat zuletzt gemeldet wurde — auf Platte, nicht im RAM.
+
+        Ein Neustart im Sendefenster wuerde sonst ein zweites Mal melden.
+        Liegt neben den Filterzaehlern.
+        """
+        return self._filter_drops_path.with_name("monatsbericht.stamp")
+
+    def _monatsbericht_faellig(self, jetzt: datetime) -> bool:
+        """Am Ersten des Monats zwischen 08:15 und 08:25 Lokalzeit, einmal.
+
+        Nach der Tageszusammenfassung (08:00), damit die beiden Pushes
+        nicht zusammenfallen. Das Fenster ist zehn Minuten breit, damit
+        ein Neustart um 08:15 die Meldung nicht kostet.
+        """
+        from datetime import time as dtime
+        if jetzt.day != 1 or not (dtime(8, 15) <= jetzt.time() <= dtime(8, 25)):
+            return False
+        monat = jetzt.strftime("%Y-%m")
+        # Nur Dateifehler bedeuten "kein Stempel". Ein breiteres except
+        # verschluckte im Test einen AttributeError und meldete "faellig" —
+        # im Betrieb waere das ein Doppelversand nach jedem Programmierfehler.
+        try:
+            if self._monatsbericht_stempel().read_text(encoding="utf-8").strip() == monat:
+                return False
+        except (OSError, ValueError):
+            pass
+        return True
+
+    async def _monats_pruefung_loop(self) -> None:
+        """Einmal im Monat die Auswahllogik gegen ihre eigenen Daten halten.
+
+        Kontrollarm gegen Regel (QSOs je Stunde), ueberfaellige Regeln aus
+        dem Register, Ausbeute je Stunde. Das ist die Antwort auf "wie
+        pruefen wir in einem halben Jahr, ob die Filter richtig sind":
+        gar nicht erst warten, sondern monatlich gemeldet bekommen, was
+        die Daten hergeben — mit Mindestfallzahl, damit Rauschen nicht als
+        Befund kommt.
+        """
+        while True:
+            try:
+                jetzt = datetime.now().astimezone()
+                if self._monatsbericht_faellig(jetzt):
+                    await self._sende_monatsbericht(jetzt)
+            except Exception as exc:
+                log.warning("Monatspruefung fehlgeschlagen: %s", exc)
+            await asyncio.sleep(60.0)
+
+    async def _sende_monatsbericht(self, jetzt: datetime) -> None:
+        from ..analyse.monatsbericht import baue_monatsbericht
+        zahlen = await self._hole_monatszahlen(self._MONATSBERICHT_TAGE)
+        text = baue_monatsbericht(zahlen, jetzt.date(), _t)
+        ntfy = self.integrations.ntfy
+        if ntfy is not None and ntfy.enabled:
+            await ntfy.notify(text, title=_t("push.monatspruefung_title"),
+                              priority="default", tags=["bar_chart"])
+        # Stempel erst nach dem Versuch — ein Fehler oben laesst ihn aus,
+        # und die naechste Minute im Fenster versucht es erneut.
+        try:
+            p = self._monatsbericht_stempel()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(jetzt.strftime("%Y-%m"), encoding="utf-8")
+        except Exception as exc:
+            log.debug("Monatsbericht-Stempel nicht geschrieben: %s", exc)
+        log.info("Monatspruefung gemeldet: %s", text.replace("\n", " | ")[:120])
+
+    async def _hole_monatszahlen(self, tage: int):
+        """Die Rohzahlen fuer den Bericht — Zeit je Arm, QSOs je Arm, Leerlauf."""
+        from sqlalchemy import text as _sql
+
+        from ..analyse.monatsbericht import Monatszahlen
+        from ..db import session_scope
+        seit_tag = f"-{tage} day"
+        seit_ts = f"-{tage} days"
+        async with session_scope() as s:
+            std = {r[0]: r[1] for r in (await s.execute(_sql(
+                "SELECT zustand, SUM(sekunden) / 3600.0 FROM state_time_daily "
+                "WHERE tag >= date('now', :seit) GROUP BY zustand"), {"seit": seit_tag})).all()}
+            qsos = {r[0]: r[1] for r in (await s.execute(_sql(
+                "SELECT CASE WHEN kontroll_arm THEN 'K' ELSE 'R' END, "
+                "SUM(outcome = 'completed') FROM pick_attempt "
+                "WHERE ts > datetime('now', :seit) AND kontroll_arm IS NOT NULL GROUP BY 1"),
+                {"seit": seit_ts})).all()}
+            qsos_gesamt = (await s.execute(_sql(
+                "SELECT COUNT(*) FROM qso WHERE qso_start > datetime('now', :seit)"),
+                {"seit": seit_ts})).scalar() or 0
+        std_gesamt = sum(v for k, v in std.items() if not str(k).startswith("ARM_"))
+        return Monatszahlen(
+            tage=tage,
+            std_regel=float(std.get("ARM_REGEL", 0.0) or 0.0),
+            qsos_regel=int(qsos.get("R", 0) or 0),
+            std_kontrolle=float(std.get("ARM_KONTROLLE", 0.0) or 0.0),
+            qsos_kontrolle=int(qsos.get("K", 0) or 0),
+            std_gesamt=float(std_gesamt),
+            qsos_gesamt=int(qsos_gesamt),
+            std_leerlauf=float(std.get("IDLE", 0.0) or 0.0),
+        )
 
     async def _build_daily_summary(self) -> str:
         """Generate the multi-line summary text from DB + state."""
