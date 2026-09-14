@@ -74,6 +74,8 @@
       eqsl_user: op.eqsl_user ?? '',
       eqsl_password: '',
       eqsl_qth_nickname: op.eqsl_qth_nickname ?? '',
+      lotw_station_location: op.lotw_station_location ?? '',
+      lotw_cert_password: '',
     };
     credOpen[op.callsign] = true;
   }
@@ -95,8 +97,12 @@
     if (f.eqsl_qth_nickname.trim() !== (op.eqsl_qth_nickname ?? '')) {
       body.eqsl_qth_nickname = f.eqsl_qth_nickname.trim();
     }
+    if (f.lotw_station_location.trim() !== (op.lotw_station_location ?? '')) {
+      body.lotw_station_location = f.lotw_station_location.trim();
+    }
     for (const k of ['qrz_password', 'qrz_logbook_api_key',
-                     'clublog_app_password', 'clublog_api_key', 'eqsl_password']) {
+                     'clublog_app_password', 'clublog_api_key', 'eqsl_password',
+                     'lotw_cert_password']) {
       if (f[k].trim()) body[k] = f[k].trim();
     }
     if (Object.keys(body).length === 0) { credOpen[op.callsign] = false; return; }
@@ -117,6 +123,8 @@
       ? { qrz_user: '', qrz_password: '', qrz_logbook_api_key: '' }
       : service === 'eQSL'
       ? { eqsl_user: '', eqsl_password: '', eqsl_qth_nickname: '' }
+      : service === 'LoTW'
+      ? { lotw_station_location: '', lotw_cert_password: '' }
       : { clublog_email: '', clublog_app_password: '', clublog_api_key: '' };
     busy = true; error = null;
     try {
@@ -151,6 +159,7 @@
           <span class="chip {op.has_qrz_credentials ? 'on' : 'off'}">QRZ</span>
           <span class="chip {op.has_clublog_credentials ? 'on' : 'off'}">ClubLog</span>
           <span class="chip {op.has_eqsl_credentials ? 'on' : 'off'}">eQSL</span>
+          <span class="chip {op.has_lotw_setup ? 'on' : 'off'}">LoTW</span>
         </span>
         <button class="btn" onclick={() => toggleCreds(op)} disabled={busy}>
           {t('opadmin.credentials')}
@@ -207,6 +216,12 @@
                    bind:value={credForm[op.callsign].eqsl_password} /></label>
           <label><span>{t('opadmin.eqsl_nickname')}</span>
             <input type="text" bind:value={credForm[op.callsign].eqsl_qth_nickname} /></label>
+          <label><span>{t('opadmin.lotw_location')}</span>
+            <input type="text" bind:value={credForm[op.callsign].lotw_station_location} /></label>
+          <label><span>{t('opadmin.lotw_cert_pw')}</span>
+            <input type="password" autocomplete="new-password"
+                   placeholder={t('opadmin.unchanged')}
+                   bind:value={credForm[op.callsign].lotw_cert_password} /></label>
 
           <div class="cf-actions">
             <button class="btn" onclick={() => credOpen[op.callsign] = false}

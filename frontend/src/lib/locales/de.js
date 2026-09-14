@@ -273,6 +273,8 @@ export const de = {
   'opadmin.eqsl_user': 'eQSL-Benutzername',
   'opadmin.eqsl_password': 'eQSL-Passwort',
   'opadmin.eqsl_nickname': 'eQSL-Kontoname (nur bei mehreren Konten)',
+  'opadmin.lotw_location': 'LoTW-Station-Location (Name in TQSL)',
+  'opadmin.lotw_cert_pw': 'LoTW-Zertifikat-Passphrase (falls gesetzt)',
   'opadmin.clear_creds': 'entfernen',
   'opadmin.save': 'speichern',
   'opadmin.cancel': 'abbrechen',

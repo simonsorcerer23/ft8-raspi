@@ -316,7 +316,7 @@ async def _migrate_station_callsign_column(conn) -> None:
 
 
 async def _migrate_eqsl_columns(conn) -> None:
-    """v0.152.0 — eQSL-Upload-Status je QSO.
+    """v0.152.0 — eQSL-Upload-Status je QSO, v0.154.0 LoTW dazu.
 
     Bestandszeilen starten mit uploaded=0. Das ist richtig so: Was vor dem
     ersten automatischen Lauf von Hand hochgeladen wurde, weist eQSL beim
@@ -329,6 +329,10 @@ async def _migrate_eqsl_columns(conn) -> None:
         ("eqsl_uploaded", "BOOLEAN NOT NULL DEFAULT 0"),
         ("eqsl_upload_attempts", "INTEGER NOT NULL DEFAULT 0"),
         ("eqsl_last_attempt_at", "DATETIME"),
+        # v0.154.0 — LoTW
+        ("lotw_uploaded", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("lotw_upload_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("lotw_last_attempt_at", "DATETIME"),
     ):
         if name not in existing:
             await conn.exec_driver_sql(f"ALTER TABLE qso ADD COLUMN {name} {ddl}")

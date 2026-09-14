@@ -81,6 +81,14 @@ class Qso(Base):
     # Datensatz, an der sich mehr festmachen liesse.
     eqsl_uploaded: Mapped[bool] = mapped_column(default=False, index=True)
     eqsl_upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    # 2026-09-14 — LoTW. Eigene Flags, obwohl TQSL selbst Duplikate kennt:
+    # dessen Gedaechtnis haengt am Rechner und waere nach einem Wechsel der
+    # Systemplatte leer, unseres nicht.
+    lotw_uploaded: Mapped[bool] = mapped_column(default=False, index=True)
+    lotw_upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lotw_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     eqsl_last_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

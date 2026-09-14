@@ -68,6 +68,17 @@ class OperatorConfig(BaseModel):
     eqsl_user: str | None = None
     eqsl_password: str | None = None
     eqsl_qth_nickname: str | None = None
+    # LoTW (seit 2026-09-14). Hier gibt es keine Zugangsdaten: LoTW nimmt
+    # nur Logdateien an, die mit dem Callsign-Zertifikat signiert sind.
+    # Das Zertifikat liegt in TQSLs eigenem Speicher auf dem Pi und wird
+    # einmalig von Hand importiert; hier steht nur, unter welchem Namen
+    # die Station Location dort angelegt ist. Ohne sie signiert TQSL nicht.
+    lotw_station_location: str | None = None
+    # Nur noetig, wenn das Zertifikat mit einer Passphrase importiert
+    # wurde. TQSL kennt dafuer allein den Schalter -p, und der ist in der
+    # Prozessliste sichtbar — ohne Passphrase zu importieren ist auf einer
+    # Einzelplatz-Station sauberer. Siehe docs/lotw.md.
+    lotw_cert_password: str | None = None
     # v0.22.0 — DX-Operating-Location.
     # home_country: ITU/CEPT-Country-Code des Heimat-DXCC (DL für DE).
     # current_operating_country: wenn gesetzt UND != home_country, dann
