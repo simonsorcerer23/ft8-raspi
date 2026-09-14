@@ -87,6 +87,15 @@ fi
 echo "  ✓ on main, clean, tag frei, upstream sync"
 
 # -----------------------------------------------------------------------------
+step "Test-Gate (die komplette Suite)"
+# Bis 2026-09-14 lief hier NICHTS: release.sh prüfte Typen und Frontend-API,
+# aber nie die Tests. Genau so ging v0.152.1 mit einem roten Test raus — ein
+# Test, der die Startstellen eines Loops zählte und nach dem Hinzufügen der
+# zweiten fehlschlug. Aufgefallen ist es erst beim nächsten Lauf von Hand.
+# Siebzig Sekunden sind billiger als ein Release, dem niemand mehr traut.
+run "cd backend && .venv/bin/python -m pytest tests/ -q -p no:cacheprovider"
+
+# -----------------------------------------------------------------------------
 step "Typ-Gate (Crash-Bugklasse: attr-defined/call-arg/…)"
 # Blockt das Release wenn ein NEUER mypy-Crash-Bugklasse-Treffer dazukam
 # (z.B. Aufruf einer nicht-existenten Methode wie das ntfy.push-Debakel).
