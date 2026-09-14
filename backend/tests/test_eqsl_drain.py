@@ -200,9 +200,14 @@ async def test_nickname_wird_durchgereicht(monkeypatch) -> None:
 # --------------------------------------------------------- Verdrahtung
 
 def test_loop_startet_nur_mit_zugangsdaten() -> None:
+    """Beide Startstellen (Boot und Konfigwechsel) muessen die
+    Zugangsdaten pruefen — ein Loop ohne Konto laeuft sonst leer."""
     quelle = (WURZEL / "ft8_appliance" / "runtime" / "orchestrator.py").read_text()
-    assert re.search(r"o\.eqsl_user and o\.eqsl_password for o in self\.config\.operators", quelle)
-    assert quelle.count('self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")') == 1
+    starts = quelle.count('self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")')
+    assert starts == 2, f"Startstellen: {starts}"
+    pruefungen = len(re.findall(
+        r"o\.eqsl_user and o\.eqsl_password for o in (self\.config|new_cfg)\.operators", quelle))
+    assert pruefungen == starts, f"{starts} Starts, aber {pruefungen} Pruefungen"
 
 
 def test_operator_api_gibt_das_passwort_nie_heraus() -> None:
