@@ -70,6 +70,25 @@ class EqslErgebnis:
     gesamt: int
     meldungen: tuple[str, ...] = ()
 
+    def kurzfassung(self, hoechstens: int = 3) -> str:
+        """Die Meldungen auf eine Logzeile eindampfen.
+
+        eQSL nennt jedes abgewiesene Duplikat einzeln beim Namen. Beim
+        ersten Lauf waren das 199 Zeilen in einer einzigen Logmeldung,
+        knapp 28 Kilobyte — das Journal liegt auf dem Pi auf Platte, und
+        alle fuenfzehn Minuten so ein Block macht es unbenutzbar. Gezaehlt
+        statt aufgezaehlt sagt dasselbe.
+        """
+        dupes = sum(1 for m in self.meldungen if "duplicate" in m.lower())
+        rest = [m for m in self.meldungen if "duplicate" not in m.lower()]
+        teile = []
+        if dupes:
+            teile.append(f"{dupes} Duplikate")
+        teile.extend(m[:120] for m in rest[:hoechstens])
+        if len(rest) > hoechstens:
+            teile.append(f"und {len(rest) - hoechstens} weitere Meldungen")
+        return "; ".join(teile)
+
 
 def _feld(name: str, wert: object) -> str:
     """Ein ADIF-Feld. Leere Werte fallen weg, sonst zaehlt die Laenge falsch."""

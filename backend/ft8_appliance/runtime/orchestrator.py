@@ -6547,9 +6547,10 @@ class Orchestrator:
                 return
             for q in faellig:
                 q.eqsl_uploaded = True
+            kurz = ergebnis.kurzfassung()
             log.info("eQSL %s: %d von %d Datensaetzen angenommen%s",
                      op.callsign, ergebnis.angenommen, ergebnis.gesamt,
-                     " — " + "; ".join(ergebnis.meldungen) if ergebnis.meldungen else "")
+                     f" ({kurz})" if kurz else "")
 
     async def _clublog_drain_loop(self) -> None:
         """v0.21.0 — ClubLog Real-Time-Upload-Drain (analog QRZ).
