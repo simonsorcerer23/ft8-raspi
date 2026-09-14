@@ -189,6 +189,30 @@ class FilterDropDaily(Base):
     anzahl: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class StateTimeDaily(Base):
+    """Wie viele Sekunden die Maschine an einem Tag in jedem Zustand war.
+
+    Seit 2026-09-14. Bis dahin liess sich "QSOs je Stunde" nicht messen,
+    nur "QSOs je Anruf" — und das ist die falsche Groesse: Ein Filter, der
+    die Haelfte der Anrufe verhindert, hebt die Quote je Anruf und senkt
+    trotzdem die Ausbeute je Stunde, wenn die gesparte Zeit ungenutzt
+    verstreicht. Ob sie das tut, steht hier: Sekunden in IDLE, im CQ-Ruf,
+    in den QSO-Zustaenden, gesperrt.
+
+    Gemessen je Slot-Tick: Die seit dem letzten Tick verstrichene Zeit
+    wird dem Zustand gutgeschrieben, in dem die Maschine bei diesem Tick
+    steht. Ein Wechsel innerhalb eines Slots verschiebt also bis zu einen
+    Slot (15 s) — fuer Stundensummen ohne Belang, fuer Einzel-QSOs nicht
+    gedacht. Einmal je Minute als Tageszeile, wie ``FilterDropDaily``.
+    """
+
+    __tablename__ = "state_time_daily"
+
+    tag: Mapped[str] = mapped_column(String, primary_key=True)
+    zustand: Mapped[str] = mapped_column(String, primary_key=True)
+    sekunden: Mapped[float] = mapped_column(Float, default=0.0)
+
+
 class BandNoise(Base):
     """Rauschpegel im Empfang, gemessen zwischen den Aussendungen.
 

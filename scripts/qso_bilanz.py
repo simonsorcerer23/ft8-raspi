@@ -80,6 +80,14 @@ def _token() -> str:
     return wert
 
 
+def hat_tabelle(con, tabelle_name: str) -> bool:
+    """Eine juengere Tabelle darf auf einer aelteren DB-Kopie nicht stuerzen."""
+    return con.execute(
+        "select count(*) from sqlite_master where type='table' and name=?",
+        (tabelle_name,),
+    ).fetchone()[0] > 0
+
+
 def hat_spalte(con, tabelle_name: str, spalte: str) -> bool:
     """Kennt diese Datenbank die Spalte schon?
 
@@ -543,6 +551,100 @@ def main() -> int:
             print("    oder hinter einer Bedingung sitzt, die nie eintritt.")
     else:
         print("    (noch keine Tageszeilen — die Historie laeuft seit v0.132.0)")
+
+    print("\n=== Zeit je Zustand: QSOs je Stunde, nicht je Anruf ===")
+    # Die Quote je Anruf ist die falsche Zielgroesse: Ein Filter, der die
+    # Haelfte der Anrufe verhindert, hebt sie zwangslaeufig — und senkt
+    # trotzdem die Ausbeute, wenn die gesparte Zeit im Leerlauf verstreicht.
+    # Erst mit den Sekunden je Zustand laesst sich rechnen, was ein Tag
+    # Betrieb bringt. Seit v0.147.0 (2026-09-14).
+    if hat_tabelle(con, "state_time_daily"):
+        tage = con.execute(
+            "select tag, sum(sekunden) from state_time_daily "
+            "where tag >= date('now', ?) group by tag order by tag",
+            (f"-{args.tage} day",),
+        ).fetchall()
+        if tage:
+            zeilen = []
+            for tag, gesamt in tage:
+                je = dict(con.execute(
+                    "select zustand, sekunden from state_time_daily where tag=?", (tag,)
+                ).fetchall())
+                qsos = con.execute(
+                    "select count(*) from qso where date(qso_start)=?", (tag,)
+                ).fetchone()[0]
+                std = gesamt / 3600.0
+                anteil = lambda z: f"{100.0 * je.get(z, 0.0) / gesamt:4.0f} %" if gesamt else "   -"
+                zeilen.append((
+                    tag, f"{std:5.1f}", qsos,
+                    f"{qsos / std:4.2f}" if std >= 0.5 else "  -",
+                    anteil("IDLE"), anteil("CQ_CALLING"),
+                    f"{100.0 * sum(v for k, v in je.items() if k.startswith('QSO_')) / gesamt:4.0f} %" if gesamt else "   -",
+                    anteil("TX_LOCKED"),
+                ))
+            tabelle(zeilen, ("Tag", "Std gemessen", "QSOs", "QSOs/Std",
+                             "Leerlauf", "CQ", "im QSO", "gesperrt"))
+            print("    'Std gemessen' ist die Zeit, in der der Dienst lief; ein")
+            print("    Tag unter 20 Std hatte Neustarts oder Luecken. QSOs/Std")
+            print("    ist die Zielgroesse fuer jeden Filter-Vergleich.")
+        else:
+            print("    (noch keine Tageszeilen)")
+    else:
+        print("    (Tabelle state_time_daily fehlt — DB-Kopie aelter als v0.147.0)")
+
+    print("\n=== Wartezeit: wie lange schweigt ein Partner, der doch noch antwortet? ===")
+    # qso_max_stale_slots (6) begrenzt, wie viele Slots wir auf den Partner
+    # warten. Kuerzer spart Zeit an Geistern, verliert aber jeden Erfolg,
+    # dessen laengste Pause die Grenze uebersteigt. Beides steht hier, aus
+    # den gespeicherten Decodes rekonstruiert: fuer jeden ausgehenden
+    # Anruf alle Decodes des Partners AN UNS, daraus die laengste Luecke.
+    # Gemessen am 2026-09-14 (305 Erfolge): Grenze 3 haette 30 % der
+    # Erfolge gekostet, Grenze 6 kostet 4,6 %. Partner antworten in
+    # Vielfachen von zwei Slots — der ungerade Slot gehoert der anderen
+    # Paritaet. Seit v0.147.0.
+    from collections import Counter
+    from datetime import datetime as _dt, timedelta as _td
+    anrufe = con.execute(
+        "select ts, target_call, user_callsign, outcome from pick_attempt "
+        "where ts > datetime('now', ?) and (pick_kind in ('cq', 'available') "
+        "or pick_kind is null) and user_callsign is not null",
+        (seit,),
+    ).fetchall()
+    laengste = {"completed": Counter(), "bailed": Counter()}
+    for ts, call, me, outc in anrufe:
+        if outc not in laengste:
+            continue
+        try:
+            t0 = _dt.fromisoformat(str(ts))
+        except ValueError:
+            continue
+        rows = con.execute(
+            "select ts from decode where call_from=? and call_to=? and ts>=? and ts<=? order by ts",
+            (call, me, str(ts), (t0 + _td(minutes=12)).isoformat(sep=" ")),
+        ).fetchall()
+        if not rows:
+            laengste[outc]["nie"] += 1
+            continue
+        zeiten = [t0] + [_dt.fromisoformat(str(r[0])) for r in rows]
+        luecken = [round((b - a).total_seconds() / 15) for a, b in zip(zeiten, zeiten[1:])]
+        laengste[outc][min(max(luecken), 10)] += 1
+    n_erfolg = sum(laengste["completed"].values())
+    if n_erfolg >= 30:
+        stale_jetzt = 6
+        zeilen = []
+        for grenze in (2, 3, 4, 6, 8):
+            verloren = sum(v for k, v in laengste["completed"].items()
+                           if isinstance(k, int) and k > grenze)
+            zeilen.append((grenze, verloren, f"{100.0 * verloren / n_erfolg:4.1f} %",
+                           "<- aktuell" if grenze == stale_jetzt else ""))
+        tabelle(zeilen, ("Grenze (Slots)", "verlorene Erfolge", "Anteil", ""))
+        geister = laengste["bailed"].get("nie", 0)
+        print(f"    Erfolge ausgewertet: {n_erfolg}; Anrufe ohne jede Antwort: {geister}")
+        print("    Jeder Slot weniger spart 15 s je Geist — aber nur, wenn die")
+        print("    gesparte Zeit einen Anruf traegt (84 % der Slots haben genau")
+        print("    einen Kandidaten). Vor dem Kuerzen die Spalte 'Anteil' lesen.")
+    else:
+        print(f"    (erst {n_erfolg} Erfolge im Zeitraum — unter 30 keine Aussage)")
 
     print("\n=== Umentscheiden: lohnt der Wechsel zu einem anderen Ziel? ===")
     # Gemessen 2026-09-12 ueber 448 Faelle: Der Wechsel ging genauso oft zu

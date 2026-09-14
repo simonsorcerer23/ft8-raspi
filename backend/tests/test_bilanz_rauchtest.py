@@ -43,6 +43,12 @@ def _baue_db(pfad: Path) -> None:
         return jetzt - timedelta(minutes=minuten)
 
     with Session(eng) as s:
+        # Zeitprotokoll: zwei Tage, damit "QSOs/Std" gerechnet wird
+        for d in (0, 1):
+            tag = (jetzt - timedelta(days=d)).strftime("%Y-%m-%d")
+            for zustand, sek in (("IDLE", 50000.0), ("CQ_CALLING", 20000.0),
+                                 ("QSO_RESPOND", 9000.0), ("TX_LOCKED", 100.0)):
+                s.add(m.StateTimeDaily(tag=tag, zustand=zustand, sekunden=sek))
         for i in range(12):
             s.add(m.PickAttempt(
                 ts=t(10 + i * 7), target_call=f"K{i}TEST", user_callsign="DK9XR",
@@ -149,6 +155,8 @@ ERWARTETE_ABSCHNITTE = (
     "Umentscheiden",
     "Stunden-Tier",
     "Schwache Ziele ohne Empfangsbeleg",
+    "Zeit je Zustand",
+    "Wartezeit",
 )
 
 
