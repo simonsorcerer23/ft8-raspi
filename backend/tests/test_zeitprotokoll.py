@@ -21,7 +21,7 @@ from ft8_appliance.statemachine.states import State
 
 def _o(zustand: State = State.IDLE, db: bool = False) -> SimpleNamespace:
     return SimpleNamespace(
-        state_machine=SimpleNamespace(state=zustand),
+        state_machine=SimpleNamespace(state=zustand, ctx=SimpleNamespace(kontroll_arm=False)),
         db_enabled=db,
         _zeit_je_zustand={}, _zeit_zuletzt=0.0, _zeit_tag="",
         _zeit_letzte_sicherung=0.0, _zeit_gesichert={},
@@ -53,7 +53,7 @@ def test_zeit_geht_an_den_aktuellen_zustand(monkeypatch) -> None:
     o.state_machine.state = State.QSO_RESPOND
     _tick(o, monkeypatch, 130.0)
     _tick(o, monkeypatch, 145.0)
-    assert o._zeit_je_zustand == {"IDLE": 15.0, "QSO_RESPOND": 30.0}
+    assert o._zeit_je_zustand == {"IDLE": 15.0, "QSO_RESPOND": 30.0, "ARM_REGEL": 45.0}
 
 
 def test_aussetzer_wird_nicht_verbucht(monkeypatch) -> None:
@@ -63,7 +63,7 @@ def test_aussetzer_wird_nicht_verbucht(monkeypatch) -> None:
     _tick(o, monkeypatch, 100.0 + 301.0)
     assert o._zeit_je_zustand == {}
     _tick(o, monkeypatch, 100.0 + 301.0 + 15.0)
-    assert o._zeit_je_zustand == {"IDLE": 15.0}
+    assert o._zeit_je_zustand == {"IDLE": 15.0, "ARM_REGEL": 15.0}
 
 
 def test_datumswechsel_faengt_bei_null_an(monkeypatch) -> None:
@@ -91,8 +91,8 @@ def test_es_wird_nur_die_differenz_geschrieben(monkeypatch) -> None:
     _tick(o, monkeypatch, 30.0)
     _tick(o, monkeypatch, 90.0)      # +75 s, naechste Sicherung
     # Zweite Sicherung darf nur den Zuwachs seit der ersten enthalten.
-    assert o._zeit_gesichert == {"IDLE": 90.0}
-    assert o._zeit_je_zustand == {"IDLE": 90.0}
+    assert o._zeit_gesichert == {"IDLE": 90.0, "ARM_REGEL": 90.0}
+    assert o._zeit_je_zustand == {"IDLE": 90.0, "ARM_REGEL": 90.0}
 
 
 @pytest.mark.asyncio
@@ -106,3 +106,11 @@ async def test_persistenz_addiert_statt_zu_setzen() -> None:
     async with session_scope() as s:
         rows = {r.zustand: r.sekunden for r in (await s.execute(select(m.StateTimeDaily))).scalars()}
     assert rows == {"IDLE": 60.0, "CQ_CALLING": 5.0}
+
+
+def test_zeit_je_arm_wird_mitgebucht(monkeypatch) -> None:
+    o = _o(State.IDLE)
+    o.state_machine.ctx.kontroll_arm = True
+    _tick(o, monkeypatch, 0.0)
+    _tick(o, monkeypatch, 15.0)
+    assert o._zeit_je_zustand == {"IDLE": 15.0, "ARM_KONTROLLE": 15.0}

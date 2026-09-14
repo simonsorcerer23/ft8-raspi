@@ -139,6 +139,18 @@ Signalstärke beim DX laut PSK Reporter, Entfernung, Bandbelegung und welchen
 Arm der Antwortfrequenz-A/B-Test gezogen hat. `scripts/qso_bilanz.py` liest das
 zurück.
 
+Seit September 2026 kommen drei Reihen dazu, ohne die sich keine Filterregel
+im Nachhinein prüfen lässt: das **Kandidatenprotokoll** (`pick_candidate`,
+jeder Kandidat eines Slots mit Signal, Kontinent, Empfangsbeleg und dem
+Filter, der ihn verworfen hat), das **Zeitprotokoll** (`state_time_daily`,
+Sekunden je Zustand und Tag, damit die Zielgröße QSOs je Stunde heißt und
+nicht Quote je Anruf), und ein **permanenter Kontrollarm**: in rund zehn
+Prozent der 15-Minuten-Blöcke laufen die „lohnt sich das?"-Gates nicht.
+Eine Regel, die wirkt, verhindert sonst ihre eigene Überprüfung, weil die
+Verworfenen nie angerufen werden. Die Bilanz vergleicht QSOs je Stunde in
+beiden Armen und rechnet die Wartezeit auf schweigende Partner aus den
+gespeicherten Decodes nach.
+
 Das hält die Funktionsliste ehrlich. Messergebnisse, die den Code geändert
 haben:
 

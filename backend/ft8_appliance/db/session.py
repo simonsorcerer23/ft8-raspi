@@ -267,6 +267,8 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "nachgestempelt": "BOOLEAN",
         # 2026-09-14 — A/B des Filters "schwach ohne Empfangsbeleg".
         "schwach_arm": "BOOLEAN",
+        # 2026-09-14 — permanenter Kontrollarm ohne Lohnt-sich-Gates.
+        "kontroll_arm": "BOOLEAN",
     }
     for name, ddl in cols.items():
         if name not in existing:

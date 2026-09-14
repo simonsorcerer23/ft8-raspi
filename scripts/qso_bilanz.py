@@ -162,6 +162,27 @@ def urteil(k_a: int, n_a: int, k_b: int, n_b: int) -> str:
     return f"z={z:+.2f} Rauschen"
 
 
+def urteil_rate(k_a: int, t_a: float, k_b: int, t_b: float) -> str:
+    """Zwei Poisson-Raten (Ereignisse je Zeit) vergleichen.
+
+    Fuer QSOs je Stunde in zwei Armen. z aus der Differenz der Raten und
+    der Summe ihrer Varianzen (k/t^2). Unter fuenf Ereignissen je Arm
+    keine Aussage — die Normalnaeherung traegt dort nicht.
+    """
+    if min(k_a, k_b) < 5 or t_a <= 0 or t_b <= 0:
+        return "zu wenig"
+    r_a, r_b = k_a / t_a, k_b / t_b
+    se = math.sqrt(k_a / t_a ** 2 + k_b / t_b ** 2)
+    if se == 0:
+        return "?"
+    z = (r_a - r_b) / se
+    if abs(z) >= 2.58:
+        return f"echt (z={z:+.1f})"
+    if abs(z) >= 1.96:
+        return f"wahrscheinlich (z={z:+.1f})"
+    return f"Rauschen (z={z:+.1f})"
+
+
 def n_fuer_nachweis(p_erwartet: float, p_referenz: float) -> int | None:
     """Wie viele Beobachtungen braeuchte es, damit dieser Unterschied
     nachweisbar waere? Beantwortet die Frage "noch warten oder nie?"."""
@@ -561,7 +582,8 @@ def main() -> int:
     if hat_tabelle(con, "state_time_daily"):
         tage = con.execute(
             "select tag, sum(sekunden) from state_time_daily "
-            "where tag >= date('now', ?) group by tag order by tag",
+            "where tag >= date('now', ?) and zustand not like 'ARM\\_%' escape '\\' "
+            "group by tag order by tag",
             (f"-{args.tage} day",),
         ).fetchall()
         if tage:
@@ -645,6 +667,43 @@ def main() -> int:
         print("    einen Kandidaten). Vor dem Kuerzen die Spalte 'Anteil' lesen.")
     else:
         print(f"    (erst {n_erfolg} Erfolge im Zeitraum — unter 30 keine Aussage)")
+
+    print("\n=== Kontrollarm: was die Lohnt-sich-Gates insgesamt bringen ===")
+    # Seit v0.148.0 laufen ~10 % der Zeitbloecke ohne die Gates, die die
+    # Erfolgschance schaetzen (SNR-Floor, Kontinent, Schwach-Gate, Pile-
+    # Up, Einzelkandidat, Fernziel, Strict). Verglichen wird die Ausbeute
+    # je Stunde — die Quote je Anruf waere in der Kontrolle zwangslaeufig
+    # schlechter, weil sie mehr anruft. Die Stunden je Arm kommen aus dem
+    # Zeitprotokoll (ARM_REGEL / ARM_KONTROLLE), die QSOs aus den Anrufen.
+    if hat_spalte(con, "pick_attempt", "kontroll_arm") and hat_tabelle(con, "state_time_daily"):
+        std = dict(con.execute(
+            "select zustand, sum(sekunden) / 3600.0 from state_time_daily "
+            "where tag >= date('now', ?) and zustand in ('ARM_REGEL', 'ARM_KONTROLLE') "
+            "group by zustand", (f"-{args.tage} day",),
+        ).fetchall())
+        qsos = dict(con.execute(
+            "select case when kontroll_arm then 'ARM_KONTROLLE' else 'ARM_REGEL' end, "
+            "sum(outcome = 'completed'), count(*) from pick_attempt "
+            "where ts > datetime('now', ?) and kontroll_arm is not null group by 1", (seit,),
+        ).fetchall())
+        anrufe = {k: v[1] for k, v in qsos.items()}
+        erfolge = {k: v[0] for k, v in qsos.items()}
+        zeilen = []
+        for arm, name in (("ARM_REGEL", "Regel"), ("ARM_KONTROLLE", "Kontrolle")):
+            h = std.get(arm, 0.0)
+            zeilen.append((name, f"{h:6.1f}", anrufe.get(arm, 0), erfolge.get(arm, 0),
+                           f"{erfolge.get(arm, 0) / h:5.2f}" if h >= 1.0 else "    -",
+                           f"{anrufe.get(arm, 0) / h:5.1f}" if h >= 1.0 else "    -"))
+        tabelle(zeilen, ("Arm", "Stunden", "Anrufe", "QSOs", "QSOs/Std", "Anrufe/Std"))
+        u = urteil_rate(erfolge.get("ARM_REGEL", 0), std.get("ARM_REGEL", 0.0),
+                        erfolge.get("ARM_KONTROLLE", 0), std.get("ARM_KONTROLLE", 0.0))
+        print(f"    Regel gegen Kontrolle, QSOs je Stunde: {u}")
+        print("    Liegt die Kontrolle vorn, kosten die Gates zusammen mehr als")
+        print("    sie bringen — dann einzeln nachsehen (pick_candidate: wer wurde")
+        print("    im Regelarm verworfen, und was brachte derselbe Typ Ziel in der")
+        print("    Kontrolle). Unter fuenf QSOs je Arm sagt die Zeile nichts.")
+    else:
+        print("    (Spalte kontroll_arm oder Tabelle state_time_daily fehlt — vor v0.148.0)")
 
     print("\n=== Umentscheiden: lohnt der Wechsel zu einem anderen Ziel? ===")
     # Gemessen 2026-09-12 ueber 448 Faelle: Der Wechsel ging genauso oft zu

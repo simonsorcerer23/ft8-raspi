@@ -590,6 +590,7 @@ class PickAttempt(Base):
     # nicht ueber die Quote — die steigt zwangslaeufig, wenn weniger
     # angerufen wird, und genau das tut der Filter.
     schwach_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    kontroll_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
     # 2026-09-07 A/B Antwortfrequenz: quiet | on_freq
     reply_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # Kam die Sendeentscheidung aus dem Vorab-Decode (vor der Slot-Grenze)

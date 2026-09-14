@@ -646,6 +646,11 @@ class OperatingConfig(BaseModel):
     # Arme bekommen gleich viele 15-Minuten-Bloecke, deshalb ist die reine
     # QSO-Zahl direkt die Ausbeute pro Zeit.
     hunt_weak_requires_psk_ab: bool = True
+    # Permanenter Kontrollarm (seit 2026-09-14): Zeitanteil der Bloecke,
+    # in denen die "lohnt sich das?"-Gates nicht laufen. Der Massstab
+    # fuer jede Filterregel — QSOs je Stunde Regel gegen Kontrolle.
+    # 0 schaltet ab. Ueber 0.5 waere die Regel selbst die Ausnahme.
+    hunt_kontrollarm_anteil: float = Field(default=0.1, ge=0.0, le=0.5)
     hunt_cq_fallback: bool = True
     hunt_cq_fallback_after_slots: int = Field(default=2, ge=1, le=20)
     # Deckel: nach so vielen unbeantworteten Fallback-CQs Pause (Minuten),

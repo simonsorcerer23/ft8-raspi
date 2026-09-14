@@ -188,6 +188,12 @@ class MachineContext:
     # Zielgroesse ist die Zahl der QSOs je Arm, nicht die Quote: Die
     # steigt zwangslaeufig, wenn weniger angerufen wird.
     schwach_arm: bool = True
+    # Kontrollarm (seit 2026-09-14): In rund 10 % der Zeitbloecke laufen
+    # die "lohnt sich das?"-Gates nicht (SNR-Floor, Kontinent, Schwach-
+    # Gate, Pile-Up, Einzelkandidat, Fernziel, Strict). Technische
+    # Ausschluesse bleiben. Nur so hat jede dieser Regeln dauerhaft einen
+    # Vergleichsmassstab — sonst verhindert sie ihre eigene Ueberpruefung.
+    kontroll_arm: bool = False
     # WSJT-Z-style "Auto CQ": after a QSO completes, automatically return
     # to CQ_CALLING (instead of IDLE). Set when the user presses the CQ
     # button; cleared by Stop. Without this, CQ mode is one-shot.
