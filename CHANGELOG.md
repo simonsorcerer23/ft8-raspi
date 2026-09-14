@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.152.1 — 2026-09-14
+- fix: eQSL-Upload startet auch ohne Neustart, sobald Zugangsdaten eingetragen sind
+
 ## v0.152.0 — 2026-09-14
 - feat: eQSL.cc-Upload — Karten entstehen dort, wir liefern die QSOs
 
