@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.152.3 — 2026-09-14
+- fix: release.sh laesst die Tests laufen, bevor es taggt
+
 ## v0.152.2 — 2026-09-14
 - test: Startstellen des eQSL-Loops zaehlen, statt genau eine zu erwarten
 
