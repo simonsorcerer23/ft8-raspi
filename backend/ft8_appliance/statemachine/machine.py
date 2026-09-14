@@ -788,6 +788,7 @@ class StateMachine:
                     "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
                     "zellen_arm": bool(self.ctx.zellen_arm),
                     "schwach_arm": bool(self.ctx.schwach_arm),
+                    "kontroll_arm": bool(self.ctx.kontroll_arm),
                     "target_call_raw": _roh_call,
                     "freq_offset_hz": best.freq_offset_hz,
                     "target_grid": best.grid,
@@ -1518,6 +1519,7 @@ class StateMachine:
             "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
             "zellen_arm": bool(self.ctx.zellen_arm),
             "schwach_arm": bool(self.ctx.schwach_arm),
+            "kontroll_arm": bool(self.ctx.kontroll_arm),
             "target_call_raw": _roh_call,
         }
 
@@ -2449,7 +2451,15 @@ class StateMachine:
         # bei seinem Setup ist -10 dB, 90%-Perzentil ~-18 dB. Stationen
         # die mit SNR < hunt_snr_floor_db ankommen sind hoehstens schwach
         # erreichbar und produzieren in der Praxis lange Bail-Sequences.
-        if self.ctx.hunt_snr_floor_db is not None:
+        # Kontrollarm: Die folgenden Gates schaetzen die Erfolgschance und
+        # verwerfen danach. Im Kontrollarm (ctx.kontroll_arm, ~10 % der
+        # Zeitbloecke) laufen sie nicht — das ist der einzige Weg, ihre
+        # Wirkung fortlaufend zu messen, denn Verworfene werden sonst nie
+        # angerufen. Gates, die "geht technisch nicht" sagen (DT-Fenster,
+        # Slot-Paritaet, Bandrand) und Sperren (Blacklist, Cooldown,
+        # schon gearbeitet) gelten in beiden Armen.
+        kontrolle = self.ctx.kontroll_arm
+        if self.ctx.hunt_snr_floor_db is not None and not kontrolle:
             _v = list(cqs)
             cqs = [
                 d for d in cqs
@@ -2459,7 +2469,7 @@ class StateMachine:
             self._buche_filter("snr_floor", _v, cqs)
         # 2026-09-08: Kontinent-Gate — aus Kontinenten mit Vollendungsquote
         # unter hunt_continent_gate_pct nur mit PSK-Bestaetigung (NA 3 %).
-        if self.ctx.hunt_continent_gate and self.ctx.continent_success:
+        if self.ctx.hunt_continent_gate and self.ctx.continent_success and not kontrolle:
             thr = self.ctx.hunt_continent_gate_pct / 100.0
             def _cont_ok(d: DecodedMsg) -> bool:
                 cu = (d.call_from or "").upper()
@@ -2475,7 +2485,7 @@ class StateMachine:
             self._buche_filter("kontinent_gate", _v, cqs)
         # 2026-09-07: schwache Ziele nur mit PSK-Bestaetigung (Telemetrie:
         # unter -13 dB kamen 3 % zurueck, darueber 12 %).
-        if self.ctx.hunt_weak_requires_psk:
+        if self.ctx.hunt_weak_requires_psk and not kontrolle:
             weak = self.ctx.hunt_weak_snr_db
             _v = list(cqs)
             uebrig = [
@@ -2601,7 +2611,7 @@ class StateMachine:
         # sagen "geht technisch nicht" (DT ausserhalb des Empfangsfensters,
         # gleiche Slot-Paritaet) und die ausdrueckliche Sperre der
         # Soft-Blacklist bleiben fuer alle bestehen.
-        if self.ctx.pile_up_calls:
+        if self.ctx.pile_up_calls and not kontrolle:
             # 2026-09-10: Stationen von der Wunschliste sind vom Pile-Up-
             # Filter ausgenommen. Seltenes DX hat per Definition Pile-Up —
             # der harte Filter machte die Liste damit genau fuer die
@@ -2636,7 +2646,7 @@ class StateMachine:
         #   anwenden, ohne die bestehende Priority-Liste zu ersetzen.
         now_ts = datetime.now(UTC).timestamp()
         strict = self.ctx.hunt_strict_until > now_ts
-        if len(cqs) == 1 and not self._is_high_confidence_pick(cqs[0], strict=False):
+        if len(cqs) == 1 and not kontrolle and not self._is_high_confidence_pick(cqs[0], strict=False):
             self._buche_filter("einzelner_schwacher_cq", list(cqs), [])
             self._last_pick_diag = {
                 "winning_tier": "sole_rejected",
@@ -2645,7 +2655,7 @@ class StateMachine:
                 "kandidaten": self._kandidaten_protokoll(None),
             }
             return None
-        if len(cqs) == 1 and self._ist_aussichtsloses_fernziel(cqs[0]):
+        if len(cqs) == 1 and not kontrolle and self._ist_aussichtsloses_fernziel(cqs[0]):
             # Der Slot geht an den CQ-Fallback: gerufen zu werden ist hier
             # aussichtsreicher als ins Leere zu rufen.
             self._buche_filter("fernziel_allein", list(cqs), [])
@@ -2656,7 +2666,7 @@ class StateMachine:
                 "kandidaten": self._kandidaten_protokoll(None),
             }
             return None
-        if strict:
+        if strict and not kontrolle:
             _v = list(cqs)
             cqs = [d for d in cqs if self._is_high_confidence_pick(d, strict=True)]
             self._buche_filter("strict_modus", _v, cqs)

@@ -134,6 +134,17 @@ outcome (`completed` / `went_silent` / `picked_another` / …), our SNR at the
 DX per PSK Reporter, distance, band occupancy, which reply-frequency arm the
 A/B picked. `scripts/qso_bilanz.py` reads it back.
 
+Since September 2026 three more series exist, without which no filter rule
+can be checked after the fact: the **candidate log** (`pick_candidate`, every
+candidate of a slot with SNR, continent, PSK evidence and the filter that
+dropped it), the **time log** (`state_time_daily`, seconds per state and day,
+so the target figure is QSOs per hour rather than completion rate per call),
+and a **permanent control arm**: in roughly ten percent of the 15-minute
+blocks the "is it worth it?" gates do not run. A rule that works otherwise
+prevents its own review, because the dropped candidates are never called.
+The balance sheet compares QSOs per hour across both arms and recomputes the
+wait time on silent partners from the stored decodes.
+
 This is what keeps the feature list honest. Measured results that changed the
 code:
 

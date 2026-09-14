@@ -103,6 +103,23 @@ Vor dem Tier-Scoring gibt es zusätzliche Hunt-Gates:
 - `hunt_profile`: `balanced`, `rate` oder `dx`. In FT4 nutzt `balanced` automatisch
   das Rate-Profil für Routine-Calls; FT8 bleibt breiter.
 
+### Kontrollarm (seit 2026-09-14)
+
+Die Gates oben schätzen eine Erfolgschance und verwerfen danach. Damit
+erzeugen sie keine Daten mehr, die sie widerlegen könnten — die Verworfenen
+werden nie angerufen. Deshalb laufen in rund zehn Prozent der 15-Minuten-
+Blöcke (`hunt_kontrollarm_anteil`, Salz `kontrolle`, deterministisch aus dem
+Blockindex) folgende Gates **nicht**: SNR-Floor, Kontinent-Gate,
+Schwach-ohne-Beleg, Pile-Up, Sole-CQ, Fernziel-allein, Strict-Modus.
+
+Bestehen bleiben in beiden Armen: DT-Fenster, Slot-Parität, Bandrand
+(„geht technisch nicht") sowie Soft-Blacklist, Cooldown und
+„schon gearbeitet" (Sperren). Der Arm steht in `pick_attempt.kontroll_arm`
+und `pick_candidate.kontroll_arm`; die Zeit je Arm im Zeitprotokoll
+(`state_time_daily`, Zustände `ARM_REGEL` / `ARM_KONTROLLE`). Die Bilanz
+vergleicht QSOs je Stunde — nie die Quote je Anruf, die ist in der
+Kontrolle zwangsläufig schlechter.
+
 ## Band/Mode-Autopilot
 
 Der Autopilot ist ein vorgeschalteter Hunt-Controller. Er entscheidet nicht,

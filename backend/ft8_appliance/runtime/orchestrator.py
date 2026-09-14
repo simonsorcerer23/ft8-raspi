@@ -118,6 +118,22 @@ def _arm_aus_block(block: int, salz: str = "") -> bool:
     return ziffer & 1 == 1
 
 
+def _kontroll_block(block: int, anteil: float) -> bool:
+    """Ist dieser Zeitblock ein Kontrollblock (ohne Lohnt-sich-Gates)?
+
+    Wie ``_arm_aus_block`` deterministisch aus dem Blockindex, mit eigenem
+    Salz — sonst liefe die Kontrolle im Gleichschritt mit einem der A/B-
+    Tests und ihre Effekte waeren nicht zu trennen. Der *anteil* ist der
+    Zeitanteil der Kontrolle (0.1 = jeder zehnte Block im Mittel); 0
+    schaltet sie ab. Ein Byte des Hashes gegen anteil*256 verglichen ist
+    auf 1/256 genau, das reicht.
+    """
+    if anteil <= 0.0:
+        return False
+    ziffer = hashlib.sha256(("kontrolle" + str(block)).encode("ascii")).digest()[0]
+    return ziffer < anteil * 256.0
+
+
 _ZELLEN_SHRINK_K = 20.0
 """Wie viele Pseudo-Anrufe das Kontinentmittel in jeder Zelle mitbringt.
 
@@ -732,6 +748,8 @@ class Orchestrator:
     # Gleichschritt laufen, sonst sind ihre Effekte nicht zu trennen.
     _schwach_arm_slot: int = field(default=-1, init=False)
     _schwach_arm: bool = field(default=True, init=False)
+    _kontroll_arm_slot: int = field(default=-1, init=False)
+    _kontroll_arm: bool = field(default=False, init=False)
     # Letzter in config_history geschriebener Stand (maskiert), damit nicht
     # jeder Knopfdruck eine identische Zeile erzeugt.
     _config_stand_zuletzt: str | None = field(default=None, init=False, repr=False)
@@ -2571,6 +2589,11 @@ class Orchestrator:
             return
         zustand = self.state_machine.state.name
         self._zeit_je_zustand[zustand] = self._zeit_je_zustand.get(zustand, 0.0) + dauer
+        # Dieselbe Zeit noch einmal je Arm — der Nenner fuer "QSOs je
+        # Stunde im Kontrollarm". Die Bilanz zaehlt ARM_-Zeilen nicht zur
+        # Gesamtzeit.
+        arm = "ARM_KONTROLLE" if getattr(self.state_machine.ctx, "kontroll_arm", False) else "ARM_REGEL"
+        self._zeit_je_zustand[arm] = self._zeit_je_zustand.get(arm, 0.0) + dauer
         if self.db_enabled and jetzt - self._zeit_letzte_sicherung >= 60.0:
             self._zeit_letzte_sicherung = jetzt
             # Nur die Differenz seit der letzten Sicherung schreiben, und
@@ -3873,6 +3896,7 @@ class Orchestrator:
                     self._setze_fern_gate_arm(index)
                     self._setze_zellen_arm()
                     self._setze_schwach_arm()
+                    self._setze_kontroll_arm()
                     self.state_machine.ctx.vorab_decode_aktiv = True
                     try:
                         self.state_machine.on_decodes(self._hardware_state, decodes)
@@ -3984,6 +4008,28 @@ class Orchestrator:
             self._schwach_arm_slot = block
             self._schwach_arm = _arm_aus_block(block, "schwach")
         self.state_machine.ctx.schwach_arm = self._schwach_arm
+
+    def _setze_kontroll_arm(self) -> None:
+        """Permanenter Kontrollarm: ~10 % der Zeitbloecke ohne Lohnt-sich-Gates.
+
+        Anders als die A/B-Tests hat er kein Ende. Er ist der Massstab,
+        an dem sich jede Filterregel fortlaufend messen muss: QSOs je
+        Stunde im Regelarm gegen QSOs je Stunde in der Kontrolle. Ohne
+        ihn gilt fuer jede Regel, was fuer das Schwach-Gate galt — sie
+        wirkt, und genau deshalb gibt es keine Daten mehr, die sie
+        widerlegen koennten.
+
+        Der Anteil ist klein, weil die Gates nach heutigem Wissen mehr
+        nuetzen als schaden; die Kontrolle kostet also Ausbeute. Zehn
+        Prozent liefern bei rund 45 QSOs am Tag etwa 30 Kontroll-QSOs im
+        Monat — genug fuer eine grobe Aussage, zu wenig fuer eine feine.
+        """
+        anteil = float(getattr(self.config.operating, "hunt_kontrollarm_anteil", 0.0) or 0.0)
+        block = int(time.time() // self._FERN_ARM_BLOCK_S)
+        if block != self._kontroll_arm_slot:
+            self._kontroll_arm_slot = block
+            self._kontroll_arm = _kontroll_block(block, anteil)
+        self.state_machine.ctx.kontroll_arm = self._kontroll_arm
 
     def _vorab_neue_decodes(self, tick: SlotTick, decodes: list) -> list:
         """Die Decodes dieses Slots, die der Vorab-Durchgang noch nicht hatte.
@@ -4143,6 +4189,7 @@ class Orchestrator:
         self._setze_fern_gate_arm(tick.index)
         self._setze_zellen_arm()
         self._setze_schwach_arm()
+        self._setze_kontroll_arm()
         self._persist_filter_drops()
         self._zeitprotokoll_tick()
         self.state_machine.on_decodes(
@@ -9529,6 +9576,7 @@ class Orchestrator:
                     fern_gate=meta.get("fern_gate"),
                     zellen_arm=meta.get("zellen_arm"),
                     schwach_arm=meta.get("schwach_arm"),
+                    kontroll_arm=meta.get("kontroll_arm"),
                     tx_offset_s=meta.get("tx_offset_s"),
                     n_candidates=meta.get("n_candidates"),
                     was_tailend=meta.get("was_tailend"),
