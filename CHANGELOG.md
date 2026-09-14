@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.155.0 — 2026-09-14
+- fix: p_cq-Messung abgeschaltet — sie zaehlte fremde Erfolge als CQ-Ertrag
+
 ## v0.154.0 — 2026-09-14
 - feat: LoTW-Upload ueber die TQSL-Kommandozeile
 
