@@ -174,12 +174,19 @@ class MachineContext:
     # A/B: gilt in diesem Zeitblock die Zellen-Quote (True) oder die alte
     # Stundenliste aus der QSO-Tabelle (False)? Siehe _tier_active_hour.
     zellen_arm: bool = False
-    # A/B ab 2026-09-14: Gilt in diesem Zeitblock der Filter, der schwache
-    # Ziele ohne Empfangsbeleg verwirft (True), oder laeuft er aus (False)?
-    # Die Frage dahinter: Wir haben bisher die Abschlussquote optimiert,
-    # und die steigt zwangslaeufig, wenn man weniger anruft. Was zaehlt,
-    # ist die Zahl der QSOs je Zeit — und die hat dieser Filter nie
-    # nachgewiesen. Er verwirft mehr Kandidaten als jeder andere.
+    # A/B ab 2026-09-14: Greift der Filter fuer schwache Ziele ohne
+    # Empfangsbeleg STARR (True) oder ADAPTIV (False)?
+    #
+    # Adaptiv heisst: nur, wenn danach noch ein Kandidat uebrig bleibt.
+    # Sonst lautet die Entscheidung nicht "schwaches Ziel oder starkes",
+    # sondern "schwaches Ziel oder gar keins". Gemessen ueber die ganze
+    # Historie: Mit Auswahl bringt ein starkes Ziel 31,3 %, ein schwaches
+    # 9,7 % — da ist der Filter richtig. Ohne Auswahl bringt das schwache
+    # 8,4 %, die Alternative ist null. 85 % aller Anrufe an schwache Ziele
+    # waren alternativlos.
+    #
+    # Zielgroesse ist die Zahl der QSOs je Arm, nicht die Quote: Die
+    # steigt zwangslaeufig, wenn weniger angerufen wird.
     schwach_arm: bool = True
     # WSJT-Z-style "Auto CQ": after a QSO completes, automatically return
     # to CQ_CALLING (instead of IDLE). Set when the user presses the CQ

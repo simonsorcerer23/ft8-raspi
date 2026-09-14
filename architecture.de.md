@@ -388,6 +388,20 @@ Zusätzliche Modi:
   und CQ sank der Nutzen weiter. Knoepfe, Token-Anhaengsel und der
   Sonderpfad in der Middleware sind entfernt; ein vorhandener Token wird
   beim Start aus der Konfiguration geloescht. Die Meldungen selbst bleiben.
+- **Schwache Ziele: adaptive und wertabhaengige Schwelle (v0.145.0):** Der
+  Filter greift nur noch, wenn danach ein Kandidat uebrig bleibt. Sonst
+  lautet die Entscheidung nicht „schwaches Ziel oder starkes", sondern
+  „schwaches Ziel oder gar keins" — und dann kostet er, ohne etwas dafuer
+  zu geben. Gemessen ueber die ganze Historie: Mit Auswahl bringt ein
+  starkes Ziel 31,3 %, ein schwaches 9,7 %; ohne Auswahl bringt das
+  schwache 8,4 % gegen null. **85 % aller Anrufe an schwache Ziele waren
+  alternativlos.** Zusaetzlich darf ein wertvolles Ziel (neues DXCC oder
+  Seltenheit ab 40) 4 dB tiefer liegen. Begruendung ist nicht eine hoehere
+  Trefferquote — dafuer reichen die Daten nicht —, sondern der hoehere
+  Wert des QSOs. Die 4 dB kommen aus der Messung: Zwischen -17 und -13 dB
+  liegt die Quote flach bei rund 9,5 %, erst darunter faellt sie auf
+  4,4 %; die alte Schwelle von -13 dB schnitt mitten durch einen glatten
+  Verlauf.
 - **A/B: schwache Ziele ohne Empfangsbeleg (seit v0.143.0):** Der Filter
   `hunt_weak_requires_psk` verwirft mehr Kandidaten als jede andere Stufe
   (1094 in drei Tagen) und ist damit der Hauptgrund, warum 78 % der
