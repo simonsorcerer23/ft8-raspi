@@ -388,6 +388,21 @@ Zusätzliche Modi:
   und CQ sank der Nutzen weiter. Knoepfe, Token-Anhaengsel und der
   Sonderpfad in der Middleware sind entfernt; ein vorhandener Token wird
   beim Start aus der Konfiguration geloescht. Die Meldungen selbst bleiben.
+- **A/B: schwache Ziele ohne Empfangsbeleg (seit v0.143.0):** Der Filter
+  `hunt_weak_requires_psk` verwirft mehr Kandidaten als jede andere Stufe
+  (1094 in drei Tagen) und ist damit der Hauptgrund, warum 78 % der
+  Anrufe ueberhaupt keine Auswahl haben. Belegt war bisher nur, dass
+  schwache Ziele eine schlechtere Abschlussquote haben — das ist nicht
+  dasselbe wie „sie anzurufen lohnt nicht". Er laeuft deshalb nur noch in
+  jedem zweiten Zeitblock. **Zielgroesse ist die QSO-ZAHL je Arm, nicht
+  die Quote:** Die steigt zwangslaeufig, wenn weniger angerufen wird, und
+  genau das tut der Filter; sie zu vergleichen misst seine Nebenwirkung
+  statt seines Nutzens. Beide Arme bekommen gleich viele 15-Minuten-
+  Bloecke, also ist die QSO-Zahl unmittelbar die Ausbeute pro Zeit.
+  Eigenes Salz im Arm-Hash, damit der Test nicht mit den beiden anderen
+  im Gleichschritt laeuft. Auswertung: Abschnitt „Schwache Ziele ohne
+  Empfangsbeleg" in `scripts/qso_bilanz.py`, Spalte
+  `pick_attempt.schwach_arm`.
 - **Konservative Hunt-Gates:** vor dem Tier-Scoring werden schwache einzelne
   Routine-CQs uebersprungen, wenn sie keinen Award-/Kontextwert und kein gutes
   Decode-/PSK-SNR haben. Nach einer schlechten Hunt-Serie geht der Picker

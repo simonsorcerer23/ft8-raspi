@@ -359,6 +359,18 @@ Additional modes:
   `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
   `dxcc_rarity`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
+- **A/B: weak targets without a reception report (since v0.143.0):** the
+  `hunt_weak_requires_psk` filter discards more candidates than any other
+  stage (1094 in three days) and is the main reason 78 % of calls have no
+  choice at all. All that was ever shown is that weak targets complete
+  less often — which is not the same as "calling them is not worth it".
+  It now runs only every other time block. **The metric is the NUMBER of
+  QSOs per arm, not the completion rate:** that rate necessarily rises
+  when you call less, which is exactly what the filter does, so comparing
+  it measures the side effect instead of the benefit. Both arms get the
+  same number of 15-minute blocks, so the QSO count is directly the yield
+  per unit of time. Its own salt in the arm hash keeps it out of lockstep
+  with the two other running tests.
 - **Push notifications without action buttons (since v0.141.0):** ntfy
   messages used to carry buttons (stop, CQ, hunting, power, band) whose URL
   embedded the narrow ``ntfy_action_token`` in clear text. The topic is

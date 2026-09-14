@@ -174,6 +174,13 @@ class MachineContext:
     # A/B: gilt in diesem Zeitblock die Zellen-Quote (True) oder die alte
     # Stundenliste aus der QSO-Tabelle (False)? Siehe _tier_active_hour.
     zellen_arm: bool = False
+    # A/B ab 2026-09-14: Gilt in diesem Zeitblock der Filter, der schwache
+    # Ziele ohne Empfangsbeleg verwirft (True), oder laeuft er aus (False)?
+    # Die Frage dahinter: Wir haben bisher die Abschlussquote optimiert,
+    # und die steigt zwangslaeufig, wenn man weniger anruft. Was zaehlt,
+    # ist die Zahl der QSOs je Zeit — und die hat dieser Filter nie
+    # nachgewiesen. Er verwirft mehr Kandidaten als jeder andere.
+    schwach_arm: bool = True
     # WSJT-Z-style "Auto CQ": after a QSO completes, automatically return
     # to CQ_CALLING (instead of IDLE). Set when the user presses the CQ
     # button; cleared by Stop. Without this, CQ mode is one-shot.

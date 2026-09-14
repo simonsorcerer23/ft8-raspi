@@ -57,6 +57,7 @@ def _baue_db(pfad: Path) -> None:
                 # Argumentzahl durch, der in der echten Bilanz abstuerzte.
                 pick_kind="cq", continent="EU" if i % 2 else "NA",
                 zellen_arm=bool(i % 2), fern_gate=bool(i % 3),
+                schwach_arm=bool(i % 2),
                 pre_decode=bool(i % 2), tx_offset_s=0.05 * i,
             ))
         # Der Decode muss VOR dem Anruf liegen — die Bilanz ordnet die
@@ -147,6 +148,7 @@ ERWARTETE_ABSCHNITTE = (
     "Ersatz fuer den fehlenden Empfangsbeleg",
     "Umentscheiden",
     "Stunden-Tier",
+    "Schwache Ziele ohne Empfangsbeleg",
 )
 
 
