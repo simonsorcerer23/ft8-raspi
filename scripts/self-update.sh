@@ -143,6 +143,17 @@ PY
     if [ -f /etc/default/ft8-rigctld ] && cmp -s "${out}" /etc/default/ft8-rigctld; then
         return 0
     fi
+    # Ein rigctld-Neustart reisst PTT und die CAT-Verbindung kurz ab. Im
+    # Update-Pfad ist die Station bereits gedrained; im Timer-Pfad ("already
+    # on latest") nur neu starten, wenn sie gerade nichts sendet — sonst
+    # beim naechsten Lauf in zehn Minuten.
+    local state
+    state="$(curl -s -m 3 http://127.0.0.1:8000/api/status 2>/dev/null \
+        | "${APP_DIR}/backend/.venv/bin/python" -c 'import sys,json; print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
+    if [ -n "${state}" ] && [ "${state}" != "IDLE" ] && [ "${state}" != "CQ_CALLING" ]; then
+        log "  rigctld-envfile: Aenderung liegt bereit, Station ist ${state} — Neustart beim naechsten Lauf"
+        return 0
+    fi
     if sudo -n /usr/bin/install -m 644 "${out}" /etc/default/ft8-rigctld 2>/dev/null; then
         log "  ↻ /etc/default/ft8-rigctld erneuert — rigctld neu starten"
         sudo -n /bin/systemctl restart ft8-rigctld.service 2>/dev/null \
