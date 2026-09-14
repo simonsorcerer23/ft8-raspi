@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.152.0 — 2026-09-14
+- feat: eQSL.cc-Upload — Karten entstehen dort, wir liefern die QSOs
+
 ## v0.151.1 — 2026-09-14
 - fix: rigctld-Neustart durch den Envfile-Sync nur, wenn die Station nichts sendet
 
