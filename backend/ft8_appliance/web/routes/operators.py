@@ -50,6 +50,10 @@ class OperatorOut(BaseModel):
     # 2026-09-14 — eQSL.cc. Wie oben: Benutzername ja, Passwort nie.
     eqsl_user: str | None = None
     has_eqsl_credentials: bool = False
+    # 2026-09-14 — LoTW: nur der Name der Station Location, das
+    # Zertifikat liegt ohnehin bei TQSL und nie hier.
+    lotw_station_location: str | None = None
+    has_lotw_setup: bool = False
     is_active: bool
     # v0.29.0 — zusaetzliche Sende-Calls (Prefix/Suffix) mit eigenem
     # QRZ-Logbook-Key. Nur die Calls, nicht die Keys.
@@ -86,6 +90,8 @@ def _to_out(op: OperatorConfig, active: str) -> OperatorOut:
         ),
         eqsl_user=op.eqsl_user,
         has_eqsl_credentials=bool(op.eqsl_user and op.eqsl_password),
+        lotw_station_location=op.lotw_station_location,
+        has_lotw_setup=bool(op.lotw_station_location),
         is_active=(op.callsign == active),
         station_logbooks=sorted(op.qrz_logbooks.keys()),
     )
@@ -201,6 +207,8 @@ class CreateOperatorRequest(BaseModel):
     eqsl_user: str | None = None
     eqsl_password: str | None = None
     eqsl_qth_nickname: str | None = None
+    lotw_station_location: str | None = None
+    lotw_cert_password: str | None = None
 
 
 class CreateOperatorResponse(BaseModel):
@@ -347,6 +355,8 @@ class UpdateOperatorRequest(BaseModel):
     eqsl_user: str | None = None
     eqsl_password: str | None = None
     eqsl_qth_nickname: str | None = None
+    lotw_station_location: str | None = None
+    lotw_cert_password: str | None = None
 
 
 # Felder, die auf None zurueckgesetzt werden duerfen. default_power_w und
@@ -356,6 +366,7 @@ _NULLABLE_OPERATOR_FIELDS = frozenset({
     "default_locator", "qrz_user", "qrz_password", "qrz_logbook_api_key",
     "clublog_email", "clublog_app_password", "clublog_api_key",
     "eqsl_user", "eqsl_password", "eqsl_qth_nickname",
+    "lotw_station_location", "lotw_cert_password",
 })
 
 

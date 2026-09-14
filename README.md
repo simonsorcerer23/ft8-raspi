@@ -137,6 +137,10 @@ Credentials live per operator and are entered through the operator admin; the
 password leaves the Pi only encrypted towards eQSL and is never returned by the
 API.
 
+LoTW works differently because it only accepts digitally signed log files:
+the appliance invokes the ARRL's TQSL tool on the Pi. Setup and pitfalls are
+documented in [docs/lotw.md](docs/lotw.md).
+
 ### Supported rigs
 
 Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ and, since v0.151.0,

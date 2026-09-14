@@ -1128,6 +1128,7 @@ class Orchestrator:
         ):
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
         self.starte_eqsl_loop_falls_noetig("Start")
+        self.starte_lotw_loop_falls_noetig("Start")
         # v0.22.0 — GPS-based DX-country detection loop
         self._spawn(self._gps_country_detect_loop(), name="gps-country-detect")
         # Audit 2026-09-06 A4: der AP-Fallback wurde von NICHTS ausgeloest —
@@ -1397,6 +1398,7 @@ class Orchestrator:
         # Neue eQSL-Zugangsdaten sollen sofort greifen, nicht erst nach
         # einem Neustart — hierher kommt der PATCH-Weg.
         self.starte_eqsl_loop_falls_noetig("Operator-Zugangsdaten geaendert")
+        self.starte_lotw_loop_falls_noetig("Operator-Zugangsdaten geaendert")
 
     async def switch_operator(self, callsign: str) -> None:
         """Aktiven Operator wechseln (Hot-Swap, Sebastian 2026-05-23).
@@ -3821,6 +3823,7 @@ class Orchestrator:
             log.info("config hot-reload: starting ClubLog-drain loop")
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
         self.starte_eqsl_loop_falls_noetig("config hot-reload")
+        self.starte_lotw_loop_falls_noetig("config hot-reload")
         log.info(
             "config hot-reloaded: callsign=%s antenna=%s",
             self.state_machine.ctx.callsign, self._active_antenna,
@@ -6551,6 +6554,101 @@ class Orchestrator:
             log.info("eQSL %s: %d von %d Datensaetzen angenommen%s",
                      op.callsign, ergebnis.angenommen, ergebnis.gesamt,
                      f" ({kurz})" if kurz else "")
+
+    # TQSL signiert und laedt in einem Aufruf; der Prozessstart kostet
+    # spuerbar mehr als ein HTTP-Request, deshalb groessere Chargen und
+    # ein ruhigeres Intervall als bei eQSL.
+    _LOTW_CHARGE_MAX: typing.ClassVar[int] = 500
+    _LOTW_INTERVALL_S: typing.ClassVar[float] = 1800.0
+
+    def starte_lotw_loop_falls_noetig(self, anlass: str) -> bool:
+        """Wie beim eQSL-Loop: von JEDEM Konfigurationsweg aufrufbar."""
+        if not self.db_enabled:
+            return False
+        if any(t.get_name() == "lotw-drain" and not t.done() for t in self._bg_tasks):
+            return False
+        if not any(o.lotw_station_location for o in self.config.operators):
+            return False
+        log.info("%s: LoTW-Drain-Loop wird gestartet", anlass)
+        self._spawn(self._lotw_drain_loop(), name="lotw-drain")
+        return True
+
+    async def _lotw_drain_loop(self) -> None:
+        """LoTW-Upload je Operator ueber die TQSL-Kommandozeile."""
+        if self.config.demo_mode:
+            log.info("demo_mode — LoTW-Upload deaktiviert")
+            return
+        log.info("LoTW drain loop aktiv (Intervall %.0fs, Charge max %d)",
+                 self._LOTW_INTERVALL_S, self._LOTW_CHARGE_MAX)
+        while True:
+            try:
+                for op in self.config.operators:
+                    if op.lotw_station_location:
+                        await self._lotw_sweep_fuer_operator(op)
+                await self._note_drain_outcome("LoTW", None)
+            except Exception as exc:
+                await self._note_drain_outcome("LoTW", exc)
+            await asyncio.sleep(self._LOTW_INTERVALL_S)
+
+    async def _lotw_sweep_fuer_operator(self, op) -> None:
+        from sqlalchemy import select
+
+        from ..db import session_scope
+        from ..db.models import Qso
+        from ..integrations.lotw import LotwError, upload
+
+        async with session_scope() as s:
+            jetzt = datetime.now(UTC)
+            offen = list((await s.execute(
+                select(Qso)
+                .where(Qso.lotw_uploaded == False)  # noqa: E712
+                .where(Qso.user_callsign == op.callsign)
+                .order_by(Qso.qso_start.asc())
+            )).scalars())
+            faellig = []
+            for q in offen:
+                backoff_s = min(7200.0, 1800.0 * (2 ** q.lotw_upload_attempts))
+                zuletzt = _as_utc(q.lotw_last_attempt_at)
+                if zuletzt is not None and (jetzt - zuletzt).total_seconds() < backoff_s:
+                    continue
+                faellig.append(q)
+                if len(faellig) >= self._LOTW_CHARGE_MAX:
+                    break
+            if not faellig:
+                return
+            for q in faellig:
+                q.lotw_upload_attempts += 1
+                q.lotw_last_attempt_at = jetzt
+            try:
+                ergebnis = await upload(
+                    faellig, station_location=op.lotw_station_location,
+                    cert_password=op.lotw_cert_password,
+                )
+            except LotwError as exc:
+                if exc.hart:
+                    # Fehlendes Zertifikat, unbekannte Station Location, von
+                    # LoTW zurueckgewiesen: nichts als hochgeladen verbuchen,
+                    # sonst waeren die QSOs nach dem Richten uebersprungen.
+                    log.error("LoTW lehnt %s ab (Code %s): %s — Einrichtung pruefen",
+                              op.callsign, exc.code, exc)
+                    return
+                aufgegeben = [q.call for q in faellig
+                              if q.lotw_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS]
+                for q in faellig:
+                    if q.lotw_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                        q.lotw_uploaded = True
+                log.warning("LoTW-Upload fehlgeschlagen (%s), %d QSOs bleiben offen",
+                            exc, len(faellig) - len(aufgegeben))
+                if aufgegeben:
+                    log.error("LoTW: %d QSOs nach %d Versuchen aufgegeben: %s",
+                              len(aufgegeben), self._UPLOAD_MAX_ATTEMPTS,
+                              ", ".join(aufgegeben))
+                    self._alert_upload_giveup_many("LoTW", aufgegeben)
+                return
+            for q in faellig:
+                q.lotw_uploaded = True
+            log.info("LoTW %s: %d QSOs, %s (Code %d)",
+                     op.callsign, ergebnis.gesamt, ergebnis.meldung, ergebnis.code)
 
     async def _clublog_drain_loop(self) -> None:
         """v0.21.0 — ClubLog Real-Time-Upload-Drain (analog QRZ).

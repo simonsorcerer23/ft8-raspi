@@ -141,6 +141,10 @@ stehen je Operator im Profil, einzutragen über die Operator-Verwaltung; das
 Passwort verlässt den Pi nur verschlüsselt zu eQSL und wird von der
 Schnittstelle nie zurückgegeben.
 
+Für LoTW gilt ein eigener Weg, weil dort nur signierte Logdateien
+angenommen werden: Die Appliance ruft dafür die ARRL-Software TQSL auf dem
+Pi auf. Einrichtung und Fallstricke stehen in [docs/lotw.md](docs/lotw.md).
+
 ### Unterstützte Rigs
 
 Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ und seit v0.151.0
