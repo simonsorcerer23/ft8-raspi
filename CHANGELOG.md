@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.151.0 — 2026-09-14
+- feat: Yaesu FT-817/818 am Digirig Mobile als Rig — vorbereitet ohne Geraet
+
 ## v0.150.0 — 2026-09-14
 - feat: Erwartungswert-Modell als A/B gegen die Filterkette
 - docs: Bilanz-Befehl und die vier entscheidenden Abschnitte in der Betriebsdoku
