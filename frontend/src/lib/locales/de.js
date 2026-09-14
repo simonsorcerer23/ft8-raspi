@@ -272,7 +272,7 @@ export const de = {
   'opadmin.unchanged': 'unverändert',
   'opadmin.eqsl_user': 'eQSL-Benutzername',
   'opadmin.eqsl_password': 'eQSL-Passwort',
-  'opadmin.eqsl_nickname': 'eQSL-QTH-Kennung (optional)',
+  'opadmin.eqsl_nickname': 'eQSL-Kontoname (nur bei mehreren Konten)',
   'opadmin.clear_creds': 'entfernen',
   'opadmin.save': 'speichern',
   'opadmin.cancel': 'abbrechen',

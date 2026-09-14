@@ -58,8 +58,13 @@ class OperatorConfig(BaseModel):
     # eQSL.cc (seit 2026-09-14). Das Kartenmotiv liegt im eQSL-Profil, wir
     # liefern nur die QSOs; eQSL druckt die Daten beim Abruf selbst darauf.
     # Anders als ClubLog nimmt eQSL das normale Login-Passwort — ein
-    # Anwendungspasswort gibt es dort nicht. Der Nickname trennt mehrere
-    # Konten desselben Rufzeichens (Heim-QTH, portabel) und bleibt meist leer.
+    # Anwendungspasswort gibt es dort nicht.
+    #
+    # eqsl_qth_nickname ist trotz des Namens KEIN Ort, sondern der bei eQSL
+    # selbst vergebene Name eines von mehreren Konten desselben Rufzeichens.
+    # Er laesst sich nicht aus GPS oder Locator ableiten und muss exakt so
+    # lauten wie dort angelegt; ein erfundener Wert laesst den Upload ins
+    # Leere laufen. Wer ein Konto hat, laesst das Feld leer.
     eqsl_user: str | None = None
     eqsl_password: str | None = None
     eqsl_qth_nickname: str | None = None
