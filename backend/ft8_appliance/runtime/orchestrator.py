@@ -1127,12 +1127,7 @@ class Orchestrator:
             and self.config.operator.clublog_api_key
         ):
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
-        # eQSL laeuft je Operator mit eigenen Zugangsdaten; es genuegt,
-        # wenn EIN Operator welche hat.
-        if self.db_enabled and any(
-            o.eqsl_user and o.eqsl_password for o in self.config.operators
-        ):
-            self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")
+        self.starte_eqsl_loop_falls_noetig("Start")
         # v0.22.0 — GPS-based DX-country detection loop
         self._spawn(self._gps_country_detect_loop(), name="gps-country-detect")
         # Audit 2026-09-06 A4: der AP-Fallback wurde von NICHTS ausgeloest —
@@ -1360,6 +1355,31 @@ class Orchestrator:
         ntfy = self.config.integrations.ntfy
         ntfy.topic = f"ft8-{base_call(op.callsign).lower()}"
 
+    def starte_eqsl_loop_falls_noetig(self, anlass: str) -> bool:
+        """Den eQSL-Loop anwerfen, sobald irgendein Operator Zugangsdaten hat.
+
+        Muss von JEDEM Weg gerufen werden, ueber den Zugangsdaten in die
+        Konfiguration kommen. Der erste Anlauf haengte nur an
+        ``on_config_changed`` — und genau den ruft der Hauptweg nicht auf:
+        ``PATCH /operators/{call}`` speichert und laedt die Integrationen
+        neu, mehr nicht. Die Zugangsdaten standen also in der Datei, der
+        Upload lief trotzdem erst nach dem naechsten Neustart, ohne dass
+        irgendwo etwas fehlschlug (2026-09-14, derselbe Fehler wie beim
+        Konfig-Historienschreiber zwei Tage zuvor).
+        """
+        if not self.db_enabled:
+            return False
+        laeuft = any(
+            t.get_name() == "eqsl-drain" and not t.done() for t in self._bg_tasks
+        )
+        if laeuft:
+            return False
+        if not any(o.eqsl_user and o.eqsl_password for o in self.config.operators):
+            return False
+        log.info("%s: eQSL-Drain-Loop wird gestartet", anlass)
+        self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")
+        return True
+
     def reload_active_operator_integrations(self) -> None:
         """Globale Integrations aus dem aktiven Profil neu aufbauen.
 
@@ -1374,6 +1394,9 @@ class Orchestrator:
         except ValueError:
             return  # operators leer (Wizard-Mode)
         self._init_integrations()
+        # Neue eQSL-Zugangsdaten sollen sofort greifen, nicht erst nach
+        # einem Neustart — hierher kommt der PATCH-Weg.
+        self.starte_eqsl_loop_falls_noetig("Operator-Zugangsdaten geaendert")
 
     async def switch_operator(self, callsign: str) -> None:
         """Aktiven Operator wechseln (Hot-Swap, Sebastian 2026-05-23).
@@ -3797,19 +3820,7 @@ class Orchestrator:
         ):
             log.info("config hot-reload: starting ClubLog-drain loop")
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
-        # eQSL analog: Wer die Zugangsdaten nachtraegt, soll nicht neu
-        # starten muessen. Der Loop prueft die Operatoren bei jedem Lauf
-        # selbst, hier geht es nur ums Anwerfen.
-        eqsl_laeuft = any(
-            t.get_name() == "eqsl-drain" and not t.done() for t in self._bg_tasks
-        )
-        if (
-            self.db_enabled
-            and not eqsl_laeuft
-            and any(o.eqsl_user and o.eqsl_password for o in new_cfg.operators)
-        ):
-            log.info("config hot-reload: starting eQSL-drain loop")
-            self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")
+        self.starte_eqsl_loop_falls_noetig("config hot-reload")
         log.info(
             "config hot-reloaded: callsign=%s antenna=%s",
             self.state_machine.ctx.callsign, self._active_antenna,
