@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.142.0 — 2026-09-14
+- feat: A/B des Stunden-Tiers beendet — und die Historie fing den Hauptweg nicht
+
 ## v0.141.0 — 2026-09-13
 - feat: Push-Meldungen ohne Aktionsknoepfe — der Steuer-Token lag offen
 
