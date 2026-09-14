@@ -655,11 +655,20 @@ class OperatingConfig(BaseModel):
     hunt_continent_gate: bool = True
     hunt_continent_gate_pct: float = Field(default=5.0, ge=0.0, le=100.0)
     # 2026-09-12: Stunden-Tier aus der Anruf-Telemetrie statt aus der
-    # QSO-Tabelle (Zelle Kontinent x UTC-Stunde). Laeuft als A/B, bis die
-    # Zahlen fuer einen der beiden Arme sprechen — hunt_zellen_prior_ab=False
-    # schaltet dauerhaft auf die neue Quelle.
+    # QSO-Tabelle (Zelle Kontinent x UTC-Stunde).
+    #
+    # A/B beendet am 2026-09-14, Ergebnis unentschieden: nach Ausgleich
+    # ueber die Stunden 19,6 % gegen 19,3 % bei 184 bzw. 218 Anrufen. Fuer
+    # einen Nachweis dieses Abstands braeuchte es rund 67.000 Anrufe je
+    # Arm. Grund fuer den Gleichstand steht in der Telemetrie: Von 607
+    # Anrufen entschied der Stunden-Tier neun, in 488 Faellen gab es
+    # ueberhaupt nur einen Kandidaten.
+    #
+    # Behalten wird trotzdem die neue Quelle — nicht weil sie besser
+    # misst, sondern weil die alte zirkulaer ist: Sie zaehlt, wann wir
+    # QSOs *hatten*, also genau das, was der Tier vorhersagen soll.
     hunt_zellen_prior: bool = True
-    hunt_zellen_prior_ab: bool = True
+    hunt_zellen_prior_ab: bool = False
     # A/B: Antwort abwechselnd auf ruhigem Bin / auf der Rufer-Frequenz;
     # pick_attempt.reply_kind haelt fest, was gewonnen hat.
     hunt_reply_ab_test: bool = True

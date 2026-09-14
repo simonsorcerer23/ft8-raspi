@@ -231,6 +231,13 @@ async def _save_config_locked(req, orch, yaml, set_config_for_tests, get_current
                 path,
                 yaml.safe_dump(d, default_flow_style=False, sort_keys=False),
             )
+            # Aenderungshistorie — dieser Endpunkt ist der Hauptweg, ueber
+            # den Einstellungen geaendert werden (die ganze Konfigseite
+            # speichert hierueber). Der Schreiber in persist_config greift
+            # hier NICHT, weil dieser Pfad die Datei selbst schreibt; ohne
+            # diese Zeile blieb die Historie bei Bedienung durch den
+            # Benutzer leer — genau der Fall, fuer den es sie gibt.
+            await orch._merke_config_stand(d)
         except OSError as exc:
             raise HTTPException(
                 status_code=500,
