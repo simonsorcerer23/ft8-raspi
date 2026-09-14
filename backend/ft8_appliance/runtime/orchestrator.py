@@ -2475,6 +2475,45 @@ class Orchestrator:
             except Exception:
                 pass
 
+    def _protokolliere_kandidaten(self, slot_ts: datetime) -> None:
+        """Kandidatenprotokoll des eben gelaufenen Picks in die DB.
+
+        Holt die Liste per pop, damit ein Slot nicht doppelt geschrieben
+        wird — on_decodes laeuft je nach Pfad mehrfach je Slot (Vorab-
+        Durchgang, regulaerer Durchgang, spaeter Pass), aber der Picker
+        legt die Liste nur ab, wenn er wirklich entschieden hat.
+        """
+        if not self.db_enabled:
+            return
+        diag = getattr(self.state_machine, "_last_pick_diag", None) or {}
+        kandidaten = diag.pop("kandidaten", None)
+        if not kandidaten:
+            return
+        ctx = self.state_machine.ctx
+        asyncio.create_task(self._persist_kandidaten(
+            slot_ts, kandidaten,
+            bool(getattr(ctx, "schwach_arm", True)),
+            getattr(ctx, "kontroll_arm", None),
+        ))
+
+    async def _persist_kandidaten(
+        self, slot_ts: datetime, kandidaten: list[dict],
+        schwach_arm: bool, kontroll_arm: bool | None,
+    ) -> None:
+        """Fail-soft — eine Messreihe darf den Betrieb nie kosten."""
+        try:
+            from ..db.models import PickCandidate
+            n = len(kandidaten)
+            async with session_scope() as s:
+                for k in kandidaten:
+                    s.add(PickCandidate(
+                        slot_ts=slot_ts, n_grundmenge=n,
+                        schwach_arm=schwach_arm, kontroll_arm=kontroll_arm,
+                        **k,
+                    ))
+        except Exception as exc:
+            log.debug("Kandidatenprotokoll nicht gespeichert: %s", exc)
+
     async def _persist_filter_drops_tag(
         self, tag: str, werte: dict[str, int],
     ) -> None:
@@ -3761,6 +3800,7 @@ class Orchestrator:
                     self.state_machine.ctx.vorab_decode_aktiv = True
                     try:
                         self.state_machine.on_decodes(self._hardware_state, decodes)
+                        self._protokolliere_kandidaten(datetime.now(UTC))
                     finally:
                         self.state_machine.ctx.vorab_decode_aktiv = False
                     # Ohne dieses Abarbeiten war der ganze Umbau wirkungslos:
@@ -4031,6 +4071,7 @@ class Orchestrator:
         self.state_machine.on_decodes(
             self._hardware_state, self._vorab_neue_decodes(tick, decodes),
         )
+        self._protokolliere_kandidaten(datetime.now(UTC))
         # Der Picker soll den ganzen Slot sehen, nicht nur den Rest.
         self.state_machine.last_decodes = list(decodes)
         _phasen["zustandsmaschine"] = round(time.time() - _t, 3)
@@ -4157,6 +4198,7 @@ class Orchestrator:
         # hier kommen Stufe 2 und jt9 durch dieselbe Tuer.
         log.debug("spaeter Pass eingespeist: %d Decodes fuer Slot %d", len(decodes), tick.index)
         self.state_machine.on_decodes(self._hardware_state, decodes)
+        self._protokolliere_kandidaten(datetime.now(UTC))
         # on_decodes ersetzt last_decodes durch die Charge — fuer den
         # CQ-Frequenz-Picker soll der ganze Slot sichtbar bleiben.
         self.state_machine.last_decodes = list(self._last_decodes)
