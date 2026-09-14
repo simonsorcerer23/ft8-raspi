@@ -419,6 +419,47 @@ class ConfigHistory(Base):
 
 
 # ---------------------------------------------------------------------------
+class PickCandidate(Base):
+    """Jeder Kandidat eines Slots, mit Schicksal — nicht nur der Gewinner.
+
+    Seit 2026-09-14. Vorher stand ueber die Verworfenen nur ein Zaehler je
+    Filterstufe ("schwach ohne Beleg: +1"). Wer das war, wie stark, aus
+    welchem Land, ob mit Empfangsbeleg: nirgends. Damit liess sich keine
+    Regel im Nachhinein pruefen — eine Regel, die wirkt, verhindert ihre
+    eigene Ueberpruefung, weil die Verworfenen nie angerufen werden.
+
+    Diese Tabelle ist die Datengrundlage fuer den dauerhaften Kontrollarm:
+    Was haette eine Regel im Kontrollarm angerufen, und wie ging es dort
+    aus. ``verworfen_von`` ist NULL fuer die, die alle Filter passierten;
+    genau einer davon traegt ``gewaehlt``.
+
+    Umfang: etwa so viele Zeilen wie CQ-Decodes, also einige tausend am
+    Tag. Bei 180.000 Decodes in neun Tagen ist das die kleinere Tabelle.
+    """
+
+    __tablename__ = "pick_candidate"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slot_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    call: Mapped[str] = mapped_column(String, index=True)
+    call_raw: Mapped[str | None] = mapped_column(String, nullable=True)
+    snr_db: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dt_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    freq_offset_hz: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    grid: Mapped[str | None] = mapped_column(String, nullable=True)
+    continent: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    psk_heard: Mapped[bool] = mapped_column(Boolean, default=False)
+    new_dxcc: Mapped[bool] = mapped_column(Boolean, default=False)
+    rarity: Mapped[int] = mapped_column(Integer, default=0)
+    verworfen_von: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    gewaehlt: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    n_grundmenge: Mapped[int] = mapped_column(Integer)
+    # Welche Arme galten in diesem Slot — fuer den Vergleich Regel/Kontrolle.
+    schwach_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    kontroll_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 class PickAttempt(Base):
     """v0.30.0 — Forward-A/B-Messpunkt fuer den psk_heard_us-Tier.
 
