@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.148.0 — 2026-09-14
+- feat: permanenter Kontrollarm — 10 % der Zeit ohne Lohnt-sich-Gates
+
 ## v0.147.0 — 2026-09-14
 - feat: Zeitprotokoll je Zustand — QSOs je Stunde statt je Anruf; Wartezeit gemessen
 
