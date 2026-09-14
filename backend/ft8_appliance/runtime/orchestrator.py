@@ -40,6 +40,7 @@ from typing import Any, overload
 from sqlalchemy import func, select
 
 from .. import i18n as _i18n
+from ..config.models import _RIG_TABLE, RIG_COMPUTED_FIELDS, RigProfil
 from ..config import AppConfig, OperatorConfig
 
 
@@ -132,6 +133,17 @@ def _kontroll_block(block: int, anteil: float) -> bool:
         return False
     ziffer = hashlib.sha256(("kontrolle" + str(block)).encode("ascii")).digest()[0]
     return ziffer < anteil * 256.0
+
+
+def _rig_profil_von(config) -> "RigProfil":
+    """Das Profil des konfigurierten Rigs (hamlib-ID, was setzbar ist).
+
+    Modulfunktion statt Methode, damit Test-Attrappen ohne Rig-Konfig
+    weiter laufen: ohne Profil gilt das Icom-Standardprofil (alles
+    setzbar) — im Betrieb hat RigConfig immer eines.
+    """
+    pf = getattr(getattr(config, "rig", None), "profil", None)
+    return pf if pf is not None else _RIG_TABLE["ic705"]
 
 
 _ZELLEN_SHRINK_K = 20.0
@@ -2306,7 +2318,7 @@ class Orchestrator:
             d = self.config.model_dump(
                 exclude_none=True,
                 exclude={
-                    "rig": {"hamlib_id", "effective_max_power_w"},
+                    "rig": set(RIG_COMPUTED_FIELDS),
                     "operator": True,  # computed_field, siehe Docstring
                 },
             )
@@ -3291,7 +3303,8 @@ class Orchestrator:
         if self._tx_burst_active:
             return {"ok": False, "detail": "burst"}
         self._rig_restore_last_at = time.monotonic()
-        await self.handle_set_mode("PKTUSB", 2700)
+        _pf = _rig_profil_von(self.config)
+        await self.handle_set_mode(_pf.digital_mode, _pf.mode_width_hz)
         await self._ensure_dial_matches_mode(f"restore:{reason}")
         self._last_mode_alert = None
         self._last_bandwidth_alert_hz = None
@@ -3312,6 +3325,19 @@ class Orchestrator:
         await self.rig.set_mode(mode, bandwidth_hz)
         self._register_app_command("mode", mode)
         self._register_app_command("bandwidth_hz", int(bandwidth_hz))
+
+    async def _notify_power_over_cap(self, rig_w: int, legal_w: int) -> None:
+        """Push: Rig ohne setzbare Leistung steht ueber dem erlaubten Wert."""
+        ntfy = self.integrations.ntfy
+        if ntfy is None or not ntfy.enabled:
+            return
+        try:
+            await ntfy.notify(
+                _t("push.power_over_cap_msg", rig=rig_w, legal=legal_w, model=self.config.rig.model),
+                title=_t("push.power_over_cap_title"), priority="high", tags=["warning"],
+            )
+        except Exception as exc:
+            log.warning("power-over-cap push failed: %s", exc)
 
     async def _notify_power_tamper(self, rig_w: int, expected_w: int) -> None:
         """Push: TX-Power wurde am Rig (extern) verstellt."""
@@ -3402,6 +3428,13 @@ class Orchestrator:
         """
         rig_max_w = self.config.rig.effective_max_power_w
         watts = max(1, min(self._legal_max_power_w(), int(watts)))
+        if not _rig_profil_von(self.config).power_settable:
+            # FT-817/818: Leistung wird am Geraet gewaehlt; der Poll liest
+            # sie zurueck und setzt _tx_power_w. Ein Set-Befehl kaeme mit
+            # RPRT-Fehler zurueck und der Slider wuerde luegen.
+            log.info("TX-Power: Rig %s stellt Leistung nur am Geraet (%d W angefragt, "
+                     "bleibt bei %d W)", self.config.rig.model, watts, self._tx_power_w)
+            return
         # Normiert wird gegen den RIG-Vollausschlag, nicht gegen das legale
         # Limit: Hamlib RFPOWER ist 0.0..1.0 der Rig-Skala. Gegen den
         # legalen Cap zu teilen wuerde bei z.B. 15 W Limit volle 100 W
@@ -3534,6 +3567,13 @@ class Orchestrator:
         # ist), trotzdem den internen Wert setzen — der wird beim
         # naechsten erfolgreichen Set-Befehl ans Rig synchronisiert.
         max_w = self.config.rig.effective_max_power_w
+        if not _rig_profil_von(self.config).power_settable:
+            # Nicht setzbar: nur der Bediener kann am Geraet reduzieren.
+            # Der Poll meldet den Ist-Wert; liegt er ueber dem Erlaubten,
+            # kommt die Meldung aus dem Poll-Block (power_manual_over_cap).
+            log.warning("tx-power safety-floor (%s): Rig %s nicht setzbar — bitte am Geraet "
+                        "auf hoechstens %d W stellen", reason, self.config.rig.model, safe)
+            return
         try:
             await self.rig.set_rfpower(safe / max_w)
             self._register_app_command("rfpower_norm", safe / max_w)
@@ -6878,7 +6918,21 @@ class Orchestrator:
             if rfp is not None:
                 max_w = self.config.rig.effective_max_power_w
                 rig_watts = max(1, int(round(rfp * max_w)))
-                if abs(rig_watts - self._tx_power_w) >= max(1, max_w // 20):
+                if not _rig_profil_von(self.config).power_settable:
+                    # Leistung wird am Geraet gewaehlt: kein "extern verstellt",
+                    # der Ist-Wert IST der Sollwert. Nur ueber dem legalen Cap
+                    # gibt es eine Meldung — einmal je neuem Wert.
+                    if rig_watts != self._tx_power_w:
+                        log.info("TX-Power vom Geraet: %d W", rig_watts)
+                        self._tx_power_w = rig_watts
+                    legal = self._legal_max_power_w()
+                    if rig_watts > legal and self._last_power_alert_w != rig_watts:
+                        self._last_power_alert_w = rig_watts
+                        asyncio.create_task(
+                            self._notify_power_over_cap(rig_watts, legal),
+                            name="power-cap-push",
+                        )
+                elif abs(rig_watts - self._tx_power_w) >= max(1, max_w // 20):
                     # Echo-Check: war das unser eigener set_rfpower-Befehl
                     # aus den letzten paar Sekunden, oder hat jemand am
                     # Frontpanel gedreht?
@@ -6944,7 +6998,7 @@ class Orchestrator:
             rig_bw = self._last_rig.bandwidth_hz
             BW_MIN_OK = 2000   # alles drueber ist breit genug fuer FT8
             BW_MAX_OK = 6000   # alles drunter ist normal SSB-Breite
-            bw_problematic = rig_bw is not None and (
+            bw_problematic = _rig_profil_von(self.config).bandwidth_settable and rig_bw is not None and (
                 rig_bw < BW_MIN_OK or rig_bw > BW_MAX_OK
             )
             if bw_problematic:

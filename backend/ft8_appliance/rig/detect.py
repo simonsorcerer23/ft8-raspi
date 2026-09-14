@@ -36,7 +36,14 @@ _PATTERNS: list[tuple[re.Pattern[str], str, str, str]] = [
     # stations, but the deploy target is an Icom-only ham shack — treat the
     # match as a confident IC-7300. If you later add a Yaesu/CAT-cable that
     # also uses CP210x, lower this back to "low" and surface the warning.
-    (re.compile(r"usb-Silicon_Labs_CP2102"), "ic7300", "high", "Icom IC-7300"),
+    # Das IC-7300-Kabel traegt seinen Namen im USB-String
+    # ("..._Controller_IC-7300_<serial>-if00-port0") — das ist eindeutig.
+    (re.compile(r"usb-Silicon_Labs_CP2102.*IC-7300"), "ic7300", "high", "Icom IC-7300"),
+    # Ein CP2102 OHNE Rig-Kennung: der Digirig Mobile (CP2102 laut
+    # digirig.net) — oder irgendein fremdes CAT-Kabel. Wir melden den
+    # Yaesu-Kandidaten mit niedriger Sicherheit; der Bediener bestaetigt.
+    (re.compile(r"usb-Silicon_Labs_CP2102"), "ft817", "low",
+     "Silicon Labs CP2102 ohne Rig-Kennung: Digirig (FT-817/818) oder fremdes CAT-Kabel"),
 ]
 
 
@@ -44,7 +51,7 @@ _PATTERNS: list[tuple[re.Pattern[str], str, str, str]] = [
 class RigDetection:
     """One detected USB serial device that might be a supported rig."""
 
-    model: Literal["ic705", "ic7300", "ic9700", "ic7610", "qmx_plus"]
+    model: Literal["ic705", "ic7300", "ic9700", "ic7610", "qmx_plus", "ft817", "ft818"]
     confidence: Literal["high", "low"]
     serial_device: str           # /dev/serial/by-id/usb-...
     description: str             # human-readable

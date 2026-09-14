@@ -313,9 +313,15 @@ for cand in /dev/serial/by-id/*u-blox* /dev/ttyACM0; do
     fi
 done
 if [ -n "${GPS_DEV}" ]; then
+    # USBAUTO="false": Mit gepinntem DEVICES braucht gpsd keine Hotplug-
+    # Suche — und die ist gefaehrlich: Sie greift jeden neuen USB-Seriell-
+    # Port ab, auch den CP2102 eines Digirig, und wackelt dort an den
+    # Handshake-Leitungen. RTS ist beim Digirig die PTT: das Rig sendet
+    # dann ohne Anlass (digirig.net/troubleshooting-digital-modes,
+    # "Constant transmission"). Stand 2026-09-14.
     cat > /etc/default/gpsd <<EOF
 START_DAEMON="true"
-USBAUTO="true"
+USBAUTO="false"
 DEVICES="${GPS_DEV}"
 GPSD_OPTIONS="-n -G"
 GPSD_SOCKET="/var/run/gpsd.sock"

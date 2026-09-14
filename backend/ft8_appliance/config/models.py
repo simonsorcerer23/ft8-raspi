@@ -930,21 +930,60 @@ class UiConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Hamlib model IDs and stock max-power-out for each rig we explicitly support.
-# Add more here if needed; the Literal in RigConfig is the source of truth for
-# what's selectable in the UI.
-_RIG_TABLE: dict[str, tuple[int, int]] = {
-    # model_id : (hamlib_id, default_max_power_w)
-    "ic705":     (3085,  10),
-    "ic7300":    (3073, 100),
-    "ic9700":    (3081, 100),
-    "ic7610":    (3079, 100),
-    # QRP Labs QMX/QMX+ — Multibanddigi-Transceiver, max 5W. Hamlib ID
-    # 2053 ist seit Hamlib 4.5 verfügbar. Falls die installierte
-    # Hamlib-Version zu alt ist, kann hier auf 2014 (Kenwood TS-480)
-    # ausgewichen werden — die QMX-Firmware emuliert TS-480 CAT.
-    "qmx_plus":  (2053,   5),
+# Ein Profil je Rig, das wir ausdruecklich unterstuetzen. Das Literal in
+# RigConfig entscheidet, was in der UI waehlbar ist; ein Test haelt beide
+# und die Frontend-Listen deckungsgleich.
+#
+# Quellen (2026-09-14): hamlib 4.6.2 ``rigctl -l`` / ``--dump-caps`` auf dem
+# Pi fuer IDs, Baudbereich, setzbare Levels und Leistung; Digirig-Doku
+# (digirig.net) fuer PTT ueber RTS und den CP2102-Seriellchip.
+from dataclasses import dataclass as _dataclass
+
+
+@_dataclass(frozen=True, slots=True)
+class RigProfil:
+    hamlib_id: int
+    max_power_w: int
+    label: str
+    cat_baud: int = 19200
+    ptt_type: str = "cat"            # "cat" | "rts" | "dtr"
+    # FT-817/818: ``Set level`` kennt nur BAND_SELECT — Leistung wird am
+    # Geraet gewaehlt (0,5/1/2,5/5 W), die Appliance liest sie nur.
+    power_settable: bool = True
+    # Filterbreite per CAT: Icom ja; beim FT-817 nicht dokumentiert, also
+    # Modus ohne Breite setzen (0 = Normalfilter) und keinen Filter-Alarm.
+    bandwidth_settable: bool = True
+    mode_width_hz: int = 2700
+    # Datenmodus fuer die rueckwaertige Buchse: bei Icom PKTUSB (USB-D),
+    # bei Yaesu ebenfalls PKTUSB laut hamlib-Modusliste ("DIG" am Geraet).
+    digital_mode: str = "PKTUSB"
+
+
+_RIG_TABLE: dict[str, RigProfil] = {
+    "ic705":    RigProfil(3085,  10, "Icom IC-705"),
+    "ic7300":   RigProfil(3073, 100, "Icom IC-7300"),
+    "ic9700":   RigProfil(3081, 100, "Icom IC-9700"),
+    "ic7610":   RigProfil(3079, 100, "Icom IC-7610"),
+    # QRP Labs QMX/QMX+ — hamlib 2053 seit 4.5; aeltere hamlib: 2014
+    # (Kenwood TS-480), dessen CAT die QMX-Firmware emuliert.
+    "qmx_plus": RigProfil(2053,   5, "QRP Labs QMX/QMX+"),
+    # Yaesu FT-817/818 am Digirig Mobile (2026-09-14): CAT ueber MiniDin8
+    # an den CP2102 des Digirig, 4800..38400 Baud 8N2 (Werkseinstellung
+    # 4800 — CAT RATE am Geraet muss zur Konfiguration passen), PTT ueber
+    # die RTS-Leitung desselben Ports, Audio ueber die CM108-Soundkarte
+    # des Digirig. Leistung laut hamlib 5 W, nur lesbar.
+    "ft817":    RigProfil(1020, 5, "Yaesu FT-817 (Digirig)", cat_baud=4800, ptt_type="rts",
+                          power_settable=False, bandwidth_settable=False, mode_width_hz=0),
+    "ft818":    RigProfil(1041, 5, "Yaesu FT-818 (Digirig)", cat_baud=4800, ptt_type="rts",
+                          power_settable=False, bandwidth_settable=False, mode_width_hz=0),
 }
+
+RIG_MODELS = tuple(_RIG_TABLE)
+# Computed-Felder von RigConfig — beim Zurueckschreiben der YAML ausschliessen,
+# sonst "Extra inputs not permitted" (extra=forbid). Eine Liste, drei Nutzer.
+RIG_COMPUTED_FIELDS: frozenset[str] = frozenset(
+    {"hamlib_id", "effective_max_power_w", "effective_cat_baud", "effective_ptt_type"}
+)
 
 
 class RigConfig(BaseModel):
@@ -953,15 +992,19 @@ class RigConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # Friendly identifier; the Hamlib ID and stock max-power are derived from it.
-    model: Literal["ic705", "ic7300", "ic9700", "ic7610", "qmx_plus"] = "ic705"
+    model: Literal["ic705", "ic7300", "ic9700", "ic7610", "qmx_plus", "ft817", "ft818"] = "ic705"
 
     # Stable serial device path. The IC-705 default works for a single rig
     # connected via its USB-C data port. IC-7300 default also works via USB-B.
     serial_device: str = "/dev/serial/by-id/usb-Icom_Inc._IC-705-if00"
 
-    # CAT baud. Both 705 and 7300 default to 19200 from the factory; can be
-    # bumped to 115200 on either side.
-    cat_baud: int = Field(default=19200, ge=4800, le=115200)
+    # CAT baud. None = Werkswert des Profils (Icom 19200, FT-817/818 4800).
+    # Am Geraet muss dieselbe Rate eingestellt sein.
+    cat_baud: int | None = Field(default=None, ge=4800, le=115200)
+
+    # PTT-Weg. None = Profil: CAT bei Icom/QMX, RTS-Leitung am Digirig.
+    # rigctld bekommt daraus --ptt-type/--ptt-file (siehe rigctld_envfile).
+    ptt_type: Literal["cat", "rts", "dtr"] | None = None
 
     # Max TX power in watts. Defaults are derived from the model when unset
     # (10 for IC-705, 100 for the rest); set explicitly to clamp lower than
@@ -973,17 +1016,31 @@ class RigConfig(BaseModel):
     # Icom CODEC. Set explicitly when you have multiple rigs/USB sound cards.
     audio_card_hint: str = ""
 
+    @property
+    def profil(self) -> RigProfil:
+        return _RIG_TABLE[self.model]
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def hamlib_id(self) -> int:
-        return _RIG_TABLE[self.model][0]
+        return self.profil.hamlib_id
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def effective_max_power_w(self) -> int:
         if self.max_power_w is not None:
             return self.max_power_w
-        return _RIG_TABLE[self.model][1]
+        return self.profil.max_power_w
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective_cat_baud(self) -> int:
+        return self.cat_baud if self.cat_baud is not None else self.profil.cat_baud
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective_ptt_type(self) -> str:
+        return self.ptt_type if self.ptt_type is not None else self.profil.ptt_type
 
 
 # ---------------------------------------------------------------------------

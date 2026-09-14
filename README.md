@@ -127,6 +127,13 @@ ours.
 
 Details and the audit trail: [docs/wsjtx_qso_state_audit.md](docs/wsjtx_qso_state_audit.md).
 
+### Supported rigs
+
+Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ and, since v0.151.0,
+Yaesu FT-817/818 via Digirig Mobile (CAT over MiniDin8, PTT over RTS, audio via
+the Digirig sound card; power is selected at the rig and only read back).
+Details and preparation: [docs/rig_yaesu_digirig.md](docs/rig_yaesu_digirig.md).
+
 ### Every rule carries a number
 
 Each transmit decision writes a `pick_attempt` row: the deciding tier, the

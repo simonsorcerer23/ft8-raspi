@@ -131,6 +131,13 @@ uns eine fehlende.
 
 Einzelheiten und Prüfprotokoll: [docs/wsjtx_qso_state_audit.md](docs/wsjtx_qso_state_audit.md).
 
+### Unterstützte Rigs
+
+Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ und seit v0.151.0
+Yaesu FT-817/818 am Digirig Mobile (CAT über MiniDin8, PTT über RTS, Audio
+über die Digirig-Soundkarte; Leistung wird am Gerät gewählt und nur gelesen).
+Einzelheiten und Vorbereitung: [docs/rig_yaesu_digirig.md](docs/rig_yaesu_digirig.md).
+
 ### Jede Regel trägt eine Zahl
 
 Jede Sendeentscheidung schreibt eine `pick_attempt`-Zeile: die entscheidende
