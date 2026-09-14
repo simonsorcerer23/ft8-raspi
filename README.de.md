@@ -131,6 +131,16 @@ uns eine fehlende.
 
 Einzelheiten und Prüfprotokoll: [docs/wsjtx_qso_state_audit.md](docs/wsjtx_qso_state_audit.md).
 
+### Logbuch-Uploads
+
+QSOs gehen automatisch ins QRZ-Logbuch, zu Club Log und seit v0.152.0 zu
+eQSL.cc. Bei eQSL entsteht die Karte auf deren Seite: Das Motiv liegt einmalig
+im eQSL-Profil, die Appliance liefert nur die Verbindungsdaten, und eQSL druckt
+Rufzeichen, Datum, Band und Rapport beim Abruf selbst darauf. Zugangsdaten
+stehen je Operator im Profil, einzutragen über die Operator-Verwaltung; das
+Passwort verlässt den Pi nur verschlüsselt zu eQSL und wird von der
+Schnittstelle nie zurückgegeben.
+
 ### Unterstützte Rigs
 
 Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ und seit v0.151.0

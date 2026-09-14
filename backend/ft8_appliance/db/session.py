@@ -143,6 +143,7 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_dxped_source_column(conn)
         await _migrate_watchlist_source_column(conn)
         await _migrate_clublog_columns(conn)
+        await _migrate_eqsl_columns(conn)
         await _migrate_pick_candidate_columns(conn)
         await _migrate_station_callsign_column(conn)
         await _migrate_decode_columns(conn)
@@ -312,6 +313,25 @@ async def _migrate_station_callsign_column(conn) -> None:
         await conn.exec_driver_sql(
             "ALTER TABLE qso ADD COLUMN station_callsign TEXT"
         )
+
+
+async def _migrate_eqsl_columns(conn) -> None:
+    """v0.152.0 — eQSL-Upload-Status je QSO.
+
+    Bestandszeilen starten mit uploaded=0. Das ist richtig so: Was vor dem
+    ersten automatischen Lauf von Hand hochgeladen wurde, weist eQSL beim
+    naechsten Versuch als Duplikat ab, und danach ist die Zeile sauber.
+    Doppelte Karten kann es dabei nicht geben.
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(qso)")
+    existing = {row[1] for row in res.fetchall()}
+    for name, ddl in (
+        ("eqsl_uploaded", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("eqsl_upload_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("eqsl_last_attempt_at", "DATETIME"),
+    ):
+        if name not in existing:
+            await conn.exec_driver_sql(f"ALTER TABLE qso ADD COLUMN {name} {ddl}")
 
 
 async def _migrate_clublog_columns(conn) -> None:

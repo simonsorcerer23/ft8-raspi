@@ -76,6 +76,14 @@ class Qso(Base):
     clublog_manual_exported_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 2026-09-14 — eQSL.cc. Wie ClubLog nur uploaded/attempts/last_attempt:
+    # eQSL meldet je Charge nur Zahlen ("195 out of 200"), keine Kennung je
+    # Datensatz, an der sich mehr festmachen liesse.
+    eqsl_uploaded: Mapped[bool] = mapped_column(default=False, index=True)
+    eqsl_upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    eqsl_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     clublog_manual_confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
