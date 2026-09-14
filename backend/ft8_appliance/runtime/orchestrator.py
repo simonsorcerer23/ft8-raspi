@@ -1127,6 +1127,12 @@ class Orchestrator:
             and self.config.operator.clublog_api_key
         ):
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
+        # eQSL laeuft je Operator mit eigenen Zugangsdaten; es genuegt,
+        # wenn EIN Operator welche hat.
+        if self.db_enabled and any(
+            o.eqsl_user and o.eqsl_password for o in self.config.operators
+        ):
+            self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")
         # v0.22.0 — GPS-based DX-country detection loop
         self._spawn(self._gps_country_detect_loop(), name="gps-country-detect")
         # Audit 2026-09-06 A4: der AP-Fallback wurde von NICHTS ausgeloest —
@@ -6418,6 +6424,108 @@ class Orchestrator:
             except Exception as exc:
                 await self._note_drain_outcome("QRZ", exc)
             await asyncio.sleep(interval_s)
+
+    # eQSL laedt eine ganze Charge in einem Request; ueber tausend
+    # Datensaetze in einer Datei will man dem Dienst trotzdem nicht
+    # zumuten, und ein Fehlschlag soll nicht alles auf einmal treffen.
+    _EQSL_CHARGE_MAX: typing.ClassVar[int] = 200
+    _EQSL_INTERVALL_S: typing.ClassVar[float] = 900.0
+
+    async def _eqsl_drain_loop(self) -> None:
+        """eQSL-Upload, je Operator mit dessen eigenen Zugangsdaten.
+
+        Anders als bei ClubLog gibt es keinen Einzel- und keinen Bulk-Pfad:
+        eQSL nimmt immer eine ADIF-Datei entgegen und antwortet mit einer
+        Zahl ("195 out of 200 records added"), ohne zu sagen, WELCHE
+        Datensaetze nicht durchkamen. Daraus folgt der Umgang damit:
+
+        * Eine angenommene Charge gilt geschlossen als hochgeladen. Der
+          haeufigste Ablehnungsgrund ist das Duplikat, und ein Duplikat
+          heisst, der Datensatz liegt bereits dort. Ein Nachfahren wie bei
+          ClubLog brauchte eine Kennung je Datensatz, die es hier nicht gibt.
+        * Falsche Zugangsdaten sind hart: erneut zu versuchen bringt nichts,
+          das muss der Betreiber richten. Wartung und Netzfehler sind weich.
+        * Alle fuenfzehn Minuten reicht. Karten sind nichts Eiliges, und
+          jeder Lauf ist genau ein Request.
+        """
+        if self.config.demo_mode:
+            log.info("demo_mode — eQSL-Upload deaktiviert")
+            return
+        log.info("eQSL drain loop aktiv (Intervall %.0fs, Charge max %d)",
+                 self._EQSL_INTERVALL_S, self._EQSL_CHARGE_MAX)
+        while True:
+            try:
+                for op in self.config.operators:
+                    if op.eqsl_user and op.eqsl_password:
+                        await self._eqsl_sweep_fuer_operator(op)
+                await self._note_drain_outcome("eQSL", None)
+            except Exception as exc:
+                await self._note_drain_outcome("eQSL", exc)
+            await asyncio.sleep(self._EQSL_INTERVALL_S)
+
+    async def _eqsl_sweep_fuer_operator(self, op) -> None:
+        """Ein eQSL-Sweep fuer genau einen Operator."""
+        from sqlalchemy import select
+
+        from ..db import session_scope
+        from ..db.models import Qso
+        from ..integrations.eqsl import EqslError, upload
+
+        async with session_scope() as s:
+            jetzt = datetime.now(UTC)
+            offen = list((await s.execute(
+                select(Qso)
+                .where(Qso.eqsl_uploaded == False)  # noqa: E712
+                .where(Qso.user_callsign == op.callsign)
+                .order_by(Qso.qso_start.asc())
+            )).scalars())
+            faellig = []
+            for q in offen:
+                backoff_s = min(3600.0, 900.0 * (2 ** q.eqsl_upload_attempts))
+                zuletzt = _as_utc(q.eqsl_last_attempt_at)
+                if zuletzt is not None and (jetzt - zuletzt).total_seconds() < backoff_s:
+                    continue
+                faellig.append(q)
+                if len(faellig) >= self._EQSL_CHARGE_MAX:
+                    break
+            if not faellig:
+                return
+            for q in faellig:
+                q.eqsl_upload_attempts += 1
+                q.eqsl_last_attempt_at = jetzt
+            try:
+                ergebnis = await upload(
+                    op.eqsl_user, op.eqsl_password, faellig,
+                    qth_nickname=op.eqsl_qth_nickname,
+                )
+            except EqslError as exc:
+                if exc.hart:
+                    # Zugangsdaten stimmen nicht. Nicht als hochgeladen
+                    # verbuchen — sonst waeren die QSOs nach dem Richten
+                    # der Zugangsdaten unwiederbringlich uebersprungen.
+                    # Stattdessen einmal laut werden und es beim naechsten
+                    # Lauf erneut versuchen.
+                    log.error("eQSL lehnt %s ab: %s — Zugangsdaten pruefen",
+                              op.callsign, exc)
+                    return
+                aufgegeben = [q.call for q in faellig
+                              if q.eqsl_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS]
+                for q in faellig:
+                    if q.eqsl_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                        q.eqsl_uploaded = True
+                log.warning("eQSL-Upload fehlgeschlagen (%s), %d QSOs bleiben offen",
+                            exc, len(faellig) - len(aufgegeben))
+                if aufgegeben:
+                    log.error("eQSL: %d QSOs nach %d Versuchen aufgegeben: %s",
+                              len(aufgegeben), self._UPLOAD_MAX_ATTEMPTS,
+                              ", ".join(aufgegeben))
+                    self._alert_upload_giveup_many("eQSL", aufgegeben)
+                return
+            for q in faellig:
+                q.eqsl_uploaded = True
+            log.info("eQSL %s: %d von %d Datensaetzen angenommen%s",
+                     op.callsign, ergebnis.angenommen, ergebnis.gesamt,
+                     " — " + "; ".join(ergebnis.meldungen) if ergebnis.meldungen else "")
 
     async def _clublog_drain_loop(self) -> None:
         """v0.21.0 — ClubLog Real-Time-Upload-Drain (analog QRZ).

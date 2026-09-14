@@ -71,6 +71,9 @@
       clublog_email: op.clublog_email ?? '',
       clublog_app_password: '',
       clublog_api_key: '',
+      eqsl_user: op.eqsl_user ?? '',
+      eqsl_password: '',
+      eqsl_qth_nickname: op.eqsl_qth_nickname ?? '',
     };
     credOpen[op.callsign] = true;
   }
@@ -86,8 +89,14 @@
     if (f.clublog_email.trim() !== (op.clublog_email ?? '')) {
       body.clublog_email = f.clublog_email.trim();
     }
+    if (f.eqsl_user.trim() !== (op.eqsl_user ?? '')) {
+      body.eqsl_user = f.eqsl_user.trim();
+    }
+    if (f.eqsl_qth_nickname.trim() !== (op.eqsl_qth_nickname ?? '')) {
+      body.eqsl_qth_nickname = f.eqsl_qth_nickname.trim();
+    }
     for (const k of ['qrz_password', 'qrz_logbook_api_key',
-                     'clublog_app_password', 'clublog_api_key']) {
+                     'clublog_app_password', 'clublog_api_key', 'eqsl_password']) {
       if (f[k].trim()) body[k] = f[k].trim();
     }
     if (Object.keys(body).length === 0) { credOpen[op.callsign] = false; return; }
@@ -106,6 +115,8 @@
     // Leerstring = Feld loeschen (PATCH-Semantik im Backend).
     const body = service === 'QRZ'
       ? { qrz_user: '', qrz_password: '', qrz_logbook_api_key: '' }
+      : service === 'eQSL'
+      ? { eqsl_user: '', eqsl_password: '', eqsl_qth_nickname: '' }
       : { clublog_email: '', clublog_app_password: '', clublog_api_key: '' };
     busy = true; error = null;
     try {
@@ -139,6 +150,7 @@
         <span class="creds">
           <span class="chip {op.has_qrz_credentials ? 'on' : 'off'}">QRZ</span>
           <span class="chip {op.has_clublog_credentials ? 'on' : 'off'}">ClubLog</span>
+          <span class="chip {op.has_eqsl_credentials ? 'on' : 'off'}">eQSL</span>
         </span>
         <button class="btn" onclick={() => toggleCreds(op)} disabled={busy}>
           {t('opadmin.credentials')}
@@ -187,6 +199,14 @@
             <input type="text" placeholder={op.has_clublog_credentials
                      ? t('opadmin.unchanged') : ''}
                    bind:value={credForm[op.callsign].clublog_api_key} /></label>
+          <label><span>{t('opadmin.eqsl_user')}</span>
+            <input type="text" bind:value={credForm[op.callsign].eqsl_user} /></label>
+          <label><span>{t('opadmin.eqsl_password')}</span>
+            <input type="password" autocomplete="new-password"
+                   placeholder={op.has_eqsl_credentials ? t('opadmin.unchanged') : ''}
+                   bind:value={credForm[op.callsign].eqsl_password} /></label>
+          <label><span>{t('opadmin.eqsl_nickname')}</span>
+            <input type="text" bind:value={credForm[op.callsign].eqsl_qth_nickname} /></label>
 
           <div class="cf-actions">
             <button class="btn" onclick={() => credOpen[op.callsign] = false}
