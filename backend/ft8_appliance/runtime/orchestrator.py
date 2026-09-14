@@ -3414,6 +3414,7 @@ class Orchestrator:
         * online-integration clients get rebuilt with new credentials
         """
         previous_mode = self._valid_digital_mode(self.config.operating.mode)
+        vorige_default_power = self.config.operator.default_power_w
         self.config = new_cfg
         # Antenna validity
         antenna_names = {a.name for a in new_cfg.antennas}
@@ -3517,8 +3518,20 @@ class Orchestrator:
             await self._ensure_dial_matches_mode(
                 f"mode_switch:{previous_mode}->{new_mode}"
             )
-        # Default TX power update too (if user changed it in the form)
-        if new_cfg.operator.default_power_w != self._tx_power_w:
+        # Sendeleistung nur uebernehmen, wenn sie im Formular tatsaechlich
+        # GEAENDERT wurde — verglichen mit der vorigen Konfiguration, nicht
+        # mit dem Laufzeitwert.
+        #
+        # Der Vergleich lief frueher gegen self._tx_power_w und schlug
+        # damit immer an, sobald Konfiguration und Laufzeitwert
+        # auseinanderlagen. Genau das ist der Normalfall: Der Laufzeitwert
+        # ueberlebt Updates ueber runtime_state, der Konfigurationswert
+        # bleibt auf dem Stand der Ersteinrichtung. Am 2026-09-14 loeste
+        # ein Speichern der Konfigseite (es ging um einen A/B-Schalter,
+        # nicht um die Leistung) deshalb die Meldung "EXTERN verstellt"
+        # samt Push aus: Die Station setzte sich auf den Konfigurationswert
+        # 10 W, sah am Rig 70 W und schloss auf einen Eingriff am Geraet.
+        if new_cfg.operator.default_power_w != vorige_default_power:
             self._tx_power_w = new_cfg.operator.default_power_w
         # Rig-Wechsel-Detection (Sebastian 2026-05-24, v0.2.3): wenn der
         # User in der Config einen anderen Rig-Typ (hamlib_id) gewaehlt
