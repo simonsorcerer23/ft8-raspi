@@ -310,3 +310,35 @@ async def test_erfolg_wird_nicht_doppelt_gebucht(db) -> None:
         f"Ausgaenge: {[z.outcome for z in zeilen]}"
     )
     assert geschrieben == ["completed"], "regulaere Zeile fehlt"
+
+
+def test_alle_schreibwege_auf_die_config_fuehren_historie() -> None:
+    """Wer die config.yaml schreibt, muss auch die Historie fuellen.
+
+    Der Schreiber sass zunaechst nur in persist_config. Der Hauptweg —
+    die Konfigseite der Oberflaeche — schreibt die Datei aber selbst, und
+    ebenso der Hotspot-Endpunkt. Die Historie blieb deshalb leer, wenn
+    ein Mensch etwas umstellte: genau der Fall, fuer den es sie gibt.
+    Aufgefallen am 2026-09-14 beim Abschalten des A/B-Tests, als die
+    Aenderung nicht protokolliert wurde.
+    """
+    from pathlib import Path
+
+    import re
+
+    wurzel = Path(__file__).resolve().parents[1] / "ft8_appliance"
+    # Auf den AUFRUF pruefen, nicht auf den Namen: Der steht auch in den
+    # Kommentaren daneben, und ein Test, der Kommentare zaehlt, faengt das
+    # Entfernen des Aufrufs nicht.
+    aufruf = re.compile(r"await\s+[\w.]*_merke_config_stand\s*\(")
+    schreiber = []
+    for datei in wurzel.rglob("*.py"):
+        text = datei.read_text()
+        if "async_atomic_write_with_backup(" not in text or datei.name == "atomicfile.py":
+            continue
+        schreiber.append((datei.name, bool(aufruf.search(text))))
+    assert schreiber, "kein Schreibweg gefunden — Test veraltet?"
+    ohne = [n for n, hat in schreiber if not hat]
+    assert not ohne, (
+        f"schreibt die Konfiguration, fuellt aber die Historie nicht: {ohne}"
+    )

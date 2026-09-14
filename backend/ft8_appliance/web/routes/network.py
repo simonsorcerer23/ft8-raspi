@@ -259,6 +259,10 @@ async def _set_ap_fallback_locked(req: APFallbackRequest, orch: Orchestrator) ->
                 path,
                 yaml.safe_dump(new_dict, sort_keys=False, allow_unicode=True),
             )
+            # Aenderungshistorie: dritter Schreibweg auf dieselbe Datei.
+            # Der Hotspot-Schluessel darin wird von _merke_config_stand
+            # maskiert, bevor irgendetwas in der Datenbank landet.
+            await orch._merke_config_stand(new_dict)
         except OSError as exc:
             raise HTTPException(
                 status_code=500, detail=f"writing config failed: {exc}"
