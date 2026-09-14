@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.153.1 — 2026-09-14
+- fix: eQSL-Meldungen zaehlen statt aufzaehlen
+
 ## v0.153.0 — 2026-09-14
 - fix: eQSL-Upload startet auch ueber die Operator-Verwaltung
 - fix: eQSL-Kontoname statt 'QTH-Kennung' — das Feld ist kein Ort
