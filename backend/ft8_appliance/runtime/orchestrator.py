@@ -796,6 +796,13 @@ class Orchestrator:
         init=False,
     )
     _filter_drops_tag: str = field(default="", init=False)
+    # Zeitprotokoll: Sekunden je Zustand des laufenden Tages (siehe
+    # StateTimeDaily). Monotone Uhr, damit ein NTP-Sprung nichts verbucht.
+    _zeit_je_zustand: dict[str, float] = field(default_factory=dict, init=False)
+    _zeit_zuletzt: float = field(default=0.0, init=False)
+    _zeit_tag: str = field(default="", init=False)
+    _zeit_letzte_sicherung: float = field(default=0.0, init=False)
+    _zeit_gesichert: dict[str, float] = field(default_factory=dict, init=False)
     _filter_drops_letzte_sicherung: float = field(default=0.0, init=False)
     # Throttle für Persist-Writes (sonst schreiben wir potenziell jede
     # Sekunde — unnötiger Flash-Wear auf der SSD). Wir persistieren nur
@@ -2534,6 +2541,75 @@ class Orchestrator:
         except Exception as exc:
             log.debug("Filterzaehler-Tageszeile nicht gespeichert: %s", exc)
 
+    def _zeitprotokoll_tick(self) -> None:
+        """Verstrichene Zeit dem aktuellen Zustand gutschreiben.
+
+        Laeuft je Slot-Tick. Die Differenz zur letzten Buchung wird dem
+        Zustand zugeschrieben, in dem die Maschine JETZT steht — ein
+        Wechsel innerhalb des Slots verschiebt bis zu 15 s, mehr nicht.
+        Mehrfachaufrufe je Slot sind harmlos: Jeder bucht nur die Zeit
+        seit dem vorigen, nichts wird doppelt gezaehlt.
+        """
+        jetzt = time.monotonic()
+        heute = datetime.now(UTC).strftime("%Y-%m-%d")
+        if heute != self._zeit_tag:
+            # Datumswechsel oder erster Tick: Der neue Tag faengt bei null
+            # an. Den Restslot des alten Tages schreiben wir nicht mehr —
+            # 15 s je Tag sind kein Verlust, ein Zwei-Tage-Puffer waere
+            # Komplexitaet ohne Ertrag.
+            self._zeit_tag = heute
+            self._zeit_je_zustand = {}
+            self._zeit_gesichert = {}
+            self._zeit_zuletzt = jetzt
+            return
+        dauer = jetzt - self._zeit_zuletzt
+        self._zeit_zuletzt = jetzt
+        if dauer <= 0.0 or dauer > 300.0:
+            # Nach einem Aussetzer (Decoder haengt, Neustart der Schleife)
+            # nicht fuenf Minuten einem Zustand zuschreiben, der sie nicht
+            # hatte. Lieber eine Luecke als eine Luege.
+            return
+        zustand = self.state_machine.state.name
+        self._zeit_je_zustand[zustand] = self._zeit_je_zustand.get(zustand, 0.0) + dauer
+        if self.db_enabled and jetzt - self._zeit_letzte_sicherung >= 60.0:
+            self._zeit_letzte_sicherung = jetzt
+            # Nur die Differenz seit der letzten Sicherung schreiben, und
+            # die in der DB ADDIEREN. Wer den Stand schriebe, ueberschriebe
+            # nach einem Neustart am selben Tag die Tageszeile mit einem
+            # kleineren Wert — der Zaehler faengt ja bei null an. So kostet
+            # ein Neustart hoechstens die letzte Minute, ein Schreibfehler
+            # ebenso; nichts wird doppelt gebucht.
+            delta = {
+                z: sek - self._zeit_gesichert.get(z, 0.0)
+                for z, sek in self._zeit_je_zustand.items()
+                if sek - self._zeit_gesichert.get(z, 0.0) > 0.0
+            }
+            self._zeit_gesichert = dict(self._zeit_je_zustand)
+            if delta:
+                try:
+                    asyncio.create_task(self._persist_zeitprotokoll(heute, delta))
+                except Exception:
+                    pass
+
+    async def _persist_zeitprotokoll(self, tag: str, delta: dict[str, float]) -> None:
+        """Fail-soft. ``delta`` wird je (tag, zustand) ADDIERT, nicht gesetzt."""
+        try:
+            from sqlalchemy.dialects.sqlite import insert
+
+            from ..db.models import StateTimeDaily
+            async with session_scope() as s:
+                for zustand, sekunden in delta.items():
+                    zuwachs = round(float(sekunden), 1)
+                    stmt = insert(StateTimeDaily).values(
+                        tag=tag, zustand=str(zustand), sekunden=zuwachs,
+                    )
+                    await s.execute(stmt.on_conflict_do_update(
+                        index_elements=["tag", "zustand"],
+                        set_={"sekunden": StateTimeDaily.sekunden + zuwachs},
+                    ))
+        except Exception as exc:
+            log.debug("Zeitprotokoll-Tageszeile nicht gespeichert: %s", exc)
+
     def _restore_psk_cache(self) -> None:
         """Die zuletzt abgerufene PSK-Liste beim Start zurueckholen.
 
@@ -4068,6 +4144,7 @@ class Orchestrator:
         self._setze_zellen_arm()
         self._setze_schwach_arm()
         self._persist_filter_drops()
+        self._zeitprotokoll_tick()
         self.state_machine.on_decodes(
             self._hardware_state, self._vorab_neue_decodes(tick, decodes),
         )
