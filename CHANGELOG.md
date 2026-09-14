@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.145.0 — 2026-09-14
+- feat: Schwelle fuer schwache Ziele adaptiv und wertabhaengig
+
 ## v0.144.0 — 2026-09-14
 - fix: Konfigurations-Neuladen loeste Manipulationsalarm fuer die Sendeleistung aus
 
