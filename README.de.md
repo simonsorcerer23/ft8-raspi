@@ -151,6 +151,13 @@ Verworfenen nie angerufen werden. Die Bilanz vergleicht QSOs je Stunde in
 beiden Armen und rechnet die Wartezeit auf schweigende Partner aus den
 gespeicherten Decodes nach.
 
+Dazu ein **Regelregister** (`ft8_appliance/analyse/regelregister.py`): jede
+Filterstufe mit Behauptung, Beleg samt Datum und Fallzahl, Prüfweg und einem
+Verfallsdatum von 90 Tagen. Regeln, die eine Erfolgschance schätzen, gelten
+danach als unbelegt, bis jemand nachgemessen hat. Am Ersten jedes Monats
+meldet die Appliance per Push, was die Daten hergeben: Kontrollarm gegen
+Regel, überfällige Regeln, Ausbeute je Betriebsstunde.
+
 Das hält die Funktionsliste ehrlich. Messergebnisse, die den Code geändert
 haben:
 

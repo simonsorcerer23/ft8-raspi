@@ -120,6 +120,12 @@ und `pick_candidate.kontroll_arm`; die Zeit je Arm im Zeitprotokoll
 vergleicht QSOs je Stunde — nie die Quote je Anruf, die ist in der
 Kontrolle zwangsläufig schlechter.
 
+Jede Stufe steht im **Regelregister** (`backend/ft8_appliance/analyse/regelregister.py`)
+mit Beleg und Verfallsdatum (90 Tage für Chancen-Regeln). Ein Test hält Register
+und `_buche_filter`-Aufrufe deckungsgleich; die Bilanz liest ihre Stufenliste von
+dort. Am Ersten des Monats geht ein Push mit Kontrollarm-Urteil, überfälligen
+Regeln und Ausbeute je Stunde (`_monats_pruefung_loop`, Stempel auf Platte).
+
 ## Band/Mode-Autopilot
 
 Der Autopilot ist ein vorgeschalteter Hunt-Controller. Er entscheidet nicht,

@@ -159,6 +159,7 @@ ERWARTETE_ABSCHNITTE = (
     "Zeit je Zustand",
     "Wartezeit",
     "Kontrollarm",
+    "Regelregister",
 )
 
 
