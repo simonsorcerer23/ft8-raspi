@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ...config.models import RIG_COMPUTED_FIELDS
 from ...config import AppConfig, get_config
 from ...rig import detect_rigs
 from ...runtime import Orchestrator
@@ -223,7 +224,7 @@ async def _save_config_locked(req, orch, yaml, set_config_for_tests, get_current
             d = cfg.model_dump(
                 exclude_none=True,
                 exclude={
-                    "rig": {"hamlib_id", "effective_max_power_w"},
+                    "rig": set(RIG_COMPUTED_FIELDS),
                     "operator": True,
                 },
             )

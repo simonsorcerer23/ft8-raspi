@@ -13,13 +13,16 @@
     ic7300: { label: 'Icom IC-7300 (Desktop, 100 W)',     max_power_w: 100 },
     ic9700: { label: 'Icom IC-9700 (VHF/UHF, 100 W)',     max_power_w: 100 },
     ic7610: { label: 'Icom IC-7610 (Top-Class, 100 W)',   max_power_w: 100 },
+    qmx_plus: { label: 'QRP Labs QMX/QMX+ (5 W)',         max_power_w: 5 },
+    ft817:  { label: 'Yaesu FT-817 am Digirig (5 W)',    max_power_w: 5 },
+    ft818:  { label: 'Yaesu FT-818 am Digirig (5 W)',    max_power_w: 5 },
   };
 
   let step = $state(1);
   let cfg = $state({
     operator: { callsign: '', default_locator: '', default_power_w: 10 },
     rig:      { model: 'ic705', serial_device: '/dev/serial/by-id/usb-Icom_Inc._IC-705-if00',
-                cat_baud: 19200, max_power_w: null },
+                cat_baud: null, max_power_w: null },   // null = Werkswert des Rig-Profils
     antennas: [{ name: 'main', bands: ['20m', '40m'] }],
     bands: [
       { name: '20m', freq_khz: 14074, freq_khz_ft4: 14080, antenna: 'main' },
@@ -76,8 +79,7 @@ ${c.operator.default_locator ? `  default_locator: ${c.operator.default_locator}
 rig:
   model: ${c.rig.model}
   serial_device: "${c.rig.serial_device}"
-  cat_baud: ${c.rig.cat_baud}
-
+${c.rig.cat_baud ? `  cat_baud: ${c.rig.cat_baud}\n` : ''}
 bands:
 ${c.bands.map(b => {
   const ft4 = b.freq_khz_ft4 ? `, freq_khz_ft4: ${b.freq_khz_ft4}` : '';

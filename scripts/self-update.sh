@@ -115,6 +115,43 @@ if ! git fetch --tags --prune --quiet 2>&1 | tee -a /tmp/ft8-self-update.fetch.l
 fi
 
 CURRENT_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || echo '')"
+# rigctld-Envfile aus config.yaml rendern und bei Aenderung installieren +
+# rigctld neu starten. Damit greift ein Rig-Wechsel in der Konfiguration ohne
+# Hand am System (spaetestens beim naechsten Timer-Lauf). Nur wenn das
+# konfigurierte serielle Geraet existiert — sonst zeigte rigctld ins Leere
+# und liefe in einer Restart-Schleife, waehrend das bisherige Rig noch
+# funktioniert. Seit 2026-09-14 (Yaesu am Digirig).
+sync_rigctld_envfile() {
+    local cfg="/etc/ft8-appliance/config.yaml"
+    local out="${APP_DIR}/.deploy-rendered/ft8-rigctld.env"
+    [ -f "${cfg}" ] || return 0
+    mkdir -p "${APP_DIR}/.deploy-rendered"
+    local dev
+    dev="$("${APP_DIR}/backend/.venv/bin/python" - "${cfg}" "${out}" <<'PY' 2>/dev/null
+import sys
+from ft8_appliance.config import load_config
+from ft8_appliance.rig import write_rigctld_envfile
+cfg = load_config(sys.argv[1])
+write_rigctld_envfile(cfg.rig, sys.argv[2])
+print(cfg.rig.serial_device)
+PY
+)" || { log "  ⚠ rigctld-envfile: render fehlgeschlagen"; return 0; }
+    if [ ! -e "${dev}" ]; then
+        log "  rigctld-envfile: ${dev} nicht vorhanden — bleibt beim bisherigen Rig"
+        return 0
+    fi
+    if [ -f /etc/default/ft8-rigctld ] && cmp -s "${out}" /etc/default/ft8-rigctld; then
+        return 0
+    fi
+    if sudo -n /usr/bin/install -m 644 "${out}" /etc/default/ft8-rigctld 2>/dev/null; then
+        log "  ↻ /etc/default/ft8-rigctld erneuert — rigctld neu starten"
+        sudo -n /bin/systemctl restart ft8-rigctld.service 2>/dev/null \
+            || log "  ⚠ rigctld restart nicht erlaubt (sudoers zu alt)"
+    else
+        log "  ⚠ sudo install /etc/default/ft8-rigctld fehlgeschlagen — sudoers zu alt"
+    fi
+}
+
 CURRENT_DESC="$(git describe --tags --always --dirty 2>/dev/null || echo 'unknown')"
 LATEST_TAG="$(git tag -l 'v*' --sort=-v:refname | head -1)"
 
@@ -127,6 +164,7 @@ fi
 
 if [ "${CURRENT_TAG}" = "${LATEST_TAG}" ]; then
     log "already on latest tag (${LATEST_TAG}), nothing to do"
+    sync_rigctld_envfile
     exit 0
 fi
 
@@ -330,6 +368,7 @@ install_and_restart() {
             sync_system_file ".deploy-rendered/systemd/ft8-self-update.timer"   "/etc/systemd/system/ft8-self-update.timer"     644 || true
             sync_system_file ".deploy-rendered/systemd/ft8-ap-fallback.service" "/etc/systemd/system/ft8-ap-fallback.service"   644 || true
             sync_system_file ".deploy-rendered/systemd/ft8-rigctld.service"     "/etc/systemd/system/ft8-rigctld.service"       644 || true
+            sync_rigctld_envfile
             sync_system_file "deploy/systemd/ft8-hostapd.service"               "/etc/systemd/system/ft8-hostapd.service"       644 || true
         else
             log "  ⚠ rendered system-file sync skipped"
@@ -341,6 +380,7 @@ install_and_restart() {
         sync_system_file "deploy/systemd/ft8-self-update.timer"   "/etc/systemd/system/ft8-self-update.timer"     644 || true
         sync_system_file "deploy/systemd/ft8-ap-fallback.service" "/etc/systemd/system/ft8-ap-fallback.service"   644 || true
         sync_system_file "deploy/systemd/ft8-rigctld.service"     "/etc/systemd/system/ft8-rigctld.service"       644 || true
+        sync_rigctld_envfile
         sync_system_file "deploy/systemd/ft8-hostapd.service"     "/etc/systemd/system/ft8-hostapd.service"       644 || true
     fi
     if [ "${DAEMON_RELOAD_NEEDED}" = "1" ]; then

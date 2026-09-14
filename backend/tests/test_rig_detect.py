@@ -43,13 +43,22 @@ def test_detect_ic9700_and_ic7610(tmp_path: Path) -> None:
 
 
 def test_detect_ic7300_cp210x(tmp_path: Path) -> None:
+    """Das IC-7300-Kabel traegt seinen Namen im USB-String — sicher erkannt.
+
+    Bis 2026-09-14 galt jeder CP2102 als IC-7300. Seit der Digirig (auch ein
+    CP2102, ohne Rig-Kennung) dazukommt, ist nur noch der benannte sicher."""
     root = _seed(tmp_path, [
-        "usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller-if00-port0",
+        "usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_IC-7300_03026783-if00-port0",
     ])
-    rigs = detect_rigs(by_id_dir=root)
-    assert len(rigs) == 1
-    assert rigs[0].model == "ic7300"
-    assert rigs[0].confidence == "high"  # treating CP210x as IC-7300 — Icom-only shack
+    d = detect_rigs(by_id_dir=root)
+    assert len(d) == 1
+    assert d[0].model == "ic7300" and d[0].confidence == "high"
+
+
+def test_detect_namenloser_cp210x_ist_kein_sicherer_ic7300(tmp_path: Path) -> None:
+    root = _seed(tmp_path, ["usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"])
+    d = detect_rigs(by_id_dir=root)
+    assert d[0].confidence == "low" and d[0].model != "ic7300"
 
 
 def test_detect_qmx_plus(tmp_path: Path) -> None:

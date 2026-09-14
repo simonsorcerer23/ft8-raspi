@@ -23,7 +23,7 @@ class TestRigConfigDefaults:
         assert cfg.rig.model == "ic705"
         assert cfg.rig.hamlib_id == 3085
         assert cfg.rig.effective_max_power_w == 10
-        assert cfg.rig.cat_baud == 19200
+        assert cfg.rig.cat_baud is None and cfg.rig.effective_cat_baud == 19200
 
     def test_explicit_ic7300(self) -> None:
         cfg = _app(RigConfig(model="ic7300"))

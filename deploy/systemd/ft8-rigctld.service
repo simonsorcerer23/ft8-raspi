@@ -8,7 +8,9 @@ Type=simple
 User=sebastian
 Group=dialout
 
-# RIG_MODEL / RIG_DEVICE / RIG_BAUD are rendered from RigConfig (config.yaml)
+# RIG_MODEL / RIG_DEVICE / RIG_BAUD / RIG_PTT_ARGS are rendered from RigConfig
+# (config.yaml). $RIG_PTT_ARGS steht absichtlich ohne Klammern: systemd teilt es
+# dann in Woerter (--ptt-type=RTS --ptt-file=...); leer bei CAT-PTT.
 # by ft8_appliance.rig.write_rigctld_envfile; see deploy/install.sh for the
 # initial bootstrap. -T 127.0.0.1 binds loopback only — the controller is
 # the only client, Hamlib is never exposed to the LAN.
@@ -17,6 +19,7 @@ ExecStart=/usr/bin/rigctld \
     -m ${RIG_MODEL} \
     -r ${RIG_DEVICE} \
     -s ${RIG_BAUD} \
+    $RIG_PTT_ARGS \
     -t 4532 \
     -T 127.0.0.1
 

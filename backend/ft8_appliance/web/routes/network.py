@@ -17,6 +17,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from ...config.models import RIG_COMPUTED_FIELDS
 from ...config import get_config, set_config_for_tests
 from ...config.loader import get_current_path
 from ...config.models import AppConfig
@@ -237,7 +238,7 @@ async def _set_ap_fallback_locked(req: APFallbackRequest, orch: Orchestrator) ->
     # Fallback-Save crashte mit "rig.hamlib_id Extra inputs not permitted".
     new_dict = cfg.model_dump(exclude={
         "operator": True,  # computed (mirrors operators[active_callsign])
-        "rig": {"hamlib_id", "effective_max_power_w"},  # computed
+        "rig": set(RIG_COMPUTED_FIELDS),  # computed
     })
     new_dict.setdefault("network", {})
     new_dict["network"]["ap_fallback"] = {
