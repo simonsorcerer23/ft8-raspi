@@ -481,6 +481,13 @@ class PickCandidate(Base):
     # Welche Arme galten in diesem Slot — fuer den Vergleich Regel/Kontrolle.
     schwach_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     kontroll_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # 2026-09-14 — Erwartungswert-Arm: was das Modell fuer diesen Kandidaten
+    # vorhergesagt hat. Gegen den Ausgang gehalten ergibt das die Kalibrierung
+    # der Tabelle (Vorhersage 10 % → treffen 10 % ein?).
+    ew_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    p_erfolg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wert: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ew: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +598,7 @@ class PickAttempt(Base):
     # angerufen wird, und genau das tut der Filter.
     schwach_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
     kontroll_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    ew_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
     # 2026-09-07 A/B Antwortfrequenz: quiet | on_freq
     reply_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # Kam die Sendeentscheidung aus dem Vorab-Decode (vor der Slot-Grenze)

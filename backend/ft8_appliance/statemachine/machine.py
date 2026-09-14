@@ -560,6 +560,7 @@ class StateMachine:
     # Kandidatenprotokoll (2026-09-14): Grundmenge des Slots und wer wen
     # verworfen hat — s. _buche_filter und _kandidaten_protokoll.
     _kandidaten_grundmenge: list = field(default_factory=list)
+    _ew_werte: dict = field(default_factory=dict)
     _verworfen: dict = field(default_factory=dict)
     # 2026-09-11 — Wie viele Kandidaten jede Filterstufe wegnimmt, summiert
     # ueber die Laufzeit. Drei der letzten fuenf Fehler waren Gates, deren
@@ -789,6 +790,7 @@ class StateMachine:
                     "zellen_arm": bool(self.ctx.zellen_arm),
                     "schwach_arm": bool(self.ctx.schwach_arm),
                     "kontroll_arm": bool(self.ctx.kontroll_arm),
+                    "ew_arm": bool(self.ctx.ew_arm),
                     "target_call_raw": _roh_call,
                     "freq_offset_hz": best.freq_offset_hz,
                     "target_grid": best.grid,
@@ -1520,6 +1522,7 @@ class StateMachine:
             "zellen_arm": bool(self.ctx.zellen_arm),
             "schwach_arm": bool(self.ctx.schwach_arm),
             "kontroll_arm": bool(self.ctx.kontroll_arm),
+            "ew_arm": bool(self.ctx.ew_arm),
             "target_call_raw": _roh_call,
         }
 
@@ -2340,6 +2343,29 @@ class StateMachine:
         )
         return grund - self._SCHWACH_BONUS_DB if wertvoll else grund
 
+    def _ew_schwelle(self) -> float:
+        from ..analyse.erwartungswert import schwelle
+        return schwelle(self.ctx.p_cq, self.ctx.ew_anruf_s)
+
+    def _ew_fuer(self, d: DecodedMsg) -> tuple[float, float, float]:
+        """(P, Wert, EW) fuer einen Kandidaten aus Tabelle und Wertfaktoren."""
+        from ..analyse.erwartungswert import PTabelle, Wertfaktoren, wert
+        call = (d.call_from or "").upper()
+        tab = self.ctx.p_tabelle if isinstance(self.ctx.p_tabelle, PTabelle) else PTabelle()
+        psk = call in self.ctx.psk_heard_us or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
+        p, _n = tab.schaetze(d.snr_db, self.ctx.call_to_continent.get(call), psk)
+        f = self.ctx.ew_faktoren if isinstance(self.ctx.ew_faktoren, Wertfaktoren) else Wertfaktoren()
+        entity = self.ctx.call_to_dxcc.get(call)
+        w = wert(
+            f,
+            new_dxcc=call in self.ctx.new_dxcc_calls,
+            new_dxcc_band=bool(entity) and (entity, self.ctx.band) not in self.ctx.worked_dxcc_band,
+            new_grid=_tier_new_grid(d, self.ctx) == 1,
+            watchlist=_in_watchlist(d.call_from, self.ctx.watchlist_calls),
+            rarity=int(self.ctx.rarity_scores.get(call, 0)),
+        )
+        return p, w, p * w
+
     def _kandidaten_protokoll(self, gewinner) -> list[dict]:
         """Alle Kandidaten des Slots mit ihrem Schicksal.
 
@@ -2351,6 +2377,7 @@ class StateMachine:
         aus = []
         for d in self._kandidaten_grundmenge:
             call = (d.call_from or "").upper()
+            _ew = self._ew_werte.get(id(d))
             aus.append({
                 "call": base_call(d.call_from) or call,
                 "call_raw": call or None,
@@ -2364,6 +2391,9 @@ class StateMachine:
                 "rarity": self.ctx.rarity_scores.get(call, 0),
                 "verworfen_von": self._verworfen.get(id(d)),
                 "gewaehlt": gewinner is not None and d is gewinner,
+                "p_erfolg": _ew[0] if _ew else None,
+                "wert": _ew[1] if _ew else None,
+                "ew": _ew[2] if _ew else None,
             })
         return aus
 
@@ -2409,6 +2439,7 @@ class StateMachine:
         if self.ctx.drain_for_update:
             return None   # 2026-09-07: Update wartet — keine neuen Picks
         self._verworfen = {}
+        self._ew_werte = {}
         decodes = list(decodes)
         if self.ctx.tail_end_hunter_enabled:
             decodes = decodes + self._build_synthetic_tail_end_decodes(decodes)
@@ -2458,7 +2489,8 @@ class StateMachine:
         # angerufen. Gates, die "geht technisch nicht" sagen (DT-Fenster,
         # Slot-Paritaet, Bandrand) und Sperren (Blacklist, Cooldown,
         # schon gearbeitet) gelten in beiden Armen.
-        kontrolle = self.ctx.kontroll_arm
+        # Im Erwartungswert-Arm ersetzt EINE Zahl je Kandidat diese Gates.
+        kontrolle = self.ctx.kontroll_arm or self.ctx.ew_arm
         if self.ctx.hunt_snr_floor_db is not None and not kontrolle:
             _v = list(cqs)
             cqs = [
@@ -2674,6 +2706,34 @@ class StateMachine:
         if not cqs:
             self._last_pick_diag = {"kandidaten": self._kandidaten_protokoll(None)}
             return None
+        if self.ctx.ew_arm:
+            # Erwartungswert je Kandidat gegen den CQ-Ertrag. Wer darunter
+            # liegt, ist den Anruf nicht wert — der Slot geht an den CQ-
+            # Fallback. Von den uebrigen gewinnt der hoechste EW; bei Gleich-
+            # stand entscheidet der Tier-Score wie bisher.
+            grenze = self._ew_schwelle()
+            for d in cqs:
+                self._ew_werte[id(d)] = self._ew_fuer(d)
+            _v = list(cqs)
+            cqs = [d for d in cqs if self._ew_werte[id(d)][2] >= grenze]
+            self._buche_filter("erwartungswert", _v, cqs)
+            if not cqs:
+                self._last_pick_diag = {
+                    "winning_tier": "ew_unter_cq",
+                    "n_candidates": len(_v),
+                    "was_tailend": False,
+                    "kandidaten": self._kandidaten_protokoll(None),
+                }
+                return None
+            winner = max(cqs, key=lambda d: (self._ew_werte[id(d)][2],
+                                             _compute_tier_score(d, self.ctx)))
+            self._last_pick_diag = {
+                "winning_tier": "erwartungswert",
+                "n_candidates": len(cqs),
+                "was_tailend": False,
+                "kandidaten": self._kandidaten_protokoll(winner),
+            }
+            return winner
         # v0.10.0 Hunt-Priority-Tiers: kaskadierender Score nach ctx.
         # hunt_priority. Default-Reihenfolge ist aus OperatingConfig
         # gehydratet. User kann via UI permutieren. Siehe HUNT_TIERS-

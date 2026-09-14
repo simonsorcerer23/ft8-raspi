@@ -194,6 +194,15 @@ class MachineContext:
     # Ausschluesse bleiben. Nur so hat jede dieser Regeln dauerhaft einen
     # Vergleichsmassstab — sonst verhindert sie ihre eigene Ueberpruefung.
     kontroll_arm: bool = False
+    # Erwartungswert-Arm (seit 2026-09-14, A/B gegen die Kette): Die sieben
+    # Lohnt-sich-Gates laufen nicht; statt dessen P(Erfolg) x Wert je
+    # Kandidat gegen den CQ-Ertrag. Tabelle und p_cq spiegelt der
+    # Orchestrator alle 30 min aus der Anruf-Telemetrie hinein.
+    ew_arm: bool = False
+    p_tabelle: object | None = None        # analyse.erwartungswert.PTabelle
+    p_cq: float = 0.015
+    ew_anruf_s: float = 90.0
+    ew_faktoren: object | None = None      # analyse.erwartungswert.Wertfaktoren
     # WSJT-Z-style "Auto CQ": after a QSO completes, automatically return
     # to CQ_CALLING (instead of IDLE). Set when the user presses the CQ
     # button; cleared by Stop. Without this, CQ mode is one-shot.

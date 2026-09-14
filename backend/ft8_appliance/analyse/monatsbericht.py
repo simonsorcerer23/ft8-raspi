@@ -24,6 +24,8 @@ class Monatszahlen:
     std_gesamt: float          # ohne ARM_-Zeilen
     qsos_gesamt: int
     std_leerlauf: float
+    std_ew: float = 0.0
+    qsos_ew: int = 0
 
 
 def baue_monatsbericht(z: Monatszahlen, heute: date | None = None,
@@ -37,6 +39,10 @@ def baue_monatsbericht(z: Monatszahlen, heute: date | None = None,
         zeilen.append(f"  Kontrolle: {z.qsos_kontrolle} QSOs / {z.std_kontrolle:.0f} h = "
                       f"{z.qsos_kontrolle / z.std_kontrolle:.2f}/h")
         zeilen.append("  " + urteil_rate(z.qsos_regel, z.std_regel, z.qsos_kontrolle, z.std_kontrolle))
+    if z.std_ew >= 1.0 and z.std_regel >= 1.0:
+        zeilen.append(f"  EW-Modell: {z.qsos_ew} QSOs / {z.std_ew:.0f} h = "
+                      f"{z.qsos_ew / z.std_ew:.2f}/h — gegen Regel: "
+                      + urteil_rate(z.qsos_ew, z.std_ew, z.qsos_regel, z.std_regel))
     else:
         zeilen.append("  noch keine Stunden je Arm")
     faellig: list[Regel] = ueberfaellige(heute)

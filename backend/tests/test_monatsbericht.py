@@ -32,6 +32,12 @@ def test_bericht_urteilt_mit_mindestfallzahl() -> None:
     assert "Rauschen" in baue_monatsbericht(_z(qsos_kontrolle=130), date(2026, 9, 14))
 
 
+def test_bericht_nennt_den_ew_arm_wenn_er_zeit_hatte() -> None:
+    t = baue_monatsbericht(_z(std_ew=300.0, qsos_ew=660), date(2026, 9, 14))
+    assert "EW-Modell: 660 QSOs / 300 h = 2.20/h" in t
+    assert "EW-Modell" not in baue_monatsbericht(_z(), date(2026, 9, 14))
+
+
 def test_bericht_ohne_zeitprotokoll_stuerzt_nicht() -> None:
     t = baue_monatsbericht(_z(std_regel=0.0, std_kontrolle=0.0, std_gesamt=0.0), date(2026, 9, 14))
     assert "noch keine Stunden je Arm" in t and "noch kein Zeitprotokoll" in t
@@ -99,14 +105,16 @@ async def test_zahlen_kommen_aus_der_db() -> None:
         await c.run_sync(m.Base.metadata.create_all)
     async with session_scope() as s:
         for z, sek in (("IDLE", 3600.0), ("QSO_RESPOND", 7200.0),
-                       ("ARM_REGEL", 9720.0), ("ARM_KONTROLLE", 1080.0)):
+                       ("ARM_REGEL", 5400.0), ("ARM_EW", 4320.0), ("ARM_KONTROLLE", 1080.0)):
             s.add(m.StateTimeDaily(tag=date.today().isoformat(), zustand=z, sekunden=sek))
         jetzt = datetime.now(UTC) - timedelta(hours=1)
         for call, outc, arm in (("A", "completed", False), ("B", "completed", False),
                                 ("C", "bailed", False), ("D", "completed", True)):
             s.add(m.PickAttempt(ts=jetzt, target_call=call, outcome=outc,
                                 kontroll_arm=arm, psk_heard_us=False))
+        s.add(m.PickAttempt(ts=jetzt, target_call="E", outcome="completed",
+                            kontroll_arm=False, ew_arm=True, psk_heard_us=False))
     z = await Orchestrator._hole_monatszahlen(SimpleNamespace(), 30)
-    assert (z.std_regel, z.std_kontrolle) == (2.7, 0.3)
-    assert (z.qsos_regel, z.qsos_kontrolle) == (2, 1)
+    assert (z.std_regel, z.std_ew, z.std_kontrolle) == (1.5, 1.2, 0.3)
+    assert (z.qsos_regel, z.qsos_ew, z.qsos_kontrolle) == (2, 1, 1)
     assert z.std_gesamt == 3.0 and z.std_leerlauf == 1.0

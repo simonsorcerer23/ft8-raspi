@@ -158,6 +158,14 @@ danach als unbelegt, bis jemand nachgemessen hat. Am Ersten jedes Monats
 meldet die Appliance per Push, was die Daten hergeben: Kontrollarm gegen
 Regel, überfällige Regeln, Ausbeute je Betriebsstunde.
 
+Gegen die Kette läuft seit v0.150.0 ein **Erwartungswert-Modell** als A/B:
+Statt sieben Ja-Nein-Gates bekommt jeder Kandidat eine Zahl, Erfolgschance
+mal Wert des Ziels, und wird angerufen, wenn sie je Sekunde den Ertrag eines
+CQ-Rufs erreicht. Die Chance kommt aus der eigenen Telemetrie je Signalklasse,
+Kontinent und Empfangsbeleg, zum Mittel geschrumpft; der Wert ist eine
+Präferenz (neues DXCC, Wunschliste, seltenes Ziel). Die Bilanz prüft die
+Kalibrierung: Sagt das Modell zehn Prozent, müssen zehn Prozent eintreten.
+
 Das hält die Funktionsliste ehrlich. Messergebnisse, die den Code geändert
 haben:
 

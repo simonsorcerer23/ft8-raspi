@@ -126,6 +126,20 @@ und `_buche_filter`-Aufrufe deckungsgleich; die Bilanz liest ihre Stufenliste vo
 dort. Am Ersten des Monats geht ein Push mit Kontrollarm-Urteil, überfälligen
 Regeln und Ausbeute je Stunde (`_monats_pruefung_loop`, Stempel auf Platte).
 
+### Erwartungswert-Arm (seit v0.150.0, A/B gegen die Kette)
+
+In der Hälfte der Nicht-Kontroll-Blöcke (`hunt_erwartungswert_ab`, Salz
+`erwartungswert`) laufen die sieben Chancen-Gates nicht. Stattdessen rechnet
+`_ew_fuer` je Kandidat `P × Wert`: P aus `analyse/erwartungswert.PTabelle`
+(Signalklasse a/b/c/d an den gemessenen Kanten −6/−12/−17 dB × Kontinent ×
+PSK-Beleg, geschrumpft mit K=20 zum Klassenmittel, das zum Gesamtmittel),
+Wert als höchster zutreffender Faktor (`hunt_ew_wert_*`). Angerufen wird,
+wenn `P × Wert / hunt_ew_anruf_s ≥ p_cq / 30 s`; `p_cq` ist der gemessene
+Ertrag je CQ-Ruf (eingehende Erfolge ÷ CQ-Rufe aus dem Zeitprotokoll, ab 100
+Rufen), vorher `hunt_ew_p_cq_default`. Höchster EW gewinnt, Tier-Score bricht
+Gleichstand. Vorhersage je Kandidat steht in `pick_candidate` (`p_erfolg`,
+`wert`, `ew`); die Bilanz prüft daraus die Kalibrierung.
+
 ## Band/Mode-Autopilot
 
 Der Autopilot ist ein vorgeschalteter Hunt-Controller. Er entscheidet nicht,

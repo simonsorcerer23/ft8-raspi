@@ -48,11 +48,12 @@ def _baue_db(pfad: Path) -> None:
             tag = (jetzt - timedelta(days=d)).strftime("%Y-%m-%d")
             for zustand, sek in (("IDLE", 50000.0), ("CQ_CALLING", 20000.0),
                                  ("QSO_RESPOND", 9000.0), ("TX_LOCKED", 100.0),
-                                 ("ARM_REGEL", 71190.0), ("ARM_KONTROLLE", 7910.0)):
+                                 ("ARM_REGEL", 40000.0), ("ARM_EW", 31190.0), ("ARM_KONTROLLE", 7910.0)):
                 s.add(m.StateTimeDaily(tag=tag, zustand=zustand, sekunden=sek))
         for i in range(12):
             s.add(m.PickAttempt(
                 ts=t(10 + i * 7), target_call=f"K{i}TEST", user_callsign="DK9XR",
+                kontroll_arm=(i % 6 == 0), ew_arm=(i % 3 == 1),
                 psk_heard_us=bool(i % 2), snr_db=-10 - i, dt_s=0.2, band="20m",
                 outcome="completed" if i % 3 == 0 else "bailed",
                 bail_reason=None if i % 3 == 0 else "went_silent",
@@ -160,6 +161,7 @@ ERWARTETE_ABSCHNITTE = (
     "Wartezeit",
     "Kontrollarm",
     "Regelregister",
+    "Erwartungswert-Modell",
 )
 
 

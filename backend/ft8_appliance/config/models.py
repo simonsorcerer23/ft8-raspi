@@ -651,6 +651,23 @@ class OperatingConfig(BaseModel):
     # fuer jede Filterregel — QSOs je Stunde Regel gegen Kontrolle.
     # 0 schaltet ab. Ueber 0.5 waere die Regel selbst die Ausnahme.
     hunt_kontrollarm_anteil: float = Field(default=0.1, ge=0.0, le=0.5)
+    # Erwartungswert-Modell (seit 2026-09-14) als A/B gegen die Kette: in
+    # der Haelfte der Nicht-Kontroll-Bloecke entscheidet P(Erfolg) x Wert
+    # je Kandidat gegen den CQ-Ertrag statt der sieben Lohnt-sich-Gates.
+    hunt_erwartungswert_ab: bool = True
+    # Ertrag je CQ-Ruf (QSO je 30-s-Ruf), solange das Zeitprotokoll noch
+    # keine 100 Rufe hat. Setzung, keine Messung: 1,5 % je Ruf entspricht
+    # 4,5 % je 90-s-Anruf — die Groessenordnung, ab der die Kette heute
+    # verwirft. Danach gilt der gemessene Wert.
+    hunt_ew_p_cq_default: float = Field(default=0.015, ge=0.0, le=0.5)
+    hunt_ew_anruf_s: float = Field(default=90.0, ge=15.0, le=600.0)
+    # Wert eines Ziels gegenueber Routine (1,0) — Praeferenz, keine Messung.
+    # Es zaehlt der hoechste zutreffende Faktor.
+    hunt_ew_wert_new_dxcc: float = Field(default=3.0, ge=1.0, le=20.0)
+    hunt_ew_wert_new_dxcc_band: float = Field(default=1.5, ge=1.0, le=20.0)
+    hunt_ew_wert_new_grid: float = Field(default=1.3, ge=1.0, le=20.0)
+    hunt_ew_wert_watchlist: float = Field(default=5.0, ge=1.0, le=20.0)
+    hunt_ew_wert_rarity: float = Field(default=2.0, ge=1.0, le=20.0)
     hunt_cq_fallback: bool = True
     hunt_cq_fallback_after_slots: int = Field(default=2, ge=1, le=20)
     # Deckel: nach so vielen unbeantworteten Fallback-CQs Pause (Minuten),
