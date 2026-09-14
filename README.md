@@ -152,6 +152,14 @@ chance count as unproven after that until someone has re-measured. On the
 first of each month the appliance pushes what the data supports: control arm
 vs. rules, expired rules, yield per operating hour.
 
+Since v0.150.0 an **expected-value model** runs as an A/B against the chain:
+instead of seven yes/no gates every candidate gets one number, success
+probability times target value, and is called when that beats the yield of a
+CQ call per second. The probability comes from our own telemetry per SNR
+class, continent and PSK evidence, shrunk towards the mean; the value is a
+preference (new DXCC, watchlist, rare target). The balance sheet checks
+calibration: if the model says ten percent, ten percent must come true.
+
 This is what keeps the feature list honest. Measured results that changed the
 code:
 

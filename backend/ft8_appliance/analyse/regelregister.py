@@ -102,6 +102,15 @@ REGELN: tuple[Regel, ...] = (
         "keiner — nie gemessen, ob eine schlechte Serie die naechsten Anrufe vorhersagt.",
         None, _KONTROLLE,
     ),
+    Regel(
+        "erwartungswert", "chance",
+        "Anrufen nur, wenn P(Erfolg) x Wert je Sekunde den CQ-Ertrag erreicht; hoechster EW gewinnt.",
+        "Signalklassen-Kanten aus 60 Tagen Telemetrie (-12/-13 und -17/-18 dB); P geschrumpft "
+        "wie die Zellenquoten. Wertfaktoren sind Praeferenz. A/B gegen die Kette seit v0.150.0.",
+        date(2026, 9, 14),
+        "Bilanz-Abschnitt 'Erwartungswert gegen Kette' (QSOs je Stunde je Arm) und Kalibrierung "
+        "(vorhergesagtes P gegen eingetretene Quote je Klasse).",
+    ),
     # ------------------------------------------------ technisch
     Regel(
         "dt_fenster", "technisch",

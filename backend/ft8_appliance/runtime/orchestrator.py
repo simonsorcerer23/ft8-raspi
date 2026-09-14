@@ -750,6 +750,9 @@ class Orchestrator:
     _schwach_arm: bool = field(default=True, init=False)
     _kontroll_arm_slot: int = field(default=-1, init=False)
     _kontroll_arm: bool = field(default=False, init=False)
+    _ew_arm_slot: int = field(default=-1, init=False)
+    _ew_arm: bool = field(default=False, init=False)
+    _p_cq_gemessen: float | None = field(default=None, init=False)
     # Letzter in config_history geschriebener Stand (maskiert), damit nicht
     # jeder Knopfdruck eine identische Zeile erzeugt.
     _config_stand_zuletzt: str | None = field(default=None, init=False, repr=False)
@@ -2520,11 +2523,12 @@ class Orchestrator:
             slot_ts, kandidaten,
             bool(getattr(ctx, "schwach_arm", True)),
             getattr(ctx, "kontroll_arm", None),
+            getattr(ctx, "ew_arm", None),
         ))
 
     async def _persist_kandidaten(
         self, slot_ts: datetime, kandidaten: list[dict],
-        schwach_arm: bool, kontroll_arm: bool | None,
+        schwach_arm: bool, kontroll_arm: bool | None, ew_arm: bool | None = None,
     ) -> None:
         """Fail-soft — eine Messreihe darf den Betrieb nie kosten."""
         try:
@@ -2534,7 +2538,7 @@ class Orchestrator:
                 for k in kandidaten:
                     s.add(PickCandidate(
                         slot_ts=slot_ts, n_grundmenge=n,
-                        schwach_arm=schwach_arm, kontroll_arm=kontroll_arm,
+                        schwach_arm=schwach_arm, kontroll_arm=kontroll_arm, ew_arm=ew_arm,
                         **k,
                     ))
         except Exception as exc:
@@ -2593,7 +2597,9 @@ class Orchestrator:
         # Dieselbe Zeit noch einmal je Arm — der Nenner fuer "QSOs je
         # Stunde im Kontrollarm". Die Bilanz zaehlt ARM_-Zeilen nicht zur
         # Gesamtzeit.
-        arm = "ARM_KONTROLLE" if getattr(self.state_machine.ctx, "kontroll_arm", False) else "ARM_REGEL"
+        _ctx = self.state_machine.ctx
+        arm = ("ARM_KONTROLLE" if getattr(_ctx, "kontroll_arm", False)
+               else "ARM_EW" if getattr(_ctx, "ew_arm", False) else "ARM_REGEL")
         self._zeit_je_zustand[arm] = self._zeit_je_zustand.get(arm, 0.0) + dauer
         if self.db_enabled and jetzt - self._zeit_letzte_sicherung >= 60.0:
             self._zeit_letzte_sicherung = jetzt
@@ -3898,6 +3904,7 @@ class Orchestrator:
                     self._setze_zellen_arm()
                     self._setze_schwach_arm()
                     self._setze_kontroll_arm()
+                    self._setze_ew_arm()
                     self.state_machine.ctx.vorab_decode_aktiv = True
                     try:
                         self.state_machine.on_decodes(self._hardware_state, decodes)
@@ -4031,6 +4038,24 @@ class Orchestrator:
             self._kontroll_arm_slot = block
             self._kontroll_arm = _kontroll_block(block, anteil)
         self.state_machine.ctx.kontroll_arm = self._kontroll_arm
+
+    def _setze_ew_arm(self) -> None:
+        """A/B: Erwartungswert-Modell gegen die Filterkette.
+
+        Laeuft nur in Nicht-Kontroll-Bloecken (die Kontrolle hat Vorrang,
+        damit sie fuer beide ein Massstab bleibt), dort in der Haelfte der
+        Bloecke, eigenes Salz. Zielgroesse: QSOs je Stunde je Arm — die
+        Zeit je Arm bucht das Zeitprotokoll (ARM_EW).
+        """
+        if not getattr(self.config.operating, "hunt_erwartungswert_ab", False) \
+                or self.state_machine.ctx.kontroll_arm:
+            self.state_machine.ctx.ew_arm = False
+            return
+        block = int(time.time() // self._FERN_ARM_BLOCK_S)
+        if block != self._ew_arm_slot:
+            self._ew_arm_slot = block
+            self._ew_arm = _arm_aus_block(block, "erwartungswert")
+        self.state_machine.ctx.ew_arm = self._ew_arm
 
     def _vorab_neue_decodes(self, tick: SlotTick, decodes: list) -> list:
         """Die Decodes dieses Slots, die der Vorab-Durchgang noch nicht hatte.
@@ -4191,6 +4216,7 @@ class Orchestrator:
         self._setze_zellen_arm()
         self._setze_schwach_arm()
         self._setze_kontroll_arm()
+        self._setze_ew_arm()
         self._persist_filter_drops()
         self._zeitprotokoll_tick()
         self.state_machine.on_decodes(
@@ -5385,7 +5411,7 @@ class Orchestrator:
                 "SELECT zustand, SUM(sekunden) / 3600.0 FROM state_time_daily "
                 "WHERE tag >= date('now', :seit) GROUP BY zustand"), {"seit": seit_tag})).all()}
             qsos = {r[0]: r[1] for r in (await s.execute(_sql(
-                "SELECT CASE WHEN kontroll_arm THEN 'K' ELSE 'R' END, "
+                "SELECT CASE WHEN kontroll_arm THEN 'K' WHEN ew_arm THEN 'E' ELSE 'R' END, "
                 "SUM(outcome = 'completed') FROM pick_attempt "
                 "WHERE ts > datetime('now', :seit) AND kontroll_arm IS NOT NULL GROUP BY 1"),
                 {"seit": seit_ts})).all()}
@@ -5399,6 +5425,8 @@ class Orchestrator:
             qsos_regel=int(qsos.get("R", 0) or 0),
             std_kontrolle=float(std.get("ARM_KONTROLLE", 0.0) or 0.0),
             qsos_kontrolle=int(qsos.get("K", 0) or 0),
+            std_ew=float(std.get("ARM_EW", 0.0) or 0.0),
+            qsos_ew=int(qsos.get("E", 0) or 0),
             std_gesamt=float(std_gesamt),
             qsos_gesamt=int(qsos_gesamt),
             std_leerlauf=float(std.get("IDLE", 0.0) or 0.0),
@@ -6707,6 +6735,10 @@ class Orchestrator:
                 await self._refresh_continent_prior()
             except Exception as exc:
                 log.debug("continent prior: %s", exc)
+            try:
+                await self._refresh_p_tabelle()
+            except Exception as exc:
+                log.debug("p-tabelle: %s", exc)
             await asyncio.sleep(1800)
 
     async def _refresh_continent_prior(self) -> None:
@@ -6744,6 +6776,48 @@ class Orchestrator:
             log.info("continent prior: %s (gesamt %.0f %%) — %d Zellen",
                      {c: f"{r*100:.0f} %" for c, r in sorted(rates.items())},
                      gesamt * 100, len(self.state_machine.ctx.zellen_success))
+
+    async def _refresh_p_tabelle(self) -> None:
+        """Wahrscheinlichkeitstabelle und CQ-Ertrag aus der eigenen Telemetrie.
+
+        P je (Signalklasse, Kontinent, PSK-Beleg) aus den ausgehenden
+        Anrufen der letzten 60 Tage; p_cq aus eingehenden Erfolgen je
+        CQ-Ruf der letzten 30 Tage (CQ-Zeit aus dem Zeitprotokoll), erst
+        ab 100 Rufen — vorher gilt der Konfig-Default.
+        """
+        if not self.db_enabled:
+            return
+        from datetime import timedelta
+
+        from sqlalchemy import select, text as _sql
+
+        from ..analyse.erwartungswert import PTabelle, p_cq_aus
+        from ..db.models import PickAttempt
+        from ..db.session import session_scope
+        seit60 = datetime.now(UTC) - timedelta(days=60)
+        async with session_scope() as s:
+            rows = list((await s.execute(
+                select(PickAttempt.snr_db, PickAttempt.continent,
+                       PickAttempt.psk_heard_us, PickAttempt.outcome)
+                .where(PickAttempt.ts >= seit60, PickAttempt.pick_kind == "cq")
+            )).all())
+            eingehend = (await s.execute(_sql(
+                "SELECT COUNT(*) FROM pick_attempt WHERE ts > datetime('now', '-30 days') "
+                "AND pick_kind LIKE 'inbound%' AND outcome = 'completed'"))).scalar() or 0
+            cq_s = (await s.execute(_sql(
+                "SELECT COALESCE(SUM(sekunden), 0) FROM state_time_daily "
+                "WHERE tag >= date('now', '-30 day') AND zustand = 'CQ_CALLING'"))).scalar() or 0.0
+        tab = PTabelle.aus_anrufen(
+            (snr, kont, psk, outcome == "completed") for snr, kont, psk, outcome in rows
+        )
+        self.state_machine.ctx.p_tabelle = tab
+        self._p_cq_gemessen = p_cq_aus(int(eingehend), float(cq_s))
+        if self._p_cq_gemessen is not None:
+            self.state_machine.ctx.p_cq = self._p_cq_gemessen
+        log.info("p-tabelle: %d Anrufe, %d Zellen; p_cq %.3f%s (%d eingehend / %.0f CQ-s)",
+                 tab.n_anrufe, len(tab.zellen), self.state_machine.ctx.p_cq,
+                 "" if self._p_cq_gemessen is not None else " (Default)",
+                 int(eingehend), float(cq_s))
 
     async def _rig_poll_loop(self) -> None:
         """Refresh the cached rig snapshot every second outside slot-time.
@@ -7965,6 +8039,19 @@ class Orchestrator:
         _op = self.config.operating
         self.state_machine.ctx.hunt_weak_snr_db = int(getattr(_op, "hunt_weak_snr_db", -13))
         self.state_machine.ctx.hunt_weak_requires_psk = bool(getattr(_op, "hunt_weak_requires_psk", True))
+        # Erwartungswert-Modell: Wertfaktoren und Zeitkosten aus der Config;
+        # Tabelle und p_cq kommen aus _refresh_p_tabelle (alle 30 min).
+        from ..analyse.erwartungswert import Wertfaktoren as _Wf
+        self.state_machine.ctx.ew_faktoren = _Wf(
+            new_dxcc=float(getattr(_op, "hunt_ew_wert_new_dxcc", 3.0)),
+            new_dxcc_band=float(getattr(_op, "hunt_ew_wert_new_dxcc_band", 1.5)),
+            new_grid=float(getattr(_op, "hunt_ew_wert_new_grid", 1.3)),
+            watchlist=float(getattr(_op, "hunt_ew_wert_watchlist", 5.0)),
+            rarity=float(getattr(_op, "hunt_ew_wert_rarity", 2.0)),
+        )
+        self.state_machine.ctx.ew_anruf_s = float(getattr(_op, "hunt_ew_anruf_s", 90.0))
+        if self._p_cq_gemessen is None:
+            self.state_machine.ctx.p_cq = float(getattr(_op, "hunt_ew_p_cq_default", 0.015))
         self.state_machine.ctx.hunt_cq_fallback = bool(getattr(_op, "hunt_cq_fallback", True))
         self.state_machine.ctx.hunt_cq_fallback_after_slots = int(getattr(_op, "hunt_cq_fallback_after_slots", 2))
         self.state_machine.ctx.hunt_cq_fallback_max_cqs = int(getattr(_op, "hunt_cq_fallback_max_cqs", 20))
@@ -9679,6 +9766,7 @@ class Orchestrator:
                     zellen_arm=meta.get("zellen_arm"),
                     schwach_arm=meta.get("schwach_arm"),
                     kontroll_arm=meta.get("kontroll_arm"),
+                    ew_arm=meta.get("ew_arm"),
                     tx_offset_s=meta.get("tx_offset_s"),
                     n_candidates=meta.get("n_candidates"),
                     was_tailend=meta.get("was_tailend"),

@@ -605,18 +605,23 @@ def main() -> int:
     if hat_spalte(con, "pick_attempt", "kontroll_arm") and hat_tabelle(con, "state_time_daily"):
         std = dict(con.execute(
             "select zustand, sum(sekunden) / 3600.0 from state_time_daily "
-            "where tag >= date('now', ?) and zustand in ('ARM_REGEL', 'ARM_KONTROLLE') "
+            "where tag >= date('now', ?) and zustand like 'ARM\\_%' escape '\\' "
             "group by zustand", (f"-{args.tage} day",),
         ).fetchall())
-        qsos = dict(con.execute(
-            "select case when kontroll_arm then 'ARM_KONTROLLE' else 'ARM_REGEL' end, "
+        ew_da = hat_spalte(con, "pick_attempt", "ew_arm")
+        # Drei Spalten je Zeile — dict() davon stuerzte (bis v0.149.0), und der
+        # Rauchtest sah es nicht, weil seine Anrufe keinen Arm trugen.
+        qsos = {r[0]: (r[1], r[2]) for r in con.execute(
+            "select case when kontroll_arm then 'ARM_KONTROLLE' "
+            + ("when ew_arm then 'ARM_EW' " if ew_da else "")
+            + "else 'ARM_REGEL' end, "
             "sum(outcome = 'completed'), count(*) from pick_attempt "
             "where ts > datetime('now', ?) and kontroll_arm is not null group by 1", (seit,),
-        ).fetchall())
+        ).fetchall()}
         anrufe = {k: v[1] for k, v in qsos.items()}
         erfolge = {k: v[0] for k, v in qsos.items()}
         zeilen = []
-        for arm, name in (("ARM_REGEL", "Regel"), ("ARM_KONTROLLE", "Kontrolle")):
+        for arm, name in (("ARM_REGEL", "Regel"), ("ARM_EW", "EW-Modell"), ("ARM_KONTROLLE", "Kontrolle")):
             h = std.get(arm, 0.0)
             zeilen.append((name, f"{h:6.1f}", anrufe.get(arm, 0), erfolge.get(arm, 0),
                            f"{erfolge.get(arm, 0) / h:5.2f}" if h >= 1.0 else "    -",
@@ -625,12 +630,49 @@ def main() -> int:
         u = urteil_rate(erfolge.get("ARM_REGEL", 0), std.get("ARM_REGEL", 0.0),
                         erfolge.get("ARM_KONTROLLE", 0), std.get("ARM_KONTROLLE", 0.0))
         print(f"    Regel gegen Kontrolle, QSOs je Stunde: {u}")
+        u2 = urteil_rate(erfolge.get("ARM_EW", 0), std.get("ARM_EW", 0.0),
+                         erfolge.get("ARM_REGEL", 0), std.get("ARM_REGEL", 0.0))
+        print(f"    EW-Modell gegen Regel, QSOs je Stunde: {u2}")
         print("    Liegt die Kontrolle vorn, kosten die Gates zusammen mehr als")
         print("    sie bringen — dann einzeln nachsehen (pick_candidate: wer wurde")
         print("    im Regelarm verworfen, und was brachte derselbe Typ Ziel in der")
         print("    Kontrolle). Unter fuenf QSOs je Arm sagt die Zeile nichts.")
     else:
         print("    (Spalte kontroll_arm oder Tabelle state_time_daily fehlt — vor v0.148.0)")
+
+    print("\n=== Erwartungswert-Modell: stimmt die Wahrscheinlichkeitstabelle? ===")
+    # Kalibrierung: Was das Modell fuer die angerufenen Kandidaten vorher-
+    # gesagt hat (p_erfolg im Kandidatenprotokoll) gegen das, was eintrat
+    # (pick_attempt.outcome, derselbe Call binnen 20 s). Sagt es 10 % und
+    # es treffen 10 % ein, stimmt die Tabelle — egal ob die Faktoren gut
+    # gewaehlt sind. Weicht es systematisch ab, ist die Schrumpfung oder
+    # die Klasseneinteilung falsch. Seit v0.150.0.
+    if hat_spalte(con, "pick_candidate", "p_erfolg"):
+        zeilen = con.execute(
+            "select k.p_erfolg, p.outcome from pick_candidate k join pick_attempt p "
+            "on p.target_call = k.call and abs(strftime('%s', p.ts) - strftime('%s', k.slot_ts)) <= 20 "
+            "where k.gewaehlt = 1 and k.p_erfolg is not null and k.slot_ts > datetime('now', ?)",
+            (seit,),
+        ).fetchall()
+        if len(zeilen) >= 30:
+            stufen = [(0.0, 0.05), (0.05, 0.10), (0.10, 0.20), (0.20, 0.35), (0.35, 1.01)]
+            aus = []
+            for lo, hi in stufen:
+                grp = [(p, o) for p, o in zeilen if lo <= p < hi]
+                if not grp:
+                    continue
+                n = len(grp); k = sum(1 for _, o in grp if o == "completed")
+                vorher = sum(p for p, _ in grp) / n
+                aus.append((f"{100*lo:3.0f}–{100*hi if hi <= 1 else 100:3.0f} %", n,
+                            f"{100*vorher:5.1f} %", f"{100*k/n:5.1f} %",
+                            urteil(k, n, round(vorher * n), n)))
+            tabelle(aus, ("vorhergesagt", "Anrufe", "Mittel P", "eingetreten", "Abweichung"))
+            print("    'Abweichung' prueft eingetreten gegen vorhergesagt. Rauschen in")
+            print("    jeder Zeile heisst: die Tabelle ist kalibriert.")
+        else:
+            print(f"    (erst {len(zeilen)} angerufene Kandidaten mit Vorhersage — unter 30 keine Aussage)")
+    else:
+        print("    (Spalte p_erfolg fehlt — vor v0.150.0)")
 
     print("\n=== Regelregister: welche Regel braucht einen frischen Beleg? ===")
     # Jede Chancen-Regel traegt den Beleg, mit dem sie eingefuehrt wurde,

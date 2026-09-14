@@ -143,10 +143,29 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_dxped_source_column(conn)
         await _migrate_watchlist_source_column(conn)
         await _migrate_clublog_columns(conn)
+        await _migrate_pick_candidate_columns(conn)
         await _migrate_station_callsign_column(conn)
         await _migrate_decode_columns(conn)
         await _migrate_pick_attempt_columns(conn)
         await _migrate_band_noise_columns(conn)
+
+
+async def _migrate_pick_candidate_columns(conn) -> None:
+    """v0.150.0 — Vorhersage des Erwartungswert-Modells je Kandidat.
+
+    Die Tabelle ist vom selben Tag wie das Modell; auf dem Pi wurde sie
+    per create_all ohne diese Spalten angelegt. Alte Zeilen bleiben NULL.
+    """
+    res = await conn.exec_driver_sql("PRAGMA table_info(pick_candidate)")
+    existing = {row[1] for row in res.fetchall()}
+    if not existing:
+        return          # Tabelle kommt gleich per create_all vollstaendig
+    for name, ddl in (("ew_arm", "BOOLEAN"), ("p_erfolg", "FLOAT"),
+                      ("wert", "FLOAT"), ("ew", "FLOAT")):
+        if name not in existing:
+            await conn.exec_driver_sql(
+                f"ALTER TABLE pick_candidate ADD COLUMN {name} {ddl}"
+            )
 
 
 async def _migrate_band_noise_columns(conn) -> None:
@@ -269,6 +288,8 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "schwach_arm": "BOOLEAN",
         # 2026-09-14 — permanenter Kontrollarm ohne Lohnt-sich-Gates.
         "kontroll_arm": "BOOLEAN",
+        # 2026-09-14 — Erwartungswert-Arm (A/B gegen die Kette).
+        "ew_arm": "BOOLEAN",
     }
     for name, ddl in cols.items():
         if name not in existing:
