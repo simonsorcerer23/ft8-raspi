@@ -170,3 +170,26 @@ async def test_netzfehler_ist_weich(monkeypatch) -> None:
     with pytest.raises(EqslError) as exc:
         await upload("DK9XR", "geheim", [_qso()])
     assert exc.value.hart is False
+
+
+def test_meldungen_werden_fuer_das_log_eingedampft() -> None:
+    """Beim ersten Lauf nannte eQSL 199 Duplikate einzeln beim Namen —
+    28 Kilobyte in einer Logzeile, alle 15 Minuten. Das Journal liegt auf
+    dem Pi auf Platte."""
+    e = EqslErgebnis(1, 200, tuple(
+        [f"Warning: Y=2026 M=09 D=07 CALL{i} 20M FT8 Bad record: Duplicate"
+         for i in range(199)] + ["Caution: ProgramID or Logger not found"]))
+    kurz = e.kurzfassung()
+    assert "199 Duplikate" in kurz
+    assert "ProgramID" in kurz
+    assert len(kurz) < 200, f"immer noch {len(kurz)} Zeichen"
+
+
+def test_kurzfassung_deckelt_auch_fremde_meldungen() -> None:
+    e = EqslErgebnis(0, 9, tuple(f"Warning: Problem {i}" for i in range(9)))
+    kurz = e.kurzfassung(hoechstens=3)
+    assert "und 6 weitere" in kurz and kurz.count("Problem") == 3
+
+
+def test_kurzfassung_ohne_meldungen_ist_leer() -> None:
+    assert EqslErgebnis(5, 5).kurzfassung() == ""
