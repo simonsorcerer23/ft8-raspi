@@ -165,6 +165,23 @@ ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
 
 Diese Queries sind im `scripts/pi-check.sh` integriert, so dass jeder Check eh die letzten Trends mitliefert.
 
+### Die Bilanz: stimmen die Filter noch?
+
+Der eine Befehl, der die ganze Auswahllogik gegen ihre eigenen Daten hält.
+Holt die DB selbst vom Pi (per SSH), braucht nur das System-Python:
+
+```bash
+python3 scripts/qso_bilanz.py --tage 180
+```
+
+`--tage 7` für die letzte Woche, `--tage 30` für den Monat. Die vier
+Abschnitte, die zählen: **Kontrollarm** (bringen die Lohnt-sich-Gates
+mehr als sie kosten? Zielgröße QSOs je Stunde), **Zeit je Zustand**
+(Leerlauf-Anteil), **Wartezeit** (Verlust je Wartegrenze; bei 6 unter
+5 % ist die Regel richtig) und **Regelregister** (welche Regel braucht
+einen frischen Beleg). Denselben Kern schickt die Appliance am Ersten
+des Monats um 08:15 als Push.
+
 ---
 
 ## 6. TX-Power Safety-Floor (seit v0.2.3)
