@@ -811,6 +811,8 @@ class StateMachine:
     def on_decodes(self, hw: HardwareState, decodes: Iterable[DecodedMsg]) -> None:
         decodes = list(decodes)
         self.last_decodes = decodes
+        if self.qso is not None and self._partner_adressiert_uns(decodes):
+            self.qso.partner_hat_uns_gerufen = True
 
         # v0.11.0 Tail-End-Hunter: bei jedem Slot CQ-Tracking + Closing-
         # Detection auffrischen. Laeuft VOR der State-Machine-Logik damit
@@ -1918,6 +1920,20 @@ class StateMachine:
         msg = f"{self.qso.their_call} {self.ctx.tx_callsign} R{snr:+03d}"
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "r_report")))
 
+    def _partner_adressiert_uns(self, decodes: Iterable[DecodedMsg]) -> bool:
+        """Hat die Gegenstation in diesen Decodes an UNS gesendet?
+
+        Die Wildcard fuer gehashte Rufzeichen gilt dabei mit — aber nur
+        noch dort, wo sie hingehoert (siehe _hashed_match).
+        """
+        if self.qso is None:
+            return False
+        ihr = self.qso.their_call
+        return any(
+            d.call_from == ihr and _hashed_match(d.call_to, self.ctx.tx_callsign)
+            for d in decodes
+        )
+
     def _track_partner_snr(self, decodes: Iterable[DecodedMsg]) -> None:
         """Update qso.their_snr_at_us auf den neuesten SNR den wir vom
         Partner gemessen haben (= d.snr_db jedes Partner-Decodes diesen
@@ -1991,6 +2007,26 @@ class StateMachine:
         einziger Zweck ein weiteres TX (das 73) ist.
         """
         assert self.qso is not None
+        # Plausibilitaetssperre (2026-09-14): Ein QSO wird nur geloggt,
+        # wenn die Gegenstation im Verlauf mindestens einmal an unser
+        # Rufzeichen gesendet hat. Zwischen dem 11. und 14.09. sind vier
+        # erfundene QSOs ins Log geraten, weil ein RR73 an einen Dritten
+        # als Bestaetigung an uns gelesen wurde. Die Ursache ist behoben;
+        # diese Sperre faengt auch Varianten, die noch niemand kennt.
+        #
+        # Ein echtes QSO erfuellt die Bedingung immer — ohne Antwort an
+        # uns gibt es keinen Abschluss. Ein Fehlalarm kostet also nichts,
+        # ein uebersehener Fall dagegen einen Logeintrag ueber eine
+        # Verbindung, die nie stattfand.
+        if not (self.qso.partner_hat_uns_gerufen
+                or self._partner_adressiert_uns(self.last_decodes)):
+            log.error(
+                "QSO mit %s NICHT geloggt: die Station hat nie an %s gesendet. "
+                "Wahrscheinlich galt ein Abschluss an einen Dritten als unserer.",
+                self.qso.their_call, self.ctx.tx_callsign,
+            )
+            self._bail_qso_with_cooldown(self.qso.their_call, "ohne_adressierung")
+            return
         self._stamp_outcome_meta()
         self._record_hunt_outcome(self.qso.their_call, completed=True)
         tx_ok = self._check_guards(hw)
