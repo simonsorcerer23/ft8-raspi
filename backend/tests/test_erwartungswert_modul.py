@@ -63,6 +63,12 @@ def test_schwelle_rechnet_zeitkosten_ein() -> None:
     assert schwelle(-1.0) == 0.0
 
 
-def test_p_cq_erst_ab_mindestzahl_rufe() -> None:
-    assert p_cq_aus(3, 90 * 30.0) is None
-    assert abs(p_cq_aus(3, 100 * 30.0) - 0.03) < 1e-9
+def test_p_cq_messung_ist_abgeschaltet() -> None:
+    """Die Formel zaehlte ALLE eingehenden Erfolge als CQ-Ertrag, auch
+    die, die uns waehrend eines laufenden QSO erreichten. p_cq sprang
+    dadurch von 0,015 auf 0,105 und die Schwelle auf 31,5 Prozent — der
+    A/B-Test zeigte es binnen eines halben Tages (1,6 gegen 5,2 QSOs je
+    Stunde). Bis eine saubere Messung existiert, gilt der Konfigwert."""
+    assert p_cq_aus(3, 100 * 30.0) is None
+    assert p_cq_aus(48, 13740.0) is None
+    assert p_cq_aus(0, 0.0) is None
