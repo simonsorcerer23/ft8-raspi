@@ -248,7 +248,15 @@ def test_hashed_call_receive_in_qso_report(
 ) -> None:
     """Audit F5 v0.3.4: wenn Partner UNS-Call hasht (compound own-call),
     sehen wir `<...>` als call_to. Wir sollen den Decode trotzdem als
-    Partner-Antwort erkennen wenn wir in QSO mit `their_call` sind."""
+    Partner-Antwort erkennen wenn wir in QSO mit `their_call` sind.
+
+    2026-09-14: Der Test setzt jetzt auch wirklich einen zusammengesetzten
+    eigenen Call. Vorher lief er mit DK9XR und behauptete im Kommentar
+    trotzdem "weil wir mit DO3XR/P geantwortet haetten" — damit prüfte er
+    einen Fall, den es nicht gibt (ein Standardcall wird nie gehasht), und
+    schrieb die Wildcard fest, die vier QSOs mit Fremden erfand.
+    """
+    sm.ctx.current_operating_suffix = "P"   # -> tx_callsign DK9XR/P
     cq = _decode("EK/RX3DPK", None, "CQ EK/RX3DPK LN30", snr=-12)
     sm.on_user_reply_to(good_hw, cq)
     sm.drain_actions()
@@ -265,11 +273,18 @@ def test_hashed_call_receive_in_qso_report(
 def test_hashed_call_closing_recognized(
     sm: StateMachine, good_hw: HardwareState,
 ) -> None:
-    """Audit F5 v0.3.4: RR73-Closing mit hashed-our-call wird erkannt."""
+    """Audit F5 v0.3.4: RR73-Closing mit hashed-our-call wird erkannt.
+
+    Wie oben: nur mit zusammengesetztem eigenem Call, denn nur der wird
+    ueberhaupt gehasht.
+    """
+    sm.ctx.current_operating_suffix = "P"   # -> tx_callsign DK9XR/P
     cq = _decode("EK/RX3DPK", None, "CQ EK/RX3DPK LN30", snr=-12)
     sm.on_user_reply_to(good_hw, cq)
     sm.drain_actions()
-    sm.on_decodes(good_hw, [_decode("EK/RX3DPK", "DK9XR", "DK9XR EK/RX3DPK -10", snr=-12)])
+    # Auch der Report traegt unseren Call gehasht: Wer DK9XR/P adressiert,
+    # bekommt ihn vom Encoder in denselben Hash gelegt wie das RR73 danach.
+    sm.on_decodes(good_hw, [_decode("EK/RX3DPK", "<...>", "<...> EK/RX3DPK -10", snr=-12)])
     sm.drain_actions()
     # Partner schickt RR73 mit unserem Call gehasht
     sm.on_decodes(good_hw, [_decode("EK/RX3DPK", "<...>", "<...> EK/RX3DPK RR73")])

@@ -3069,18 +3069,42 @@ def _is_contest_cq(message: str, contest_tokens: set[str]) -> bool:
     return parts[1].upper() in contest_tokens
 
 
+# FT8 kodiert Standardrufzeichen in 28 Bit: optional ein Zeichen, dann ein
+# Buchstabe, eine Ziffer und ein bis drei Buchstaben. Alles andere — vor
+# allem zusammengesetzte Rufzeichen mit Schraegstrich — passt dort nicht
+# hinein und wird als Hash uebertragen, den der Decoder als "<...>" zeigt,
+# wenn er ihn nicht aufloesen kann.
+_STANDARD_CALL = re.compile(r"^[A-Z0-9]?[A-Z][0-9][A-Z]{1,3}$")
+
+
+def _ist_standard_call(call: str) -> bool:
+    return bool(_STANDARD_CALL.match((call or "").upper()))
+
+
 def _hashed_match(field: str | None, expected: str) -> bool:
-    """Hashed-Call-Wildcard (Sebastian Audit F5, v0.3.4): FT8 hashes
-    Calls die nicht in 13 chars passen (compound calls wie DL/W1AW,
-    DK9XR/P, EK/RX3DPK). Decoder zeigt sie als ``<...>``. Wenn wir in
-    einer aktiven QSO mit *expected* sind und der andere Field-Slot der
-    Decode-Message korrekt zu uns passt, akzeptieren wir das ``<...>``
-    als Wildcard-Match. Ohne diese Erweiterung wuerden Antworten auf
-    unsere compound-Replies (siehe EK/RX3DPK-Case) verloren gehen.
+    """Hashed-Call-Wildcard (Sebastian Audit F5, v0.3.4): FT8 hasht
+    Rufzeichen, die nicht in die 28-Bit-Kodierung passen (DL/W1AW,
+    DK9XR/P, EK/RX3DPK). Der Decoder zeigt sie als ``<...>``. Antworten
+    auf unsere zusammengesetzten Aussendungen wuerden sonst verloren
+    gehen (siehe EK/RX3DPK-Fall).
+
+    **Die Wildcard gilt nur, wenn das erwartete Rufzeichen ueberhaupt
+    gehasht werden kann.** Ein Standardrufzeichen wie DK9XR wird nie
+    gehasht — steht dort ``<...>``, ist es garantiert jemand anderes.
+
+    Ohne diese Einschraenkung hat die Station zwischen dem 11. und dem
+    14.09.2026 vier QSOs geloggt, die nie stattfanden: Die Gegenstation
+    schloss ihr QSO mit einem Dritten ab ("<...> SM6/DL1HTW RR73"),
+    unsere Maschine las das als Bestaetigung an uns. Belegt bei
+    SM6/DL1HTW, der unmittelbar danach "<HB9CEX> SM6/DL1HTW 73" sendete.
     """
     if field is None:
         return False
-    return field == expected or field == "<...>"
+    if field == expected:
+        return True
+    if field != "<...>":
+        return False
+    return not _ist_standard_call(expected)
 
 
 def _find_report_from_them(
