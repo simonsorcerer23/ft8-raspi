@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.156.0 — 2026-09-14
+- fix: ein RR73 an einen Dritten ist keine Bestaetigung an uns
+
 ## v0.155.0 — 2026-09-14
 - fix: p_cq-Messung abgeschaltet — sie zaehlte fremde Erfolge als CQ-Ertrag
 
