@@ -783,6 +783,7 @@ class StateMachine:
                     "pre_decode": bool(self.ctx.vorab_decode_aktiv),
                     "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
                     "zellen_arm": bool(self.ctx.zellen_arm),
+                    "schwach_arm": bool(self.ctx.schwach_arm),
                     "target_call_raw": _roh_call,
                     "freq_offset_hz": best.freq_offset_hz,
                     "target_grid": best.grid,
@@ -1512,6 +1513,7 @@ class StateMachine:
             # ja gerade darueber, ob wir in diesem Slot CQ rufen konnten.
             "fern_gate": bool(self.ctx.hunt_sole_dx_arm),
             "zellen_arm": bool(self.ctx.zellen_arm),
+            "schwach_arm": bool(self.ctx.schwach_arm),
             "target_call_raw": _roh_call,
         }
 
@@ -2387,7 +2389,7 @@ class StateMachine:
             self._buche_filter("kontinent_gate", _v, len(cqs))
         # 2026-09-07: schwache Ziele nur mit PSK-Bestaetigung (Telemetrie:
         # unter -13 dB kamen 3 % zurueck, darueber 12 %).
-        if self.ctx.hunt_weak_requires_psk:
+        if self.ctx.hunt_weak_requires_psk and self.ctx.schwach_arm:
             weak = self.ctx.hunt_weak_snr_db
             _v = len(cqs)
             cqs = [

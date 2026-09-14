@@ -520,6 +520,11 @@ class PickAttempt(Base):
     # steht das hier: sonst ersetzt eine unsichtbare Korrektur den
     # unsichtbaren Fehler, und die Quote laesst sich nicht mehr pruefen.
     nachgestempelt: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # 2026-09-14 A/B: Galt in diesem Slot der Filter, der schwache Ziele
+    # ohne Empfangsbeleg verwirft? Auswertung ueber die QSO-ZAHL je Arm,
+    # nicht ueber die Quote — die steigt zwangslaeufig, wenn weniger
+    # angerufen wird, und genau das tut der Filter.
+    schwach_arm: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
     # 2026-09-07 A/B Antwortfrequenz: quiet | on_freq
     reply_kind: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # Kam die Sendeentscheidung aus dem Vorab-Decode (vor der Slot-Grenze)

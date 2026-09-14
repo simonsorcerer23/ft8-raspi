@@ -727,6 +727,11 @@ class Orchestrator:
     # eigenem Salz — sonst faellt der Arm mit dem des Fernziel-Gates zusammen.
     _zellen_arm_slot: int = field(default=-1, init=False)
     _zellen_arm: bool = field(default=False, init=False)
+    # Dasselbe fuer den Filter "schwach ohne Empfangsbeleg", wieder mit
+    # eigenem Salz — drei gleichzeitige A/B-Tests duerfen nicht im
+    # Gleichschritt laufen, sonst sind ihre Effekte nicht zu trennen.
+    _schwach_arm_slot: int = field(default=-1, init=False)
+    _schwach_arm: bool = field(default=True, init=False)
     # Letzter in config_history geschriebener Stand (maskiert), damit nicht
     # jeder Knopfdruck eine identische Zeile erzeugt.
     _config_stand_zuletzt: str | None = field(default=None, init=False, repr=False)
@@ -3739,6 +3744,7 @@ class Orchestrator:
                     await self._refresh_decode_context(decodes)
                     self._setze_fern_gate_arm(index)
                     self._setze_zellen_arm()
+                    self._setze_schwach_arm()
                     self.state_machine.ctx.vorab_decode_aktiv = True
                     try:
                         self.state_machine.on_decodes(self._hardware_state, decodes)
@@ -3824,6 +3830,31 @@ class Orchestrator:
                 if getattr(op, "hunt_zellen_prior_ab", True) else True
             )
         self.state_machine.ctx.zellen_arm = self._zellen_arm
+
+    def _setze_schwach_arm(self) -> None:
+        """A/B fuer den Filter, der schwache Ziele ohne Empfangsbeleg verwirft.
+
+        Er wirft mehr Kandidaten weg als jede andere Stufe (1094 in drei
+        Tagen) und ist damit der Hauptgrund, warum 78 % der Anrufe
+        ueberhaupt keine Auswahl haben. Belegt ist bisher nur, dass
+        schwache Ziele eine schlechtere Abschlussquote haben — das ist
+        nicht dasselbe wie "sie anzurufen lohnt nicht".
+
+        Zielgroesse ist deshalb ausdruecklich NICHT die Quote: Die steigt
+        zwangslaeufig, wenn man weniger anruft, und genau das tut dieser
+        Filter. Zu vergleichen ist die Zahl der QSOs je Arm. Weil beide
+        Arme gleich viele Zeitbloecke bekommen, ist sie unmittelbar die
+        Ausbeute pro Zeit.
+        """
+        op = self.config.operating
+        if not getattr(op, "hunt_weak_requires_psk_ab", False):
+            self.state_machine.ctx.schwach_arm = True
+            return
+        block = int(time.time() // self._FERN_ARM_BLOCK_S)
+        if block != self._schwach_arm_slot:
+            self._schwach_arm_slot = block
+            self._schwach_arm = _arm_aus_block(block, "schwach")
+        self.state_machine.ctx.schwach_arm = self._schwach_arm
 
     def _vorab_neue_decodes(self, tick: SlotTick, decodes: list) -> list:
         """Die Decodes dieses Slots, die der Vorab-Durchgang noch nicht hatte.
@@ -3982,6 +4013,7 @@ class Orchestrator:
         #    fuer diesen Slot bereits verarbeitet hat.
         self._setze_fern_gate_arm(tick.index)
         self._setze_zellen_arm()
+        self._setze_schwach_arm()
         self._persist_filter_drops()
         self.state_machine.on_decodes(
             self._hardware_state, self._vorab_neue_decodes(tick, decodes),
@@ -9364,6 +9396,7 @@ class Orchestrator:
                     pre_decode=meta.get("pre_decode"),
                     fern_gate=meta.get("fern_gate"),
                     zellen_arm=meta.get("zellen_arm"),
+                    schwach_arm=meta.get("schwach_arm"),
                     tx_offset_s=meta.get("tx_offset_s"),
                     n_candidates=meta.get("n_candidates"),
                     was_tailend=meta.get("was_tailend"),

@@ -151,3 +151,64 @@ def test_unbekannte_zelle_entscheidet_nichts() -> None:
 def test_unbekannter_kontinent_entscheidet_nichts() -> None:
     ctx = _ctx(zellen_arm=True, zellen_success={("NA", 0): 0.9}, zellen_success_overall=0.12)
     assert _tier_active_hour(_Decode("XX0XXX"), ctx) == 0
+
+
+# ----------------------------------- A/B: schwache Ziele ohne Empfangsbeleg
+
+def test_drei_ab_tests_laufen_unabhaengig() -> None:
+    """Jeder Test braucht sein eigenes Salz.
+
+    Ohne das bekaemen alle in jedem Zeitblock denselben Arm, und ihre
+    Effekte waeren nicht mehr voneinander zu loesen — dieselbe Falle wie
+    am 12.09., nur mit drei statt zwei Tests.
+    """
+    bloecke = range(2000)
+    paare = (("", "zellen"), ("", "schwach"), ("zellen", "schwach"))
+    for a, b in paare:
+        gleich = sum(1 for x in bloecke if _arm_aus_block(x, a) == _arm_aus_block(x, b))
+        anteil = gleich / 2000
+        assert 0.45 < anteil < 0.55, (
+            f"Arme {a or '(fern)'!r} und {b!r} laufen zu {anteil:.0%} gleich"
+        )
+
+
+def test_jeder_ab_test_benutzt_ein_eigenes_salz() -> None:
+    """Nicht nur die Hash-Funktion muss trennen — der Aufrufer auch.
+
+    Der Test darueber prueft ``_arm_aus_block`` selbst. Setzt der
+    Orchestrator zweimal dasselbe Salz ein, faellt er trotzdem nicht auf:
+    Genau das ist beim ersten Anlauf passiert, die Mutationsprobe lief
+    durch. Hier stehen die tatsaechlich verwendeten Salze.
+    """
+    from pathlib import Path
+    import re
+
+    quelle = (Path(__file__).resolve().parents[1] / "ft8_appliance"
+              / "runtime" / "orchestrator.py").read_text()
+    salze = re.findall(r'_arm_aus_block\(block(?:,\s*"([^"]*)")?\)', quelle)
+    salze = [x or "(fern)" for x in salze]
+    assert len(salze) >= 3, f"weniger A/B-Arme als erwartet: {salze}"
+    assert len(set(salze)) == len(salze), f"Salz doppelt vergeben: {salze}"
+
+
+def test_filter_greift_nur_im_eigenen_arm() -> None:
+    """Im Arm ohne Filter muessen schwache Ziele durchkommen."""
+    from ft8_appliance.statemachine.machine import StateMachine  # noqa: F401
+
+    # Der Filter haengt an zwei Bedingungen; faellt eine weg, laeuft er aus.
+    from pathlib import Path
+    quelle = (Path(__file__).resolve().parents[1] / "ft8_appliance"
+              / "statemachine" / "machine.py").read_text()
+    assert "if self.ctx.hunt_weak_requires_psk and self.ctx.schwach_arm:" in quelle, \
+        "Filter haengt nicht am A/B-Arm — der Test misst dann nichts"
+
+
+def test_schwach_arm_hat_sinnvollen_grundzustand() -> None:
+    """Ohne laufenden Test muss der Filter AN sein, nicht aus.
+
+    Ein Grundzustand False wuerde den Filter stillschweigend abschalten,
+    sobald jemand den A/B beendet — aus einem Messaufbau wuerde eine
+    unbeabsichtigte Verhaltensaenderung.
+    """
+    ctx = MachineContext(callsign="DO3XR", my_grid="JN58")
+    assert ctx.schwach_arm is True

@@ -640,6 +640,12 @@ class OperatingConfig(BaseModel):
     # nach N leeren Slots selbst CQ rufen, bis wieder ein Rufer da ist.
     hunt_weak_snr_db: int = Field(default=-13, ge=-30, le=0)
     hunt_weak_requires_psk: bool = True
+    # A/B ab 2026-09-14: Der Filter laeuft nur in jedem zweiten Zeitblock.
+    # Zielgroesse ist NICHT die Abschlussquote — die steigt zwangslaeufig,
+    # wenn man weniger anruft —, sondern die Zahl der QSOs je Arm. Beide
+    # Arme bekommen gleich viele 15-Minuten-Bloecke, deshalb ist die reine
+    # QSO-Zahl direkt die Ausbeute pro Zeit.
+    hunt_weak_requires_psk_ab: bool = True
     hunt_cq_fallback: bool = True
     hunt_cq_fallback_after_slots: int = Field(default=2, ge=1, le=20)
     # Deckel: nach so vielen unbeantworteten Fallback-CQs Pause (Minuten),

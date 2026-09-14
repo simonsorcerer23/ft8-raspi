@@ -377,6 +377,36 @@ def main() -> int:
     else:
         print("    (keine Daten — hunt_sole_dx_gate ist aus)")
 
+    print("\n=== Schwache Ziele ohne Empfangsbeleg: lohnt der Anruf? (A/B) ===")
+    if not hat_spalte(con, "pick_attempt", "schwach_arm"):
+        print("    (keine Daten — der Test laeuft noch nicht, oder die Kopie")
+        print("     stammt von vor dem Ausrollen der Spalte)")
+    else:
+        zeilen = con.execute(
+            "select case when schwach_arm=1 then 'Filter an' else 'Filter aus' end, "
+            "  count(*), sum(outcome='completed'), "
+            "  round(100.0*sum(outcome='completed')/count(*),1)||' %' "
+            "from pick_attempt where schwach_arm is not null and pick_kind='cq' "
+            "  and ts > datetime('now',?) group by 1 order by 1", (seit,)
+        ).fetchall()
+        if not zeilen:
+            print("    (noch keine Anrufe mit gesetztem Arm)")
+        else:
+            tabelle(zeilen, ("Arm", "Anrufe", "QSOs", "Quote"))
+            print("    Die entscheidende Spalte ist QSOs, NICHT die Quote.")
+            print("    Beide Arme bekommen gleich viele Zeitbloecke, also ist die")
+            print("    QSO-Zahl unmittelbar die Ausbeute pro Zeit. Die Quote steigt")
+            print("    zwangslaeufig, wenn weniger angerufen wird — und genau das")
+            print("    tut der Filter. Sie zu vergleichen misst seine Nebenwirkung,")
+            print("    nicht seinen Nutzen.")
+            if len(zeilen) == 2:
+                an, aus = zeilen
+                mehr = int(aus[2]) - int(an[2])
+                print(f"    Ohne Filter {mehr:+d} QSOs bei {int(aus[1]) - int(an[1]):+d} Anrufen.")
+                print("    Signifikanz der QSO-Zahl:",
+                      urteil(int(aus[2]), int(aus[1]) + int(an[1]),
+                             int(an[2]), int(aus[1]) + int(an[1])))
+
     print("\n=== Stunden-Tier: Zellen-Quote gegen die alte Stundenliste (A/B) ===")
     zeilen = [] if not hat_spalte(con, "pick_attempt", "zellen_arm") else con.execute(
         "select case when zellen_arm=1 then 'Zellen-Quote' else 'Stundenliste' end, "

@@ -265,6 +265,8 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "target_call_raw": "TEXT",
         # 2026-09-13 — nachtraeglich von "bailed" auf "completed" korrigiert.
         "nachgestempelt": "BOOLEAN",
+        # 2026-09-14 — A/B des Filters "schwach ohne Empfangsbeleg".
+        "schwach_arm": "BOOLEAN",
     }
     for name, ddl in cols.items():
         if name not in existing:
