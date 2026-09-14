@@ -3797,6 +3797,19 @@ class Orchestrator:
         ):
             log.info("config hot-reload: starting ClubLog-drain loop")
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
+        # eQSL analog: Wer die Zugangsdaten nachtraegt, soll nicht neu
+        # starten muessen. Der Loop prueft die Operatoren bei jedem Lauf
+        # selbst, hier geht es nur ums Anwerfen.
+        eqsl_laeuft = any(
+            t.get_name() == "eqsl-drain" and not t.done() for t in self._bg_tasks
+        )
+        if (
+            self.db_enabled
+            and not eqsl_laeuft
+            and any(o.eqsl_user and o.eqsl_password for o in new_cfg.operators)
+        ):
+            log.info("config hot-reload: starting eQSL-drain loop")
+            self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")
         log.info(
             "config hot-reloaded: callsign=%s antenna=%s",
             self.state_machine.ctx.callsign, self._active_antenna,

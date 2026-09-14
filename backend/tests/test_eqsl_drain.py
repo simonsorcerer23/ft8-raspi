@@ -224,3 +224,14 @@ def test_frontend_sendet_leere_passwoerter_nicht() -> None:
               / "OperatorAdminPanel.svelte").read_text()
     m2 = re.search(r"for \(const k of \[([^\]]+)\]\) \{\s*\n\s*if \(f\[k\]\.trim\(\)\)", quelle)
     assert m2 and "eqsl_password" in m2.group(1)
+
+
+def test_loop_startet_auch_ohne_neustart() -> None:
+    """Wer die Zugangsdaten nachtraegt, soll nicht neu starten muessen.
+    Der Loop wird deshalb auch aus on_config_changed angeworfen."""
+    quelle = (WURZEL / "ft8_appliance" / "runtime" / "orchestrator.py").read_text()
+    assert quelle.count('self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")') == 2
+    block = quelle[quelle.index("async def on_config_changed"):]
+    block = block[:block.index("\n    async def ", 10)]
+    assert 'name="eqsl-drain"' in block
+    assert 'eqsl_laeuft' in block, "ohne Laufprueffung staende der Loop doppelt"
