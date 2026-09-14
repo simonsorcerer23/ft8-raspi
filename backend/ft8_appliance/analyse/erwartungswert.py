@@ -128,9 +128,24 @@ def schwelle(p_cq: float, anruf_s: float = 90.0, cq_s: float = 30.0) -> float:
 
 def p_cq_aus(eingehende_erfolge: int, cq_sekunden: float, cq_s: float = 30.0,
              mindest_rufe: int = 100) -> float | None:
-    """Ertrag je CQ-Ruf aus dem Zeitprotokoll — oder None, solange die
-    Messung nicht traegt. Dann gilt der Konfig-Default."""
-    rufe = cq_sekunden / cq_s if cq_s > 0 else 0.0
-    if rufe < mindest_rufe:
-        return None
-    return eingehende_erfolge / rufe
+    """ABGESCHALTET seit 2026-09-14, liefert immer None.
+
+    Die Formel war falsch, und der A/B-Test hat es binnen eines halben
+    Tages gezeigt. Sie teilte ALLE eingehenden Erfolge durch die Zahl der
+    CQ-Rufe — aber die meisten eingehenden Anrufe sind keine Antwort auf
+    einen CQ. Wer uns auf dem Band hoert, ruft auch, waehrend wir gerade
+    jemand anderen arbeiten oder nur lauschen.
+
+    Die Folge war eindeutig: p_cq sprang vom Startwert 0,015 auf 0,105,
+    die Schwelle damit von 4,5 auf 31,5 Prozent. Von 156 bewerteten
+    Kandidaten lagen nur 21 darueber, und der Erwartungswert-Arm holte
+    1,6 QSOs je Stunde gegen 5,2 im Regelarm.
+
+    Sauber messen liesse sich das nur mit eingehenden Erfolgen, die
+    nachweislich in eine CQ-Phase fallen — dafuer muesste das
+    Zeitprotokoll feiner aufloesen als tageweise. Bis dahin gilt der
+    Konfigwert, und dieser Platzhalter bleibt als Warnung stehen: Eine
+    Groesse zu messen, die man nicht sauber messen kann, ist schlechter
+    als sie zu setzen.
+    """
+    return None

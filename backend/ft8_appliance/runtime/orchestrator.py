@@ -7082,12 +7082,16 @@ class Orchestrator:
             (snr, kont, psk, outcome == "completed") for snr, kont, psk, outcome in rows
         )
         self.state_machine.ctx.p_tabelle = tab
+        # p_cq_aus liefert seit 2026-09-14 immer None: Die Messung war
+        # falsch (siehe dort). Der Konfigwert bleibt massgeblich; die
+        # Rohzahlen stehen weiter im Log, damit eine spaetere, saubere
+        # Messung sich daran messen lassen kann.
         self._p_cq_gemessen = p_cq_aus(int(eingehend), float(cq_s))
         if self._p_cq_gemessen is not None:
             self.state_machine.ctx.p_cq = self._p_cq_gemessen
-        log.info("p-tabelle: %d Anrufe, %d Zellen; p_cq %.3f%s (%d eingehend / %.0f CQ-s)",
+        log.info("p-tabelle: %d Anrufe, %d Zellen; p_cq %.3f (Konfigwert; "
+                 "roh waeren %d eingehend / %.0f CQ-s)",
                  tab.n_anrufe, len(tab.zellen), self.state_machine.ctx.p_cq,
-                 "" if self._p_cq_gemessen is not None else " (Default)",
                  int(eingehend), float(cq_s))
 
     async def _rig_poll_loop(self) -> None:
