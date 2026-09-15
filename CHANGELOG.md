@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.158.0 — 2026-09-15
+- fix: Erwartungswert-Modell abgeschaltet, Bilanz warnt vor kurzer Messzeit
+
 ## v0.157.0 — 2026-09-14
 - feat: Plausibilitaetssperre — kein Logeintrag ohne Sendung an uns
 
