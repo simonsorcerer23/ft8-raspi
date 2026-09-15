@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.160.0 — 2026-09-15
+- fix: Bilanz kennzeichnet den laufenden Tag und die abgedeckten Stunden
+- docs: Kontamination im Antwortfrequenz-A/B beziffert (~22 von 779 Zeilen)
+
 ## v0.159.0 — 2026-09-15
 - fix: CQ-Wiederholungen getrennt messen, Wochenauswertung der Antwortstrategie
 
