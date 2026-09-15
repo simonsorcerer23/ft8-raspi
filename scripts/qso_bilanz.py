@@ -500,6 +500,9 @@ def main() -> int:
     else:
         print("    (noch keine Tageszeilen — die Historie laeuft seit v0.132.0)")
 
+    from datetime import UTC as _UTC_Z, datetime as _dtm_Z
+    heute = _dtm_Z.now(_UTC_Z).date()
+
     print("\n=== Zeit je Zustand: QSOs je Stunde, nicht je Anruf ===")
     # Die Quote je Anruf ist die falsche Zielgroesse: Ein Filter, der die
     # Haelfte der Anrufe verhindert, hebt sie zwangslaeufig — und senkt
@@ -524,15 +527,32 @@ def main() -> int:
                 ).fetchone()[0]
                 std = gesamt / 3600.0
                 anteil = lambda z: f"{100.0 * je.get(z, 0.0) / gesamt:4.0f} %" if gesamt else "   -"
+                # Welche Tagesstunden deckt die Zeile ueberhaupt ab? Ohne das
+                # laedt die Tabelle zum Fehlschluss ein: Am 15.09. standen
+                # dort 2,09 QSOs/Std gegen 3,89 am Vortag — nur waren im
+                # einen Fall Nacht- und Morgenstunden erfasst, im anderen
+                # die ertragreichen Mittagsstunden. Quelle sind die Decodes,
+                # weil sie am zuverlaessigsten sagen, wann die Station lief.
+                spanne = con.execute(
+                    "select min(strftime('%H', ts)), max(strftime('%H', ts)) "
+                    "from decode where date(ts) = ?", (tag,)
+                ).fetchone()
+                stunden = f"{spanne[0]}-{spanne[1]}" if spanne and spanne[0] else "  -  "
+                laeuft = " *" if tag == heute.isoformat() else ""
                 zeilen.append((
-                    tag, f"{std:5.1f}", qsos,
+                    tag + laeuft, stunden, f"{std:5.1f}", qsos,
                     f"{qsos / std:4.2f}" if std >= 0.5 else "  -",
                     anteil("IDLE"), anteil("CQ_CALLING"),
                     f"{100.0 * sum(v for k, v in je.items() if k.startswith('QSO_')) / gesamt:4.0f} %" if gesamt else "   -",
                     anteil("TX_LOCKED"),
                 ))
-            tabelle(zeilen, ("Tag", "Std gemessen", "QSOs", "QSOs/Std",
+            tabelle(zeilen, ("Tag", "Std UTC", "Std gemessen", "QSOs", "QSOs/Std",
                              "Leerlauf", "CQ", "im QSO", "gesperrt"))
+            if any(z[0].endswith(" *") for z in zeilen):
+                print("    * laufender Tag — noch unvollstaendig. 'Std UTC' nennt die")
+                print("    abgedeckten Tagesstunden: Zeilen mit verschiedenen Spannen")
+                print("    sind NICHT vergleichbar, die Ausbeute haengt stark an der")
+                print("    Tageszeit.")
             print("    'Std gemessen' ist die Zeit, in der der Dienst lief; ein")
             print("    Tag unter 20 Std hatte Neustarts oder Luecken. QSOs/Std")
             print("    ist die Zielgroesse fuer jeden Filter-Vergleich.")

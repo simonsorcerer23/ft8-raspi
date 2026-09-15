@@ -308,3 +308,14 @@ def test_warnt_bei_zu_kurzer_messzeit(ausgabe) -> None:
     die Bilanz den Armvergleich nicht kommentarlos hinstellen — am
     15.09.2026 bekam der Regelarm 16 % statt 45 % der Zeit."""
     assert "unter 20 Stunden Messzeit" in ausgabe
+
+
+def test_laufender_tag_ist_markiert(ausgabe) -> None:
+    """Die Tageszeile verglich den angebrochenen Tag mit vollen Tagen.
+    Am 15.09.2026 standen dort 2,09 QSOs/Std gegen 3,89 am Vortag — nur
+    waren im einen Fall Nacht- und Morgenstunden erfasst, im anderen die
+    ertragreichen Mittagsstunden. Ohne Kennzeichnung liest sich das wie
+    ein Einbruch."""
+    assert "laufender Tag" in ausgabe
+    assert "Std UTC" in ausgabe
+    assert "NICHT vergleichbar" in ausgabe
