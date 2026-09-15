@@ -145,3 +145,42 @@ curl -X PUT localhost:8000/api/operators/DK9XR/lotw-location \
   -H 'Content-Type: application/json' \
   -d '{"on_air_call": "DK9XR/MM", "station_location": "Schiff"}'
 ```
+
+## Was es gebracht hat
+
+Ob LoTW etwas bringt, misst `scripts/qsl_stand.py`. Es fragt die
+QRZ-Logbook-API nach Gesamtzahl, bestätigten Verbindungen und
+DXCC-Gebieten und merkt sich auf Wunsch einen Vergleichspunkt:
+
+```bash
+./scripts/qsl_stand.py --merken    # vor dem LoTW-Import bei QRZ
+./scripts/qsl_stand.py             # danach — die Differenz steht da
+```
+
+QRZ zählt als bestätigt ausschließlich den eigenen Abgleich (beide
+Seiten haben dieselbe Verbindung unabhängig ins QRZ-Logbuch geschrieben)
+und Bestätigungen, die **direkt aus LoTW importiert** wurden. eQSL,
+Club Log und Papierkarten stehen dort nie drin. Der LoTW-Import bei QRZ
+läuft nicht von selbst — er wird im QRZ-Logbuch unter *Settings → LoTW*
+angestoßen, wobei nur der LoTW-Benutzername hinterlegt wird; das
+Passwort fragt QRZ jedes Mal neu und speichert es nicht.
+
+Ausgangsstand am 15.09.2026, unmittelbar nach dem Hochladen des Altlogs
+und **vor** jedem LoTW-Import: 8608 Verbindungen, davon 5341 bestätigt
+(62,0 %), 134 DXCC-Gebiete.
+
+## Der andere Weg: DCL
+
+Das DARC Community Logbook nimmt Bestätigungen aus **LoTW, Club Log und
+eQSL** entgegen und ist damit die einzige Stelle, an der die drei
+Systeme zusammenlaufen. Der LoTW-Import liegt dort unter *Logbuch →
+LoTW-Import*; einzugeben sind Benutzername, Passwort (wird nicht
+gespeichert) und ein Stichtag, ab dem neue Bestätigungen geholt werden.
+Für den ersten Lauf muss weit genug zurückdatiert werden, und der kann
+je nach Menge Stunden dauern.
+
+Eine DARC-Mitgliedschaft ist dafür nicht nötig: Wer keine hat, kann sich
+im DCL über einen gleichlautenden LoTW-Account registrieren.
+
+Umgekehrt geht nichts. LoTW nimmt ausschließlich eigene, signierte QSOs
+an und kennt keinen Import fremder Bestätigungen.
