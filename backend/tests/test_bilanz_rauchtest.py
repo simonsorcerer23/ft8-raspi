@@ -316,6 +316,14 @@ def test_laufender_tag_ist_markiert(ausgabe) -> None:
     waren im einen Fall Nacht- und Morgenstunden erfasst, im anderen die
     ertragreichen Mittagsstunden. Ohne Kennzeichnung liest sich das wie
     ein Einbruch."""
+    import re
     assert "laufender Tag" in ausgabe
-    assert "Std UTC" in ausgabe
     assert "NICHT vergleichbar" in ausgabe
+    # Die Spalte muss auch tatsaechlich Stunden nennen, nicht nur
+    # ueberschrieben sein — sonst faellt eine leere Spanne nicht auf.
+    start = ausgabe.index("=== Zeit je Zustand")
+    # ab der naechsten Zeile suchen: die Ueberschrift endet selbst auf "==="
+    naechster = ausgabe.find("\n===", start + 1)
+    block = ausgabe[start:naechster if naechster > 0 else len(ausgabe)]
+    assert re.search(r"\d{4}-\d{2}-\d{2} \*?\s+\d{2}-\d{2}\s", block), \
+        f"keine Stundenspanne in der Tabelle:\n{block[:400]}"
