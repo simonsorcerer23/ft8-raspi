@@ -566,6 +566,12 @@ class PickAttempt(Base):
     mode: Mapped[str | None] = mapped_column(String, nullable=True)
     tx_power_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     n_resends: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2026-09-15 — n_resends addiert CQ- und Report-Wiederholungen. Damit war
+    # qso_max_cq_resends nicht auswertbar: Zeilen mit n_resends >= 2 sind bei
+    # qso_max_cq_resends=1 zwangslaeufig QSOs mit Report-Wiederholung, also
+    # bereits laufende QSOs — ihre hohe Vollendungsquote sagt ueber den
+    # zweiten CQ-Ruf nichts. n_cq_resends traegt nur die CQ-Wiederholungen.
+    n_cq_resends: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stale_slots: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # v0.64.0 — "ALLES analysieren": die letzte Tranche (alle nullable):
     #  * winning_tier   — WELCHE hunt_priority-Regel den Pick entschied (erster

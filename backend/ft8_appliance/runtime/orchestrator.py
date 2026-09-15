@@ -10045,6 +10045,7 @@ class Orchestrator:
                     freq_offset_hz=meta.get("freq_offset_hz"),
                     target_grid=meta.get("target_grid"),
                     n_resends=meta.get("n_resends"),
+                    n_cq_resends=meta.get("n_cq_resends"),
                     stale_slots=meta.get("stale_slots"),
                     mode=self.config.operating.mode,
                     tx_power_w=self._tx_power_w,
