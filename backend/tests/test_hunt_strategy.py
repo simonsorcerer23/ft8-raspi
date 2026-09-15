@@ -248,3 +248,35 @@ def test_continent_gate_needs_psk_for_low_rate_continents() -> None:
     sm2 = _sm(hunt_continent_gate=False)
     sm2.ctx.call_to_continent = {"W1AW": "NA"}; sm2.ctx.continent_success = {"NA": 0.03}
     assert sm2._pick_hunt_target([_d("CQ W1AW FN31", "W1AW", snr=-5)]) is not None
+
+
+# ------------------------------------------------- CQ- vs Report-Wiederholungen
+
+def test_cq_resends_werden_getrennt_von_report_resends_gestempelt() -> None:
+    """2026-09-15: ``n_resends`` ist die Summe aus CQ- und Report-
+    Wiederholungen. Bei ``qso_max_cq_resends=1`` kann eine Zeile mit
+    ``n_resends=2`` also gar kein zweiter CQ-Ruf sein — sie ist ein bereits
+    laufendes QSO mit Report-Wiederholung. Genau daran ist die Auswertung der
+    Wochentelemetrie gescheitert: der Bucket "2+" trug 52 % Vollendung und sah
+    aus, als lohne sich die zweite Wiederholung. ``n_cq_resends`` trennt das."""
+    from ft8_appliance.statemachine.states import QsoContext
+
+    sm = _sm()
+    sm.qso = QsoContext(their_call="K1ABC", cq_resends=1, report_resends=1)
+    sm.ctx.hunt_attempt_meta["K1ABC"] = {}
+    sm._stamp_outcome_meta()
+
+    meta = sm.ctx.hunt_attempt_meta["K1ABC"]
+    assert meta["n_resends"] == 2, "Summe bleibt, alte Zeilen bleiben vergleichbar"
+    assert meta["n_cq_resends"] == 1, "nur der eine CQ-Ruf, nicht die Report-Wdh."
+
+
+def test_ohne_report_wiederholung_sind_beide_zaehler_gleich() -> None:
+    from ft8_appliance.statemachine.states import QsoContext
+
+    sm = _sm()
+    sm.qso = QsoContext(their_call="K1ABC", cq_resends=1, report_resends=0)
+    sm.ctx.hunt_attempt_meta["K1ABC"] = {}
+    sm._stamp_outcome_meta()
+    meta = sm.ctx.hunt_attempt_meta["K1ABC"]
+    assert meta["n_resends"] == meta["n_cq_resends"] == 1

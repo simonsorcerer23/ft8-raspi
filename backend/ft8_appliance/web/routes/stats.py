@@ -41,6 +41,10 @@ class PickAttemptStats(BaseModel):
     by_latency: list[dict]    # v0.62.0 — Completion + went_silent nach Pick-Alter
     by_pick_kind: list[dict]  # v0.62.0 — cq vs to_us vs to_other
     by_resends: list[dict]    # v0.62.0 — 0 vs 1 vs 2+ eigene Anrufe
+    # 2026-09-15 — nur die CQ-Wiederholungen. by_resends addiert CQ- und
+    # Report-Wiederholungen und kann qso_max_cq_resends daher nicht
+    # beantworten; dieser Schnitt kann es.
+    by_cq_resends: list[dict]
     by_winning_tier: list[dict]  # v0.64.0 — Tier-Wirksamkeit (Kernfrage)
     by_continent: list[dict]     # v0.64.0 — Completion je Kontinent
     by_psk_snr: list[dict]       # v0.64.0 — wie laut wir bei ihnen sind
@@ -195,6 +199,17 @@ async def pick_attempts(
     by_resends = [
         {"resends": b, **_age_cell(v)} for b, v in sorted(resend_groups.items())
     ]
+    # 2026-09-15 — derselbe Schnitt, aber ohne die Report-Wiederholungen.
+    # Alte Zeilen (vor der Spalte) haben n_cq_resends NULL und landen in
+    # "n/a", statt die Buckets zu verwaessern.
+    cq_resend_groups: dict[str, list[PickAttempt]] = {}
+    for r in rows:
+        key = _resend_bucket(getattr(r, "n_cq_resends", None))
+        cq_resend_groups.setdefault(key, []).append(r)
+    by_cq_resends = [
+        {"cq_resends": b, **_age_cell(v)}
+        for b, v in sorted(cq_resend_groups.items())
+    ]
 
     # v0.64.0 — Tier-Wirksamkeit (die Kernfrage), Kontinent, PSK-Lautstaerke.
     tier_groups: dict[str, list[PickAttempt]] = {}
@@ -245,6 +260,7 @@ async def pick_attempts(
         by_continent=by_continent,
         by_psk_snr=by_psk_snr,
         by_reply_kind=by_reply_kind,
+        by_cq_resends=by_cq_resends,
         bail_reasons=dict(sorted(bail_reasons.items(), key=lambda kv: -kv[1])),
         note=(
             "Hunt-Picks, outcome completed/bailed. psk-Effekt: rate(with_psk) "
@@ -253,7 +269,10 @@ async def pick_attempts(
             "by_latency: steigt went_silent_rate mit pick_age, sind stale Picks "
             "schuld; flach = Gegenstation. by_pick_kind: to_other = Station busy "
             "(erwartbar silent). by_resends: 0 = nie geantwortet (Geist) vs 2+ "
-            "= engagiert dann verloren. by_winning_tier: Completion JE "
+            "= engagiert dann verloren; Vorsicht, das addiert CQ- UND "
+            "Report-Wiederholungen. by_cq_resends zaehlt nur die CQ-"
+            "Wiederholungen und beantwortet damit qso_max_cq_resends "
+            "(Zeilen vor 2026-09-15: n/a). by_winning_tier: Completion JE "
             "entscheidendem hunt_priority-Tier (direkte Tier-Wirksamkeit). "
             "by_psk_snr: hoeren die uns leise (<-18) → erklaert went_silent. "
             "Erweiterte Felder erst ab v0.62/0.64 (alte Zeilen n/a). "

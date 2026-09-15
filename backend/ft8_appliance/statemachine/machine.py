@@ -1540,6 +1540,9 @@ class StateMachine:
         if meta is None:
             return
         meta["n_resends"] = self.qso.cq_resends + self.qso.report_resends
+        # 2026-09-15 — getrennt, damit by_cq_resends qso_max_cq_resends
+        # beantworten kann; die Summe allein vermischt beide Ursachen.
+        meta["n_cq_resends"] = self.qso.cq_resends
         meta["stale_slots"] = self.qso.stale_slots
         meta["our_snr_received"] = self.qso.our_snr_received
         try:

@@ -220,7 +220,21 @@ Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne set
 
 - `hunt_cq_fallback_pause_max_min` (Default 60): jede Fallback-Runde ohne Antwort verdoppelt die Pause (10, 20, 40, 60 min); die erste Antwort auf ein Fallback-CQ setzt zurück. Anlass: nachts 83 Starts, 0 QSOs.
 - `qso_max_cq_resends` Default 2 → 1: Telemetrie 0 Wiederholungen 7 %, 1 → 10 %, 2+ → 5 % Vollendung; die zweite Wiederholung kostet nur einen Burst.
+
+  **Nachtrag 2026-09-15:** Diese Begründung stand auf einer Kennzahl, die zwei Dinge addiert. `pick_attempt.n_resends` = `cq_resends + report_resends`; bei `qso_max_cq_resends = 1` ist eine Zeile mit `n_resends ≥ 2` also zwangsläufig ein bereits laufendes QSO mit wiederholtem Report, nie ein zweiter CQ-Ruf. In der Wochentelemetrie trug der Bucket „2+" darum 52 % Vollendung (n=44) und sah aus, als lohne sich die zweite Wiederholung — er misst sie gar nicht. Seit v0.159.0 trägt `pick_attempt` zusätzlich `n_cq_resends` (nur die CQ-Wiederholungen), ausgewertet als `by_cq_resends` in `/api/stats/pick-attempts`. `by_resends` bleibt für die Vergleichbarkeit alter Zeilen; Zeilen vor dem 15.9. haben `n_cq_resends = NULL` und stehen in `n/a`. Die Frage, ob `qso_max_cq_resends = 1` richtig steht, ist erst mit einigen hundert neuen Zeilen beantwortbar.
 - `hunt_continent_gate` / `hunt_continent_gate_pct` (Default an, 5 %): Rufer aus einem Kontinent, dessen Vollendungsquote in der eigenen Telemetrie (14 Tage, ≥ 20 Picks) unter der Schwelle liegt, werden nur angerufen, wenn PSK Reporter sie als „hört uns“ führt. Am 8.9.: EU 18 %, AS 7 %, NA 3 %. Nachteil bewusst in Kauf genommen: die seltenen NA-QSOs bei Nacht.
+
+### Wochenauswertung der Antwortstrategie (2026-09-15)
+
+Eine Woche Betrieb, 1798 Picks, 360 QSOs (Vorwoche 57). Drei Befunde, keine Umstellung:
+
+**Antwortfrequenz — die Rufer-Frequenz liegt vorn, knapp.** Der A/B aus `hunt_reply_ab_test` hat seit dem 8.9. 1513 Picks verteilt, sauber balanciert über Kontinent (NA 80/80, SA 23/24, EU 596/563) und SNR. Auf der Frequenz des Rufers zu antworten vollendet 20,3 % (158/779), auf dem ruhigen Bin 16,8 % (123/734) — ein Vorsprung von 3,5 Prozentpunkten. Stratifiziert nach SNR-Bucket ergibt Mantel-Haenszel OR 1,29 (z = 1,89, p = 0,059), nach Kontinent OR 1,28 (z = 1,80, p = 0,072). Die Richtung stimmt in 7 von 8 Strata; einzig AF (n = 30/27) läuft gegenläufig. Das verfehlt die 5-%-Schwelle knapp, widerspricht aber der Annahme, auf der v0.77.0 gebaut wurde — der ruhige Bin ist nicht besser, eher schlechter. `quiet_edge` (138 Picks, 18,1 %) ist vom A/B ausgenommen und bleibt, wie er ist: dort ginge die Antwort sonst in den Rig-Bandpass.
+
+Eine Einschränkung des Messaufbaus: Wird der quiet-Arm zugeteilt und findet `_next_cq_freq_hz()` keinen ruhigen Bin, sendet die Box auf der Rufer-Frequenz und die Zeile wird als `on_freq` gestempelt. Der on_freq-Bucket trägt darum vermutlich einige Dutzend Zeilen aus vollen Bandlagen, die eigentlich dem quiet-Arm zugelost waren.
+
+**Das Kontinent-Gate arbeitet richtig, seine PSK-Ausnahme bei NA nicht.** Über 14 Tage: EU 22,7 %, AS 11,6 %, AF 10,7 %, OC 4,8 %, NA 3,0 %, SA 1,2 %. Gesperrt (ohne PSK-Bestätigung) sind damit NA, SA und OC; AS und AF liegen über der Schwelle und sind frei — kein Kontinent mit inzwischen guter Quote wird ausgesperrt. Die PSK-Ausnahme dagegen trägt nur teilweise: bei AF hebt sie die Quote von 5,8 % auf 21,7 %, bei AS von 9,9 % auf 18,2 %, bei NA von 3,0 % auf 3,0 % — 100 Picks mit Freifahrtschein, exakt die Quote der 236 ungefilterten. Dass PSK Reporter uns in Nordamerika hört, sagt über den Abschluss eines QSOs dorthin nichts.
+
+**Der CQ-Fallback trägt.** 582 Starts im persistenten Journalzeitraum (ab 12.9.), davon liefen nur 45 bis in die Pause — die übrigen brach der Picker ab, weil er wieder etwas fand. Von den 45 Pausen sind 25 Runde 1, der adaptive Backoff wird also regelmäßig durch eine Antwort zurückgesetzt und eskaliert nur selten bis Runde 5/6. Die eingehenden Anrufe (`pick_kind = inbound_*`, 148 Picks) vollenden zu 33,1 % und damit doppelt so gut wie selbst gepickte CQs (16,6 %); 72 % von ihnen fallen in ein 5-Minuten-Fenster nach einem Fallback-Start, obwohl diese Fenster nur 55 % der Messspanne abdecken (z = 3,15). `hunt_cq_fallback_pause_min` bleibt deshalb bei 10.
 
 
 ### Wunschliste im Picker (2026-09-10)
