@@ -268,6 +268,12 @@ export const api = {
   operatorDeleteLogbook: (callsign, on_air_call) =>
                     request(`/operators/${encodeURIComponent(callsign)}/logbook?on_air_call=${encodeURIComponent(on_air_call)}`,
                             { method: 'DELETE' }),
+  // v0.161.0 — LoTW Station Location je Sende-Call. /MM und /AM haben
+  // kein DXCC und brauchen eine eigene Location, sonst bleiben ihre
+  // QSOs liegen statt falsch signiert zu werden.
+  operatorSetLotwLocation: (callsign, on_air_call, station_location) =>
+                    request(`/operators/${encodeURIComponent(callsign)}/lotw-location`,
+                            { method: 'PUT', body: { on_air_call, station_location } }),
 
   // v0.37.0 — API-Auth
   blobUrl,                                        // Bild hinter der Token-Pruefung

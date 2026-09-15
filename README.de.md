@@ -143,7 +143,11 @@ Schnittstelle nie zurückgegeben.
 
 Für LoTW gilt ein eigener Weg, weil dort nur signierte Logdateien
 angenommen werden: Die Appliance ruft dafür die ARRL-Software TQSL auf dem
-Pi auf. Einrichtung und Fallstricke stehen in [docs/lotw.md](docs/lotw.md).
+Pi auf. Weil eine Station Location genau ein DXCC-Gebiet trägt, werden die
+QSOs nach Sende-Rufzeichen getrennt signiert; wer keine eigene Location hat
+— `/MM` und `/AM` haben überhaupt kein DXCC — bleibt liegen, statt falsch
+bestätigt zu werden. Einrichtung und Fallstricke stehen in
+[docs/lotw.md](docs/lotw.md).
 
 ### Unterstützte Rigs
 

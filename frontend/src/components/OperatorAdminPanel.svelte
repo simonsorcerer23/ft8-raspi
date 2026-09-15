@@ -13,7 +13,8 @@
   let busy = $state(false);
   let error = $state(null);
   let preflight = $state({});   // call → { busy, qrz, clublog, error }
-  let lbForm = $state({});      // person → { call, key }
+  let lbForm = $state({});      // person → { call, key, loc }
+  let locForm = $state({});     // 'person|call' → Station-Location-Eingabe
   // person → Zugangsdaten-Formular. Passwoerter/Keys werden von der API
   // nie ausgeliefert, also starten die Felder leer: leer = "nicht
   // aendern". Geloescht wird ueber die expliziten Entfernen-Buttons.
@@ -33,7 +34,7 @@
       operators = data.operators;
       active = data.active_callsign;
       for (const op of operators) {
-        if (!lbForm[op.callsign]) lbForm[op.callsign] = { call: '', key: '' };
+        if (!lbForm[op.callsign]) lbForm[op.callsign] = { call: '', key: '', loc: '' };
       }
       error = null;
     } catch (e) { error = e.message; }
@@ -54,10 +55,23 @@
   async function addLogbook(cs) {
     const d = lbForm[cs];
     if (!d || !d.call.trim() || !d.key.trim() || busy) return;
+    const call = d.call.trim().toUpperCase();
     busy = true; error = null;
     try {
-      await api.operatorAddLogbook(cs, d.call.trim().toUpperCase(), d.key.trim());
-      lbForm[cs] = { call: '', key: '' };
+      await api.operatorAddLogbook(cs, call, d.key.trim());
+      if (d.loc.trim()) await api.operatorSetLotwLocation(cs, call, d.loc.trim());
+      lbForm[cs] = { call: '', key: '', loc: '' };
+      await refresh();
+    } catch (e) { error = e.message; } finally { busy = false; }
+  }
+
+  async function setLotwLocation(cs, call) {
+    const wert = (locForm[`${cs}|${call}`] ?? '').trim();
+    if (!wert || busy) return;
+    busy = true; error = null;
+    try {
+      await api.operatorSetLotwLocation(cs, call, wert);
+      locForm[`${cs}|${call}`] = '';
       await refresh();
     } catch (e) { error = e.message; } finally { busy = false; }
   }
@@ -252,6 +266,15 @@
           <div class="lb-row">
             <span class="lb-call">{call}</span>
             <span class="chip on">Key ✓</span>
+            {#if op.lotw_station_locations[call]}
+              <span class="chip on">LoTW: {op.lotw_station_locations[call]}</span>
+            {:else if op.lotw_station_location}
+              <span class="chip warn">{t('opadmin.lotw_loc_missing')}</span>
+              <input class="loc-in" type="text" placeholder={t('opadmin.lotw_loc_ph')}
+                     bind:value={locForm[`${op.callsign}|${call}`]} />
+              <button class="btn sm" onclick={() => setLotwLocation(op.callsign, call)}
+                      disabled={busy}>{t('opadmin.save')}</button>
+            {/if}
             <button class="btn sm" onclick={() => check(call)}
                     disabled={preflight[call]?.busy}>
               {preflight[call]?.busy ? '…' : t('opadmin.check')}
@@ -270,6 +293,8 @@
                    bind:value={lbForm[op.callsign].call} />
             <input type="text" placeholder={t('opadmin.api_key_ph')}
                    bind:value={lbForm[op.callsign].key} />
+            <input type="text" placeholder={t('opadmin.lotw_loc_ph')}
+                   bind:value={lbForm[op.callsign].loc} />
             <button class="btn" onclick={() => addLogbook(op.callsign)} disabled={busy}>{t('opadmin.add')}</button>
           </div>
         {/if}
@@ -280,6 +305,7 @@
 
 <style>
   .panel { background: var(--panel); border-radius: 8px; padding: 0.8rem; }
+  .loc-in { width: 9rem; font-size: 0.78rem; padding: 0.15rem 0.3rem; }
   h3 { margin: 0 0 0.6rem; color: var(--accent); font-size: 0.95rem; }
   .op {
     border: 1px solid #1e293b; border-radius: 6px; padding: 0.6rem;
@@ -296,6 +322,7 @@
   }
   .chip.on { background: rgba(34,197,94,0.18); color: #4ade80; }
   .chip.off { background: rgba(100,116,139,0.18); color: #64748b; }
+  .chip.warn { background: rgba(245,158,11,0.18); color: #fbbf24; }
   .btn {
     background: rgba(56,189,248,0.12); border: 1px solid #334155; color: var(--accent);
     border-radius: 5px; padding: 0.25rem 0.6rem; cursor: pointer; font-size: 0.78rem;

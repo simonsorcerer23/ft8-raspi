@@ -208,7 +208,11 @@ def _orch(ergebnis=None, fehler=None, *, monkeypatch) -> SimpleNamespace:
         _LOTW_CHARGE_MAX=Orchestrator._LOTW_CHARGE_MAX,
         _UPLOAD_MAX_ATTEMPTS=Orchestrator._UPLOAD_MAX_ATTEMPTS,
         _alert_upload_giveup_many=lambda *a: None,
+        _lotw_gemeldet=set(),
     )
+    o._lotw_melde_fehlende_location = \
+        lambda *a: Orchestrator._lotw_melde_fehlende_location(o, *a)
+    o._lotw_lade_charge = lambda *a: Orchestrator._lotw_lade_charge(o, *a)
     o.gesehen, o.op = gesehen, op
     return o
 
@@ -267,6 +271,89 @@ async def test_nur_eigene_qsos(monkeypatch) -> None:
     o = _orch(monkeypatch=monkeypatch)
     await Orchestrator._lotw_sweep_fuer_operator(o, o.op)
     assert [q.call for q in o.gesehen[0][0]] == ["OH3OJ1"]
+
+
+# ----------------------------------------------- Location je Sende-Call
+
+def test_heimat_call_nimmt_die_heimat_location() -> None:
+    op = OperatorConfig(callsign="DK9XR", lotw_station_location="Weissenhorn")
+    assert op.lotw_location_for("DK9XR") == "Weissenhorn"
+    assert op.lotw_location_for(None) == "Weissenhorn"
+
+
+def test_fremder_call_ohne_eintrag_bekommt_nichts() -> None:
+    """Der entscheidende Unterschied zu qrz_key_for: KEIN Rueckfall.
+
+    Eine Station Location traegt ein festes DXCC und einen festen Grid.
+    /MM und /AM haben ueberhaupt kein DXCC — sie mit der Heimat-Location
+    zu signieren waere eine falsche Aussage gegenueber LoTW, und anders
+    als ein QSO im falschen QRZ-Logbuch bekommt man das nicht zurueck.
+    """
+    op = OperatorConfig(callsign="DK9XR", lotw_station_location="Weissenhorn")
+    assert op.lotw_location_for("DK9XR/MM") is None
+    assert op.lotw_location_for("9A/DK9XR") is None
+
+
+def test_eigener_eintrag_gewinnt() -> None:
+    op = OperatorConfig(callsign="DK9XR", lotw_station_location="Weissenhorn",
+                        lotw_station_locations={"dk9xr/mm": "Schiff"})
+    assert op.lotw_location_for("DK9XR/MM") == "Schiff"
+    assert op.lotw_location_for("DK9XR") == "Weissenhorn"
+
+
+@pytest.mark.asyncio
+async def test_zwei_sende_calls_werden_getrennt_signiert(monkeypatch) -> None:
+    await _db([_qso(1), _qso(2, station_callsign="DK9XR/MM")])
+    o = _orch(monkeypatch=monkeypatch)
+    o.op.lotw_station_locations = {"DK9XR/MM": "Schiff"}
+    await Orchestrator._lotw_sweep_fuer_operator(o, o.op)
+    orte = {kw["station_location"]: [q.call for q in qsos]
+            for qsos, kw in o.gesehen}
+    assert orte == {"Home": ["OH3OJ1"], "Schiff": ["OH3OJ2"]}
+
+
+@pytest.mark.asyncio
+async def test_ohne_location_bleibt_liegen_statt_falsch_signiert(monkeypatch) -> None:
+    await _db([_qso(1), _qso(2, station_callsign="DK9XR/MM")])
+    o = _orch(monkeypatch=monkeypatch)
+    await Orchestrator._lotw_sweep_fuer_operator(o, o.op)
+    assert [q.call for qsos, _ in o.gesehen for q in qsos] == ["OH3OJ1"]
+    assert await _stand() == [("OH3OJ1", True, 1), ("OH3OJ2", False, 0)]
+
+
+@pytest.mark.asyncio
+async def test_liegengebliebene_blockieren_die_charge_nicht(monkeypatch) -> None:
+    """Ohne Versuchszaehler stehen sie fuer immer vorn in der Liste.
+
+    Zaehlten sie gegen die Chargengrenze, wuerden ein paar hundert
+    /MM-QSOs jeden Sweep fuellen und nichts Neues kaeme je an die Reihe.
+    """
+    await _db([_qso(i, station_callsign="DK9XR/MM") for i in range(3)]
+              + [_qso(9)])
+    o = _orch(monkeypatch=monkeypatch)
+    o._LOTW_CHARGE_MAX = 3
+    await Orchestrator._lotw_sweep_fuer_operator(o, o.op)
+    assert [q.call for qsos, _ in o.gesehen for q in qsos] == ["OH3OJ9"]
+
+
+@pytest.mark.asyncio
+async def test_meldung_kommt_nur_einmal(monkeypatch) -> None:
+    """Sonst steht die Meldung alle 30 Minuten im Journal.
+
+    Gezaehlt wird am Logger selbst, nicht ueber caplog: der Sweep
+    protokolliert ueber den Modul-Logger, und dessen Weiterleitung
+    haengt davon ab, was andere Tests vorher an der Log-Einrichtung
+    gedreht haben — in der Gesamtsuite kam mit caplog nichts an.
+    """
+    await _db([_qso(1, station_callsign="DK9XR/MM")])
+    o = _orch(monkeypatch=monkeypatch)
+    meldungen: list[str] = []
+    import ft8_appliance.runtime.orchestrator as mod
+    monkeypatch.setattr(mod.log, "error",
+                        lambda msg, *a, **kw: meldungen.append(msg % a if a else msg))
+    await Orchestrator._lotw_sweep_fuer_operator(o, o.op)
+    await Orchestrator._lotw_sweep_fuer_operator(o, o.op)
+    assert sum("DK9XR/MM" in m for m in meldungen) == 1
 
 
 # ------------------------------------------------------------ Verdrahtung
