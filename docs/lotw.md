@@ -20,20 +20,45 @@ Identität, und jede Bestätigung ist danach kryptografisch signiert.
 TQSL ist auf dem Pi bereits installiert (Debian-Paket `trustedqsl`, dazu
 `xvfb`, weil die Fassung im Paket ein Display verlangt).
 
-Was noch fehlt, sind zwei Schritte, die nur der Betreiber machen kann:
+Zwei Schritte kann nur der Betreiber machen. Beide sind für DK9XR am
+15.09.2026 erledigt; die Beschreibung steht hier für den nächsten
+Operator und für den Fall, dass der Pi neu aufgesetzt wird.
 
 1. **Zertifikat beantragen.** Das läuft über TQSL selbst und dauert
    einige Tage. Die ARRL will eine Kopie der Zulassung und ein zweites
    Dokument mit Name und Adresse, per E-Mail an `LoTW-help@arrl.org`.
    Ein Postweg ist nicht nötig. Das Zertifikat gilt drei Jahre; die
    Erneuerung verlangt die Unterlagen nicht erneut.
+
+   Der Antrag enthält ein **QSO-Startdatum**, und das ist etwas anderes
+   als die drei Jahre Laufzeit: Es legt fest, welche QSO-Daten überhaupt
+   signiert werden dürfen, und gehört auf das erste QSO unter diesem
+   Rufzeichen, damit sich auch ein Altlog hochladen lässt. Nachsehen
+   lässt es sich am fertigen Zertifikat:
+
+   ```bash
+   ssh ft8-pi5 'openssl x509 -in ~/.tqsl/certs/user -noout -text' | grep -A1 12348
+   ```
+
+   Die Erweiterungen `…12348.1.2` und `.1.3` sind Anfang und Ende,
+   `.1.4` ist die DXCC-Nummer. Für DK9XR: 1990-04-02 bis 2029-09-13,
+   DXCC 230. Ein zu enger Bereich wird über die Erneuerung korrigiert,
+   nicht über einen Neuantrag — der kollidiert mit dem bestehenden
+   Zertifikat.
 2. **Zertifikat und Station Location auf dem Pi anlegen.** Beides
    braucht die grafische Oberfläche, also per `ssh -X ft8-pi5` mit
    weitergereichtem Display:
 
 ```bash
-ssh -X ft8-pi5 'tqsl -i /pfad/zum/zertifikat.p12'
+ssh -X ft8-pi5 'tqsl -i /pfad/zum/zertifikat.tq6'
 ```
+
+**Der Aufruf kommt nicht von selbst zurück.** TQSL schreibt die
+Zertifikate, zeigt danach eine Erfolgsmeldung und wartet auf den Klick
+darauf. Kommt kein Fenster (etwa beim Aufruf über `xvfb-run` statt über
+`ssh -X`), hängt der Prozess sichtbar untätig. Abbrechen ist in diesem
+Fall gefahrlos: nachsehen, ob `~/.tqsl/certs/` die drei Dateien
+`authorities`, `root` und `user` enthält, dann ist der Import fertig.
 
 Danach die Station Location anlegen und benennen:
 
@@ -41,9 +66,37 @@ Danach die Station Location anlegen und benennen:
 ssh -X ft8-pi5 'tqsl -s'
 ```
 
+Rufzeichen und DXCC-Eintrag setzen, Grid eintragen; ITU- und CQ-Zone
+füllt TQSL aus dem DXCC und lässt sie grau. IOTA bleibt leer, sofern
+nicht von einer Insel gefunkt wird. Das Ergebnis landet in
+`~/.tqsl/station_data`.
+
 Der dort vergebene Name gehört anschließend in die Operator-Verwaltung,
 Feld „LoTW-Station-Location". Ohne ihn signiert TQSL nicht, und der
-Upload-Loop startet gar nicht erst.
+Upload-Loop startet gar nicht erst. Mit ihm startet er sofort — das
+Eintragen über die Oberfläche genügt, ein Neustart ist nicht nötig.
+
+## Ein Altlog einmalig nachtragen
+
+Für QSOs, die vor der Appliance entstanden sind, gibt es keinen
+automatischen Weg — sie stehen in keiner Datenbank, die der Loop kennt.
+Der Weg ist eine ADIF-Datei und ein einzelner TQSL-Aufruf. Erst ohne
+`-u` signieren, damit sichtbar wird, was TQSL bemängelt:
+
+```bash
+ssh ft8-pi5 'xvfb-run -a tqsl -d -a compliant -l Weissenhorn -o /tmp/probe.tq8 -x /tmp/altlog.adi'
+```
+
+Läuft das sauber durch, derselbe Aufruf mit `-u` statt `-o …` lädt hoch.
+Bereits hochgeladene QSOs weist LoTW als Duplikate ab, das ist Status 8
+oder 9 und kein Fehler.
+
+**Achtung bei Portabelbetrieb.** Eine Station Location trägt genau ein
+DXCC-Gebiet. QSOs mit `/MM` oder `/AM` gehören nicht dazu und brauchen
+eine eigene Location. Der Upload-Loop unterscheidet das derzeit **nicht**
+— er filtert die offenen QSOs nach dem Operator, nicht nach dem
+Stationsrufzeichen, und würde Schiffs-QSOs mit der Heimatadresse
+signieren. Vor dem ersten `/MM`-Betrieb ist das zu ändern.
 
 ## Zur Passphrase
 
