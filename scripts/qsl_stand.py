@@ -122,8 +122,17 @@ def main() -> int:
               f"  {d_best:+d} bestaetigt,"
               f"  {d_dxcc:+d} DXCC")
         if d_best > d_ges:
-            print("  → mehr neue Bestaetigungen als neue Verbindungen:"
-                  " da ist von aussen etwas dazugekommen.")
+            # Vorsicht mit der Deutung: Ein Ueberschuss heisst nur, dass
+            # AELTERE Verbindungen bestaetigt wurden. Das macht QRZs
+            # eigener Abgleich laufend von allein, sobald die Gegenseite
+            # ihr Log nachtraegt — es ist kein Beleg fuer einen
+            # LoTW-Import. Bei kleinen Zahlen ist es schlicht Rauschen.
+            print(f"  → {d_best - d_ges} Bestaetigung(en) mehr als neue"
+                  " Verbindungen, also fuer aeltere QSOs.")
+            print("     Das macht QRZs eigener Abgleich auch ohne LoTW."
+                  " Ob der Import gewirkt hat,")
+            print("     zeigt erst ein Sprung in der Groessenordnung"
+                  " der hochgeladenen Menge.")
     elif not args.merken:
         print("\n  Kein Vergleichspunkt gesichert."
               " Mit --merken einen setzen.")
