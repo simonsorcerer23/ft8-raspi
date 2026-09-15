@@ -627,6 +627,22 @@ def main() -> int:
                            f"{erfolge.get(arm, 0) / h:5.2f}" if h >= 1.0 else "    -",
                            f"{anrufe.get(arm, 0) / h:5.1f}" if h >= 1.0 else "    -"))
         tabelle(zeilen, ("Arm", "Stunden", "Anrufe", "QSOs", "QSOs/Std", "Anrufe/Std"))
+        # Warnung vor zu kurzer Messzeit. Die Arme werden in 15-Minuten-
+        # Bloecken zugeteilt, und bei wenigen Bloecken schwankt die
+        # Verteilung erheblich: Am 15.09.2026 bekam der Regelarm 16 %
+        # statt 45 % der Zeit, die Kontrolle 40 % statt 10 %. Die
+        # Hash-Funktion ist sauber, das Fenster war nur klein — genau
+        # deshalb gehoert der Hinweis hierher und nicht in den Code.
+        # Auf 10 % genau wird die Zuteilung erst bei rund 120 Bloecken,
+        # also etwa 30 Stunden je Arm.
+        knapp = [name for arm, name in (("ARM_REGEL", "Regel"), ("ARM_EW", "EW-Modell"),
+                                        ("ARM_KONTROLLE", "Kontrolle"))
+                 if 0 < std.get(arm, 0.0) < 20.0]
+        if knapp:
+            print(f"    ACHTUNG: {', '.join(knapp)} unter 20 Stunden Messzeit. Die Zuteilung")
+            print("    laeuft in 15-Minuten-Bloecken und schwankt darunter stark — die")
+            print("    Zeilen oben koennen die Arme deutlich ungleich getroffen haben.")
+            print("    Belastbar wird der Vergleich ab etwa 30 Stunden je Arm.")
         u = urteil_rate(erfolge.get("ARM_REGEL", 0), std.get("ARM_REGEL", 0.0),
                         erfolge.get("ARM_KONTROLLE", 0), std.get("ARM_KONTROLLE", 0.0))
         print(f"    Regel gegen Kontrolle, QSOs je Stunde: {u}")

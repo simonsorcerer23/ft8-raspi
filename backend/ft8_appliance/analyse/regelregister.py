@@ -107,11 +107,13 @@ REGELN: tuple[Regel, ...] = (
         "Anrufen nur, wenn P(Erfolg) x Wert je Sekunde den CQ-Ertrag erreicht; hoechster EW gewinnt.",
         "Signalklassen-Kanten aus 60 Tagen Telemetrie (-12/-13 und -17/-18 dB); P geschrumpft "
         "wie die Zellenquoten. Wertfaktoren sind Praeferenz. A/B gegen die Kette seit v0.150.0. "
-        "ERSTER BEFUND 14.09. (halber Tag): 1,6 QSOs/Std gegen 5,2 im Regelarm, z=-3,0. Ursache "
-        "war eine falsche p_cq-Messung (Schwelle 31,5 statt 4,5 %), seit v0.155.0 abgeschaltet. "
-        "Offen bleibt die schlechtere Quote je Anruf (11,1 gegen 24,4 %) — Verdacht: die "
-        "Wertfaktoren heben unwahrscheinliche Ziele ueber wahrscheinliche.",
-        date(2026, 9, 14),
+        "ABGESCHALTET 15.09. nach zwei Tagen: 1,82 QSOs/Std gegen 2,66 im Regelarm, und auch "
+        "wertgewichtet hinten (2,28 gegen 3,16 Wert/Std). Belegt im Kandidatenprotokoll: 20 Anrufe "
+        "an Ziele mit Wert 3 und im Mittel 9,5 % Chance, davon 1 Erfolg. Der Wertfaktor hebt "
+        "unwahrscheinliche Ziele ueber wahrscheinliche. Die erste Erklaerung (falsche p_cq-Messung, "
+        "Schwelle 31,5 statt 4,5 %) war richtig, aber nicht die ganze. Tabelle bleibt brauchbar: "
+        "kalibriert (10-20 % vorhergesagt, 15,1 % eingetreten).",
+        date(2026, 9, 15),
         "Bilanz-Abschnitt 'Erwartungswert gegen Kette' (QSOs je Stunde je Arm) und Kalibrierung "
         "(vorhergesagtes P gegen eingetretene Quote je Klasse).",
     ),
