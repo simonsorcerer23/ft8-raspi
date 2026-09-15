@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.161.0 — 2026-09-15
+- build: Frontend mit der Station-Location-Zeile
+- feat: LoTW signiert getrennt nach Sende-Rufzeichen
+- docs: LoTW-Einrichtung nach der Inbetriebnahme korrigiert
+
 ## v0.160.1 — 2026-09-15
 - test: Stundenspanne der Tageszeile auf den Inhalt pruefen, nicht auf die Ueberschrift
 
