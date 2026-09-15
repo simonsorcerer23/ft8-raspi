@@ -675,10 +675,27 @@ class OperatingConfig(BaseModel):
     # fuer jede Filterregel — QSOs je Stunde Regel gegen Kontrolle.
     # 0 schaltet ab. Ueber 0.5 waere die Regel selbst die Ausnahme.
     hunt_kontrollarm_anteil: float = Field(default=0.1, ge=0.0, le=0.5)
-    # Erwartungswert-Modell (seit 2026-09-14) als A/B gegen die Kette: in
-    # der Haelfte der Nicht-Kontroll-Bloecke entscheidet P(Erfolg) x Wert
-    # je Kandidat gegen den CQ-Ertrag statt der sieben Lohnt-sich-Gates.
-    hunt_erwartungswert_ab: bool = True
+    # Erwartungswert-Modell (v0.150.0) als A/B gegen die Kette: P(Erfolg)
+    # x Wert je Kandidat gegen den CQ-Ertrag statt der sieben Lohnt-sich-
+    # Gates.
+    #
+    # ABGESCHALTET seit 2026-09-15 nach zwei Tagen Messung. Es verlor
+    # deutlich: 1,82 QSOs je Stunde gegen 2,66 im Regelarm. Auch fair
+    # gemessen, also mit dem Wert der Ziele gewichtet, liegt es hinten
+    # (2,28 gegen 3,16 Wert je Stunde) — der Einwand, die Zielgroesse
+    # benachteilige ein Modell, das absichtlich Wert ueber Anzahl stellt,
+    # traegt also nicht.
+    #
+    # Der Grund steht im Kandidatenprotokoll: Es rief zwanzigmal Ziele mit
+    # dreifachem Wert an, deren mittlere Erfolgschance bei 9,5 % lag. Ein
+    # einziges QSO kam zustande. Der Wertfaktor hebt unwahrscheinliche
+    # Ziele ueber wahrscheinliche, und das kostet mehr als es einbringt.
+    #
+    # Das Modell selbst bleibt im Code: Die Wahrscheinlichkeitstabelle ist
+    # inzwischen sauber kalibriert (10-20 % vorhergesagt, 15 % eingetreten)
+    # und damit auch fuer anderes brauchbar. Wer es erneut versuchen will,
+    # sollte zuerst die Wertfaktoren deutlich senken.
+    hunt_erwartungswert_ab: bool = False
     # Ertrag je CQ-Ruf (QSO je 30-s-Ruf), solange das Zeitprotokoll noch
     # keine 100 Rufe hat. Setzung, keine Messung: 1,5 % je Ruf entspricht
     # 4,5 % je 90-s-Anruf — die Groessenordnung, ab der die Kette heute

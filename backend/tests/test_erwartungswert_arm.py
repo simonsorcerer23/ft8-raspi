@@ -172,3 +172,14 @@ def test_eigenes_salz_und_beide_aufrufstellen() -> None:
     assert '_arm_aus_block(block, "erwartungswert")' in quelle
     assert len(re.findall(r"^\s+self\._setze_ew_arm\(\)$", quelle, re.M)) == 2
     assert quelle.count('ew_arm=meta.get("ew_arm")') == 1
+
+
+def test_modell_bleibt_abgeschaltet() -> None:
+    """Am 15.09.2026 abgeschaltet, nachdem es zwei Tage lang verlor:
+    1,82 QSOs je Stunde gegen 2,66 im Regelarm, und auch wertgewichtet
+    hinten (2,28 gegen 3,16). Wer den Default wieder umlegt, schaltet
+    einen gemessenen Verlust scharf — dann bitte mit neuen Zahlen und
+    deutlich kleineren Wertfaktoren.
+    """
+    from ft8_appliance.config.models import OperatingConfig
+    assert OperatingConfig().hunt_erwartungswert_ab is False

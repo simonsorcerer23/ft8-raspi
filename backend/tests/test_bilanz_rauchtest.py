@@ -301,3 +301,10 @@ def test_alte_datenbank_ohne_junge_spalten(tmp_path) -> None:
     )
     assert res.returncode == 0, f"Bilanz brach ab:\n{res.stderr[-2000:]}"
     assert "Datenbasis" in res.stdout, "Lauf endete vorzeitig"
+
+
+def test_warnt_bei_zu_kurzer_messzeit(ausgabe) -> None:
+    """Die Testdaten geben jedem Arm nur wenige Stunden. Genau dann darf
+    die Bilanz den Armvergleich nicht kommentarlos hinstellen — am
+    15.09.2026 bekam der Regelarm 16 % statt 45 % der Zeit."""
+    assert "unter 20 Stunden Messzeit" in ausgabe
