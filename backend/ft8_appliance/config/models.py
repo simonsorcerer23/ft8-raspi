@@ -79,6 +79,23 @@ class OperatorConfig(BaseModel):
     # Prozessliste sichtbar — ohne Passphrase zu importieren ist auf einer
     # Einzelplatz-Station sauberer. Siehe docs/lotw.md.
     lotw_cert_password: str | None = None
+    # v0.161.0 — eine Station Location traegt genau EIN DXCC-Gebiet und
+    # einen Grid. QSOs unter einem abweichenden On-Air-Call (/MM, /AM,
+    # DX-Prefix) gehoeren nicht dazu: /MM und /AM haben ueberhaupt kein
+    # DXCC. Diese Map ordnet einem konkreten On-Air-Call seine eigene
+    # Station Location zu, angelegt mit `tqsl -s`.
+    #
+    # ANDERS ALS BEI qrz_logbooks gibt es hier bewusst KEINEN Rueckfall
+    # auf die Heimat-Location: ein QSO im falschen QRZ-Logbuch laesst
+    # sich verschieben, eine bei LoTW unter der falschen Location
+    # bestaetigte Verbindung praktisch nicht. Fehlt der Eintrag, bleibt
+    # das QSO offen und wird gemeldet. Siehe :meth:`lotw_location_for`.
+    lotw_station_locations: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("lotw_station_locations")
+    @classmethod
+    def _upper_lotw_location_keys(cls, v: dict[str, str]) -> dict[str, str]:
+        return {k.upper().strip(): val for k, val in (v or {}).items()}
     # v0.22.0 — DX-Operating-Location.
     # home_country: ITU/CEPT-Country-Code des Heimat-DXCC (DL für DE).
     # current_operating_country: wenn gesetzt UND != home_country, dann
@@ -144,6 +161,24 @@ class OperatorConfig(BaseModel):
             if key:
                 return key
         return self.qrz_logbook_api_key
+
+    def lotw_location_for(self, station_callsign: str | None) -> str | None:
+        """LoTW Station Location fuer einen konkreten On-Air-Call.
+
+        Der Heimat-Call bekommt ``lotw_station_location``, jeder andere
+        On-Air-Call nur einen ausdruecklichen Eintrag aus
+        ``lotw_station_locations``. **Kein Rueckfall auf die Heimat-
+        Location** — sie traegt ein festes DXCC und einen festen Grid,
+        und ein damit signiertes /MM-QSO waere eine falsche Aussage
+        gegenueber LoTW. Ohne Eintrag: None, das QSO bleibt offen.
+        """
+        call = (station_callsign or "").upper().strip()
+        if not call or call == self.callsign:
+            return self.lotw_station_location
+        treffer = self.lotw_station_locations.get(call)
+        if treffer:
+            return treffer
+        return None
 
     @field_validator("callsign")
     @classmethod

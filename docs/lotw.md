@@ -80,69 +80,68 @@ Eintragen über die Oberfläche genügt, ein Neustart ist nicht nötig.
 
 Für QSOs, die vor der Appliance entstanden sind, gibt es keinen
 automatischen Weg — sie stehen in keiner Datenbank, die der Loop kennt.
-Der Weg ist eine ADIF-Datei und ein einzelner TQSL-Aufruf. Erst ohne
-`-u` signieren, damit sichtbar wird, was TQSL bemängelt:
+Aus dem QRZ-Logbuch holt man sie über **Settings → ADIF Import/Export →
+Export** (abopflichtig, und zwar für den Eigentümer des Logbuchs).
+
+**Die Datei muss in Häppchen zerlegt werden.** Am 15.09.2026 mit 8605
+Datensätzen durchgespielt: Ein einzelner Aufruf über die ganze Datei
+blieb nach dem Versionsbanner stumm stehen und wurde nach fünfzehn
+Minuten abgebrochen, ohne dass TQSL überhaupt eine Verbindung aufgebaut
+hätte — nachprüfbar in `~/.tqsl/curl.log`, das in dieser Zeit keinen
+einzigen `POST /lotw/upload` verzeichnete. In Portionen zu 500 lief
+dieselbe Datei danach ohne Zwischenfall durch, achtzehn Aufrufe, jeder
+`Success(0)`. Das ist dieselbe Chargengröße, die der Loop im Betrieb
+verwendet.
+
+**Der Umweg über eine signierte `.tq8` funktioniert nicht.** `tqsl -o`
+erzeugt sie anstandslos, aber sie anschließend mit `tqsl -u` zu
+verschicken hängt genauso stumm. Signieren und Hochladen gehören in
+einen Aufruf, direkt aus der ADIF.
+
+Wichtig ist außerdem `-a all` statt `-a compliant`: TQSL merkt sich in
+`~/.tqsl/uploaded.db`, was es schon einmal signiert hat, und überspringt
+solche Datensätze sonst wortlos. Bereits bei LoTW liegende QSOs sind
+kein Problem — die weist der Server als Duplikate ab, das ist Status 8
+oder 9.
 
 ```bash
-ssh ft8-pi5 'xvfb-run -a tqsl -d -a compliant -l Weissenhorn -o /tmp/probe.tq8 -x /tmp/altlog.adi'
+# Auf dem Pi, je Häppchen:
+xvfb-run -a tqsl -d -a all -l Weissenhorn -u -x /tmp/haeppchen/teil_001.adi
 ```
 
-Läuft das sauber durch, derselbe Aufruf mit `-u` statt `-o …` lädt hoch.
-Bereits hochgeladene QSOs weist LoTW als Duplikate ab, das ist Status 8
-oder 9 und kein Fehler.
+Erwartete Ausgabe am Ende: `Attempting to upload 500 QSOs`, dann
+`Log uploaded successfully` und `Final Status: Success(0)`. Bleibt ein
+Aufruf stumm, ist `~/.tqsl/curl.log` die Stelle, an der sich ablesen
+lässt, ob überhaupt etwas gesendet wurde.
 
-**Achtung bei Portabelbetrieb.** Eine Station Location trägt genau ein
-DXCC-Gebiet. QSOs mit `/MM` oder `/AM` gehören nicht dazu und brauchen
-eine eigene Location. Der Upload-Loop unterscheidet das derzeit **nicht**
-— er filtert die offenen QSOs nach dem Operator, nicht nach dem
-Stationsrufzeichen, und würde Schiffs-QSOs mit der Heimatadresse
-signieren. Vor dem ersten `/MM`-Betrieb ist das zu ändern.
+## Mehrere Sende-Rufzeichen
 
-## Zur Passphrase
+Eine Station Location trägt genau ein DXCC-Gebiet und einen Grid. QSOs
+unter einem abweichenden On-Air-Call gehören nicht dazu: `/MM` und `/AM`
+haben überhaupt kein DXCC. Sie mit der Heimat-Location zu signieren wäre
+eine falsche Aussage gegenüber LoTW, und anders als ein QSO im falschen
+QRZ-Logbuch lässt sich das praktisch nicht zurücknehmen.
 
-Das Zertifikat lässt sich mit oder ohne Passphrase importieren. TQSL
-kennt für den unbeaufsichtigten Betrieb nur den Schalter `-p`, und was
-dort steht, ist in der Prozessliste sichtbar. Auf einer Station, an der
-nur der Betreiber arbeitet, ist ein Import **ohne** Passphrase deshalb
-sauberer als eine, die im Klartext über die Kommandozeile geht. Wer
-trotzdem eine setzt, trägt sie in der Operator-Verwaltung ein.
+Der Upload-Loop gruppiert deshalb seit v0.161.0 nach
+`station_callsign` und sucht für jede Gruppe eine eigene Location:
 
-## Was die Appliance dann tut
+- Der Heimat-Call nimmt `lotw_station_location`.
+- Jeder andere On-Air-Call braucht einen ausdrücklichen Eintrag. **Einen
+  Rückfall auf die Heimat-Location gibt es bewusst nicht** — anders als
+  bei den QRZ-Logbuch-Keys, wo ein falsch einsortiertes QSO harmlos ist.
+- Ohne Eintrag bleiben die QSOs liegen, ohne Versuchszähler, und der
+  Journaleintrag sagt einmal, welche Location fehlt. Sie zählen nicht
+  gegen die Chargengrenze, sonst würden ein paar hundert liegengebliebene
+  Datensätze jeden Durchgang füllen und nichts Neues käme mehr an die
+  Reihe.
 
-Alle dreißig Minuten sammelt sie die noch nicht hochgeladenen
-Verbindungen des Operators, schreibt sie als ADIF in eine temporäre
-Datei und ruft auf:
+Angelegt wird die zusätzliche Location wie die erste mit
+`ssh -X ft8-pi5 'tqsl -s'`, für `/MM` und `/AM` mit DXCC „NONE".
+Hinterlegt wird sie in der Operator-Verwaltung in der Zeile des
+jeweiligen Sende-Calls, oder über die Schnittstelle:
 
+```bash
+curl -X PUT localhost:8000/api/operators/DK9XR/lotw-location \
+  -H 'Content-Type: application/json' \
+  -d '{"on_air_call": "DK9XR/MM", "station_location": "Schiff"}'
 ```
-xvfb-run -a tqsl -d -a compliant -l "<Station Location>" -u -x <datei>
-```
-
-Die vier Schalter decken die vier Stellen ab, an denen TQSL sonst einen
-Dialog öffnen und unbeaufsichtigt hängenbleiben würde: Datumsbereich,
-Duplikatbehandlung, Standortwahl und Passphrase.
-
-Entscheidend ist die Auswertung des Ergebnisses. TQSL meldet nicht nur
-Erfolg oder Misserfolg:
-
-| Code | Bedeutung | Behandlung |
-|---|---|---|
-| 0 | alles signiert und hochgeladen | Erfolg |
-| 8 | nichts übrig, alles waren Duplikate | Erfolg |
-| 9 | teils Duplikate, Rest hochgeladen | Erfolg |
-| 11 | LoTW nicht erreichbar | später erneut |
-| 2, 4, 5, 6, 7, 10 | zurückgewiesen oder Fehler | Einrichtung prüfen |
-
-Wer nur auf Null prüft, hält die Codes acht und neun für Fehler und lädt
-dieselben Verbindungen endlos erneut hoch. Bei einem zweiten Lauf ist
-acht der Normalfall.
-
-Ein harter Fehler verbucht **nichts** als hochgeladen. Sonst wären die
-Verbindungen still übersprungen, sobald jemand die Einrichtung richtet.
-
-## Was nicht geprüft ist
-
-Alles oben stammt aus der Dokumentation, nicht vom laufenden System: Es
-gibt noch kein Zertifikat. Ungeprüft sind insbesondere das Verhalten von
-`xvfb-run` bei langen Läufen, die genaue Form der Statuszeile in Version
-2.8.1 und ob eine Station Location sich ohne echte grafische Oberfläche
-anlegen lässt. Beim ersten echten Lauf gehört das Journal gelesen.

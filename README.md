@@ -138,8 +138,11 @@ password leaves the Pi only encrypted towards eQSL and is never returned by the
 API.
 
 LoTW works differently because it only accepts digitally signed log files:
-the appliance invokes the ARRL's TQSL tool on the Pi. Setup and pitfalls are
-documented in [docs/lotw.md](docs/lotw.md).
+the appliance invokes the ARRL's TQSL tool on the Pi. Because a station
+location carries exactly one DXCC entity, QSOs are signed separately per
+transmit callsign; anything without its own location — `/MM` and `/AM` have
+no DXCC at all — stays queued rather than being confirmed under the wrong
+one. Setup and pitfalls are documented in [docs/lotw.md](docs/lotw.md).
 
 ### Supported rigs
 

@@ -58,6 +58,10 @@ class OperatorOut(BaseModel):
     # v0.29.0 — zusaetzliche Sende-Calls (Prefix/Suffix) mit eigenem
     # QRZ-Logbook-Key. Nur die Calls, nicht die Keys.
     station_logbooks: list[str] = Field(default_factory=list)
+    # v0.161.0 — Station Location je Sende-Call. Anders als bei den
+    # QRZ-Keys ist hier nichts geheim: es sind Namen, die der Betreiber
+    # selbst in TQSL vergeben hat.
+    lotw_station_locations: dict[str, str] = Field(default_factory=dict)
 
 
 class OperatorsResponse(BaseModel):
@@ -94,6 +98,7 @@ def _to_out(op: OperatorConfig, active: str) -> OperatorOut:
         has_lotw_setup=bool(op.lotw_station_location),
         is_active=(op.callsign == active),
         station_logbooks=sorted(op.qrz_logbooks.keys()),
+        lotw_station_locations=dict(sorted(op.lotw_station_locations.items())),
     )
 
 
@@ -420,6 +425,11 @@ class StationLogbookRequest(BaseModel):
     qrz_logbook_api_key: str
 
 
+class LotwLocationRequest(BaseModel):
+    on_air_call: str
+    station_location: str
+
+
 def _resolve_person(orch: Orchestrator, callsign: str) -> OperatorConfig:
     target = callsign.upper().strip()
     for op in orch.config.operators:
@@ -441,6 +451,52 @@ async def upsert_station_logbook(
     if not call or not key:
         raise HTTPException(status_code=400, detail="on_air_call und Key noetig")
     op.qrz_logbooks = {**op.qrz_logbooks, call: key}
+    await orch.persist_config()
+    return _to_out(op, orch.config.active_callsign or "")
+
+
+@router.put("/operators/{callsign}/lotw-location", response_model=OperatorOut)
+async def upsert_lotw_location(
+    callsign: str,
+    payload: LotwLocationRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    """LoTW Station Location fuer einen Sende-Call setzen.
+
+    Der Name muss in TQSL auf dem Pi existieren (`tqsl -s`); geprueft
+    wird das hier nicht, TQSL meldet einen unbekannten Namen beim
+    naechsten Upload als harten Fehler.
+    """
+    op = _resolve_person(orch, callsign)
+    call = payload.on_air_call.upper().strip()
+    ort = payload.station_location.strip()
+    if not call or not ort:
+        raise HTTPException(status_code=400,
+                            detail="on_air_call und station_location noetig")
+    if call == op.callsign:
+        # Der Heimat-Call hat sein eigenes Feld; zwei Quellen fuer
+        # dieselbe Angabe waeren eine Fehlerquelle.
+        op.lotw_station_location = ort
+    else:
+        op.lotw_station_locations = {**op.lotw_station_locations, call: ort}
+    orch._lotw_gemeldet.discard((op.callsign, call))
+    await orch.persist_config()
+    orch.starte_lotw_loop_falls_noetig("LoTW-Station-Location gesetzt")
+    return _to_out(op, orch.config.active_callsign or "")
+
+
+@router.delete("/operators/{callsign}/lotw-location", response_model=OperatorOut)
+async def delete_lotw_location(
+    callsign: str,
+    on_air_call: str,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    """Eine Station-Location-Zuordnung entfernen."""
+    op = _resolve_person(orch, callsign)
+    call = on_air_call.upper().strip()
+    op.lotw_station_locations = {
+        k: v for k, v in op.lotw_station_locations.items() if k != call
+    }
     await orch.persist_config()
     return _to_out(op, orch.config.active_callsign or "")
 

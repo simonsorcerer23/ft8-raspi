@@ -521,6 +521,9 @@ class Orchestrator:
     _cq_count_zero_at: float = field(default=0.0, init=False)
     _cq_idle_alert_sent: bool = field(default=False, init=False)
     _bg_tasks: list[asyncio.Task] = field(default_factory=list, init=False)
+    # (Operator, On-Air-Call) ohne LoTW Station Location. Nur damit die
+    # Meldung einmal kommt und nicht alle 30 Minuten erneut.
+    _lotw_gemeldet: set[tuple[str, str]] = field(default_factory=set, init=False)
     # Set of callsigns we've already worked at least once. Loaded from
     # DB at start(); appended to on every LOG_QSO. Used by the worked-B4
     # annotation served via /api/decodes and the SSE stream.
@@ -6595,7 +6598,6 @@ class Orchestrator:
 
         from ..db import session_scope
         from ..db.models import Qso
-        from ..integrations.lotw import LotwError, upload
 
         async with session_scope() as s:
             jetzt = datetime.now(UTC)
@@ -6605,50 +6607,94 @@ class Orchestrator:
                 .where(Qso.user_callsign == op.callsign)
                 .order_by(Qso.qso_start.asc())
             )).scalars())
-            faellig = []
+            # v0.161.0 — nach On-Air-Call gruppieren. Eine Station
+            # Location traegt ein festes DXCC und einen festen Grid; ein
+            # /MM-QSO damit zu signieren waere eine falsche Aussage
+            # gegenueber LoTW und praktisch nicht zurueckzunehmen.
+            #
+            # Wer keine eigene Location hat, wird hier schon aussortiert
+            # und zaehlt NICHT gegen die Chargengrenze. Sonst wuerden ein
+            # paar hundert liegengebliebene /MM-QSOs — die keinen
+            # Versuchszaehler bekommen und deshalb vorn in der nach Zeit
+            # sortierten Liste stehen bleiben — jeden Sweep die Charge
+            # fuellen, und nichts Neues kaeme je an die Reihe.
+            nach_call: dict[str, list] = {}
+            ohne_ort: dict[str, int] = {}
             for q in offen:
+                on_air = q.station_callsign or op.callsign
+                if not op.lotw_location_for(on_air):
+                    ohne_ort[on_air] = ohne_ort.get(on_air, 0) + 1
+                    continue
                 backoff_s = min(7200.0, 1800.0 * (2 ** q.lotw_upload_attempts))
                 zuletzt = _as_utc(q.lotw_last_attempt_at)
                 if zuletzt is not None and (jetzt - zuletzt).total_seconds() < backoff_s:
                     continue
-                faellig.append(q)
-                if len(faellig) >= self._LOTW_CHARGE_MAX:
-                    break
-            if not faellig:
+                charge = nach_call.setdefault(on_air, [])
+                if len(charge) < self._LOTW_CHARGE_MAX:
+                    charge.append(q)
+            for on_air, anzahl in sorted(ohne_ort.items()):
+                self._lotw_melde_fehlende_location(op, on_air, anzahl)
+            for on_air, charge in sorted(nach_call.items()):
+                ort = op.lotw_location_for(on_air)
+                if not ort:  # pragma: no cover — oben schon gefiltert
+                    continue
+                await self._lotw_lade_charge(op, on_air, ort, charge, jetzt)
+
+    def _lotw_melde_fehlende_location(self, op, on_air: str, anzahl: int) -> None:
+        """Einmal je Operator und On-Air-Call warnen, nicht alle 30 min.
+
+        Die QSOs bleiben offen — kein Versuchszaehler, kein Aufgeben:
+        sie sind nicht fehlgeschlagen, es fehlt eine Einrichtung, die
+        nur von Hand nachzuholen ist (`tqsl -s`).
+        """
+        schluessel = (op.callsign, on_air)
+        if schluessel in self._lotw_gemeldet:
+            return
+        self._lotw_gemeldet.add(schluessel)
+        log.error(
+            "LoTW: %d QSOs als %s haben keine Station Location und bleiben "
+            "liegen. Mit 'ssh -X ft8-pi5 tqsl -s' eine eigene Location fuer "
+            "%s anlegen (/MM und /AM haben kein DXCC) und sie in der "
+            "Operator-Verwaltung hinterlegen.", anzahl, on_air, on_air)
+
+    async def _lotw_lade_charge(self, op, on_air: str, ort: str,
+                                faellig: list, jetzt) -> None:
+        """Eine Charge gleichen On-Air-Calls signieren und hochladen."""
+        from ..integrations.lotw import LotwError, upload
+
+        for q in faellig:
+            q.lotw_upload_attempts += 1
+            q.lotw_last_attempt_at = jetzt
+        try:
+            ergebnis = await upload(
+                faellig, station_location=ort,
+                cert_password=op.lotw_cert_password,
+            )
+        except LotwError as exc:
+            if exc.hart:
+                # Fehlendes Zertifikat, unbekannte Station Location, von
+                # LoTW zurueckgewiesen: nichts als hochgeladen verbuchen,
+                # sonst waeren die QSOs nach dem Richten uebersprungen.
+                log.error("LoTW lehnt %s ab (Code %s): %s — Einrichtung pruefen",
+                          on_air, exc.code, exc)
                 return
+            aufgegeben = [q.call for q in faellig
+                          if q.lotw_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS]
             for q in faellig:
-                q.lotw_upload_attempts += 1
-                q.lotw_last_attempt_at = jetzt
-            try:
-                ergebnis = await upload(
-                    faellig, station_location=op.lotw_station_location,
-                    cert_password=op.lotw_cert_password,
-                )
-            except LotwError as exc:
-                if exc.hart:
-                    # Fehlendes Zertifikat, unbekannte Station Location, von
-                    # LoTW zurueckgewiesen: nichts als hochgeladen verbuchen,
-                    # sonst waeren die QSOs nach dem Richten uebersprungen.
-                    log.error("LoTW lehnt %s ab (Code %s): %s — Einrichtung pruefen",
-                              op.callsign, exc.code, exc)
-                    return
-                aufgegeben = [q.call for q in faellig
-                              if q.lotw_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS]
-                for q in faellig:
-                    if q.lotw_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
-                        q.lotw_uploaded = True
-                log.warning("LoTW-Upload fehlgeschlagen (%s), %d QSOs bleiben offen",
-                            exc, len(faellig) - len(aufgegeben))
-                if aufgegeben:
-                    log.error("LoTW: %d QSOs nach %d Versuchen aufgegeben: %s",
-                              len(aufgegeben), self._UPLOAD_MAX_ATTEMPTS,
-                              ", ".join(aufgegeben))
-                    self._alert_upload_giveup_many("LoTW", aufgegeben)
-                return
-            for q in faellig:
-                q.lotw_uploaded = True
-            log.info("LoTW %s: %d QSOs, %s (Code %d)",
-                     op.callsign, ergebnis.gesamt, ergebnis.meldung, ergebnis.code)
+                if q.lotw_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                    q.lotw_uploaded = True
+            log.warning("LoTW-Upload fehlgeschlagen (%s), %d QSOs bleiben offen",
+                        exc, len(faellig) - len(aufgegeben))
+            if aufgegeben:
+                log.error("LoTW: %d QSOs nach %d Versuchen aufgegeben: %s",
+                          len(aufgegeben), self._UPLOAD_MAX_ATTEMPTS,
+                          ", ".join(aufgegeben))
+                self._alert_upload_giveup_many("LoTW", aufgegeben)
+            return
+        for q in faellig:
+            q.lotw_uploaded = True
+        log.info("LoTW %s: %d QSOs, %s (Code %d)",
+                 on_air, ergebnis.gesamt, ergebnis.meldung, ergebnis.code)
 
     async def _clublog_drain_loop(self) -> None:
         """v0.21.0 — ClubLog Real-Time-Upload-Drain (analog QRZ).

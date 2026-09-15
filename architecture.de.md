@@ -1021,13 +1021,15 @@ hochgericht-ft8/
 - Audio-Recording on demand
 - JSONL-Decode-Dump
 - USB-Stick-Backup
-- LotW / eQSL Auto-Upload (~~ClubLog~~ ist implementiert, siehe §6.6)
 - Easter-Egg-Animationen
 - Dual-WLAN-Chip Travel-Router-Modus
 
 Inzwischen umgesetzt (waren mal out of scope):
 - ~~Multi-User-Profile~~ — implementiert 2026-05-23, siehe §7.1
 - ~~ClubLog Auto-Upload~~ — implementiert, siehe §6.6
+- ~~eQSL Auto-Upload~~ — implementiert 2026-09-14 (v0.152.0)
+- ~~LoTW Auto-Upload~~ — implementiert 2026-09-14 (v0.154.0), in Betrieb
+  seit 15.09.2026; siehe docs/lotw.md
 - ~~DXCC-Award-Tracking~~ — Picker-Tiers `new_dxcc`/`new_dxcc_band` (5BWAS) + `new_grid(_band)` (VUCC), siehe §6.2
 - ~~Remote-Support via Tailscale/WireGuard~~ — der Pi läuft über Tailscale (Zugang token-gesichert)
 
