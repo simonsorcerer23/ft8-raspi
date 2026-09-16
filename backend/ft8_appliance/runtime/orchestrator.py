@@ -1404,6 +1404,11 @@ class Orchestrator:
     _QSL_JE_RUNDE: typing.ClassVar[int] = 25
     _QSL_RUNDE_PAUSE_S: typing.ClassVar[float] = 1800.0
     _QSL_MAX_VERSUCHE: typing.ClassVar[int] = 3
+    # Wie weit zurueck eine Karte als "frisch eingetroffen" gilt und
+    # damit Vorrang vor dem Altbestand behaelt. Deckt den Upload-Verzug
+    # der Gegenstationen ab: 206 der letzten 300 Karten kamen am QSO-Tag,
+    # 39 weitere binnen zwei Tagen.
+    _QSL_FRISCH_TAGE: typing.ClassVar[int] = 3
 
     def qsl_verzeichnis(self) -> Path:
         """Wo die Kartenbilder liegen. Neben der Datenbank, nicht im Repo."""
@@ -1530,8 +1535,18 @@ class Orchestrator:
     async def _qsl_bilder_nachholen(self) -> None:
         """Fehlende Kartenbilder holen — einzeln, mit Abstand.
 
-        Reihenfolge: das Neueste zuerst. Wer den Posteingang aufschlaegt,
-        will sehen, was gerade hereinkam, nicht eine Karte von 1976.
+        Reihenfolge in zwei Stufen. **Frisch Eingetroffenes zuerst**: Wer
+        den Posteingang aufschlaegt, will sehen, was gerade hereinkam,
+        nicht eine Karte von 1976.
+
+        **Im Altbestand dann Stationen, die noch gar nicht zu sehen sind.**
+        Die Galerie zeigt je Station eine Kachel. Rein chronologisch holt
+        der Lauf unterwegs staendig die zweite, achte, achtundzwanzigste
+        Karte einer Station, deren Kachel laengst dasteht — jede davon ist
+        eine eigene Bestaetigung mit eigener Uhrzeit und eigenem Rapport,
+        aber am Bildschirm aendert sie nichts. Bei 4149 Stationen und 6260
+        Karten sind das rund 2100 Abrufe, die die Galerie nicht voller
+        machen. Sie kommen weiterhin, nur eben spaeter.
 
         **Je Karte eine eigene, kurze Transaktion.** Der erste Entwurf
         hielt eine Sitzung ueber die ganze Runde offen — bei 25 Karten mit
@@ -1541,7 +1556,8 @@ class Orchestrator:
         niemand kannte. Waisen, die beim naechsten Lauf erneut geholt
         worden waeren — auf Kosten des Tempolimits.
         """
-        from sqlalchemy import select
+        from sqlalchemy import case, select
+        from sqlalchemy.orm import aliased
 
         from ..db import session_scope
         from ..db.models import QslKarte
@@ -1553,6 +1569,23 @@ class Orchestrator:
                  if o.eqsl_user and o.eqsl_password}
         if not opern:
             return
+
+        # Stufe 1: was in den letzten Tagen hereinkam, hat immer Vorrang —
+        # sonst landet eine heute eingetroffene Karte hinter 4000 alten.
+        frisch_ab = (datetime.now(UTC)
+                     - timedelta(days=self._QSL_FRISCH_TAGE)).strftime("%Y%m%d")
+        frisch = QslKarte.empfangen_am >= frisch_ab
+
+        # Stufe 2: Hat diese Station schon irgendein Bild? Dann ist ihre
+        # Kachel da, und ein weiterer Abruf aendert die Galerie nicht.
+        k2 = aliased(QslKarte)
+        schon_sichtbar = (
+            select(1)
+            .where(k2.call == QslKarte.call)
+            .where(k2.user_callsign == QslKarte.user_callsign)
+            .where(k2.datei.is_not(None))
+            .exists()
+        )
 
         # Nur die Arbeitsliste ziehen, dann die Sitzung wieder schliessen.
         async with session_scope() as s:
@@ -1568,7 +1601,12 @@ class Orchestrator:
                     .where(QslKarte.fehler.is_(None))
                     .where(QslKarte.versuche < self._QSL_MAX_VERSUCHE)
                     .where(QslKarte.user_callsign.in_(list(opern)))
-                    .order_by(QslKarte.empfangen_am.desc(), QslKarte.qso_date.desc())
+                    .order_by(
+                        case((frisch, 0), else_=1),
+                        case((schon_sichtbar, 1), else_=0),
+                        QslKarte.empfangen_am.desc(),
+                        QslKarte.qso_date.desc(),
+                    )
                     .limit(self._QSL_JE_RUNDE)
                 )).scalars()
             ]
