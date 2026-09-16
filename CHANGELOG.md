@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.162.0 — 2026-09-16
+- feat: Kontrollarm misst jede Gate-Stufe einzeln
+- fix: zwei Fehlschluesse in der Bilanz abstellen
+- fix: Bestaetigungsueberschuss nicht als LoTW-Wirkung ausgeben
+- feat: Bestaetigungsstand messbar machen
+
 ## v0.161.0 — 2026-09-15
 - build: Frontend mit der Station-Location-Zeile
 - feat: LoTW signiert getrennt nach Sende-Rufzeichen
