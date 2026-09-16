@@ -242,3 +242,51 @@ def test_tempolimit_haelt_die_vorgabe_ein() -> None:
     """eQSL verlangt LANGSAMER als sechs je Minute — also mehr als zehn
     Sekunden Abstand, nicht genau zehn."""
     assert MINDESTABSTAND_S > 10.0
+
+
+# ------------------------------------------- Persistenz (Regression)
+
+def test_transaktion_haelt_nicht_die_ganze_runde() -> None:
+    """Je Karte eine eigene Sitzung, sonst kostet ein Neustart alles.
+
+    Der erste Entwurf hielt eine Sitzung ueber die ganze Runde offen —
+    25 Karten zu je zwoelf Sekunden sind fuenf Minuten. Das naechste
+    Self-Update fiel mitten hinein: 23 Bilder lagen auf der Platte, die
+    Datenbank kannte keines davon. Der Schlaf zwischen zwei Karten darf
+    deshalb nicht innerhalb von ``session_scope`` liegen.
+    """
+    from pathlib import Path
+    quelle = (Path(__file__).resolve().parents[1]
+              / "ft8_appliance" / "runtime" / "orchestrator.py").read_text()
+    rumpf = quelle.split("async def _qsl_bilder_nachholen", 1)[1]
+    rumpf = rumpf.split("async def _qsl_waisen_einsammeln", 1)[0]
+
+    # Die Schleife ueber die Auftraege darf keine offene Sitzung umspannen:
+    # zwischen "async with session_scope" und dem Schlaf darf kein
+    # "for ... in auftraege" liegen.
+    schleife = rumpf.index("for karten_id, callsign, eintrag in auftraege")
+    schlaf = rumpf.index("await asyncio.sleep(MINDESTABSTAND_S)")
+    offene = [i for i in range(len(rumpf))
+              if rumpf.startswith("async with session_scope()", i)]
+    dazwischen = [i for i in offene if schleife < i < schlaf]
+    assert dazwischen, "keine Sitzung je Karte — wird ueberhaupt gespeichert?"
+    # ... und die letzte davon muss VOR dem Schlaf wieder geschlossen sein,
+    # was hier heisst: der Schlaf steht auf geringerer Einrueckung.
+    zeile_schlaf = rumpf.rfind("\n", 0, schlaf)
+    einzug_schlaf = schlaf - zeile_schlaf - 1
+    zeile_sitzung = rumpf.rfind("\n", 0, dazwischen[-1])
+    einzug_sitzung = dazwischen[-1] - zeile_sitzung - 1
+    assert einzug_schlaf <= einzug_sitzung, (
+        "der Schlaf liegt in der offenen Sitzung — "
+        f"Einzug {einzug_schlaf} gegen {einzug_sitzung}")
+
+
+def test_waisen_einsammeln_ist_verdrahtet() -> None:
+    """Sonst holt der naechste Lauf dieselben Bilder erneut — auf Kosten
+    eines Kontingents von sechs Karten je Minute."""
+    from pathlib import Path
+    quelle = (Path(__file__).resolve().parents[1]
+              / "ft8_appliance" / "runtime" / "orchestrator.py").read_text()
+    assert "async def _qsl_waisen_einsammeln" in quelle
+    loop = quelle.split("async def _qsl_inbox_loop", 1)[1].split("async def", 1)[0]
+    assert "_qsl_waisen_einsammeln" in loop, "wird im Loop nie gerufen"

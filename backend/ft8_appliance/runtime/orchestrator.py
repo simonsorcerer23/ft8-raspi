@@ -1424,6 +1424,11 @@ class Orchestrator:
     async def _qsl_inbox_loop(self) -> None:
         """Liste abgleichen und Bilder nachholen, beides gemaechlich."""
         await asyncio.sleep(20.0)
+        # Erst nachsehen, ob vom letzten Lauf Bilder ohne Eintrag liegen.
+        try:
+            await self._qsl_waisen_einsammeln()
+        except Exception as exc:                        # pragma: no cover
+            log.debug("Waisensuche uebersprungen: %s", exc)
         letzter_abgleich = 0.0
         while True:
             try:
@@ -1527,6 +1532,14 @@ class Orchestrator:
 
         Reihenfolge: das Neueste zuerst. Wer den Posteingang aufschlaegt,
         will sehen, was gerade hereinkam, nicht eine Karte von 1976.
+
+        **Je Karte eine eigene, kurze Transaktion.** Der erste Entwurf
+        hielt eine Sitzung ueber die ganze Runde offen — bei 25 Karten mit
+        je zwoelf Sekunden Abstand sind das fuenf Minuten. Das naechste
+        Self-Update startete den Dienst mittendrin neu, die Transaktion
+        verfiel, und auf der Platte lagen 23 Bilder, die in der Datenbank
+        niemand kannte. Waisen, die beim naechsten Lauf erneut geholt
+        worden waeren — auf Kosten des Tempolimits.
         """
         from sqlalchemy import select
 
@@ -1540,59 +1553,126 @@ class Orchestrator:
                  if o.eqsl_user and o.eqsl_password}
         if not opern:
             return
+
+        # Nur die Arbeitsliste ziehen, dann die Sitzung wieder schliessen.
         async with session_scope() as s:
-            offen = list((await s.execute(
-                select(QslKarte)
-                .where(QslKarte.datei.is_(None))
-                .where(QslKarte.fehler.is_(None))
-                .where(QslKarte.versuche < self._QSL_MAX_VERSUCHE)
-                .where(QslKarte.user_callsign.in_(list(opern)))
-                .order_by(QslKarte.empfangen_am.desc(), QslKarte.qso_date.desc())
-                .limit(self._QSL_JE_RUNDE)
-            )).scalars())
-            if not offen:
-                return
-            wurzel = self.qsl_verzeichnis()
-            geholt = 0
-            for k in offen:
-                op = opern.get(k.user_callsign)
-                if op is None or not (op.eqsl_user and op.eqsl_password):
-                    continue
-                k.versuche += 1
-                k.letzter_versuch = datetime.now(UTC)
-                eintrag = Karteneintrag(
+            auftraege = [
+                (k.id, k.user_callsign, Karteneintrag(
                     call=k.call, qso_date=k.qso_date, time_on=k.time_on,
                     band=k.band, mode=k.mode, empfangen_am=k.empfangen_am,
                     gridsquare=k.gridsquare, nachricht=k.nachricht,
+                ))
+                for k in (await s.execute(
+                    select(QslKarte)
+                    .where(QslKarte.datei.is_(None))
+                    .where(QslKarte.fehler.is_(None))
+                    .where(QslKarte.versuche < self._QSL_MAX_VERSUCHE)
+                    .where(QslKarte.user_callsign.in_(list(opern)))
+                    .order_by(QslKarte.empfangen_am.desc(), QslKarte.qso_date.desc())
+                    .limit(self._QSL_JE_RUNDE)
+                )).scalars()
+            ]
+        if not auftraege:
+            return
+
+        wurzel = self.qsl_verzeichnis()
+        geholt = 0
+        for karten_id, callsign, eintrag in auftraege:
+            op = opern.get(callsign)
+            if op is None or not (op.eqsl_user and op.eqsl_password):
+                continue
+            daten: bytes | None = None
+            typ = "image/jpeg"
+            harter_fehler: str | None = None
+            try:
+                daten, typ = await hole_karte(
+                    op.eqsl_user, op.eqsl_password, eintrag,
+                    qth_nickname=op.eqsl_qth_nickname,
                 )
-                try:
-                    daten, typ = await hole_karte(
-                        op.eqsl_user, op.eqsl_password, eintrag,
-                        qth_nickname=op.eqsl_qth_nickname,
-                    )
-                except EqslInboxError as exc:
-                    if exc.hart:
-                        k.fehler = str(exc)[:200]
-                    elif "drosselt" in str(exc):
-                        # eQSL bittet um Ruhe — Runde sofort beenden.
-                        log.info("eQSL drosselt, Kartenabruf pausiert")
-                        break
-                    await asyncio.sleep(MINDESTABSTAND_S)
-                    continue
+            except EqslInboxError as exc:
+                if exc.hart:
+                    harter_fehler = str(exc)[:200]
+                elif "drosselt" in str(exc):
+                    log.info("eQSL drosselt, Kartenabruf pausiert")
+                    break
+
+            # Erst die Datei, dann der Eintrag — in dieser Reihenfolge gibt
+            # es hoechstens eine Datei ohne Eintrag (die beim naechsten Lauf
+            # ueberschrieben wird), nie einen Eintrag ohne Datei.
+            ziel_rel: str | None = None
+            if daten is not None:
                 endung = {"image/jpeg": ".jpg", "image/png": ".png",
                           "image/gif": ".gif"}.get(typ, ".jpg")
-                unter = wurzel / k.qso_date[:4]
+                unter = wurzel / eintrag.qso_date[:4]
                 unter.mkdir(parents=True, exist_ok=True)
-                ziel = unter / (k.schluessel.replace("/", "-") + endung)
+                ziel = unter / (eintrag.schluessel.replace("/", "-") + endung)
                 ziel.write_bytes(daten)
-                k.datei = str(ziel.relative_to(wurzel))
-                k.medientyp = typ
-                k.bytes = len(daten)
-                k.geholt_am = datetime.now(UTC)
-                geholt += 1
-                await asyncio.sleep(MINDESTABSTAND_S)
+                ziel_rel = str(ziel.relative_to(wurzel))
+
+            async with session_scope() as s:
+                k = (await s.execute(
+                    select(QslKarte).where(QslKarte.id == karten_id)
+                )).scalar_one_or_none()
+                if k is None:
+                    continue
+                k.versuche += 1
+                k.letzter_versuch = datetime.now(UTC)
+                if harter_fehler:
+                    k.fehler = harter_fehler
+                elif ziel_rel:
+                    k.datei = ziel_rel
+                    k.medientyp = typ
+                    k.bytes = len(daten) if daten else None
+                    k.geholt_am = datetime.now(UTC)
+                    geholt += 1
+            await asyncio.sleep(MINDESTABSTAND_S)
+
         if geholt:
             log.info("eQSL-Karten: %d Bilder geholt", geholt)
+
+    async def _qsl_waisen_einsammeln(self) -> int:
+        """Bilder auf der Platte, die kein Eintrag kennt, nachtragen.
+
+        Kann nur entstehen, wenn ein Neustart genau zwischen Dateischreiben
+        und Datenbankeintrag faellt. Statt sie erneut von eQSL zu holen —
+        was Tempo aus einem knappen Kontingent kostet — werden sie hier
+        eingesammelt.
+        """
+        from sqlalchemy import select
+
+        from ..db import session_scope
+        from ..db.models import QslKarte
+
+        wurzel = self.qsl_verzeichnis()
+        if not wurzel.is_dir():
+            return 0
+        vorhanden: dict[str, tuple[str, int]] = {}
+        for datei in wurzel.rglob("*"):
+            if datei.is_file() and datei.suffix.lower() in (".jpg", ".png", ".gif"):
+                vorhanden[datei.stem] = (
+                    str(datei.relative_to(wurzel)), datei.stat().st_size)
+        if not vorhanden:
+            return 0
+        typen = {".jpg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
+        n = 0
+        async with session_scope() as s:
+            offen = list((await s.execute(
+                select(QslKarte).where(QslKarte.datei.is_(None))
+            )).scalars())
+            for k in offen:
+                treffer = vorhanden.get(k.schluessel.replace("/", "-"))
+                if not treffer:
+                    continue
+                pfad, groesse = treffer
+                k.datei = pfad
+                k.bytes = groesse
+                k.medientyp = typen.get("." + pfad.rsplit(".", 1)[-1].lower(),
+                                        "image/jpeg")
+                k.geholt_am = datetime.now(UTC)
+                n += 1
+        if n:
+            log.info("eQSL-Karten: %d verwaiste Bilder nachgetragen", n)
+        return n
 
     def reload_active_operator_integrations(self) -> None:
         """Globale Integrations aus dem aktiven Profil neu aufbauen.
