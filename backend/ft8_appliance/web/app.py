@@ -27,6 +27,7 @@ from .routes import (
     integrations,
     network,
     propagation,
+    qsl,
     sse,
     stats,
     status,
@@ -199,6 +200,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     app.include_router(integrations.router, prefix="/api", tags=["integrations"])
     app.include_router(network.router, prefix="/api", tags=["network"])
     app.include_router(stats.router, prefix="/api", tags=["stats"])
+    app.include_router(qsl.router, prefix="/api", tags=["qsl"])
     app.include_router(propagation.router, prefix="/api", tags=["propagation"])
     app.include_router(system.router, prefix="/api", tags=["system"])
     app.include_router(adif.router, prefix="/api", tags=["adif"])

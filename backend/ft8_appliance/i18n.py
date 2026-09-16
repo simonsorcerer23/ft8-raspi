@@ -91,6 +91,8 @@ _DE: dict[str, str] = {
     "hint.idle_wait": "wartet — drücke CQ oder Antworten",
     # --- ntfy push bodies / titles / action labels (orchestrator) ---
     "push.preflight_title": "⚠ {call}: Upload-Setup unvollstaendig",
+    "qsl.neu.title": "📬 {callsign}: neue eQSL-Karten",
+    "qsl.neu.body": "{anzahl} Bestaetigung(en) im Posteingang.",
     "push.shutdown_msg": "Pi wird heruntergefahren — sicher zum Stecker-Ziehen in ~30 s",
     "push.shutdown_title": "🌙 FT8 Pi: shutdown",
     "push.reboot_msg": "Pi wird neu gestartet — kommt in ca. 30 s zurück",
@@ -294,6 +296,8 @@ _EN: dict[str, str] = {
     "hint.idle_wait": "waiting — press CQ or Answer",
     # --- ntfy push bodies / titles / action labels (orchestrator) ---
     "push.preflight_title": "⚠ {call}: upload setup incomplete",
+    "qsl.neu.title": "📬 {callsign}: new eQSL cards",
+    "qsl.neu.body": "{anzahl} confirmation(s) in the inbox.",
     "push.shutdown_msg": "Pi is shutting down — safe to unplug in ~30 s",
     "push.shutdown_title": "🌙 FT8 Pi: shutdown",
     "push.reboot_msg": "Pi is rebooting — back in ~30 s",

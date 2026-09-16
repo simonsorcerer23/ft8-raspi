@@ -7,7 +7,7 @@ schema can also be queried from ``sqlite3`` on the Pi during pi-check.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -637,3 +637,49 @@ class PickAttempt(Base):
     # Versuchs begann. Die Zielgroesse des Vorab-Decodes: Ohne ihn liegt der
     # Wert bei rund 0,9 s, mit ihm sollte er gegen null gehen.
     tx_offset_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class QslKarte(Base):
+    """Eine eingegangene eQSL-Bestaetigung — Metadaten hier, Bild auf Platte.
+
+    Getrennt gehalten, weil beides in ganz unterschiedlichem Takt kommt:
+    Die Liste holt ein einziger Abruf, auch fuer tausende Eintraege. Die
+    Bilder kosten eQSL Rechenzeit und duerfen laut deren Spezifikation nur
+    einzeln und langsamer als sechs je Minute abgerufen werden — sie
+    tropfen also ueber Tage herein.
+
+    ``datei`` ist der Pfad relativ zum Kartenverzeichnis; ``None`` heisst
+    "noch nicht geholt". ``fehler`` haelt fest, warum eine Karte dauerhaft
+    nicht kommt (zurueckgewiesen, kein Motiv hinterlegt), damit der
+    Abrufer sie nicht endlos erneut versucht.
+    """
+
+    __tablename__ = "qsl_karte"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Rufzeichen des Absenders + QSO-Koordinaten. Zusammen eindeutig, und
+    # genau diese fuenf Angaben verlangt eQSL zum Abruf des Bildes.
+    schluessel: Mapped[str] = mapped_column(String, unique=True, index=True)
+    call: Mapped[str] = mapped_column(String, index=True)
+    qso_date: Mapped[str] = mapped_column(String, index=True)
+    time_on: Mapped[str] = mapped_column(String)
+    band: Mapped[str] = mapped_column(String, index=True)
+    mode: Mapped[str] = mapped_column(String)
+    user_callsign: Mapped[str] = mapped_column(String, index=True)
+    # Wann eQSL die Bestaetigung verbucht hat (EQSL_QSLRDATE), nicht das
+    # QSO-Datum. Das ist die Sortierung fuer "neu eingetroffen".
+    empfangen_am: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    gridsquare: Mapped[str | None] = mapped_column(String, nullable=True)
+    nachricht: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Bild
+    datei: Mapped[str | None] = mapped_column(String, nullable=True)
+    medientyp: Mapped[str | None] = mapped_column(String, nullable=True)
+    bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    geholt_am: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    versuche: Mapped[int] = mapped_column(Integer, default=0)
+    letzter_versuch: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    fehler: Mapped[str | None] = mapped_column(String, nullable=True)
+    entdeckt_am: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)

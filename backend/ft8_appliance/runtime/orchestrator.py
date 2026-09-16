@@ -825,6 +825,13 @@ class Orchestrator:
         default_factory=lambda: Path("/var/lib/ft8-appliance/runtime_state.json"),
         init=False,
     )
+    # Kartenbilder aus dem eQSL-Posteingang. Eigenes Verzeichnis statt
+    # Datenbank: es sind tausende JPEGs zu je rund 30 KB, und die gehoeren
+    # nicht in eine SQLite-Datei, die im Sekundentakt geschrieben wird.
+    _qsl_dir: Path = field(
+        default_factory=lambda: Path("/var/lib/ft8-appliance/qsl"),
+        init=False,
+    )
     # Tageswerte der Picker-Filterstufen. Eigene Datei, weil sie einen
     # Tagesstempel traegt und nur beim Slot-Ende angefasst wird.
     _filter_drops_path: Path = field(
@@ -1132,6 +1139,7 @@ class Orchestrator:
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
         self.starte_eqsl_loop_falls_noetig("Start")
         self.starte_lotw_loop_falls_noetig("Start")
+        self.starte_qsl_inbox_loop_falls_noetig("Start")
         # v0.22.0 — GPS-based DX-country detection loop
         self._spawn(self._gps_country_detect_loop(), name="gps-country-detect")
         # Audit 2026-09-06 A4: der AP-Fallback wurde von NICHTS ausgeloest —
@@ -1384,6 +1392,208 @@ class Orchestrator:
         self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")
         return True
 
+    # ------------------------------------------------ eQSL-Posteingang
+
+    # Abgleich der Liste: zweimal am Tag reicht. Bestaetigungen sind keine
+    # Echtzeitware, und ein Abruf liefert den ganzen Posteingang.
+    _QSL_LISTE_INTERVALL_S: typing.ClassVar[float] = 43200.0
+    # Bilder tropfen einzeln herein. eQSL verlangt langsamer als sechs je
+    # Minute; 12 s halten das ein. Mehr als _QSL_JE_RUNDE am Stueck holen
+    # wir nicht — ganze Posteingaenge abzuraeumen ist dort ausdruecklich
+    # unerwuenscht, und die Karten laufen ohnehin nicht weg.
+    _QSL_JE_RUNDE: typing.ClassVar[int] = 25
+    _QSL_RUNDE_PAUSE_S: typing.ClassVar[float] = 1800.0
+    _QSL_MAX_VERSUCHE: typing.ClassVar[int] = 3
+
+    def qsl_verzeichnis(self) -> Path:
+        """Wo die Kartenbilder liegen. Neben der Datenbank, nicht im Repo."""
+        return self._qsl_dir
+
+    def starte_qsl_inbox_loop_falls_noetig(self, anlass: str) -> bool:
+        """Wie bei eQSL und LoTW: von JEDEM Konfigurationsweg aufrufbar."""
+        if not self.db_enabled:
+            return False
+        if any(t.get_name() == "qsl-inbox" and not t.done() for t in self._bg_tasks):
+            return False
+        if not any(o.eqsl_user and o.eqsl_password for o in self.config.operators):
+            return False
+        log.info("%s: eQSL-Posteingang wird abgeglichen", anlass)
+        self._spawn(self._qsl_inbox_loop(), name="qsl-inbox")
+        return True
+
+    async def _qsl_inbox_loop(self) -> None:
+        """Liste abgleichen und Bilder nachholen, beides gemaechlich."""
+        await asyncio.sleep(20.0)
+        letzter_abgleich = 0.0
+        while True:
+            try:
+                jetzt = time.monotonic()
+                if jetzt - letzter_abgleich >= self._QSL_LISTE_INTERVALL_S:
+                    for op in self.config.operators:
+                        if op.eqsl_user and op.eqsl_password:
+                            await self._qsl_liste_abgleichen(op)
+                    letzter_abgleich = jetzt
+                await self._qsl_bilder_nachholen()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("eQSL-Posteingang: %s", exc)
+            await asyncio.sleep(self._QSL_RUNDE_PAUSE_S)
+
+    async def _qsl_liste_abgleichen(self, op) -> None:
+        """Neue Bestaetigungen in die Datenbank uebernehmen.
+
+        Beim ersten Lauf kommt der ganze Posteingang, danach nur noch,
+        was seit dem juengsten bekannten Eingang dazukam — ``RcvdSince``
+        filtert bei eQSL auf den Eingangszeitpunkt, nicht auf das
+        QSO-Datum.
+        """
+        from sqlalchemy import func, select
+
+        from ..db import session_scope
+        from ..db.models import QslKarte
+        from ..integrations.eqsl_inbox import EqslInboxError, hole_inbox
+
+        async with session_scope() as s:
+            bekannt = (await s.execute(
+                select(func.count()).select_from(QslKarte)
+                .where(QslKarte.user_callsign == op.callsign)
+            )).scalar() or 0
+            juengste = (await s.execute(
+                select(func.max(QslKarte.empfangen_am))
+                .where(QslKarte.user_callsign == op.callsign)
+            )).scalar()
+
+        seit = None
+        if bekannt and juengste and len(juengste) == 8:
+            # Einen Tag zurueck, damit nichts durchfaellt, was am selben
+            # Tag spaeter noch eintraf.
+            tag = datetime.strptime(juengste, "%Y%m%d").replace(tzinfo=UTC)
+            seit = tag - timedelta(days=1)
+
+        try:
+            eintraege = await hole_inbox(
+                op.eqsl_user, op.eqsl_password, seit=seit,
+                qth_nickname=op.eqsl_qth_nickname,
+            )
+        except EqslInboxError as exc:
+            log.warning("eQSL-Posteingang %s: %s", op.callsign, exc)
+            return
+
+        neu = 0
+        async with session_scope() as s:
+            vorhanden = {r[0] for r in (await s.execute(
+                select(QslKarte.schluessel)
+                .where(QslKarte.user_callsign == op.callsign)
+            )).all()}
+            for e in eintraege:
+                if e.schluessel in vorhanden:
+                    continue
+                s.add(QslKarte(
+                    schluessel=e.schluessel, call=e.call, qso_date=e.qso_date,
+                    time_on=e.time_on, band=e.band, mode=e.mode,
+                    user_callsign=op.callsign, empfangen_am=e.empfangen_am,
+                    gridsquare=e.gridsquare, nachricht=e.nachricht,
+                ))
+                vorhanden.add(e.schluessel)
+                neu += 1
+        log.info("eQSL-Posteingang %s: %d Eintraege geprueft, %d neu (bekannt: %d)",
+                 op.callsign, len(eintraege), neu, bekannt)
+        if neu and bekannt:
+            # Beim Erstabgleich nicht melden — sonst kaeme eine Nachricht
+            # ueber mehrere tausend "neue" Karten.
+            self._alert_qsl_neu(op.callsign, neu)
+
+    def _alert_qsl_neu(self, callsign: str, anzahl: int) -> None:
+        """Ein leiser Hinweis aufs Handy — genau dafuer ist das gebaut.
+
+        Raymond soll nicht bei eQSL nachsehen muessen, ob etwas gekommen
+        ist. Deshalb ``low``: eine Information, kein Alarm.
+        """
+        if not (self.integrations.ntfy and self.integrations.ntfy.enabled):
+            return
+        try:
+            asyncio.create_task(self.integrations.ntfy.notify(
+                _t("qsl.neu.body", anzahl=anzahl),
+                title=_t("qsl.neu.title", callsign=callsign),
+                priority="low",
+                tags=["postbox"],
+            ))
+        except Exception as exc:                        # pragma: no cover
+            log.debug("QSL-Hinweis nicht gesendet: %s", exc)
+
+    async def _qsl_bilder_nachholen(self) -> None:
+        """Fehlende Kartenbilder holen — einzeln, mit Abstand.
+
+        Reihenfolge: das Neueste zuerst. Wer den Posteingang aufschlaegt,
+        will sehen, was gerade hereinkam, nicht eine Karte von 1976.
+        """
+        from sqlalchemy import select
+
+        from ..db import session_scope
+        from ..db.models import QslKarte
+        from ..integrations.eqsl_inbox import (
+            MINDESTABSTAND_S, EqslInboxError, Karteneintrag, hole_karte,
+        )
+
+        opern = {o.callsign: o for o in self.config.operators
+                 if o.eqsl_user and o.eqsl_password}
+        if not opern:
+            return
+        async with session_scope() as s:
+            offen = list((await s.execute(
+                select(QslKarte)
+                .where(QslKarte.datei.is_(None))
+                .where(QslKarte.fehler.is_(None))
+                .where(QslKarte.versuche < self._QSL_MAX_VERSUCHE)
+                .where(QslKarte.user_callsign.in_(list(opern)))
+                .order_by(QslKarte.empfangen_am.desc(), QslKarte.qso_date.desc())
+                .limit(self._QSL_JE_RUNDE)
+            )).scalars())
+            if not offen:
+                return
+            wurzel = self.qsl_verzeichnis()
+            geholt = 0
+            for k in offen:
+                op = opern.get(k.user_callsign)
+                if op is None or not (op.eqsl_user and op.eqsl_password):
+                    continue
+                k.versuche += 1
+                k.letzter_versuch = datetime.now(UTC)
+                eintrag = Karteneintrag(
+                    call=k.call, qso_date=k.qso_date, time_on=k.time_on,
+                    band=k.band, mode=k.mode, empfangen_am=k.empfangen_am,
+                    gridsquare=k.gridsquare, nachricht=k.nachricht,
+                )
+                try:
+                    daten, typ = await hole_karte(
+                        op.eqsl_user, op.eqsl_password, eintrag,
+                        qth_nickname=op.eqsl_qth_nickname,
+                    )
+                except EqslInboxError as exc:
+                    if exc.hart:
+                        k.fehler = str(exc)[:200]
+                    elif "drosselt" in str(exc):
+                        # eQSL bittet um Ruhe — Runde sofort beenden.
+                        log.info("eQSL drosselt, Kartenabruf pausiert")
+                        break
+                    await asyncio.sleep(MINDESTABSTAND_S)
+                    continue
+                endung = {"image/jpeg": ".jpg", "image/png": ".png",
+                          "image/gif": ".gif"}.get(typ, ".jpg")
+                unter = wurzel / k.qso_date[:4]
+                unter.mkdir(parents=True, exist_ok=True)
+                ziel = unter / (k.schluessel.replace("/", "-") + endung)
+                ziel.write_bytes(daten)
+                k.datei = str(ziel.relative_to(wurzel))
+                k.medientyp = typ
+                k.bytes = len(daten)
+                k.geholt_am = datetime.now(UTC)
+                geholt += 1
+                await asyncio.sleep(MINDESTABSTAND_S)
+        if geholt:
+            log.info("eQSL-Karten: %d Bilder geholt", geholt)
+
     def reload_active_operator_integrations(self) -> None:
         """Globale Integrations aus dem aktiven Profil neu aufbauen.
 
@@ -1402,6 +1612,7 @@ class Orchestrator:
         # einem Neustart — hierher kommt der PATCH-Weg.
         self.starte_eqsl_loop_falls_noetig("Operator-Zugangsdaten geaendert")
         self.starte_lotw_loop_falls_noetig("Operator-Zugangsdaten geaendert")
+        self.starte_qsl_inbox_loop_falls_noetig("Operator-Zugangsdaten geaendert")
 
     async def switch_operator(self, callsign: str) -> None:
         """Aktiven Operator wechseln (Hot-Swap, Sebastian 2026-05-23).
@@ -3827,6 +4038,7 @@ class Orchestrator:
             self._spawn(self._clublog_drain_loop(), name="clublog-drain")
         self.starte_eqsl_loop_falls_noetig("config hot-reload")
         self.starte_lotw_loop_falls_noetig("config hot-reload")
+        self.starte_qsl_inbox_loop_falls_noetig("config hot-reload")
         log.info(
             "config hot-reloaded: callsign=%s antenna=%s",
             self.state_machine.ctx.callsign, self._active_antenna,
