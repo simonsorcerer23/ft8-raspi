@@ -260,7 +260,7 @@ export const en = {
   'wifi.no_wlans': 'No WiFi networks in range. Are WiFi radio + antenna on?',
   'wifi.signal': 'Signal',
   'wifi.security': 'Security',
-  'nav.qsl': "QSL",
+  'nav.qsl': "📬 QSL",
   'qsl.title': "eQSL inbox",
   'qsl.suche': "search callsign",
   'qsl.suchen': "search",

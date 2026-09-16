@@ -7,6 +7,7 @@
   // Angaben sind vollstaendig, nur das Motiv fehlt noch.
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import QslBild from './QslBild.svelte';
   import { t } from '../lib/i18n.svelte.js';
 
   let karten = $state([]);
@@ -107,7 +108,7 @@
       {#each karten as k (k.id)}
         <button class="karte" class:ohne={!k.bild_da} onclick={() => gross = k}>
           {#if k.bild_da}
-            <img src={api.qslBildUrl(k.id)} alt={k.call} loading="lazy" />
+            <QslBild id={k.id} alt={k.call} />
           {:else}
             <span class="platzhalter">
               <b>{k.call}</b>
@@ -134,7 +135,7 @@
   <div class="lupe" onclick={() => gross = null} role="presentation">
     <div class="lupe-inhalt" onclick={(e) => e.stopPropagation()} role="presentation">
       {#if gross.bild_da}
-        <img src={api.qslBildUrl(gross.id)} alt={gross.call} />
+        <span class="lupe-bild"><QslBild id={gross.id} alt={gross.call} /></span>
       {:else}
         <div class="lupe-leer">{t('qsl.bild_folgt')}</div>
       {/if}
@@ -201,8 +202,10 @@
           display: flex; align-items: center; justify-content: center;
           z-index: 100; padding: 1rem; }
   .lupe-inhalt { position: relative; max-width: min(900px, 96vw); }
-  .lupe-inhalt img { max-width: 100%; max-height: 74vh; display: block;
-                     border-radius: 4px; }
+  .lupe-bild { display: block; max-height: 74vh; }
+  .lupe-inhalt :global(img) { max-width: 100%; max-height: 74vh; display: block;
+                              border-radius: 4px; width: auto; height: auto;
+                              object-fit: contain; }
   .lupe-leer { width: min(620px, 90vw); aspect-ratio: 14/9; display: flex;
                align-items: center; justify-content: center;
                background: #0f172a; border: 1px solid #1e293b; color: #64748b; }

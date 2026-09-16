@@ -25,7 +25,14 @@ def test_kein_api_pfad_als_bildquelle() -> None:
         re.compile(r"url\(\s*['\"]?/api/"),
     )
     for datei in FRONTEND.rglob("*.svelte"):
-        text = datei.read_text()
+        # Kommentarzeilen ausnehmen. Sonst schlaegt der Test auf einer
+        # Erklaerung an, warum man genau das nicht tut — und verbietet
+        # damit die Dokumentation seiner eigenen Fehlerklasse
+        # (2026-09-16, QslBild.svelte).
+        text = "\n".join(
+            "" if z.lstrip().startswith(("//", "*", "<!--")) else z
+            for z in datei.read_text().splitlines()
+        )
         for m in muster:
             for treffer in m.finditer(text):
                 zeile = text[: treffer.start()].count("\n") + 1

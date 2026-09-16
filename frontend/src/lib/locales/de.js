@@ -260,7 +260,7 @@ export const de = {
   'wifi.no_wlans': 'Keine WLANs in Reichweite. Sind WiFi-Radio + Antenne an?',
   'wifi.signal': 'Signal',
   'wifi.security': 'Sicherheit',
-  'nav.qsl': "QSL",
+  'nav.qsl': "📬 QSL",
   'qsl.title': "eQSL-Posteingang",
   'qsl.suche': "Rufzeichen suchen",
   'qsl.suchen': "suchen",
