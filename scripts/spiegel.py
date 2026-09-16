@@ -43,8 +43,12 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-PI = "http://100.64.0.10:8000"
-TOKEN_DATEI = Path("/etc/dk9xr-spiegel/token")
+# Adresse der Station. Der Tailscale-Name reicht; wer anders benennt,
+# setzt FT8_PI (etwa "http://192.168.1.50:8000"). Eine feste IP gehoert
+# nicht in ein oeffentliches Repository — sie ist fuer jeden Nachbauer
+# falsch und verraet fuer nichts die eigene Netzstruktur.
+PI = os.environ.get("FT8_PI", "http://ft8-pi5:8000").rstrip("/")
+TOKEN_DATEI = Path(os.environ.get("FT8_SPIEGEL_TOKEN", "/etc/dk9xr-spiegel/token"))
 
 # Was vom Geraetestatus nach draussen darf. Alles andere bleibt hier.
 RIG_FELDER = ("freq_hz", "mode", "swr", "ptt")

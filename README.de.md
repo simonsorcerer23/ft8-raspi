@@ -149,6 +149,46 @@ QSOs nach Sende-Rufzeichen getrennt signiert; wer keine eigene Location hat
 bestätigt zu werden. Einrichtung und Fallstricke stehen in
 [docs/lotw.md](docs/lotw.md).
 
+### Die Gegenrichtung: eingegangene QSL-Karten
+
+Seit v0.163.0 holt die Appliance auch ab, was andere *ihr* schicken. Der
+eQSL-Posteingang wird abgeglichen, neue Karten werden als Bild geholt und je
+Station eine in einer Galerie in der Oberfläche gezeigt.
+
+Zwei Eigenheiten der Schnittstelle prägen den Code. Erstens antworten beide
+Endpunkte im Fehlerfall mit einer HTML-Seite statt mit Nutzdaten — der Leser
+muss das erkennen, sonst landet Markup in der Datenbank. Zweitens gilt ein
+Tempolimit; zwischen zwei Abrufen liegen darum zwölf Sekunden. Diese Wartezeit
+steht bewusst **außerhalb** der Datenbanktransaktion: Wer sie umschließt, hält
+bei fünfzig Karten zehn Minuten lang eine Transaktion offen. Erst die Datei
+schreiben, dann den Eintrag; ein Aufräumlauf sammelt Bilddateien ein, deren
+Eintrag nie zustande kam.
+
+Die Bildadressen bei eQSL sind flüchtig und werden nach wenigen Stunden
+abgeräumt — die Bilder müssen also lokal liegen, ein Verweis dorthin zeigte
+bald ins Leere. Und: eQSL versioniert Motive nicht. Abgerufen wird immer das
+*aktuelle* Profilmotiv des Absenders, auch für eine Verbindung von 1976.
+
+### Die Station zeigen, ohne sie zu öffnen
+
+`scripts/spiegel.py` ist für den Fall gedacht, dass der Stand der Station
+öffentlich sichtbar sein soll. Der naheliegende Weg — einen Port aufmachen —
+ist der falsche: Am Transceiver hängt ein Gerät, das senden kann.
+
+Das Skript läuft deshalb nicht auf dem Pi, sondern auf dem Webserver, und
+**holt** sich den Stand über ein privates Netz (hier Tailscale). Ergebnis sind
+statische JSON-Dateien und Bilder, die der Webserver ausliefert. Der Pi
+bekommt keinen offenen Port, und wenn er nicht antwortet, wird schlicht nichts
+geschrieben — die alten Dateien bleiben mit ihrem Zeitstempel liegen.
+
+Was hinausgeht, ist eine abschließende Aufzählung, keine Filterliste: Vom
+Gerätestatus nur Band, Frequenz, Leistung und SWR; die GPS-Position wird auf
+die Mitte des Maidenhead-Feldes gerundet (rund 50 km), Audiopegel und
+interne Zustände bleiben ganz hier. `--ohne-rufzeichen` nimmt zusätzlich alle
+fremden Rufzeichen heraus, `--ohne-qsl` die Kartengalerie. Die Tests in
+`backend/tests/test_spiegel.py` prüfen genau diese Auslassungen — ein Test,
+der bestätigt, dass etwas *nicht* in der Ausgabe steht.
+
 ### Unterstützte Rigs
 
 Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ und seit v0.151.0
@@ -285,6 +325,8 @@ Mess- und Wartungswerkzeuge, die man kennen sollte:
 | `qso_bilanz.py` | Abschlussquoten nach Weg, PSK-Datenlage, Kandidatenzahl |
 | `doc_screenshots.py` | erzeugt die Oberflächen-Screenshots neu |
 | `dev_run.py` | voller Stack gegen Mock-Rig/GPS, ohne Pi |
+| `spiegel.py` | holt den Stand über ein privates Netz und legt ihn als statische Dateien ab |
+| `qsl_stand.py` | vergleicht Bestätigungsquoten bei QRZ, LoTW und eQSL |
 
 ## Schnellstart — Workstation, kein Pi nötig
 

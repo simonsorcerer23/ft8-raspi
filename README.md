@@ -144,6 +144,45 @@ transmit callsign; anything without its own location — `/MM` and `/AM` have
 no DXCC at all — stays queued rather than being confirmed under the wrong
 one. Setup and pitfalls are documented in [docs/lotw.md](docs/lotw.md).
 
+### The other direction: incoming QSL cards
+
+Since v0.163.0 the appliance also fetches what others send *to it*. The eQSL
+inbox is reconciled, new cards are downloaded as images, and one card per
+station is shown in a gallery in the UI.
+
+Two quirks of that interface shape the code. First, both endpoints answer with
+an HTML page instead of payload when something goes wrong — the parser has to
+notice, or markup ends up in the database. Second, there is a rate limit, hence
+twelve seconds between fetches. That wait sits deliberately **outside** the
+database transaction: wrap it, and fifty cards hold a transaction open for ten
+minutes. Write the file first, then the row; a sweep collects image files whose
+row never materialised.
+
+eQSL's image URLs are ephemeral and are cleared after a few hours, so the images
+have to be stored locally — a link there would soon point at nothing. And eQSL
+does not version card designs: you always get the sender's *current* profile
+image, even for a contact from 1976.
+
+### Showing the station without opening it
+
+`scripts/spiegel.py` exists for the case where the station's state should be
+publicly visible. The obvious route — open a port — is the wrong one: there is
+a transmitter attached to this machine.
+
+So the script does not run on the Pi. It runs on the web server and **pulls**
+the state over a private network (Tailscale here). The result is static JSON
+files and images that the web server serves. The Pi keeps no open port, and if
+it does not answer, nothing is written — the previous files stay in place with
+their timestamp.
+
+What leaves is an exhaustive allowlist, not a filter list: from the rig status
+only band, frequency, power and SWR; the GPS position is rounded to the centre
+of the Maidenhead field (roughly 50 km), audio levels and internal state never
+leave. `--ohne-rufzeichen` additionally strips every foreign callsign,
+`--ohne-qsl` drops the card gallery. The tests in
+`backend/tests/test_spiegel.py` assert exactly these omissions — tests that
+confirm something is *absent* from the output.
+
 ### Supported rigs
 
 Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ and, since v0.151.0,
@@ -275,6 +314,8 @@ Measurement and maintenance tooling worth knowing about:
 | `qso_bilanz.py` | completion rates by path, PSK data validity, candidate counts |
 | `doc_screenshots.py` | regenerates UI screenshots from a local demo stack |
 | `dev_run.py` | full stack against mock rig/GPS, no Pi needed |
+| `spiegel.py` | pulls station state over a private network into static files |
+| `qsl_stand.py` | compares confirmation rates across QRZ, LoTW and eQSL |
 
 ## Quick start — workstation, no Pi
 

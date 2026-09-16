@@ -40,6 +40,7 @@ Zwei Fallen, in die eine Auswertung sonst laeuft:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -53,7 +54,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from ft8_appliance.analyse.regelregister import REGELN, stufen as _register_stufen, ueberfaellige  # noqa: E402
 from ft8_appliance.analyse.stochastik import n_fuer_nachweis, urteil, urteil_rate  # noqa: E402
 
-PI = "sebastian@100.64.0.10"
+# SSH-Ziel der Station. Der Tailscale-Name genuegt; abweichende
+# Installationen setzen FT8_PI_SSH (etwa "pi@192.168.1.50").
+PI = os.environ.get("FT8_PI_SSH", "ft8-pi5")
+PI_HTTP = os.environ.get("FT8_PI", "http://ft8-pi5:8000").rstrip("/")
 FERN = "/var/lib/ft8-appliance/qso.sqlite"
 
 
@@ -440,7 +444,7 @@ def main() -> int:
     _tok = None
     try:
         _tok = _token()
-        req = _u.Request("http://100.64.0.10:8000/api/status",
+        req = _u.Request(f"{PI_HTTP}/api/status",
                          headers={"Authorization": f"Bearer {_tok}"})
         with _u.urlopen(req, timeout=10) as r:
             st = _json.load(r) or {}
@@ -467,7 +471,7 @@ def main() -> int:
     import urllib.request as _u
     try:
         req = _u.Request(
-            "http://100.64.0.10:8000/api/status",
+            f"{PI_HTTP}/api/status",
             headers={"Authorization": f"Bearer {_token()}"},
         )
         with _u.urlopen(req, timeout=10) as r:

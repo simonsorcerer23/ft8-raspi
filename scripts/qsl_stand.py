@@ -27,13 +27,16 @@ ausgegeben — auch nicht in Fehlermeldungen.
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-PI = "sebastian@100.64.0.10"
+# SSH-Ziel der Station. Der Tailscale-Name genuegt; abweichende
+# Installationen setzen FT8_PI_SSH (etwa "pi@192.168.1.50").
+PI = os.environ.get("FT8_PI_SSH", "ft8-pi5")
 KONFIG = "/etc/ft8-appliance/config.yaml"
 STAND = Path.home() / ".cache" / "ft8-qsl-stand.json"
 
