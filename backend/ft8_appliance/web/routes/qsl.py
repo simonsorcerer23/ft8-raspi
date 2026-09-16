@@ -85,6 +85,7 @@ async def liste(
 
     async with session_scope() as s:
         anzahl_je: dict[str, int] = {}
+        reihen: list[dict] = []
         if gruppiert:
             # Je Station eine Zeile: die mit Bild gewinnt, danach die
             # juengste. ``datei IS NULL`` liefert 0/1 und sortiert die
@@ -110,18 +111,22 @@ async def liste(
             gesamt = (await s.execute(
                 select(func.count()).select_from(
                     aussen.order_by(None).subquery()))).scalar() or 0
-            zeilen = (await s.execute(aussen.limit(limit).offset(offset))).all()
-            reihen = []
-            for z in zeilen:
-                k = z._mapping
+            for z in (await s.execute(aussen.limit(limit).offset(offset))).all():
+                k = dict(z._mapping)
                 reihen.append(k)
                 anzahl_je[k["call"]] = k["wie_viele"]
         else:
             grund = select(QslKarte)
             for b in bedingungen:
                 grund = grund.where(b)
+            # Dieselbe Form wie im gruppierten Zweig, damit die Ausgabe
+            # unten nur einen Fall kennt.
             reihen = [
-                k.__dict__ for k in (await s.execute(
+                {"id": k.id, "call": k.call, "qso_date": k.qso_date,
+                 "time_on": k.time_on, "band": k.band, "mode": k.mode,
+                 "empfangen_am": k.empfangen_am, "gridsquare": k.gridsquare,
+                 "nachricht": k.nachricht, "datei": k.datei, "bytes": k.bytes}
+                for k in (await s.execute(
                     grund.order_by(QslKarte.empfangen_am.desc(), QslKarte.id.desc())
                     .limit(limit).offset(offset)
                 )).scalars()
