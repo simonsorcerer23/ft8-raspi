@@ -18,6 +18,9 @@
   let gesamt = $state(0);
   let suche = $state('');
   let nurMitBild = $state(false);
+  // Eine Station schickt fuer jede Verbindung eine Karte, aber immer
+  // dasselbe Motiv — EC3A steht sonst achtundzwanzigmal da.
+  let gruppiert = $state(true);
   let gross = $state(null);      // aufgeschlagene Karte
 
   const PRO_SEITE = 60;
@@ -30,6 +33,7 @@
         limit: PRO_SEITE, offset,
         call: suche.trim() || undefined,
         nur_mit_bild: nurMitBild || undefined,
+        gruppiert,
       });
       karten = r.karten ?? [];
       gesamt = r.gesamt ?? 0;
@@ -89,6 +93,10 @@
     <input type="search" bind:value={suche} placeholder={t('qsl.suche')}
            onkeydown={(e) => e.key === 'Enter' && hole(true)} />
     <label class="hakerl">
+      <input type="checkbox" bind:checked={gruppiert} onchange={() => hole(true)} />
+      {t('qsl.gruppiert')}
+    </label>
+    <label class="hakerl">
       <input type="checkbox" bind:checked={nurMitBild} onchange={() => hole(true)} />
       {t('qsl.nur_mit_bild')}
     </label>
@@ -118,6 +126,11 @@
             </span>
           {/if}
           <span class="unterschrift">{k.call}</span>
+          {#if k.anzahl > 1}
+            <span class="mehrfach" title={t('qsl.mehrfach', { n: k.anzahl })}>
+              {k.anzahl}
+            </span>
+          {/if}
         </button>
       {/each}
     </div>
@@ -143,6 +156,12 @@
         <b>{gross.call}</b>
         <span>{datum(gross.qso_date)} {zeit(gross.time_on)} UTC</span>
         <span>{gross.band} · {gross.mode}{gross.gridsquare ? ' · ' + gross.gridsquare : ''}</span>
+        {#if gross.anzahl > 1}
+          <button class="alle" onclick={() => { gruppiert = false; suche = gross.call;
+                  gross = null; hole(true); }}>
+            {t('qsl.mehrfach', { n: gross.anzahl })}
+          </button>
+        {/if}
         {#if gross.nachricht}<span class="gruss">„{gross.nachricht}"</span>{/if}
       </div>
       <button class="zu" onclick={() => gross = null} aria-label={t('qsl.schliessen')}>×</button>
@@ -190,6 +209,19 @@
                   font-size: 0.7rem; padding: 0.15rem 0.3rem;
                   font-family: ui-monospace, monospace; }
   .karte.ohne .unterschrift { display: none; }
+
+  /* Wie viele Karten diese Station geschickt hat. Klein und oben rechts,
+     damit es das Motiv nicht zerschneidet. */
+  .mehrfach { position: absolute; top: 4px; right: 4px; min-width: 1.15rem;
+              padding: 0 0.25rem; height: 1.15rem; line-height: 1.15rem;
+              text-align: center; border-radius: 0.6rem;
+              background: rgba(2,6,23,0.8); color: #cbd5e1;
+              font-size: 0.66rem; font-family: ui-monospace, monospace; }
+
+  .alle { background: none; border: 1px solid #334155; color: #94a3b8;
+          border-radius: 3px; padding: 0.15rem 0.5rem; font-size: 0.74rem;
+          cursor: pointer; }
+  .alle:hover { border-color: var(--accent); color: var(--accent); }
 
   .blaettern { display: flex; align-items: center; justify-content: center;
                gap: 0.8rem; margin-top: 0.7rem; font-size: 0.78rem;

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, literal_column, select
 
 from ...db import session_scope
 from ...db.models import QslKarte
@@ -41,6 +41,9 @@ class QslOut(BaseModel):
     # Platzhalter statt eines toten Bildes — die Karte kommt nach.
     bild_da: bool = False
     bytes: int | None = None
+    # Wie viele Karten diese Station insgesamt geschickt hat. In der
+    # gruppierten Ansicht steht hier die Zahl, sonst 1.
+    anzahl: int = 1
 
 
 class QslListe(BaseModel):
@@ -57,6 +60,7 @@ async def liste(
     call: str | None = Query(None, description="nach Rufzeichen filtern"),
     band: str | None = Query(None),
     nur_mit_bild: bool = Query(False),
+    gruppiert: bool = Query(True, description="eine Kachel je Station"),
     orch: Orchestrator = Depends(get_orchestrator),
 ) -> QslListe:
     """Die Bestaetigungen, neueste zuerst.
@@ -64,6 +68,12 @@ async def liste(
     Sortiert nach dem Eingangsdatum bei eQSL, nicht nach dem QSO-Datum:
     Wer den Posteingang aufschlaegt, will sehen, was gerade hereinkam —
     auch wenn die Verbindung selbst Jahre zurueckliegt.
+
+    ``gruppiert`` zeigt je Station nur eine Karte. Eine Station schickt
+    fuer jede Verbindung eine eigene Bestaetigung, aber immer dasselbe
+    Motiv — ungruppiert stand EC3A achtundzwanzigmal mit demselben Bild
+    in der Galerie. Gewaehlt wird je Station die neueste Karte, die schon
+    ein Bild hat; erst wenn keine eines hat, die neueste ueberhaupt.
     """
     bedingungen = []
     if call:
@@ -74,18 +84,52 @@ async def liste(
         bedingungen.append(QslKarte.datei.is_not(None))
 
     async with session_scope() as s:
-        grund = select(QslKarte)
-        for b in bedingungen:
-            grund = grund.where(b)
-        reihen = list((await s.execute(
-            grund.order_by(QslKarte.empfangen_am.desc(), QslKarte.id.desc())
-            .limit(limit).offset(offset)
-        )).scalars())
-
-        zaehler = select(func.count()).select_from(QslKarte)
-        for b in bedingungen:
-            zaehler = zaehler.where(b)
-        gesamt = (await s.execute(zaehler)).scalar() or 0
+        anzahl_je: dict[str, int] = {}
+        if gruppiert:
+            # Je Station eine Zeile: die mit Bild gewinnt, danach die
+            # juengste. ``datei IS NULL`` liefert 0/1 und sortiert die
+            # bebilderten nach vorn.
+            rang = func.row_number().over(
+                partition_by=QslKarte.call,
+                order_by=[
+                    case((QslKarte.datei.is_(None), 1), else_=0),
+                    QslKarte.empfangen_am.desc(),
+                    QslKarte.id.desc(),
+                ],
+            ).label("rang")
+            wie_viele = func.count().over(partition_by=QslKarte.call).label("wie_viele")
+            innen = select(QslKarte, rang, wie_viele)
+            for b in bedingungen:
+                innen = innen.where(b)
+            unter = innen.subquery()
+            aussen = (
+                select(unter)
+                .where(literal_column("rang") == 1)
+                .order_by(unter.c.empfangen_am.desc(), unter.c.id.desc())
+            )
+            gesamt = (await s.execute(
+                select(func.count()).select_from(
+                    aussen.order_by(None).subquery()))).scalar() or 0
+            zeilen = (await s.execute(aussen.limit(limit).offset(offset))).all()
+            reihen = []
+            for z in zeilen:
+                k = z._mapping
+                reihen.append(k)
+                anzahl_je[k["call"]] = k["wie_viele"]
+        else:
+            grund = select(QslKarte)
+            for b in bedingungen:
+                grund = grund.where(b)
+            reihen = [
+                k.__dict__ for k in (await s.execute(
+                    grund.order_by(QslKarte.empfangen_am.desc(), QslKarte.id.desc())
+                    .limit(limit).offset(offset)
+                )).scalars()
+            ]
+            zaehler = select(func.count()).select_from(QslKarte)
+            for b in bedingungen:
+                zaehler = zaehler.where(b)
+            gesamt = (await s.execute(zaehler)).scalar() or 0
         mit_bild = (await s.execute(
             select(func.count()).select_from(QslKarte)
             .where(QslKarte.datei.is_not(None))
@@ -94,10 +138,11 @@ async def liste(
         return QslListe(
             karten=[
                 QslOut(
-                    id=k.id, call=k.call, qso_date=k.qso_date, time_on=k.time_on,
-                    band=k.band, mode=k.mode, empfangen_am=k.empfangen_am,
-                    gridsquare=k.gridsquare, nachricht=k.nachricht,
-                    bild_da=k.datei is not None, bytes=k.bytes,
+                    id=k["id"], call=k["call"], qso_date=k["qso_date"],
+                    time_on=k["time_on"], band=k["band"], mode=k["mode"],
+                    empfangen_am=k["empfangen_am"], gridsquare=k["gridsquare"],
+                    nachricht=k["nachricht"], bild_da=k["datei"] is not None,
+                    bytes=k["bytes"], anzahl=anzahl_je.get(k["call"], 1),
                 )
                 for k in reihen
             ],

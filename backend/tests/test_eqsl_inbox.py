@@ -290,3 +290,59 @@ def test_waisen_einsammeln_ist_verdrahtet() -> None:
     assert "async def _qsl_waisen_einsammeln" in quelle
     loop = quelle.split("async def _qsl_inbox_loop", 1)[1].split("async def", 1)[0]
     assert "_qsl_waisen_einsammeln" in loop, "wird im Loop nie gerufen"
+
+
+# ------------------------------------------------ Gruppierung je Station
+
+@pytest.mark.asyncio
+async def test_gruppiert_zeigt_je_station_eine_karte(tmp_path) -> None:
+    """Eine Station schickt je Verbindung eine Karte, aber immer dasselbe
+    Motiv — ungruppiert stand EC3A achtundzwanzigmal in der Galerie.
+
+    Und die Auswahl darf nicht beliebig sein: Hat eine der Karten schon
+    ein Bild, muss genau die gezeigt werden. Sonst sieht der Betrachter
+    'Bild folgt', obwohl eines dalaege.
+    """
+    from sqlalchemy import case, func, literal_column, select
+
+    from ft8_appliance.db import models as m
+    from ft8_appliance.db.session import init_engine, session_scope
+
+    eng = init_engine(tmp_path / "q.sqlite")
+    async with eng.begin() as c:
+        await c.run_sync(m.Base.metadata.create_all)
+    async with session_scope() as s:
+        # EC3A dreimal: die juengste OHNE Bild, eine aeltere MIT.
+        s.add(m.QslKarte(schluessel="EC3A_A", call="EC3A", qso_date="20260901",
+                         time_on="1000", band="20M", mode="FT8",
+                         user_callsign="DK9XR", empfangen_am="20260914"))
+        s.add(m.QslKarte(schluessel="EC3A_B", call="EC3A", qso_date="20260902",
+                         time_on="1100", band="20M", mode="FT8",
+                         user_callsign="DK9XR", empfangen_am="20260913",
+                         datei="2026/EC3A_B.jpg", medientyp="image/jpeg"))
+        s.add(m.QslKarte(schluessel="EC3A_C", call="EC3A", qso_date="20260903",
+                         time_on="1200", band="17M", mode="FT8",
+                         user_callsign="DK9XR", empfangen_am="20260912"))
+        s.add(m.QslKarte(schluessel="W3FOX_A", call="W3FOX", qso_date="20260905",
+                         time_on="0900", band="17M", mode="FT8",
+                         user_callsign="DK9XR", empfangen_am="20260915",
+                         datei="2026/W3FOX_A.jpg"))
+
+    async with session_scope() as s:
+        rang = func.row_number().over(
+            partition_by=m.QslKarte.call,
+            order_by=[case((m.QslKarte.datei.is_(None), 1), else_=0),
+                      m.QslKarte.empfangen_am.desc(), m.QslKarte.id.desc()],
+        ).label("rang")
+        wie_viele = func.count().over(partition_by=m.QslKarte.call).label("wie_viele")
+        unter = select(m.QslKarte, rang, wie_viele).subquery()
+        aussen = (select(unter).where(literal_column("rang") == 1)
+                  .order_by(unter.c.empfangen_am.desc(), unter.c.id.desc()))
+        zeilen = [z._mapping for z in (await s.execute(aussen)).all()]
+
+    assert len(zeilen) == 2, "je Station genau eine Kachel"
+    je_call = {z["call"]: z for z in zeilen}
+    assert je_call["EC3A"]["wie_viele"] == 3
+    # Die bebilderte gewinnt, obwohl eine juengere ohne Bild existiert.
+    assert je_call["EC3A"]["schluessel"] == "EC3A_B"
+    assert je_call["W3FOX"]["wie_viele"] == 1

@@ -264,6 +264,8 @@ export const de = {
   'qsl.title': "eQSL-Posteingang",
   'qsl.suche': "Rufzeichen suchen",
   'qsl.suchen': "suchen",
+  'qsl.gruppiert': "eine je Station",
+  'qsl.mehrfach': "{n} Karten dieser Station zeigen",
   'qsl.nur_mit_bild': "nur mit Bild",
   'qsl.laedt': "wird geladen …",
   'qsl.leer': "Keine Karten gefunden.",

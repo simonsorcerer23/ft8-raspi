@@ -264,6 +264,8 @@ export const en = {
   'qsl.title': "eQSL inbox",
   'qsl.suche': "search callsign",
   'qsl.suchen': "search",
+  'qsl.gruppiert': "one per station",
+  'qsl.mehrfach': "show all {n} cards from this station",
   'qsl.nur_mit_bild': "with image only",
   'qsl.laedt': "loading …",
   'qsl.leer': "No cards found.",
