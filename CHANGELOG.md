@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.166.0 — 2026-09-16
+- feat: Kartenabrufe holen zuerst Stationen, die noch nicht zu sehen sind
+- docs: Posteingang, Spiegel und Kartengalerie ins README; interne Adressen raus
+- feat: Spiegel der Stationsdaten auf den Webserver
+
 ## v0.165.0 — 2026-09-16
 - feat: QSL-Galerie zeigt je Station eine Karte
 - feat: QSL-Galerie zeigt je Station eine Karte
