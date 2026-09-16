@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.164.2 — 2026-09-16
+- fix: QSL-Kacheln zeigten den Alt-Text statt der Karte
+
 ## v0.164.1 — 2026-09-16
 - fix: Kartenabruf haelt die Transaktion nicht mehr fuenf Minuten offen
 
