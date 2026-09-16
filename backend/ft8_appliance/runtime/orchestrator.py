@@ -1556,7 +1556,7 @@ class Orchestrator:
         niemand kannte. Waisen, die beim naechsten Lauf erneut geholt
         worden waeren — auf Kosten des Tempolimits.
         """
-        from sqlalchemy import case, select
+        from sqlalchemy import case, func, select
         from sqlalchemy.orm import aliased
 
         from ..db import session_scope
@@ -1587,6 +1587,25 @@ class Orchestrator:
             .exists()
         )
 
+        # Stufe 3: je Station hoechstens EINE Karte pro Runde. Ohne das
+        # holt eine noch unsichtbare Station mit vier wartenden Karten alle
+        # vier auf einmal — Stufe 2 bewertet sie ja alle als "neue Station",
+        # weil sie einmal je Runde ausgewertet wird und nicht je Abruf.
+        # Gemessen am 16.09.: 60 von 225 Abrufen gingen so an Stationen,
+        # deren Kachel laengst stand.
+        rang = func.row_number().over(
+            partition_by=(QslKarte.user_callsign, QslKarte.call),
+            order_by=(QslKarte.empfangen_am.desc(), QslKarte.qso_date.desc()),
+        ).label("rang")
+        eine_je_station = (
+            select(QslKarte.id.label("kid"), rang)
+            .where(QslKarte.datei.is_(None))
+            .where(QslKarte.fehler.is_(None))
+            .where(QslKarte.versuche < self._QSL_MAX_VERSUCHE)
+            .where(QslKarte.user_callsign.in_(list(opern)))
+            .subquery()
+        )
+
         # Nur die Arbeitsliste ziehen, dann die Sitzung wieder schliessen.
         async with session_scope() as s:
             auftraege = [
@@ -1597,10 +1616,8 @@ class Orchestrator:
                 ))
                 for k in (await s.execute(
                     select(QslKarte)
-                    .where(QslKarte.datei.is_(None))
-                    .where(QslKarte.fehler.is_(None))
-                    .where(QslKarte.versuche < self._QSL_MAX_VERSUCHE)
-                    .where(QslKarte.user_callsign.in_(list(opern)))
+                    .join(eine_je_station, eine_je_station.c.kid == QslKarte.id)
+                    .where(eine_je_station.c.rang == 1)
                     .order_by(
                         case((frisch, 0), else_=1),
                         case((schon_sichtbar, 1), else_=0),

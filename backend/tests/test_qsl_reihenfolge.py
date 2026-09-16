@@ -115,3 +115,34 @@ async def test_unter_gleichen_bleibt_das_neueste_vorn(
     await Orchestrator._qsl_bilder_nachholen(o)
 
     assert o.reihenfolge == ["NEU", "MITTE", "ALT"]
+
+
+@pytest.mark.asyncio
+async def test_je_station_nur_eine_karte_pro_runde(tmp_path, monkeypatch) -> None:
+    """EA4CPM hatte vier wartende Karten und bekam sie am 16.09. alle vier
+    binnen 44 Sekunden — Stufe 2 wird einmal je Runde ausgewertet, also
+    galten alle vier als "neue Station". Eine Runde darf je Station nur
+    eine Karte ziehen, sonst holt eine einzige Station den halben Block."""
+    await _db([
+        _karte("EA4CPM", _tag(40)), _karte("EA4CPM", _tag(41)),
+        _karte("EA4CPM", _tag(42)), _karte("EA4CPM", _tag(43)),
+        _karte("V31DL", _tag(44)), _karte("F5JAE", _tag(45)),
+    ])
+    o = _orch(tmp_path, monkeypatch, je_runde=4)
+    await Orchestrator._qsl_bilder_nachholen(o)
+
+    assert len(o.reihenfolge) == len(set(o.reihenfolge)), (
+        f"Station doppelt in einer Runde: {o.reihenfolge}")
+    assert set(o.reihenfolge) == {"EA4CPM", "V31DL", "F5JAE"}, o.reihenfolge
+
+
+@pytest.mark.asyncio
+async def test_die_uebrigen_karten_kommen_in_spaeteren_runden(
+        tmp_path, monkeypatch) -> None:
+    """Sie werden nicht verworfen — jede ist eine eigene Bestaetigung."""
+    await _db([_karte("EA4CPM", _tag(40)), _karte("EA4CPM", _tag(41))])
+    o = _orch(tmp_path, monkeypatch, je_runde=4)
+
+    await Orchestrator._qsl_bilder_nachholen(o)   # Runde 1
+    await Orchestrator._qsl_bilder_nachholen(o)   # Runde 2
+    assert o.reihenfolge == ["EA4CPM", "EA4CPM"], o.reihenfolge
