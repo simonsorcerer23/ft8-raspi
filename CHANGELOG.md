@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.165.0 — 2026-09-16
+- feat: QSL-Galerie zeigt je Station eine Karte
+- feat: QSL-Galerie zeigt je Station eine Karte
+
 ## v0.164.2 — 2026-09-16
 - fix: QSL-Kacheln zeigten den Alt-Text statt der Karte
 
