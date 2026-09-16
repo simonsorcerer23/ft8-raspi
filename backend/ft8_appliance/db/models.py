@@ -492,6 +492,13 @@ class PickCandidate(Base):
     new_dxcc: Mapped[bool] = mapped_column(Boolean, default=False)
     rarity: Mapped[int] = mapped_column(Integer, default=0)
     verworfen_von: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # v0.162.0 — Schattenprotokoll des Kontrollarms: Welche Stufe HAETTE
+    # diesen Kandidaten verworfen? Im Kontrollarm laufen die Lohnt-sich-
+    # Gates weiter, ihr Ergebnis wird aber nur hier notiert statt
+    # angewandt. Damit laesst sich je Stufe messen, was aus genau den
+    # Zielen wurde, die sie sonst verhindert haette — ohne die
+    # Filterlogik in der Auswertung nachzubauen. Im Regelarm NULL.
+    haette_verworfen: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     gewaehlt: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     n_grundmenge: Mapped[int] = mapped_column(Integer)
     # Welche Arme galten in diesem Slot — fuer den Vergleich Regel/Kontrolle.

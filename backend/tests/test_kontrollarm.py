@@ -43,6 +43,12 @@ def _verworfen(sm: StateMachine) -> dict[str, str | None]:
     return {k["call"]: k["verworfen_von"] for k in sm._last_pick_diag.get("kandidaten") or []}
 
 
+def _haette(sm: StateMachine) -> dict[str, str | None]:
+    """Was HAETTE im Kontrollarm gegriffen — das Schattenprotokoll."""
+    return {k["call"]: k["haette_verworfen"]
+            for k in sm._last_pick_diag.get("kandidaten") or []}
+
+
 # ------------------------------------------------------------ Regelarm
 
 def test_regelarm_verwirft_schwaches_ziel_ohne_beleg() -> None:
@@ -104,6 +110,95 @@ def test_kontrollarm_ignoriert_pile_up() -> None:
     sm.ctx.pile_up_calls = {"DL1AAA"}
     sm.ctx.kontroll_arm = True
     assert sm._pick_hunt_target([_cq("DL1AAA", snr=-5)]) is not None
+
+
+# ------------------------------- Schattenprotokoll (v0.162.0)
+
+# Der Kontrollarm ruft an, WEIL ein Gate ihn sonst gehindert haette.
+# Welches Gate das war, muss mitgeschrieben werden: Ohne diese Spalte
+# liesse sich je Stufe nur rekonstruieren, wen sie getroffen haette —
+# und eine Rekonstruktion, die die Filterlogik nachbaut, misst am Ende
+# den Nachbau. Angewandt wird im Kontrollarm weiterhin nichts.
+
+def test_schatten_nennt_den_floor() -> None:
+    sm = _sm()
+    sm.ctx.kontroll_arm = True
+    best = sm._pick_hunt_target([_cq("DL1AAA", snr=-24)])
+    assert best is not None
+    assert _haette(sm)["DL1AAA"] == "snr_floor"
+    assert _verworfen(sm)["DL1AAA"] is None      # angewandt wurde nichts
+
+
+def test_schatten_nennt_das_schwach_gate() -> None:
+    sm = _sm()
+    sm.ctx.kontroll_arm = True
+    assert sm._pick_hunt_target([_cq("DL1AAA", snr=-15)]) is not None
+    assert _haette(sm)["DL1AAA"] == "schwach_ohne_psk"
+
+
+def test_schatten_nennt_das_kontinent_gate() -> None:
+    sm = _sm()
+    sm.ctx.hunt_continent_gate = True
+    sm.ctx.hunt_continent_gate_pct = 5
+    sm.ctx.continent_success = {"NA": 0.01}
+    sm.ctx.call_to_continent = {"K1ABC": "NA"}
+    sm.ctx.kontroll_arm = True
+    assert sm._pick_hunt_target([_cq("K1ABC", snr=-5)]) is not None
+    assert _haette(sm)["K1ABC"] == "kontinent_gate"
+
+
+def test_schatten_nennt_pile_up() -> None:
+    sm = _sm()
+    sm.ctx.pile_up_calls = {"DL1AAA"}
+    sm.ctx.kontroll_arm = True
+    assert sm._pick_hunt_target([_cq("DL1AAA", snr=-5)]) is not None
+    assert _haette(sm)["DL1AAA"] == "pile_up"
+
+
+def test_schatten_nennt_strict_modus() -> None:
+    sm = _sm()
+    sm.ctx.hunt_weak_requires_psk = False
+    sm.ctx.hunt_strict_until = datetime.now(UTC).timestamp() + 600
+    sm.ctx.kontroll_arm = True
+    assert sm._pick_hunt_target([_cq("DL1AAA", snr=-15), _cq("DL2BBB", snr=-15)]) is not None
+    assert _haette(sm)["DL1AAA"] == "strict_modus"
+
+
+def test_schatten_nennt_den_einzelnen_schwachen_cq() -> None:
+    """Dieses Gate wirkt durch Abbruch des Slots, nicht durch Kuerzen
+    der Liste — im Kontrollarm darf es trotzdem nicht abbrechen."""
+    sm = _sm()
+    sm.ctx.hunt_weak_requires_psk = False
+    sm.ctx.kontroll_arm = True
+    best = sm._pick_hunt_target([_cq("DL1AAA", snr=-19)])
+    assert best is not None
+    assert _haette(sm)["DL1AAA"] == "einzelner_schwacher_cq"
+
+
+def test_erste_stufe_gewinnt_im_schatten() -> None:
+    """Wie bei verworfen_von: der Grund ist der ERSTE, der gegriffen
+    haette. Sonst haengt die Zuordnung an der Reihenfolge der Kette."""
+    sm = _sm()
+    sm.ctx.pile_up_calls = {"DL1AAA"}
+    sm.ctx.kontroll_arm = True
+    assert sm._pick_hunt_target([_cq("DL1AAA", snr=-24)]) is not None
+    assert _haette(sm)["DL1AAA"] == "snr_floor"
+
+
+def test_regelarm_schreibt_kein_schattenprotokoll() -> None:
+    """Dort wird angewandt — verworfen_von traegt den Grund, und eine
+    zweite Spalte mit demselben Inhalt waere nur eine Fehlerquelle."""
+    sm = _sm()
+    assert sm._pick_hunt_target([_cq("DL1AAA", snr=-24)]) is None
+    assert _verworfen(sm)["DL1AAA"] == "snr_floor"
+    assert _haette(sm)["DL1AAA"] is None
+
+
+def test_durchgelassene_tragen_nichts() -> None:
+    sm = _sm()
+    sm.ctx.kontroll_arm = True
+    assert sm._pick_hunt_target([_cq("DL1AAA", snr=-5)]) is not None
+    assert _haette(sm)["DL1AAA"] is None
 
 
 # ------------------------------------------- technische Gates bleiben

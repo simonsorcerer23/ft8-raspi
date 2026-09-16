@@ -12,8 +12,19 @@ WURZEL = Path(__file__).resolve().parents[2]
 
 
 def _gebuchte_stufen_im_code() -> set[str]:
+    """Jede Stufe, die im Picker eine Verwerfung protokolliert.
+
+    Seit v0.162.0 gibt es dafuer zwei Wege: `_buche_filter` wendet an und
+    bucht, `_gate` tut dasselbe, protokolliert im Kontrollarm aber nur.
+    Die beiden Abbruch-Gates notieren im Kontrollarm direkt in
+    `_haette_verworfen` — auch das ist eine gebuchte Stufe. Wer hier
+    einen Weg vergisst, erklaert eine lebende Regel fuer tot.
+    """
     quelle = (WURZEL / "backend" / "ft8_appliance" / "statemachine" / "machine.py").read_text()
-    return set(re.findall(r'_buche_filter\("([a-z_]+)"', quelle)) - {"schwach_zurueckgenommen"}
+    namen = set(re.findall(r'_buche_filter\("([a-z_]+)"', quelle))
+    namen |= set(re.findall(r'self\._gate\(\s*\n?\s*"([a-z_]+)"', quelle))
+    namen |= set(re.findall(r'_haette_verworfen\.setdefault\([^,]+,\s*"([a-z_]+)"', quelle))
+    return namen - {"schwach_zurueckgenommen"}
 
 
 def test_register_deckt_jede_gebuchte_stufe() -> None:

@@ -44,9 +44,14 @@ def _tage(n: int):
     return timedelta(days=n)
 
 
-_KONTROLLE = ("Kontrollarm-Abschnitt der Bilanz: QSOs je Stunde Regel gegen "
-              "Kontrolle; dann in pick_candidate, was der von dieser Stufe "
-              "verworfene Zieltyp in der Kontrolle brachte.")
+# Seit v0.162.0 rechnet der Kontrollarm jedes Lohnt-sich-Gate weiter und
+# schreibt in pick_candidate.haette_verworfen, welche Stufe gegriffen
+# haette — angewandt wird nichts. Damit steht je Regel ein Feldversuch
+# in der Bilanz, statt dass die Auswertung die Filterlogik nachbaut.
+_KONTROLLE = ("Bilanz-Abschnitt 'Jede Gate-Stufe einzeln': was aus genau "
+              "den Zielen wurde, die diese Stufe verhindert haette "
+              "(Kontrollarm, Spalte haette_verworfen) — gegen die Quote "
+              "der Kontroll-Anrufe, die kein Gate getroffen haette.")
 
 REGELN: tuple[Regel, ...] = (
     # ------------------------------------------------ Chancen-Regeln

@@ -100,6 +100,36 @@ def _baue_db(pfad: Path) -> None:
                               s_meter_db=-54, rx_audio_dbfs=-30.0 - i))
             s.add(m.SwrLog(ts=t(18 + i * 55), band="20m", freq_hz=14_074_000,
                            swr=1.0 + i * 0.01))
+        # Kandidatenprotokoll mit Schattenspalte (v0.162.0). Ohne diese
+        # Zeilen lief der Abschnitt "Jede Gate-Stufe einzeln" nur in
+        # seinen Leerzweig — genau der Fehler vom 2026-09-14, als der
+        # Kontrollarm-Abschnitt auf echten Daten stuerzte, weil die
+        # Testanrufe keinen Arm trugen. Jede Zeile braucht einen
+        # PickAttempt gleichen Namens im Zeitfenster, sonst greift der
+        # Join nicht und die Tabelle bleibt trotzdem leer.
+        for i in range(20):
+            name = f"C{i}TEST"
+            zeit = t(200 + i * 3)
+            # Die erste Haelfte haette ein Gate verhindert, die zweite
+            # ist die Vergleichsgruppe ohne Schatteneintrag.
+            schatten = ("snr_floor", "schwach_ohne_psk", "pile_up",
+                        "kontinent_gate")[i % 4] if i < 10 else None
+            s.add(m.PickCandidate(
+                slot_ts=zeit, call=name, call_raw=name, snr_db=-14 - (i % 7),
+                dt_s=0.2, freq_offset_hz=800 + i * 40, grid="JN58",
+                continent="EU" if i % 2 else "NA", psk_heard=bool(i % 3),
+                new_dxcc=False, rarity=0, verworfen_von=None,
+                haette_verworfen=schatten, gewaehlt=True, n_grundmenge=2,
+                schwach_arm=False, kontroll_arm=True, ew_arm=False,
+            ))
+            s.add(m.PickAttempt(
+                ts=zeit, target_call=name, user_callsign="DK9XR",
+                kontroll_arm=True, ew_arm=False, psk_heard_us=bool(i % 3),
+                snr_db=-14 - (i % 7), dt_s=0.2, band="20m",
+                outcome="completed" if i % 4 == 0 else "bailed",
+                bail_reason=None if i % 4 == 0 else "went_silent",
+                pick_kind="cq", n_candidates=2,
+            ))
         # Tageshistorie der Filterstufen: zwei Tage, eine Stufe ohne Treffer
         for tage_zurueck in (0, 1):
             tag = (jetzt - timedelta(days=tage_zurueck)).strftime("%Y-%m-%d")
@@ -128,6 +158,22 @@ def ausgabe(tmp_path_factory) -> str:
 
 def test_laeuft_ohne_absturz(ausgabe):
     assert ausgabe.strip()
+
+
+def test_gate_stufen_abschnitt_zeigt_zahlen(ausgabe):
+    """Der Abschnitt darf nicht bloss seine Ueberschrift drucken.
+
+    Ein Leerzweig, der immer laeuft, ist kein Test: Am 2026-09-14
+    stuerzte der Kontrollarm-Abschnitt auf echten Daten ab, weil die
+    Rauchtest-Anrufe keinen Arm trugen und der Zweig nie lief.
+    """
+    # Nach der Ueberschrift trennen, nicht am ersten "===" — das
+    # schliesst die Ueberschrift selbst ab und liefert einen leeren Block.
+    block = ausgabe.split("=== Jede Gate-Stufe einzeln")[1].split("\n===")[0]
+    assert "fehlt" not in block and "noch keine" not in block, block
+    assert "snr_floor" in block, block
+    # Die Vergleichsgruppe muss beziffert sein, sonst sagt die Quote nichts.
+    assert re.search(r"die \d+ Kontroll-Anrufe", block), block
 
 
 # Die Abschnitte, die es geben muss. Nur zu zaehlen reicht nicht — bei

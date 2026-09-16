@@ -84,6 +84,14 @@ def _token() -> str:
     return wert
 
 
+def spalte_da(con, tabelle_name: str, spalte: str) -> bool:
+    """Eine juengere Spalte darf auf einer aelteren DB-Kopie nicht stuerzen."""
+    if not hat_tabelle(con, tabelle_name):
+        return False
+    return spalte in {r[1] for r in con.execute(
+        f"pragma table_info({tabelle_name})").fetchall()}
+
+
 def hat_tabelle(con, tabelle_name: str) -> bool:
     """Eine juengere Tabelle darf auf einer aelteren DB-Kopie nicht stuerzen."""
     return con.execute(
@@ -121,6 +129,10 @@ def tabelle(zeilen: list[tuple], kopf: tuple[str, ...]) -> None:
 # Stufe ohne jeden Treffer gar nicht auf — sie fehlt dann einfach in der
 # Tabelle und sieht aus wie nicht vorhanden.
 ALLE_FILTERSTUFEN = _register_stufen()
+# Nur Chancen-Regeln schaetzen die Erfolgsaussicht und laufen deshalb im
+# Kontrollarm nicht mit. Technische Gates und Sperren gelten in beiden
+# Armen — sie koennen im Schattenprotokoll gar nicht auftauchen.
+_CHANCEN_STUFEN = {r.stufe for r in REGELN if r.art == "chance"}
 
 
 def main() -> int:
@@ -715,11 +727,76 @@ def main() -> int:
                              erfolge.get("ARM_REGEL", 0), std.get("ARM_REGEL", 0.0))
             print(f"    EW-Modell gegen Regel, QSOs je Stunde: {u2}")
         print("    Liegt die Kontrolle vorn, kosten die Gates zusammen mehr als")
-        print("    sie bringen — dann einzeln nachsehen (pick_candidate: wer wurde")
-        print("    im Regelarm verworfen, und was brachte derselbe Typ Ziel in der")
-        print("    Kontrolle). Unter fuenf QSOs je Arm sagt die Zeile nichts.")
+        print("    sie bringen. Welche das sind, sagt der naechste Abschnitt.")
+        print("    Unter fuenf QSOs je Arm sagt die Zeile nichts.")
     else:
         print("    (Spalte kontroll_arm oder Tabelle state_time_daily fehlt — vor v0.148.0)")
+
+    print("\n=== Jede Gate-Stufe einzeln: was haette sie verhindert? ===")
+    # Das ist die Antwort auf "welche Regel traegt", und die einzige, die
+    # ohne Nachbau der Filterlogik auskommt. Seit v0.162.0 rechnet der
+    # Kontrollarm jedes Lohnt-sich-Gate weiter, wendet es aber nicht an,
+    # und schreibt in haette_verworfen, welche Stufe gegriffen HAETTE.
+    # Jede Zeile hier ist damit ein Feldversuch: Diese Ziele haette die
+    # Regel verhindert — so oft kamen sie trotzdem durch.
+    #
+    # Die Vergleichszahl ist die Abschlussquote der Kandidaten, die im
+    # selben Arm alle Gates passiert haben. Liegt eine Stufe darueber,
+    # wirft sie die Falschen weg.
+    if spalte_da(con, "pick_candidate", "haette_verworfen"):
+        # Ausgang je Kandidat: angerufen wurde, wer 'gewaehlt' trug; ob es
+        # klappte, steht in pick_attempt (gleicher Call, gleicher Slot).
+        zeilen_g = []
+        basis = con.execute(
+            "select count(*), sum(a.outcome = 'completed') from pick_candidate c "
+            "join pick_attempt a on a.target_call = c.call "
+            "  and abs(strftime('%s', a.ts) - strftime('%s', c.slot_ts)) < 120 "
+            "where c.slot_ts > datetime('now', ?) and c.kontroll_arm = 1 "
+            "  and c.gewaehlt = 1 and c.haette_verworfen is null", (seit,),
+        ).fetchone()
+        basis_n, basis_ok = (basis[0] or 0), (basis[1] or 0)
+        for stufe, n, ok in con.execute(
+            "select c.haette_verworfen, count(*), sum(a.outcome = 'completed') "
+            "from pick_candidate c "
+            "join pick_attempt a on a.target_call = c.call "
+            "  and abs(strftime('%s', a.ts) - strftime('%s', c.slot_ts)) < 120 "
+            "where c.slot_ts > datetime('now', ?) and c.kontroll_arm = 1 "
+            "  and c.gewaehlt = 1 and c.haette_verworfen is not null "
+            "group by 1 order by 2 desc", (seit,),
+        ).fetchall():
+            ok = ok or 0
+            quote = 100.0 * ok / n if n else 0.0
+            zeilen_g.append((
+                stufe, n, ok, f"{quote:5.1f} %",
+                urteil(ok, n, basis_ok, basis_n) if n >= 5 and basis_n >= 5
+                else "zu wenig",
+            ))
+        if zeilen_g:
+            tabelle(zeilen_g, ("Stufe", "angerufen", "QSOs", "Quote", "gegen den Rest"))
+            basis_q = 100.0 * basis_ok / basis_n if basis_n else 0.0
+            print(f"    Vergleich: die {basis_n} Kontroll-Anrufe, die KEIN Gate")
+            print(f"    verhindert haette, schlossen zu {basis_q:.1f} % ab.")
+            print("    Eine Stufe mit hoeherer Quote wirft die Falschen weg. Eine")
+            print("    mit deutlich niedrigerer hat ihren Beleg — dann beleg_datum")
+            print("    in ft8_appliance/analyse/regelregister.py setzen.")
+            fehlt_g = sorted(s for s in ALLE_FILTERSTUFEN
+                             if s in _CHANCEN_STUFEN
+                             and s not in {z[0] for z in zeilen_g})
+            if fehlt_g:
+                print("    Ohne Fall im Zeitraum — die Stufe kam im Kontrollarm nie")
+                print("    zum Zug, nicht dass sie nichts taete:")
+                zeile = "     "
+                for s_ in fehlt_g:
+                    if len(zeile) + len(s_) > 72:
+                        print(zeile); zeile = "     "
+                    zeile += " " + s_
+                if zeile.strip():
+                    print(zeile)
+        else:
+            print("    (noch keine Kontroll-Anrufe mit Schattenprotokoll — die Spalte")
+            print("    fuellt sich erst seit v0.162.0, und nur in Kontrollbloecken)")
+    else:
+        print("    (Spalte haette_verworfen fehlt — DB-Kopie aelter als v0.162.0)")
 
     print("\n=== Erwartungswert-Modell: stimmt die Wahrscheinlichkeitstabelle? ===")
     # Kalibrierung: Was das Modell fuer die angerufenen Kandidaten vorher-

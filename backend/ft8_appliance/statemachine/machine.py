@@ -562,6 +562,13 @@ class StateMachine:
     _kandidaten_grundmenge: list = field(default_factory=list)
     _ew_werte: dict = field(default_factory=dict)
     _verworfen: dict = field(default_factory=dict)
+    # v0.162.0 — Schattenprotokoll des Kontrollarms: Welches Lohnt-sich-Gate
+    # HAETTE diesen Kandidaten verworfen? Im Kontrollarm laufen die Gates
+    # weiter, ihr Ergebnis wird aber nur notiert statt angewandt. Ohne das
+    # liesse sich je Stufe nur rekonstruieren, wen sie getroffen haette —
+    # und eine Rekonstruktion, die die Filterlogik nachbaut, misst am Ende
+    # den Nachbau statt die Regel.
+    _haette_verworfen: dict = field(default_factory=dict)
     # 2026-09-11 — Wie viele Kandidaten jede Filterstufe wegnimmt, summiert
     # ueber die Laufzeit. Drei der letzten fuenf Fehler waren Gates, deren
     # Begruendung eine spaetere Aenderung ueberlebt hatte, ohne dass es
@@ -2429,6 +2436,7 @@ class StateMachine:
                 "new_dxcc": call in self.ctx.new_dxcc_calls,
                 "rarity": self.ctx.rarity_scores.get(call, 0),
                 "verworfen_von": self._verworfen.get(id(d)),
+                "haette_verworfen": self._haette_verworfen.get(id(d)),
                 "gewaehlt": gewinner is not None and d is gewinner,
                 "p_erfolg": _ew[0] if _ew else None,
                 "wert": _ew[1] if _ew else None,
@@ -2462,6 +2470,23 @@ class StateMachine:
                 self._verworfen.setdefault(id(d), name)
         return len(nachher)
 
+    def _gate(self, name: str, vorher: list, uebrig: list, *, kontrolle: bool) -> list:
+        """Ein Lohnt-sich-Gate anwenden — im Kontrollarm nur protokollieren.
+
+        Die Bedingung steht beim Gate und wird genau einmal ausgewertet;
+        hier faellt nur die Entscheidung, ob das Ergebnis die Kandidaten-
+        liste kuerzt oder bloss ins Schattenprotokoll geht. Damit misst
+        der Kontrollarm die Regel selbst und nicht deren Nachbau.
+        """
+        if not kontrolle:
+            self._buche_filter(name, vorher, uebrig)
+            return uebrig
+        behalten = {id(d) for d in uebrig}
+        for d in vorher:
+            if id(d) not in behalten:
+                self._haette_verworfen.setdefault(id(d), name)
+        return vorher
+
     def _pick_hunt_target(self, decodes: Iterable[DecodedMsg]) -> DecodedMsg | None:
         """Pick the strongest non-blacklisted CQ from this slot's decodes.
 
@@ -2478,6 +2503,7 @@ class StateMachine:
         if self.ctx.drain_for_update:
             return None   # 2026-09-07: Update wartet — keine neuen Picks
         self._verworfen = {}
+        self._haette_verworfen = {}
         self._ew_werte = {}
         decodes = list(decodes)
         if self.ctx.tail_end_hunter_enabled:
@@ -2530,17 +2556,16 @@ class StateMachine:
         # schon gearbeitet) gelten in beiden Armen.
         # Im Erwartungswert-Arm ersetzt EINE Zahl je Kandidat diese Gates.
         kontrolle = self.ctx.kontroll_arm or self.ctx.ew_arm
-        if self.ctx.hunt_snr_floor_db is not None and not kontrolle:
+        if self.ctx.hunt_snr_floor_db is not None:
             _v = list(cqs)
-            cqs = [
+            cqs = self._gate("snr_floor", _v, [
                 d for d in cqs
                 if d.snr_db is None or d.snr_db >= self.ctx.hunt_snr_floor_db
                 or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
-            ]
-            self._buche_filter("snr_floor", _v, cqs)
+            ], kontrolle=kontrolle)
         # 2026-09-08: Kontinent-Gate — aus Kontinenten mit Vollendungsquote
         # unter hunt_continent_gate_pct nur mit PSK-Bestaetigung (NA 3 %).
-        if self.ctx.hunt_continent_gate and self.ctx.continent_success and not kontrolle:
+        if self.ctx.hunt_continent_gate and self.ctx.continent_success:
             thr = self.ctx.hunt_continent_gate_pct / 100.0
             def _cont_ok(d: DecodedMsg) -> bool:
                 cu = (d.call_from or "").upper()
@@ -2552,11 +2577,11 @@ class StateMachine:
                     return True
                 return cu in self.ctx.psk_heard_us or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
             _v = list(cqs)
-            cqs = [d for d in cqs if _cont_ok(d)]
-            self._buche_filter("kontinent_gate", _v, cqs)
+            cqs = self._gate("kontinent_gate", _v,
+                             [d for d in cqs if _cont_ok(d)], kontrolle=kontrolle)
         # 2026-09-07: schwache Ziele nur mit PSK-Bestaetigung (Telemetrie:
         # unter -13 dB kamen 3 % zurueck, darueber 12 %).
-        if self.ctx.hunt_weak_requires_psk and not kontrolle:
+        if self.ctx.hunt_weak_requires_psk:
             weak = self.ctx.hunt_weak_snr_db
             _v = list(cqs)
             uebrig = [
@@ -2577,9 +2602,8 @@ class StateMachine:
             # Alternative ist null. 85 % aller Anrufe an schwache Ziele
             # waren alternativlos; dort hat der Filter 35 QSOs gekostet.
             if uebrig or self.ctx.schwach_arm:
-                cqs = uebrig
-                self._buche_filter("schwach_ohne_psk", _v, cqs)
-            else:
+                cqs = self._gate("schwach_ohne_psk", _v, uebrig, kontrolle=kontrolle)
+            elif not kontrolle:
                 self._buche_filter("schwach_zurueckgenommen", 1, 0)
         # DT-Filter (Sebastian v0.5.4, Audit-Lücke 1 vs WSJT-X):
         # Stationen mit |dt_s| > 2.5s sind zwar decodebar (FT8-Decoder
@@ -2682,7 +2706,7 @@ class StateMachine:
         # sagen "geht technisch nicht" (DT ausserhalb des Empfangsfensters,
         # gleiche Slot-Paritaet) und die ausdrueckliche Sperre der
         # Soft-Blacklist bleiben fuer alle bestehen.
-        if self.ctx.pile_up_calls and not kontrolle:
+        if self.ctx.pile_up_calls:
             # 2026-09-10: Stationen von der Wunschliste sind vom Pile-Up-
             # Filter ausgenommen. Seltenes DX hat per Definition Pile-Up —
             # der harte Filter machte die Liste damit genau fuer die
@@ -2692,12 +2716,11 @@ class StateMachine:
             # nimmt das Gedraenge bewusst in Kauf. Alle anderen bleiben
             # gefiltert.
             _v = list(cqs)
-            cqs = [
+            cqs = self._gate("pile_up", _v, [
                 d for d in cqs
                 if (d.call_from or "").upper() not in self.ctx.pile_up_calls
                 or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
-            ]
-            self._buche_filter("pile_up", _v, cqs)
+            ], kontrolle=kontrolle)
         # Slot-Parity: meide Calls, die in UNSEREM Sende-Slot senden — die
         # hoeren uns nicht. Gegen den gerade dekodierten Slot zu pruefen
         # waere genau verkehrt: wer darin sendet, hoert im naechsten, und
@@ -2717,30 +2740,44 @@ class StateMachine:
         #   anwenden, ohne die bestehende Priority-Liste zu ersetzen.
         now_ts = datetime.now(UTC).timestamp()
         strict = self.ctx.hunt_strict_until > now_ts
-        if len(cqs) == 1 and not kontrolle and not self._is_high_confidence_pick(cqs[0], strict=False):
-            self._buche_filter("einzelner_schwacher_cq", list(cqs), [])
-            self._last_pick_diag = {
-                "winning_tier": "sole_rejected",
-                "n_candidates": 1,
-                "was_tailend": False,
-                "kandidaten": self._kandidaten_protokoll(None),
-            }
-            return None
-        if len(cqs) == 1 and not kontrolle and self._ist_aussichtsloses_fernziel(cqs[0]):
+        if len(cqs) == 1 and not self._is_high_confidence_pick(cqs[0], strict=False):
+            if kontrolle:
+                self._haette_verworfen.setdefault(id(cqs[0]), "einzelner_schwacher_cq")
+            else:
+                # Nur im Regelarm bricht der Slot hier ab. Im Kontrollarm
+                # laeuft der Kandidat weiter und wird angerufen — genau
+                # das ist die Messung.
+                self._buche_filter("einzelner_schwacher_cq", list(cqs), [])
+                self._last_pick_diag = {
+                    "winning_tier": "sole_rejected",
+                    "n_candidates": 1,
+                    "was_tailend": False,
+                    "kandidaten": self._kandidaten_protokoll(None),
+                }
+                return None
+        if len(cqs) == 1 and self._ist_aussichtsloses_fernziel(cqs[0]):
             # Der Slot geht an den CQ-Fallback: gerufen zu werden ist hier
             # aussichtsreicher als ins Leere zu rufen.
-            self._buche_filter("fernziel_allein", list(cqs), [])
-            self._last_pick_diag = {
-                "winning_tier": "sole_dx_rejected",
-                "n_candidates": 1,
-                "was_tailend": False,
-                "kandidaten": self._kandidaten_protokoll(None),
-            }
-            return None
-        if strict and not kontrolle:
+            if kontrolle:
+                self._haette_verworfen.setdefault(id(cqs[0]), "fernziel_allein")
+            else:
+                # Nur im Regelarm bricht der Slot hier ab. Im Kontrollarm
+                # laeuft der Kandidat weiter und wird angerufen — genau
+                # das ist die Messung.
+                self._buche_filter("fernziel_allein", list(cqs), [])
+                self._last_pick_diag = {
+                    "winning_tier": "sole_dx_rejected",
+                    "n_candidates": 1,
+                    "was_tailend": False,
+                    "kandidaten": self._kandidaten_protokoll(None),
+                }
+                return None
+        if strict:
             _v = list(cqs)
-            cqs = [d for d in cqs if self._is_high_confidence_pick(d, strict=True)]
-            self._buche_filter("strict_modus", _v, cqs)
+            cqs = self._gate(
+                "strict_modus", _v,
+                [d for d in cqs if self._is_high_confidence_pick(d, strict=True)],
+                kontrolle=kontrolle)
         cqs = self._apply_hunt_profile(cqs)
         if not cqs:
             self._last_pick_diag = {"kandidaten": self._kandidaten_protokoll(None)}

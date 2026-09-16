@@ -162,7 +162,9 @@ async def _migrate_pick_candidate_columns(conn) -> None:
     if not existing:
         return          # Tabelle kommt gleich per create_all vollstaendig
     for name, ddl in (("ew_arm", "BOOLEAN"), ("p_erfolg", "FLOAT"),
-                      ("wert", "FLOAT"), ("ew", "FLOAT")):
+                      ("wert", "FLOAT"), ("ew", "FLOAT"),
+                      # v0.162.0 — welche Stufe im Kontrollarm gegriffen haette
+                      ("haette_verworfen", "VARCHAR")):
         if name not in existing:
             await conn.exec_driver_sql(
                 f"ALTER TABLE pick_candidate ADD COLUMN {name} {ddl}"
