@@ -136,6 +136,39 @@ def test_schatten_nennt_das_schwach_gate() -> None:
     assert _haette(sm)["DL1AAA"] == "schwach_ohne_psk"
 
 
+def test_schwach_gate_wirft_schatten_auch_ohne_starren_arm() -> None:
+    """_sm() setzt schwach_arm=True — damit greift der Filter immer.
+
+    Im Betrieb ist das ein A/B-Arm, und in der anderen Haelfte nimmt der
+    Filter sich zurueck, sobald nach ihm nichts uebrig bliebe. Ohne
+    diesen Test deckte die Suite nur den starren Fall ab, und im Feld
+    blieb die Schattenspalte fuer diese Stufe zunaechst leer.
+    """
+    sm = _sm()
+    sm.ctx.schwach_arm = False
+    sm.ctx.kontroll_arm = True
+    best = sm._pick_hunt_target([_cq("DL1AAA", snr=-15), _cq("DL2BBB", snr=-5)])
+    assert best is not None and best.call_from == "DL2BBB"
+    assert _haette(sm)["DL1AAA"] == "schwach_ohne_psk"
+    assert _haette(sm)["DL2BBB"] is None
+
+
+def test_zurueckgenommener_filter_wirft_keinen_schatten() -> None:
+    """Sind ALLE Ziele schwach, nimmt der Filter sich zurueck — er haette
+    also nichts verhindert, und ein Schatteneintrag waere schlicht falsch.
+
+    Das ist der haeufigste Fall: 84 % der Slots haben genau einen
+    Kandidaten. Eine leere Schattenspalte fuer diese Stufe ist deshalb
+    kein Befund, solange es keine Auswahl-Slots gab.
+    """
+    sm = _sm()
+    sm.ctx.schwach_arm = False
+    sm.ctx.kontroll_arm = True
+    assert sm._pick_hunt_target([_cq("DL1AAA", snr=-15), _cq("DL2BBB", snr=-16)]) is not None
+    assert _haette(sm)["DL1AAA"] is None
+    assert _haette(sm)["DL2BBB"] is None
+
+
 def test_schatten_nennt_das_kontinent_gate() -> None:
     sm = _sm()
     sm.ctx.hunt_continent_gate = True
