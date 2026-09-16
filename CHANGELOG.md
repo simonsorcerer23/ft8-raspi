@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.163.0 — 2026-09-16
+- feat: eQSL-Posteingang holen, Karten lokal vorhalten
+- test: Schwach-Gate im Kontrollarm ohne starren A/B-Arm pruefen
+
 ## v0.162.0 — 2026-09-16
 - feat: Kontrollarm misst jede Gate-Stufe einzeln
 - fix: zwei Fehlschluesse in der Bilanz abstellen
