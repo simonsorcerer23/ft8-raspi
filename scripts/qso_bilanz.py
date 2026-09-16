@@ -539,23 +539,44 @@ def main() -> int:
                 ).fetchone()
                 stunden = f"{spanne[0]}-{spanne[1]}" if spanne and spanne[0] else "  -  "
                 laeuft = " *" if tag == heute.isoformat() else ""
+                # Wie viel des Tages fehlt ganz? Die Spanne allein genuegt
+                # nicht: Am 14. und 15.09. stand bei beiden "00-23", der
+                # eine Tag war aber nur 15,9 Stunden erfasst und der
+                # andere 23,9. Wer dann QSOs/Std vergleicht, vergleicht
+                # vor allem, wie viel tote Nachtzeit im Nenner steckt.
+                jetzt_z = _dtm_Z.now(_UTC_Z)
+                soll = 24.0 if tag != heute.isoformat() else max(
+                    1.0, jetzt_z.hour + jetzt_z.minute / 60.0)
+                luecke = max(0.0, soll - std)
                 zeilen.append((
-                    tag + laeuft, stunden, f"{std:5.1f}", qsos,
+                    tag + laeuft, stunden, f"{std:5.1f}",
+                    f"{luecke:4.1f}" if luecke >= 0.2 else "   -",
+                    qsos,
                     f"{qsos / std:4.2f}" if std >= 0.5 else "  -",
                     anteil("IDLE"), anteil("CQ_CALLING"),
                     f"{100.0 * sum(v for k, v in je.items() if k.startswith('QSO_')) / gesamt:4.0f} %" if gesamt else "   -",
                     anteil("TX_LOCKED"),
                 ))
-            tabelle(zeilen, ("Tag", "Std UTC", "Std gemessen", "QSOs", "QSOs/Std",
-                             "Leerlauf", "CQ", "im QSO", "gesperrt"))
+            tabelle(zeilen, ("Tag", "Std UTC", "Std gemessen", "fehlt", "QSOs",
+                             "QSOs/Std", "Leerlauf", "CQ", "im QSO", "gesperrt"))
+            # Weichen die Messzeiten stark ab, ist der Spaltenvergleich wertlos.
+            gemessen = [float(z[2]) for z in zeilen if not z[0].endswith(" *")]
+            if len(gemessen) >= 2 and max(gemessen) - min(gemessen) > 4.0:
+                print(f"    ACHTUNG: Die Messzeiten liegen zwischen {min(gemessen):.1f}"
+                      f" und {max(gemessen):.1f} Stunden auseinander.")
+                print("    QSOs/Std ist dann NICHT zwischen diesen Tagen vergleichbar:")
+                print("    der laengere Tag hat mehr ertragslose Nachtstunden im")
+                print("    Nenner. Dasselbe gilt fuer jeden Arm-Vergleich, der ueber")
+                print("    solche Tage hinweg mittelt.")
             if any(z[0].endswith(" *") for z in zeilen):
                 print("    * laufender Tag — noch unvollstaendig. 'Std UTC' nennt die")
                 print("    abgedeckten Tagesstunden: Zeilen mit verschiedenen Spannen")
                 print("    sind NICHT vergleichbar, die Ausbeute haengt stark an der")
                 print("    Tageszeit.")
-            print("    'Std gemessen' ist die Zeit, in der der Dienst lief; ein")
-            print("    Tag unter 20 Std hatte Neustarts oder Luecken. QSOs/Std")
-            print("    ist die Zielgroesse fuer jeden Filter-Vergleich.")
+            print("    'Std gemessen' ist die Zeit, in der der Dienst lief,")
+            print("    'fehlt' der Rest des Tages. QSOs/Std ist die Zielgroesse")
+            print("    fuer jeden Filter-Vergleich — aber nur zwischen Tagen mit")
+            print("    aehnlicher Messzeit.")
         else:
             print("    (noch keine Tageszeilen)")
     else:
@@ -640,13 +661,36 @@ def main() -> int:
         ).fetchall()}
         anrufe = {k: v[1] for k, v in qsos.items()}
         erfolge = {k: v[0] for k, v in qsos.items()}
+        # Laeuft ein Arm ueberhaupt noch? Der EW-Arm ist seit v0.158.0
+        # abgeschaltet, seine Zeilen stammen aus der Zeit davor. Ohne
+        # Kennzeichnung liest sich die Tabelle so, als liefe der Versuch
+        # weiter — und der Vergleich unten mittelt einen toten Arm gegen
+        # einen lebenden. Als "laeuft noch" gilt, wer am juengsten Tag
+        # mit Armdaten Zeit bekommen hat.
+        letzter_tag = con.execute(
+            "select max(tag) from state_time_daily where substr(zustand,1,4)='ARM_'"
+        ).fetchone()[0]
+        aktiv = {r[0] for r in con.execute(
+            "select zustand from state_time_daily where tag=? "
+            "and substr(zustand,1,4)='ARM_' and sekunden > 0", (letzter_tag,),
+        ).fetchall()} if letzter_tag else set()
         zeilen = []
         for arm, name in (("ARM_REGEL", "Regel"), ("ARM_EW", "EW-Modell"), ("ARM_KONTROLLE", "Kontrolle")):
             h = std.get(arm, 0.0)
-            zeilen.append((name, f"{h:6.1f}", anrufe.get(arm, 0), erfolge.get(arm, 0),
+            if h <= 0.0 and arm not in aktiv:
+                continue
+            marke = "" if arm in aktiv else "  (aus)"
+            zeilen.append((name + marke, f"{h:6.1f}", anrufe.get(arm, 0), erfolge.get(arm, 0),
                            f"{erfolge.get(arm, 0) / h:5.2f}" if h >= 1.0 else "    -",
                            f"{anrufe.get(arm, 0) / h:5.1f}" if h >= 1.0 else "    -"))
         tabelle(zeilen, ("Arm", "Stunden", "Anrufe", "QSOs", "QSOs/Std", "Anrufe/Std"))
+        tot = [n for a, n in (("ARM_REGEL", "Regel"), ("ARM_EW", "EW-Modell"),
+                              ("ARM_KONTROLLE", "Kontrolle"))
+               if std.get(a, 0.0) > 0 and a not in aktiv]
+        if tot:
+            print(f"    (aus) = bekam am {letzter_tag} keine Zeit mehr:"
+                  f" {', '.join(tot)}. Die Zahlen sind")
+            print("    Nachlese aus der Zeit davor, kein laufender Versuch.")
         # Warnung vor zu kurzer Messzeit. Die Arme werden in 15-Minuten-
         # Bloecken zugeteilt, und bei wenigen Bloecken schwankt die
         # Verteilung erheblich: Am 15.09.2026 bekam der Regelarm 16 %
@@ -657,7 +701,7 @@ def main() -> int:
         # also etwa 30 Stunden je Arm.
         knapp = [name for arm, name in (("ARM_REGEL", "Regel"), ("ARM_EW", "EW-Modell"),
                                         ("ARM_KONTROLLE", "Kontrolle"))
-                 if 0 < std.get(arm, 0.0) < 20.0]
+                 if 0 < std.get(arm, 0.0) < 20.0 and arm in aktiv]
         if knapp:
             print(f"    ACHTUNG: {', '.join(knapp)} unter 20 Stunden Messzeit. Die Zuteilung")
             print("    laeuft in 15-Minuten-Bloecken und schwankt darunter stark — die")
@@ -666,9 +710,10 @@ def main() -> int:
         u = urteil_rate(erfolge.get("ARM_REGEL", 0), std.get("ARM_REGEL", 0.0),
                         erfolge.get("ARM_KONTROLLE", 0), std.get("ARM_KONTROLLE", 0.0))
         print(f"    Regel gegen Kontrolle, QSOs je Stunde: {u}")
-        u2 = urteil_rate(erfolge.get("ARM_EW", 0), std.get("ARM_EW", 0.0),
-                         erfolge.get("ARM_REGEL", 0), std.get("ARM_REGEL", 0.0))
-        print(f"    EW-Modell gegen Regel, QSOs je Stunde: {u2}")
+        if "ARM_EW" in aktiv:
+            u2 = urteil_rate(erfolge.get("ARM_EW", 0), std.get("ARM_EW", 0.0),
+                             erfolge.get("ARM_REGEL", 0), std.get("ARM_REGEL", 0.0))
+            print(f"    EW-Modell gegen Regel, QSOs je Stunde: {u2}")
         print("    Liegt die Kontrolle vorn, kosten die Gates zusammen mehr als")
         print("    sie bringen — dann einzeln nachsehen (pick_candidate: wer wurde")
         print("    im Regelarm verworfen, und was brachte derselbe Typ Ziel in der")
