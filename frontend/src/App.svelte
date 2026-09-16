@@ -26,6 +26,7 @@
   import QsoConversation from './components/QsoConversation.svelte';
   import RigPanel       from './components/RigPanel.svelte';
   import SwrTrendChart  from './components/SwrTrendChart.svelte';
+  import QslGalerie    from './components/QslGalerie.svelte';
   import WhoHeardMe     from './components/WhoHeardMe.svelte';
   import LoginGate      from './components/LoginGate.svelte';
   import { api, getToken } from './lib/api.js';
@@ -177,6 +178,7 @@
     <button class:active={tab === 'bl'}    onclick={() => tab = 'bl'}>{t('nav.blacklist')}</button>
     <button class:active={tab === 'watch'} onclick={() => tab = 'watch'}>{t('nav.watchlist')}</button>
     <button class:active={tab === 'rep'}   onclick={() => tab = 'rep'}>{t('nav.reputation')}</button>
+    <button class:active={tab === 'qsl'}   onclick={() => tab = 'qsl'}>{t('nav.qsl')}</button>
     <button class:active={tab === 'dxped'} onclick={() => tab = 'dxped'}>{t('nav.dxpedition')}</button>
     <button class:active={tab === 'wifi'}  onclick={() => tab = 'wifi'}>{t('nav.wifi')}</button>
     <button class:active={tab === 'cfg'}   onclick={() => tab = 'cfg'}>{t('nav.config')}</button>
@@ -227,6 +229,8 @@
     <ADIFTable />
   {:else if tab === 'who'}
     <WhoHeardMe />
+  {:else if tab === 'qsl'}
+    <QslGalerie />
   {:else if tab === 'bl'}
     <BlacklistPanel />
   {:else if tab === 'watch'}

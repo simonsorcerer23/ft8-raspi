@@ -268,6 +268,16 @@ export const api = {
   operatorDeleteLogbook: (callsign, on_air_call) =>
                     request(`/operators/${encodeURIComponent(callsign)}/logbook?on_air_call=${encodeURIComponent(on_air_call)}`,
                             { method: 'DELETE' }),
+  // v0.163.0 — eQSL-Posteingang. Die Bilder liegen auf dem Pi, nicht bei
+  // eQSL: deren Adressen werden nach Stunden abgeraeumt.
+  qslListe: (p = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(p)) if (v !== undefined) q.set(k, v);
+    return request(`/qsl?${q}`);
+  },
+  qslStand: () => request('/qsl/stand'),
+  qslBildUrl: (id) => blobUrl(`/qsl/${id}/bild`),
+
   // v0.161.0 — LoTW Station Location je Sende-Call. /MM und /AM haben
   // kein DXCC und brauchen eine eigene Location, sonst bleiben ihre
   // QSOs liegen statt falsch signiert zu werden.
