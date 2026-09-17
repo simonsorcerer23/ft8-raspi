@@ -753,7 +753,16 @@ class OperatingConfig(BaseModel):
     hunt_respect_directed_cq: bool = True
     # 2026-09-06: Antwort auf der ruhigsten Audio-Frequenz statt exakt auf
     # der des CQ-Rufers (dort sammeln sich die anderen Anrufer).
-    hunt_reply_quiet_freq: bool = True
+    # 2026-09-17 ENTSCHIEDEN, Default jetzt False: Der A/B (seit 07.09.) zeigte
+    # das Gegenteil der Annahme — ueber 14 Tage schloss die Rufer-Frequenz zu
+    # 19,5 % ab (n = 1104), der ruhige Bin zu 15,4 % (n = 1057); nach SNR
+    # geschichtet OR 1,31, p = 0,019. Siehe analyse/messplan.py.
+    hunt_reply_quiet_freq: bool = False
+    # 2026-09-17: Stationen am Rand des Audio-Fensters auf einem ruhigen Bin
+    # anrufen, statt sie wegzufiltern. War bis dahin an hunt_reply_quiet_freq
+    # und hunt_reply_ab_test gekoppelt — beide aus haette das Ausweichen
+    # stillschweigend abgeschaltet (138 Anrufe in 14 Tagen, 18 % Abschluss).
+    hunt_reply_edge_dodge: bool = True
     # 2026-09-07 Hunting-Strategie aus der Pick-Telemetrie (381 Picks, 7 %):
     # Ziele unter -13 dB kamen zu 3 % zurueck, -13..-8 zu 12 %. Schwache
     # Ziele nur noch, wenn PSK Reporter sagt, dass sie uns hoeren; sonst
@@ -836,7 +845,8 @@ class OperatingConfig(BaseModel):
     hunt_zellen_prior_ab: bool = False
     # A/B: Antwort abwechselnd auf ruhigem Bin / auf der Rufer-Frequenz;
     # pick_attempt.reply_kind haelt fest, was gewonnen hat.
-    hunt_reply_ab_test: bool = True
+    # 2026-09-17 entschieden (Rufer-Frequenz), Default aus.
+    hunt_reply_ab_test: bool = False
     # v0.10.0 Hunt-Priority-Tiers (Sebastian-Wunsch):
     # Mehrstufige Priorisierung beim Picker statt nur "DXCC zuerst, dann SNR".
     # Reihenfolge der Liste = Reihenfolge der Tiers (top-priority zuerst).

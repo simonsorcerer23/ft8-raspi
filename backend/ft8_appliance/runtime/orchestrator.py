@@ -8884,7 +8884,10 @@ class Orchestrator:
             getattr(self.config.operating, "hunt_respect_directed_cq", True)
         )
         self.state_machine.ctx.hunt_reply_quiet_freq = bool(
-            getattr(self.config.operating, "hunt_reply_quiet_freq", True)
+            getattr(self.config.operating, "hunt_reply_quiet_freq", False)
+        )
+        self.state_machine.ctx.hunt_reply_edge_dodge = bool(
+            getattr(self.config.operating, "hunt_reply_edge_dodge", True)
         )
         # 2026-09-07 Hunting-Strategie
         _op = self.config.operating
@@ -8910,7 +8913,7 @@ class Orchestrator:
         self.state_machine.ctx.hunt_cq_fallback_pause_max_min = int(getattr(_op, "hunt_cq_fallback_pause_max_min", 60))
         self.state_machine.ctx.hunt_continent_gate = bool(getattr(_op, "hunt_continent_gate", True))
         self.state_machine.ctx.hunt_continent_gate_pct = float(getattr(_op, "hunt_continent_gate_pct", 5.0))
-        self.state_machine.ctx.hunt_reply_ab_test = bool(getattr(_op, "hunt_reply_ab_test", True))
+        self.state_machine.ctx.hunt_reply_ab_test = bool(getattr(_op, "hunt_reply_ab_test", False))
         # Unser Kontinent fuer den Directed-CQ-Filter (aus cty.dat, per Slot
         # billig — Lookup ist ein Dict).
         try:

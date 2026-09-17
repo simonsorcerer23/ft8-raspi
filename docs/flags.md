@@ -228,7 +228,9 @@ Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne set
 
 Eine Woche Betrieb, 1798 Picks, 360 QSOs (Vorwoche 57). Drei Befunde, keine Umstellung:
 
-**Antwortfrequenz — die Rufer-Frequenz liegt vorn, knapp.** Der A/B aus `hunt_reply_ab_test` hat seit dem 8.9. 1513 Picks verteilt, sauber balanciert über Kontinent (NA 80/80, SA 23/24, EU 596/563) und SNR. Auf der Frequenz des Rufers zu antworten vollendet 20,3 % (158/779), auf dem ruhigen Bin 16,8 % (123/734) — ein Vorsprung von 3,5 Prozentpunkten. Stratifiziert nach SNR-Bucket ergibt Mantel-Haenszel OR 1,29 (z = 1,89, p = 0,059), nach Kontinent OR 1,28 (z = 1,80, p = 0,072). Die Richtung stimmt in 7 von 8 Strata; einzig AF (n = 30/27) läuft gegenläufig. Das verfehlt die 5-%-Schwelle knapp, widerspricht aber der Annahme, auf der v0.77.0 gebaut wurde — der ruhige Bin ist nicht besser, eher schlechter. `quiet_edge` (138 Picks, 18,1 %) ist vom A/B ausgenommen und bleibt, wie er ist: dort ginge die Antwort sonst in den Rig-Bandpass.
+**Antwortfrequenz — die Rufer-Frequenz liegt vorn, knapp.** Der A/B aus `hunt_reply_ab_test` hat seit dem 8.9. 1513 Picks verteilt, sauber balanciert über Kontinent (NA 80/80, SA 23/24, EU 596/563) und SNR. Auf der Frequenz des Rufers zu antworten vollendet 20,3 % (158/779), auf dem ruhigen Bin 16,8 % (123/734) — ein Vorsprung von 3,5 Prozentpunkten. Stratifiziert nach SNR-Bucket ergibt Mantel-Haenszel OR 1,29 (z = 1,89, p = 0,059), nach Kontinent OR 1,28 (z = 1,80, p = 0,072). Die Richtung stimmt in 7 von 8 Strata; einzig AF (n = 30/27) läuft gegenläufig. Das verfehlt die 5-%-Schwelle knapp, widerspricht aber der Annahme, auf der v0.77.0 gebaut wurde — der ruhige Bin ist nicht besser, eher schlechter.
+
+**Entschieden am 17.09.2026:** Über 14 Tage Rufer-Frequenz 19,5 % (n = 1104), ruhiger Bin 15,4 % (n = 1057), nach SNR geschichtet OR 1,31, p = 0,019. Seitdem `hunt_reply_ab_test: false` und `hunt_reply_quiet_freq: false` (auch als Default). Das Ausweichen von Randstationen auf einen ruhigen Bin hat seither einen eigenen Schalter, `hunt_reply_edge_dodge` (Default `true`) — vorher hing es an den beiden Antwort-Schaltern und wäre mit ihnen verschwunden. Regel und Stand: `analyse/messplan.py`. `quiet_edge` (138 Picks, 18,1 %) ist vom A/B ausgenommen und bleibt, wie er ist: dort ginge die Antwort sonst in den Rig-Bandpass.
 
 Eine Einschränkung des Messaufbaus: Wird der quiet-Arm zugeteilt und findet `_next_cq_freq_hz()` keinen ruhigen Bin, sendet die Box auf der Rufer-Frequenz und die Zeile wird als `on_freq` gestempelt. Der Zähler alterniert streng, beide Arme bekamen also je rund 826 der 1651 Zuteilungen; fällt `quiet_edge` symmetrisch auf beide Arme, sind rund 22 Zeilen des on_freq-Buckets so entstanden (2,9 %), im ungünstigsten Fall 92 (12 %). Die Verzerrung geht zulasten von `on_freq` — sie trägt Picks aus vollen Bandlagen — und kehrt den Befund damit nicht um.
 
@@ -334,6 +336,8 @@ gemessen: Die Daten sagen nur, dass es irgendwo zwischen 2000 und 4000 km
 kippt.
 
 ### `hunt_sole_dx_ab` (2026-09-11)
+
+**Entschieden am 17.09.2026, A/B aus:** Über 14 Tage Gate an 176 QSOs, Gate aus 185 (z = +0,47) — kein messbarer Unterschied in der Ausbeute. Das Gate bleibt an; beobachtet wird es weiter über den Kontrollarm (Schattenprotokoll, Stufe `fernziel_allein`).
 
 Würfelt den Arm in **Blöcken von 15 Minuten**, nicht je Slot. Der Grund ist
 die Länge der Wirkungskette: Das Gate greift in Slot N, der CQ-Fallback

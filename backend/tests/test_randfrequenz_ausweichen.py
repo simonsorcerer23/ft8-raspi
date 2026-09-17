@@ -42,13 +42,14 @@ def _cq(call: str, hz: int, snr: int = -10) -> DecodedMsg:
     )
 
 
-def _sm(quiet: bool = True, ab: bool = False) -> StateMachine:
+def _sm(quiet: bool = True, ab: bool = False, edge: bool = True) -> StateMachine:
     sm = StateMachine(ctx=MachineContext(callsign="DK9XR", my_grid="JN58"))
     sm.ctx.auto_answer = True
     sm.ctx.hunt_audio_freq_min_hz = 400
     sm.ctx.hunt_audio_freq_max_hz = 2600
     sm.ctx.hunt_reply_quiet_freq = quiet
     sm.ctx.hunt_reply_ab_test = ab
+    sm.ctx.hunt_reply_edge_dodge = edge
     sm.state = State.IDLE
     return sm
 
@@ -127,8 +128,8 @@ def test_ab_test_wird_am_rand_nicht_gewuerfelt():
 
 # ------------------------------------------------- ohne Ausweichmoeglichkeit
 def test_ohne_ausweichschalter_bleibt_der_alte_filter():
-    """Wer fest auf der Rufer-Frequenz antwortet, muss den Rand meiden."""
-    sm = _sm(quiet=False, ab=False)
+    """Ist auch das Ausweichen am Rand aus, bleibt nur der alte Filter."""
+    sm = _sm(quiet=False, ab=False, edge=False)
 
     sm.on_decodes(_hw_ok(), [_cq("J38DX", hz=2921)])
 
@@ -142,3 +143,18 @@ def test_normale_ziele_bleiben_unveraendert():
 
     assert sm.state is State.QSO_RESPOND
     assert _reply_hz(sm) == 1500, "im Fenster wird auf seiner Frequenz geantwortet"
+
+
+def test_rufer_frequenz_und_trotzdem_ausweichen_am_rand():
+    """Die Einstellung seit 17.09.: normale Antworten auf der Rufer-Frequenz
+    (A/B entschieden), Randstationen weiter ueber einen ruhigen Bin. Bis dahin
+    hing das Ausweichen an den beiden Antwort-Schaltern — mit beiden aus
+    waere J38DX wieder weggefiltert worden."""
+    mitte = _sm(quiet=False, ab=False, edge=True)
+    mitte.on_decodes(_hw_ok(), [_cq("EA4GA", hz=1500, snr=-8)])
+    assert mitte.qso is not None and _reply_hz(mitte) == 1500, "Mitte: auf dem Rufer"
+
+    rand = _sm(quiet=False, ab=False, edge=True)
+    rand.on_decodes(_hw_ok(), [_cq("J38DX", hz=2921, snr=-16)])
+    assert rand.state is State.QSO_RESPOND, "Randstation darf nicht am Filter haengen"
+    assert 300 <= _reply_hz(rand) <= 2400, "am Rand: ausweichen, nicht in den Bandpass"

@@ -149,7 +149,10 @@ class MachineContext:
     # der des Rufers: dort stapeln sich die anderen Anrufer, und wer
     # als Einziger auf einem freien Bin steht, wird sauber decodiert.
     # Der CQ-Rufer dekodiert ohnehin das ganze Passband.
-    hunt_reply_quiet_freq: bool = True
+    hunt_reply_quiet_freq: bool = False
+    # 2026-09-17: Randstationen per ruhigem Bin anrufen — unabhaengig davon,
+    # wo normale Antworten landen (s. OperatingConfig.hunt_reply_edge_dodge).
+    hunt_reply_edge_dodge: bool = True
     # 2026-09-07 Hunting-Strategie (s. OperatingConfig)
     hunt_weak_snr_db: int = -13
     hunt_weak_requires_psk: bool = False   # Config-Default True; der Orchestrator spiegelt jeden Slot
@@ -165,7 +168,7 @@ class MachineContext:
     # 2026-09-07: Self-Update wartet nur das laufende QSO ab, keine neuen
     # Picks/CQs/Antworten mehr ("Ping-Pong abwarten, dann Update").
     drain_for_update: bool = False
-    hunt_reply_ab_test: bool = True
+    hunt_reply_ab_test: bool = False
     reply_ab_counter: int = 0
     idle_slots_without_pick: int = 0
     cq_fallback_active: bool = False

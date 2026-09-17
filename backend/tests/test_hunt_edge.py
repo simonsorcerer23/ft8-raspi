@@ -101,7 +101,7 @@ def _run_pick(sm: StateMachine, decodes: list[DecodedMsg]):
 
 
 def test_reply_goes_to_a_quiet_bin_not_onto_the_caller() -> None:
-    sm = _sm()
+    sm = _sm(hunt_reply_quiet_freq=True)
     # Rufer bei 1500 Hz, drum herum dicht belegt; 800 Hz ist frei.
     crowd = [_d(f"CQ DL{i}AAA JN58", f"DL{i}AAA", hz=1500 + 30 * i) for i in range(1, 6)]
     target = _d("CQ K1ABC FN42", "K1ABC", hz=1500, snr=-5)

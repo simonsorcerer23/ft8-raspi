@@ -91,7 +91,7 @@ MESSPLAN: tuple[Messung, ...] = (
         schalter=("hunt_kontrollarm_anteil",),
     ),
     Messung(
-        "antwortfrequenz", "laufend",
+        "antwortfrequenz", "entschieden",
         "Schliessen Antworten auf der Rufer-Frequenz oefter ab als auf einem ruhigen Bin?",
         ("pick_attempt.reply_kind", "config:hunt_reply_ab_test"),
         "Antwortfrequenz: Rufer-Frequenz oder ruhiger Bin? (A/B)",
@@ -99,24 +99,32 @@ MESSPLAN: tuple[Messung, ...] = (
         "einstellen. Bleibt p darueber, obwohl beide Arme mehr als 2000 Anrufe "
         "haben → als Nicht-Effekt eintragen.",
         lesen_ab=date(2026, 9, 17),
-        danach="A/B abschalten (hunt_reply_ab_test: false), hunt_reply_quiet_freq "
-               "auf den Gewinner. Stand 15.09.: Rufer-Frequenz vorn, OR 1,29, p = 0,059.",
+        danach="A/B aus (hunt_reply_ab_test: false), Antworten auf der Rufer-Frequenz "
+               "(hunt_reply_quiet_freq: false). Randstationen weichen weiter auf einen "
+               "ruhigen Bin aus — dafuer seit 17.09. der eigene Schalter "
+               "hunt_reply_edge_dodge, das Ausweichen hing vorher an den beiden.",
         seit=date(2026, 9, 7),
+        ergebnis="17.09., 14 Tage: Rufer-Frequenz 19,5 % (n = 1104), ruhiger Bin 15,4 % "
+                 "(n = 1057); nach SNR geschichtet OR 1,31, z = +2,34, p = 0,019. Am "
+                 "15.09. stand es bei p = 0,059 — mehrfaches Nachsehen erhoeht die "
+                 "Irrtumsgefahr etwas; die Richtung war von Beginn an dieselbe.",
         quelle="docs/flags.md 'Antwortstrategie' und 'Antwortfrequenz'",
         schalter=("hunt_reply_ab_test",),
     ),
     Messung(
-        "fernziel_gate", "laufend",
+        "fernziel_gate", "entschieden",
         "Bringt es mehr, aussichtslose Fernziele im Alleingang dem CQ-Ruf zu ueberlassen?",
         ("pick_attempt.fern_gate", "config:hunt_sole_dx_ab"),
         "Fernziel-Gate: bringt CQ-Rufen mehr als ein 2-%-Anruf? (A/B)",
         "Beide Arme bekommen gleich viele 15-Minuten-Bloecke, also ist die QSO-Zahl "
         "je Arm die Ausbeute. z = (a−b)/√(a+b) ≥ 1,96 entscheidet, ab 40 QSOs je Arm.",
         lesen_ab=date(2026, 9, 21),
-        danach="Gewinnt 'Gate aus': Gate abschalten. Gewinnt 'Gate an': A/B abschalten, "
-               "Gate bleibt. Rauschen bei 150 QSOs je Arm: A/B abschalten, Gate bleibt "
-               "(Beleg im Regelregister 'fernziel_allein').",
+        danach="A/B aus (hunt_sole_dx_ab: false), Gate bleibt an. Beobachtet wird es "
+               "weiter ueber den Kontrollarm (Schattenprotokoll, Stufe fernziel_allein).",
         seit=date(2026, 9, 11),
+        ergebnis="17.09., 14 Tage: Gate an 176 QSOs, Gate aus 185, z = +0,47 — kein "
+                 "messbarer Unterschied bei ueber 150 QSOs je Arm. Einen Unterschied von "
+                 "10 % nachzuweisen braeuchte etwa die vierfache Menge (rund zwei Monate).",
         quelle="docs/flags.md 'hunt_sole_dx_ab'",
         schalter=("hunt_sole_dx_ab",),
     ),

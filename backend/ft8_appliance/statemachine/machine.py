@@ -1381,10 +1381,14 @@ class StateMachine:
         """Duerfen wir dem Sende-Randbereich per ruhigem Bin ausweichen?
 
         Nur dann darf der Picker Ziele ausserhalb des Audio-Fensters
-        behalten. Steht die Station fest auf der Frequenz des Rufers
-        (beide Schalter aus), bleibt der alte Filter die einzige Bremse.
+        behalten. Seit 2026-09-17 ein eigener Schalter: Bis dahin hing das
+        Ausweichen an hunt_reply_quiet_freq/hunt_reply_ab_test — die
+        Entscheidung fuer die Rufer-Frequenz (beide aus) haette die
+        Randstationen stillschweigend wieder weggefiltert. Nur wenn auch
+        hunt_reply_edge_dodge aus ist, bleibt der alte Filter die Bremse.
         """
-        return bool(self.ctx.hunt_reply_quiet_freq or self.ctx.hunt_reply_ab_test)
+        return bool(self.ctx.hunt_reply_edge_dodge or self.ctx.hunt_reply_quiet_freq
+                    or self.ctx.hunt_reply_ab_test)
 
     def _freq_outside_tx_window(self, d: DecodedMsg) -> bool:
         """Laege unsere Antwort auf *seiner* Frequenz im gedaempften Rand?"""
