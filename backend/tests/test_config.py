@@ -273,3 +273,29 @@ async def test_sqlite_wal_and_busy_timeout(tmp_path: Path) -> None:
         bt = (await conn.execute(text("PRAGMA busy_timeout"))).scalar()
     assert str(jm).lower() == "wal"
     assert int(bt) >= 30000
+
+
+def test_kein_operator_geheimnis_verlaesst_die_api() -> None:
+    """GET /api/config lieferte bis 17.09. das eQSL-Passwort im Klartext:
+    Die Schwaerzung arbeitete eine Liste ab, und das Feld kam spaeter dazu.
+    Dieser Test setzt JEDES Operator-Feld mit Geheimnis-Namen und prueft,
+    dass keines durchkommt — auch Felder, die es heute noch nicht gibt."""
+    from ft8_appliance.config import OperatorConfig
+    from ft8_appliance.web.routes.config import (
+        _GEHEIM_NAMENSTEILE, _GEHEIM_OHNE_NAMEN, _redact_secrets,
+    )
+
+    cfg = _two_op_config()
+    geheim = [n for n in OperatorConfig.model_fields
+              if n in _GEHEIM_OHNE_NAMEN or any(t in n for t in _GEHEIM_NAMENSTEILE)]
+    assert {"eqsl_password", "lotw_cert_password", "qrz_password", "qrz_logbooks"} <= set(geheim)
+    for op in cfg.operators:
+        for n in geheim:
+            wert = getattr(op, n)
+            setattr(op, n, {"DK9XR/MM": "GEHEIM"} if isinstance(wert, dict) else "GEHEIM")
+        op.eqsl_user = "dk9xr"
+
+    red = _redact_secrets(cfg)
+    assert "GEHEIM" not in red.model_dump_json()
+    # Benutzernamen und die Rufzeichen-Schluessel bleiben sichtbar
+    assert red.operators[0].eqsl_user == "dk9xr"

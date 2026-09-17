@@ -14,6 +14,11 @@ from ..deps import get_orchestrator
 router = APIRouter()
 
 
+_GEHEIM_NAMENSTEILE = ("password", "passwort", "api_key", "token", "secret", "psk")
+# Geheim, ohne dass der Name es verraet: Rufzeichen -> QRZ-API-Schluessel.
+_GEHEIM_OHNE_NAMEN = ("qrz_logbooks",)
+
+
 def _redact_secrets(cfg: AppConfig) -> AppConfig:
     """Maskiere Secrets fuer GET /api/config (SEC-C2, Audit 2026-05-30).
 
@@ -26,11 +31,20 @@ def _redact_secrets(cfg: AppConfig) -> AppConfig:
     """
     c = cfg.model_copy(deep=True)
     for op in c.operators:
-        op.qrz_password = None
-        op.qrz_logbook_api_key = None
-        op.clublog_app_password = None
-        op.clublog_api_key = None
-        op.qrz_logbooks = {k: "" for k in op.qrz_logbooks}
+        # Nach Feldnamen statt nach Liste: Die Liste vergass am 17.09. das
+        # eQSL-Passwort (Feld seit 14.09.) und das LoTW-Zertifikatspasswort
+        # — GET /api/config lieferte das eQSL-Passwort im Klartext aus.
+        # Jedes neue Operator-Feld mit einem dieser Namensteile ist ab
+        # jetzt automatisch geschwaerzt.
+        for name, feld in type(op).model_fields.items():
+            if name not in _GEHEIM_OHNE_NAMEN and not any(
+                    teil in name for teil in _GEHEIM_NAMENSTEILE):
+                continue
+            wert = getattr(op, name)
+            if isinstance(wert, dict):
+                setattr(op, name, {k: "" for k in wert})
+            elif wert is not None:
+                setattr(op, name, None if not feld.is_required() else "")
     c.integrations.qrz.password = None
     c.integrations.qrz.logbook_api_key = None
     c.integrations.hamqth.password = None
