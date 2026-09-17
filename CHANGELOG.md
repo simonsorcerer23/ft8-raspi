@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.167.2 — 2026-09-17
+- fix: automatisch gefundene DXpeditionen gelten fuer jeden Operator
+- fix: Bilanz trennt Nachgeben von Verwerfen und wertet die Sonnenindizes aus
+
 ## v0.167.1 — 2026-09-17
 - feat: Spiegel holt das Tagesprofil; Laender darin nach Flagge zusammengefasst
 
