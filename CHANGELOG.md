@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.167.0 — 2026-09-17
+- fix: ALC-Regler meldet den Sweet-Spot auch in der ersten Stunde nach dem Start
+- feat: Tagesprofil der Empfangsberichte je Band, Kontinent und Stunde
+
 ## v0.166.1 — 2026-09-16
 - fix: je Station hoechstens eine Kartenabfrage pro Runde
 
