@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.167.3 — 2026-09-17
+- fix(sicherheit): GET /api/config lieferte das eQSL-Passwort im Klartext aus
+
 ## v0.167.2 — 2026-09-17
 - fix: automatisch gefundene DXpeditionen gelten fuer jeden Operator
 - fix: Bilanz trennt Nachgeben von Verwerfen und wertet die Sonnenindizes aus
