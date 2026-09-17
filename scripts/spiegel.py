@@ -38,6 +38,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -162,6 +163,43 @@ def baue(token: str, *, mit_rufzeichen: bool) -> dict:
     }
 
 
+# Das Tagesprofil aendert sich im Stundentakt, und der Pi rechnet dafuer
+# eine Woche Empfangsberichte durch. Jede Minute waere Verschwendung.
+PROFIL_ALTER_S = 900.0
+
+
+def ist_faellig(pfad: Path, max_alter_s: float, jetzt: float | None = None) -> bool:
+    try:
+        alter = (time.time() if jetzt is None else jetzt) - pfad.stat().st_mtime
+    except OSError:
+        return True
+    return alter >= max_alter_s
+
+
+def baue_profil(token: str) -> dict:
+    """Wer uns wann hoert, je Band, Kontinent und Stunde (UTC).
+
+    Der Pi liefert hier schon keine Rufzeichen. Uebernommen wird trotzdem
+    nur, was ausdruecklich aufgezaehlt ist — wie beim Geraetestatus.
+    """
+    roh = hole("/api/psk/tagesprofil?tage=7", token, timeout=60.0)
+    baender = []
+    for b in roh.get("baender") or []:
+        baender.append({
+            "band": b.get("band"),
+            "empfaenger": b.get("empfaenger"),
+            "stunden": [{
+                "h": s.get("h"), "tage": s.get("tage"),
+                "gesamt": s.get("gesamt"),
+                "kontinente": s.get("kontinente") or {},
+                "laender": s.get("laender"),
+                "top": [[f, n] for f, n in (s.get("top") or [])][:3],
+            } for s in b.get("stunden") or []],
+        })
+    return {"tage": roh.get("tage"), "baender": baender,
+            "stand": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
 def baue_qsl(token: str, ziel: Path, *, grenze: int = 120) -> dict:
     """Die neuesten Karten spiegeln — Metadaten und Bilder.
 
@@ -237,6 +275,15 @@ def main() -> int:
         except Exception as exc:
             if not args.leise:
                 print(f"QSL-Spiegel uebersprungen: {exc}", file=sys.stderr)
+
+    if ist_faellig(args.ziel / "profil.json", PROFIL_ALTER_S):
+        try:
+            schreibe(args.ziel, "profil.json", baue_profil(token))
+        except Exception as exc:
+            # Aeltere Pi-Version ohne Endpunkt, oder die Station ist gerade
+            # beschaeftigt: live.json ist davon nicht betroffen.
+            if not args.leise:
+                print(f"Tagesprofil uebersprungen: {exc}", file=sys.stderr)
 
     if not args.leise:
         s = live["station"]

@@ -122,3 +122,17 @@ async def test_endpunkt_liest_die_datenbank_und_gibt_keine_rufzeichen_heraus() -
     roh = repr(antwort)
     for call in ("DL0XYZ", "JA1ABC", "JA9OLD"):
         assert call not in roh, f"{call} steht in der Antwort"
+
+
+def test_russland_erscheint_nur_einmal() -> None:
+    """cty.dat trennt European und Asiatic Russia. Auf der Seite stuenden
+    sonst zwei gleiche Flaggen nebeneinander."""
+    laender = {"UA": ("European Russia", "🇷🇺"), "UA9": ("Asiatic Russia", "🇷🇺"),
+               "DL": ("Germany", "🇩🇪")}
+    zeilen = [("20m", "2026-09-16", 5, c) for c in
+              ("UA1AA", "UA3BB", "UA9CC", "UA9DD", "DL1AA")]
+    p = baue_profil(zeilen, lambda c: "EU",
+                    lambda c: laender["UA9" if c.startswith("UA9") else c[:2]],
+                    mindest_empfaenger=1)[0]["stunden"][5]
+    assert [f for f, _ in p["top"]] == ["🇷🇺", "🇩🇪"]
+    assert p["laender"] == 2

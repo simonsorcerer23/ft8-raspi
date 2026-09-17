@@ -116,3 +116,32 @@ def test_geraetestatus_gibt_keine_gps_position_heraus() -> None:
     assert "48.4567890" not in roh, "GPS-Position durchgereicht"
     assert "rx_audio_dbfs" not in roh
     assert "gps" not in roh
+
+
+def test_tagesprofil_reicht_nur_aufgezaehlte_felder_durch() -> None:
+    """Der Pi liefert keine Rufzeichen im Profil. Kaeme durch eine spaetere
+    Aenderung doch eines dazu, darf es nicht auf der Webseite landen."""
+    m = _modul()
+    m.hole = lambda pfad, token, timeout=20.0: {
+        "tage": 7,
+        "baender": [{"band": "20m", "empfaenger": 6014, "rx_calls": ["M0VTS"],
+                     "stunden": [{"h": 8, "tage": 6, "gesamt": 210.5,
+                                  "kontinente": {"EU": 180.2, "AS": 12.0},
+                                  "laender": 41, "top": [["🇩🇪", "Germany"]],
+                                  "beispiel": "UT0UE"}]}],
+    }
+    aus = m.baue_profil("egal")
+    roh = repr(aus)
+    assert "M0VTS" not in roh and "UT0UE" not in roh
+    assert aus["baender"][0]["stunden"][0]["kontinente"]["EU"] == 180.2
+    assert aus["baender"][0]["stunden"][0]["top"] == [["🇩🇪", "Germany"]]
+
+
+def test_tagesprofil_wird_nur_alle_viertelstunde_neu_geholt(tmp_path) -> None:
+    m = _modul()
+    datei = tmp_path / "profil.json"
+    assert m.ist_faellig(datei, 900), "fehlt die Datei, ist sie faellig"
+    datei.write_text("{}")
+    jetzt = datei.stat().st_mtime
+    assert not m.ist_faellig(datei, 900, jetzt=jetzt + 60)
+    assert m.ist_faellig(datei, 900, jetzt=jetzt + 901)

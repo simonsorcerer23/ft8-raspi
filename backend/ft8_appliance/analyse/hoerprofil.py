@@ -86,20 +86,28 @@ def baue_profil(
                 if k in KONTINENTE:
                     je_kont[k] += 1
             # Laender ueber den ganzen Zeitraum, nicht gemittelt: "aus
-            # welchen Laendern hoert man uns um diese Uhrzeit".
-            je_land: dict[tuple[str, str], set[str]] = defaultdict(set)
+            # welchen Laendern hoert man uns um diese Uhrzeit". Zusammengefasst
+            # wird nach Flagge, nicht nach DXCC-Gebiet — cty.dat fuehrt das
+            # europaeische und das asiatische Russland getrennt, und zwei
+            # gleiche Flaggen nebeneinander sehen auf der Seite wie ein
+            # Fehler aus.
+            je_land: dict[str, set[str]] = defaultdict(set)
+            name_von: dict[str, str] = {}
             for _, c in paare:
                 l = land(c)
                 if l is not None:
-                    je_land[l].add(c)
-            top = sorted(je_land.items(), key=lambda x: (-len(x[1]), x[0][0]))[:3]
+                    schluessel = l[1] or l[0]
+                    je_land[schluessel].add(c)
+                    name_von.setdefault(schluessel, l[0])
+            top = sorted(je_land.items(), key=lambda x: (-len(x[1]), x[0]))[:3]
             stunden.append({
                 "h": h, "tage": tage,
                 "gesamt": round(len(paare) / tage, 1),
                 "kontinente": {k: round(je_kont[k] / tage, 1)
                                for k in KONTINENTE if je_kont.get(k)},
                 "laender": len(je_land),
-                "top": [[flagge, name] for (name, flagge), _ in top],
+                "top": [[s if s != name_von[s] else "", name_von[s]]
+                        for s, _ in top],
             })
         ergebnis.append({"band": band, "empfaenger": len(empfaenger),
                          "stunden": stunden})
