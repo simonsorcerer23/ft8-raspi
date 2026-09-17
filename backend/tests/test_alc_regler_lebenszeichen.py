@@ -11,7 +11,9 @@ def _o():
     return SimpleNamespace(
         _tx_alc_samples=[0], _tx_pwr_samples=[0.60], _last_alc_pct=0,
         _last_rig=SimpleNamespace(rfpower_norm=0.698), _audio_gain=0.29,
-        _pwr_integrator=0.0, _alc_sweetspot_gemeldet_at=0.0,
+        _pwr_integrator=0.0,
+        _alc_sweetspot_gemeldet_at=Orchestrator.__dataclass_fields__[
+            "_alc_sweetspot_gemeldet_at"].default,
         config=SimpleNamespace(operating=SimpleNamespace(
             alc_safety_threshold=40, alc_safety_factor=0.7, pwr_target_ratio=0.8,
             alc_target_pct=15, alc_deadband_pct=5, gain_loop_kp=0.5, gain_loop_ki=0.1,
@@ -38,3 +40,16 @@ def test_unterhalb_der_schwelle_kein_sweetspot(monkeypatch):
     Orchestrator._apply_burst_loop_update(o)
     assert not any("Sweet-Spot gehalten" in m for m in infos)
     assert o._audio_gain > 0.29
+
+
+def test_meldung_kommt_auch_kurz_nach_dem_rechnerstart(monkeypatch):
+    """monotonic() zaehlt ab Rechnerstart. Mit dem alten Startwert 0.0 blieb
+    die erste Meldung nach einem Neustart des Pi eine Stunde lang aus — und
+    dieser Test schlug nur auf Rechnern fehl, die kuerzer als eine Stunde
+    liefen."""
+    infos = []
+    monkeypatch.setattr(om.log, "info", lambda msg, *a, **k: infos.append(msg % a if a else msg))
+    monkeypatch.setattr(om.time, "monotonic", lambda: 120.0)   # 2 min nach dem Start
+    o = _o()
+    Orchestrator._apply_burst_loop_update(o)
+    assert any("Sweet-Spot gehalten" in m for m in infos), infos

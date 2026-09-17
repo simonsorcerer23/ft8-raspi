@@ -745,7 +745,9 @@ class Orchestrator:
     # den Neustart — s. _upload_stau_waechter_loop).
     _upload_stau_gemeldet_at: float = field(default=0.0, init=False)
     _rausch_pegel_proben: list[float] = field(default_factory=list, init=False)
-    _alc_sweetspot_gemeldet_at: float = field(default=0.0, init=False)
+    # -inf statt 0.0: time.monotonic() zaehlt ab Rechnerstart. Mit 0.0
+    # schwieg der Regler nach jedem Neustart des Pi eine Stunde lang.
+    _alc_sweetspot_gemeldet_at: float = field(default=float("-inf"), init=False)
     # Wann der Wartungslauf zuletzt durch war (Wandzeit, ueberlebt den
     # Neustart — s. _maintenance_loop).
     _maintenance_at: float = field(default=0.0, init=False)
