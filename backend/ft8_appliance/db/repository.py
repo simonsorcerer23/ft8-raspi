@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, desc, select, update
+from sqlalchemy import delete, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (BandNoise, Decode, Heard, PathPrediction, PickAttempt,
@@ -249,3 +249,18 @@ async def heard_in_last(
     if user_callsign:
         stmt = stmt.where(Heard.user_callsign == user_callsign)
     return list((await session.execute(stmt)).scalars())
+
+
+def wunschliste_sichtbar(operatoren: Iterable[str]):
+    """Welche Wunschlisten-Eintraege ein Operator sieht (WHERE-Bedingung).
+
+    Selbst eingetragene Rufzeichen bleiben beim Operator, der sie eingetragen
+    hat. Automatisch gefundene DXpeditionen (source='ng3k_auto') gelten fuer
+    alle: Sie werden dem Operator zugeordnet, der beim Eintragen gerade aktiv
+    ist — am 17.09. standen so Nepal und Amerikanisch-Samoa auf der Liste von
+    DO3XR, waehrend die Station als DK9XR sendete, und der Picker suchte sie
+    nicht. Eine seltene DXpedition ist fuer jeden Operator selten.
+    """
+    from .models import Watchlist
+    return or_(Watchlist.user_callsign.in_(list(operatoren)),
+               Watchlist.source == "ng3k_auto")

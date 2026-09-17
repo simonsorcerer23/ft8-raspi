@@ -319,13 +319,15 @@ class WatchlistResponse(BaseModel):
 async def get_watchlist(
     orch: Orchestrator = Depends(get_orchestrator),
 ) -> WatchlistResponse:
-    """Watchlist des aktiven Operators."""
+    """Watchlist des aktiven Operators, dazu die automatisch gefundenen
+    DXpeditionen — dieselbe Regel wie beim Picker."""
+    from ...db.repository import wunschliste_sichtbar
     my_call = orch.config.operator.callsign
     async with session_scope() as s:
         rows = list(
             (await s.execute(
                 select(Watchlist)
-                .where(Watchlist.user_callsign == my_call)
+                .where(wunschliste_sichtbar([my_call]))
                 .order_by(desc(Watchlist.added))
             )).scalars()
         )

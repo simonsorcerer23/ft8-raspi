@@ -2086,10 +2086,12 @@ class Orchestrator:
                 self.state_machine.ctx.blacklist = {c.upper() for c in bl_rows if c}
                 # v0.14.0 Watchlist — pro Operator isoliert. Sets im
                 # Orchestrator und in ctx; In-Memory-Sync, DB ist die
-                # Wahrheit.
+                # Wahrheit. Ausnahme seit v0.167.2: automatisch gefundene
+                # DXpeditionen gelten fuer jeden Operator.
+                from ..db.repository import wunschliste_sichtbar
                 wl_rows = (await s.execute(
                     select(DbWatchlist.call, DbWatchlist.source).where(
-                        DbWatchlist.user_callsign.in_(sib)
+                        wunschliste_sichtbar(sib)
                     )
                 )).all()
                 self._watchlist_calls = set()
@@ -3344,7 +3346,8 @@ class Orchestrator:
         """Add a callsign to the watchlist (in-memory + DB persist).
 
         Operator-Isolation: row.user_callsign = aktiver Op. Bei Hot-Switch
-        sieht ein anderer Op die nicht.
+        sieht ein anderer Op die nicht — ausser bei source="ng3k_auto",
+        siehe ``wunschliste_sichtbar``.
 
         v0.19.2 — source-Parameter: "manual" (User-Eingabe ueber UI/API)
         oder "ng3k_auto" (vom DXpedition-Schedule-Loop). Source ist
