@@ -144,3 +144,33 @@ def bereinige_tagesgang(werte: dict[str, float]) -> dict[str, float]:
               if len(v) >= 2 and statistics.fmean(v) > 0}
     return {s: float(w) / mittel[s[11:13]] for s, w in werte.items()
             if s[11:13] in mittel}
+
+
+def mantel_haenszel(
+    schichten: list[tuple[int, int, int, int]],
+) -> tuple[float | None, float | None, float | None]:
+    """Zwei Quoten ueber Schichten vergleichen: (Odds Ratio, z, p).
+
+    Je Schicht ``(fertig_a, gesamt_a, fertig_b, gesamt_b)``. Noetig, sobald
+    die Arme sich in einer Stoergroesse unterscheiden koennten — beim A/B der
+    Antwortfrequenz etwa im SNR: Ein Arm mit mehr starken Zielen gewaenne
+    sonst, ohne dass die Frequenz etwas taete. Cochran-Mantel-Haenszel ohne
+    Stetigkeitskorrektur; OR > 1 heisst, Arm a schliesst oefter ab.
+    """
+    zaehler = nenner = summe_a = erwartet = varianz = 0.0
+    for fa, na, fb, nb in schichten:
+        n = na + nb
+        if na <= 0 or nb <= 0 or n < 2:
+            continue
+        a, b, c, d = fa, na - fa, fb, nb - fb
+        zaehler += a * d / n
+        nenner += b * c / n
+        summe_a += a
+        erwartet += (a + b) * (a + c) / n
+        varianz += (a + b) * (c + d) * (a + c) * (b + d) / (n * n * (n - 1))
+    if varianz <= 0:
+        return None, None, None
+    quote = zaehler / nenner if nenner > 0 else None
+    z = (summe_a - erwartet) / math.sqrt(varianz)
+    p = 2 * (1 - statistics.NormalDist().cdf(abs(z)))
+    return quote, z, p

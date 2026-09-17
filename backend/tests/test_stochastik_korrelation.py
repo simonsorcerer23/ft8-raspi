@@ -57,3 +57,27 @@ def test_einmalige_uhrzeiten_fallen_heraus() -> None:
     rein = bereinige_tagesgang({"2026-09-15 02": 10, "2026-09-16 02": 12,
                                 "2026-09-16 13": 99})
     assert "2026-09-16 13" not in rein
+
+
+def test_mantel_haenszel_gleiche_arme() -> None:
+    from ft8_appliance.analyse.stochastik import mantel_haenszel
+    quote, z, p = mantel_haenszel([(20, 100, 20, 100), (5, 50, 5, 50)])
+    assert quote == pytest.approx(1.0) and z == pytest.approx(0.0) and p == pytest.approx(1.0)
+
+
+def test_mantel_haenszel_erkennt_scheinbaren_vorsprung_aus_der_schichtung() -> None:
+    """Arm a hat viele starke Ziele (schliessen oft ab), Arm b viele schwache.
+    Roh sieht a besser aus; innerhalb jeder SNR-Klasse sind beide gleich."""
+    from ft8_appliance.analyse.stochastik import mantel_haenszel
+    stark, schwach = (60, 200, 15, 50), (5, 50, 20, 200)
+    roh_a, roh_b = (60 + 5) / 250, (15 + 20) / 250
+    assert roh_a > roh_b * 1.5
+    quote, z, p = mantel_haenszel([stark, schwach])
+    assert quote == pytest.approx(1.0) and abs(z) < 0.01
+
+
+def test_mantel_haenszel_echter_unterschied() -> None:
+    from ft8_appliance.analyse.stochastik import mantel_haenszel
+    quote, z, p = mantel_haenszel([(40, 200, 20, 200), (30, 150, 15, 150)])
+    assert quote > 1.5 and z > 2.5 and p < 0.05
+    assert mantel_haenszel([]) == (None, None, None)

@@ -52,8 +52,10 @@ from pathlib import Path
 # ein Register, kein zweiter Namensraum. Nur Standardbibliothek dort.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from ft8_appliance.analyse.regelregister import REGELN, stufen as _register_stufen, ueberfaellige  # noqa: E402
+from ft8_appliance.analyse.messplan import MESSPLAN, faellige, nach_status  # noqa: E402
 from ft8_appliance.analyse.stochastik import (  # noqa: E402
-    bereinige_tagesgang, n_fuer_nachweis, spearman, urteil, urteil_korrelation, urteil_rate,
+    bereinige_tagesgang, mantel_haenszel, n_fuer_nachweis, spearman, urteil,
+    urteil_korrelation, urteil_rate,
 )
 
 # SSH-Ziel der Station. Der Tailscale-Name genuegt; abweichende
@@ -221,6 +223,52 @@ def spaete_decodes_abschnitt(con, seit: str) -> None:
     print(f"    Schritt der Gegenstation, den nur jt9 empfangen hat: {mit_jt9}")
     print("    Die ausgefallenen Aussendungen stehen nur im Journal:")
     print("    journalctl -u ft8-controller | grep -c 'Burst entfaellt\\|verworfen: ein Burst'")
+
+
+def messplan_abschnitt() -> None:
+    from datetime import UTC as _U, datetime as _D
+
+    heute = _D.now(_U).date()
+    faellig = faellige(heute)
+    if faellig:
+        tabelle([(m.schluessel, f"{(heute - m.lesen_ab).days} d", m.auswertung or "-")
+                 for m in sorted(faellig, key=lambda m: m.lesen_ab)],
+                ("FAELLIG", "seit", "Abschnitt"))
+        for m in faellig:
+            print(f"    {m.schluessel}: {m.entscheidungsregel}")
+            if m.danach:
+                print(f"      danach: {m.danach}")
+    else:
+        print("    Nichts faellig.")
+    bald = [m for m in nach_status("laufend") if m not in faellig and m.lesen_ab]
+    if bald:
+        print("    Demnaechst: " + ", ".join(
+            f"{m.schluessel} ab {m.lesen_ab:%d.%m.}" for m in sorted(bald, key=lambda m: m.lesen_ab)))
+
+    # Entschieden, aber der A/B-Schalter steht noch an? Das liest die
+    # laufende Konfiguration, nicht die Datenbank.
+    try:
+        import json as _json
+        import urllib.request as _u
+        req = _u.Request(f"{PI_HTTP}/api/config",
+                         headers={"Authorization": f"Bearer {_token()}"})
+        with _u.urlopen(req, timeout=10) as r:
+            operating = (_json.load(r) or {}).get("operating") or {}
+        noch_an = [(m.schluessel, s) for m in nach_status("entschieden")
+                   for s in m.schalter if operating.get(s)]
+        for schluessel, s in noch_an:
+            print(f"    ENTSCHIEDEN, Schalter noch an: {s} ({schluessel})")
+    except Exception as e:
+        print(f"    (Schalterstand nicht lesbar: {e})")
+
+    ohne = nach_status("ohne_auswertung")
+    if ohne:
+        groessen = sorted({g for m in ohne for g in m.messgroessen})
+        print(f"    Ohne Auswertung ({len(ohne)} Fragen, {len(groessen)} Spalten): "
+              "Frage steht fest, aber niemand wertet aus —")
+        print("    eine Auswertung bauen oder das Schreiben einstellen:")
+        for m in ohne:
+            print(f"      {m.schluessel:16s} {m.frage}")
 
 
 def hat_tabelle(con, tabelle_name: str) -> bool:
@@ -495,11 +543,55 @@ def main() -> int:
     ).fetchall()
     if zeilen:
         tabelle(zeilen, ("Arm", "Versuche", "fertig", "Quote", "eingehend"))
+        je_arm = {z[0]: z[2] or 0 for z in zeilen}
+        a, b = je_arm.get("Gate aus", 0), je_arm.get("Gate an", 0)
+        if a + b:
+            import math as _m
+            z = (a - b) / _m.sqrt(a + b)
+            urt = ("zu wenig" if min(a, b) < 40 else
+                   "echt" if abs(z) >= 1.96 else "Rauschen")
+            print(f"    QSOs Gate aus gegen Gate an: z = {z:+.2f} → {urt} "
+                  "(Messplan: ab 40 QSOs je Arm, |z| ≥ 1,96)")
         print("    Beide Arme haben gleich viele Slots — die QSO-Zahlen sind")
         print("    direkt vergleichbar. 'eingehend' zeigt, ob die frei")
         print("    gewordene Zeit als Rufer zurueckkommt.")
     else:
         print("    (keine Daten — hunt_sole_dx_gate ist aus)")
+
+    print("\n=== Antwortfrequenz: Rufer-Frequenz oder ruhiger Bin? (A/B) ===")
+    # Laeuft seit 2026-09-07; bis 17.09. gab es keinen Bilanz-Abschnitt dafuer,
+    # das letzte Ergebnis (p = 0,059) war eine einmalige Rechnung in flags.md.
+    zeilen = [] if not hat_spalte(con, "pick_attempt", "reply_kind") else con.execute(
+        "select reply_kind, "
+        "  case when snr_db >= -10 then 1 when snr_db >= -15 then 2 "
+        "       when snr_db >= -20 then 3 else 4 end, "
+        "  count(*), sum(outcome='completed') "
+        "from pick_attempt where reply_kind in ('on_freq','quiet') and snr_db is not null "
+        "  and ts > datetime('now',?) group by 1, 2", (seit,)
+    ).fetchall()
+    if zeilen:
+        summe: dict[str, list[int]] = {}
+        schichten: dict[int, dict[str, tuple[int, int]]] = {}
+        for art, klasse, n, k in zeilen:
+            s = summe.setdefault(art, [0, 0]); s[0] += n; s[1] += k
+            schichten.setdefault(klasse, {})[art] = (k, n)
+        tabelle([(art, n, k, f"{100.0 * k / n:.1f} %") for art, (n, k) in sorted(summe.items())],
+                ("Antwort", "Versuche", "fertig", "Quote"))
+        quote, z, p = mantel_haenszel([
+            (sch.get("on_freq", (0, 0))[0], sch.get("on_freq", (0, 0))[1],
+             sch.get("quiet", (0, 0))[0], sch.get("quiet", (0, 0))[1])
+            for sch in schichten.values()])
+        if z is None:
+            print("    (zu wenig fuer den Schichtvergleich)")
+        else:
+            urt = "echt" if p < 0.05 else "Rauschen"
+            print(f"    Mantel-Haenszel ueber SNR-Klassen: Odds Ratio "
+                  f"{quote:.2f}, z = {z:+.2f}, p = {p:.3f} → {urt}")
+            print("    OR > 1: die Rufer-Frequenz schliesst oefter ab. Regel im Messplan:")
+            print("    p < 0,05 → Gewinner einstellen, A/B aus; ab 2000 Anrufen je Arm")
+            print("    ohne Befund → Nicht-Effekt eintragen, A/B aus.")
+    else:
+        print("    (keine Daten — hunt_reply_ab_test ist aus)")
 
     print("\n=== Schwache Ziele ohne Empfangsbeleg: lohnt der Anruf? (A/B) ===")
     if not hat_spalte(con, "pick_attempt", "schwach_arm"):
@@ -1022,6 +1114,12 @@ def main() -> int:
         for r in faellig:
             print(f"      {r.stufe}: {r.pruefung}")
         print("    Danach beleg_datum im Register setzen (ft8_appliance/analyse/regelregister.py).")
+
+    print("\n=== Messplan: was ist faellig, was laeuft ohne Frage? ===")
+    # Seit 2026-09-17, ft8_appliance/analyse/messplan.py. Die Frage hinter
+    # einer Messreihe stand bis dahin bestenfalls im Modellkommentar, Regel
+    # und Lesetermin nur in privaten Notizen.
+    messplan_abschnitt()
 
     print("\n=== Umentscheiden: lohnt der Wechsel zu einem anderen Ziel? ===")
     # Gemessen 2026-09-12 ueber 448 Faelle: Der Wechsel ging genauso oft zu

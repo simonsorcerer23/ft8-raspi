@@ -82,7 +82,7 @@ python scripts/dev_run.py
 Pi-Status nur aus Live-Quellen ableiten:
 
 ```bash
-ssh ft8 'bash -s' < scripts/pi-check.sh
+ssh ft8-pi5 'bash -s' < scripts/pi-check.sh   # 'ft8' ist der tote alte Tailscale-Knoten
 ```
 
 ## Regeln beim Aendern
@@ -94,6 +94,12 @@ ssh ft8 'bash -s' < scripts/pi-check.sh
 - Bei Frontend-Backend-Zugriffen nie rohes `fetch()` oder `EventSource`
   ausserhalb der zentralen Layer verwenden; `scripts/check_frontend_api.sh`
   ist dafuer das Gate.
+- Neue Messreihe (Spalte in `pick_attempt`, A/B-Schalter, Telemetrie-
+  Tabelle) nur mit Eintrag in `backend/ft8_appliance/analyse/messplan.py`:
+  Frage, Auswertung, Entscheidungsregel, Lesetermin, was danach passiert.
+  `tests/test_messplan.py` erzwingt das. Ein erreichter Lesetermin steht in
+  `scripts/qso_bilanz.py` unter "Messplan"; die Entscheidung trifft der
+  Betreiber, nicht der Agent.
 - i18n ernst nehmen: UI und Backend-Texte sind DE/EN. Neue sichtbare
   Strings muessen in die passenden Kataloge und Gates.
 - Release nicht manuell taggen. `scripts/release.sh vX.Y.Z` baut Frontend,

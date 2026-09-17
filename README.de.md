@@ -236,6 +236,17 @@ danach als unbelegt, bis jemand nachgemessen hat. Am Ersten jedes Monats
 meldet die Appliance per Push, was die Daten hergeben: Kontrollarm gegen
 Regel, überfällige Regeln, Ausbeute je Betriebsstunde.
 
+Was das Regelregister für die Filterregeln ist, ist der **Messplan**
+(`ft8_appliance/analyse/messplan.py`) für die Messreihen selbst: je Messung
+die Frage, die Messgrößen, der Bilanz-Abschnitt, der sie auswertet, eine
+Entscheidungsregel, ein Lesetermin und was danach passiert. Ein Test hält
+ihn deckungsgleich mit dem Code — jede Spalte der Anrufversuche, jeder
+A/B-Schalter und jede Telemetrie-Tabelle braucht einen Eintrag. Die Bilanz
+zeigt, was fällig ist, welcher entschiedene A/B-Test noch läuft und welche
+Daten geschrieben werden, ohne dass jemand sie auswertet. Anlass war eine
+Bestandsaufnahme am 17.09.2026: 20 von 36 Messspalten ohne Auswertung und
+drei A/B-Tests ohne festgelegtes Ende.
+
 Gegen die Kette läuft seit v0.150.0 ein **Erwartungswert-Modell** als A/B:
 Statt sieben Ja-Nein-Gates bekommt jeder Kandidat eine Zahl, Erfolgschance
 mal Wert des Ziels, und wird angerufen, wenn sie je Sekunde den Ertrag eines

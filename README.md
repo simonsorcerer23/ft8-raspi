@@ -228,6 +228,16 @@ chance count as unproven after that until someone has re-measured. On the
 first of each month the appliance pushes what the data supports: control arm
 vs. rules, expired rules, yield per operating hour.
 
+What the rule register is for filter rules, the **measurement plan**
+(`ft8_appliance/analyse/messplan.py`) is for the measurements themselves: per
+measurement the question, the columns, the report section that evaluates it,
+a decision rule, a date to read it and what happens afterwards. A test keeps
+it in step with the code — every pick-attempt column, every A/B switch and
+every telemetry table needs an entry. The report shows what is due, which
+decided A/B test is still running and which data is written without anyone
+evaluating it. It came out of an audit on 2026-09-17: 20 of 36 measurement
+columns without evaluation and three A/B tests without a defined end.
+
 Since v0.150.0 an **expected-value model** runs as an A/B against the chain:
 instead of seven yes/no gates every candidate gets one number, success
 probability times target value, and is called when that beats the yield of a
