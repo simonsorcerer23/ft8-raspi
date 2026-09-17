@@ -130,11 +130,36 @@ def _baue_db(pfad: Path) -> None:
                 bail_reason=None if i % 4 == 0 else "went_silent",
                 pick_kind="cq", n_candidates=2,
             ))
+        # Elf Tage Stundenwerte fuer die Sonnenauswertung. Die Empfangs-
+        # berichte FALLEN absichtlich mit dem K-Index; der Tagesgang ist
+        # kraeftig (Faktor bis 6). Findet die Bilanz den negativen
+        # Zusammenhang nicht, rechnet sie falsch — und wuerde sie den
+        # Tagesgang nicht herausrechnen, verwischte er ihn.
+        stunde0 = jetzt.replace(minute=0, second=0, microsecond=0)
+        rx = 0
+        for h in range(1, 11 * 24 + 1):
+            zeit = stunde0 - timedelta(hours=h)
+            d = (stunde0 - zeit).days
+            k_index = (d * 3 + (zeit.hour // 3) * 5) % 7
+            basis = 6 + (zeit.hour % 12) * 3
+            s.add(m.SolarLog(ts=zeit + timedelta(minutes=5), sfi=90 + (d * 7) % 11,
+                             a_index=5 + k_index, k_index=k_index))
+            for j in range(round(basis * (1.6 - 0.12 * k_index))):
+                rx += 1
+                s.add(m.PskReporterIn(ts=zeit + timedelta(seconds=10 + j),
+                                      rx_call=f"S{rx}UN", rx_grid="JO40",
+                                      snr_db=-15, band="20m"))
+            for j in range(round(basis * (1 + ((d * 7 + zeit.hour * 3) % 5) / 10))):
+                s.add(m.Decode(ts=zeit + timedelta(seconds=20 + j), call_from=f"D{h}X{j}",
+                               call_to=None, message="CQ D", snr_db=-12, dt_s=0.1,
+                               freq_offset_hz=1500, band="20m", grid="JN58"))
+
         # Tageshistorie der Filterstufen: zwei Tage, eine Stufe ohne Treffer
         for tage_zurueck in (0, 1):
             tag = (jetzt - timedelta(days=tage_zurueck)).strftime("%Y-%m-%d")
             for stufe, n in (("cooldown", 120 + tage_zurueck),
-                             ("schwach_ohne_psk", 80), ("snr_floor", 1)):
+                             ("schwach_ohne_psk", 80), ("snr_floor", 1),
+                             ("schwach_zurueckgenommen", 900)):
                 s.add(m.FilterDropDaily(tag=tag, stufe=stufe, anzahl=n))
         s.commit()
     eng.dispose()
@@ -274,14 +299,14 @@ def test_umgebungsreihen_haben_einen_abnehmer(ausgabe):
     einzigen Leser: geschrieben, neunzig Tage aufgehoben, geloescht. Dieser
     Abschnitt ist ihr Abnehmer — faellt er weg, sammeln sie wieder ins Leere."""
     abschnitt = ausgabe.split("=== Umgebung")[1]
-    for frage in ("Rauschflur", "Sonnenindizes", "SWR-Verlauf"):
+    for frage in ("Rauschflur", "K-Index gegen", "Sonnenfluss gegen", "SWR-Verlauf"):
         assert frage in abschnitt, frage
 
 
 def test_umgebung_sagt_wann_die_daten_reichen(ausgabe):
     """Ohne diese Angabe liest man aus drei Datenpunkten einen Befund."""
     abschnitt = ausgabe.split("=== Umgebung")[1]
-    assert "zu wenige" in abschnitt or "auswertbar" in abschnitt
+    assert "zu wenig" in abschnitt or "von 10 Tagen" in abschnitt
     assert "Ballast" in abschnitt
 
 
@@ -373,3 +398,49 @@ def test_laufender_tag_ist_markiert(ausgabe) -> None:
     block = ausgabe[start:naechster if naechster > 0 else len(ausgabe)]
     assert re.search(r"\d{4}-\d{2}-\d{2} \*?\s+\d{2}-\d{2}\s", block), \
         f"keine Stundenspanne in der Tabelle:\n{block[:400]}"
+
+
+def _zeile(ausgabe: str, abschnitt: str, anfang: str) -> str:
+    teil = ausgabe.split(abschnitt)[1].split("\n===")[0]
+    treffer = [z for z in teil.splitlines() if z.strip().startswith(anfang)]
+    assert treffer, f"keine Zeile '{anfang}' in {abschnitt}"
+    return treffer[0]
+
+
+def test_nachgeben_steht_nicht_in_der_verwurfstabelle(ausgabe) -> None:
+    """schwach_zurueckgenommen verwirft nichts. Am 17.09. stand es trotzdem
+    mit 66 % ganz oben — ueber dem Satz, die dominierende Stufe sei der
+    erste Verdaechtige."""
+    teil = ausgabe.split("=== Filterstufen ueber die Tage")[1].split("\n===")[0]
+    tabelle, _, rest = teil.partition("Nicht mitgezaehlt")
+    assert "schwach_zurueckgenommen" not in tabelle
+    assert "schwach_zurueckgenommen = 1800" in rest
+    assert "nachgegeben" in rest
+
+
+def test_k_index_findet_den_eingebauten_zusammenhang(ausgabe) -> None:
+    """Die Testdaten lassen die Empfangsberichte mit dem K-Index fallen.
+    Das muss als deutlicher negativer Zusammenhang herauskommen."""
+    zeile = _zeile(ausgabe, "=== Umgebung", "K-Index gegen Empfangsberichte")
+    assert "r=-" in zeile, zeile
+    assert "deutlich" in zeile, zeile
+
+
+def test_sonnenfluss_wartet_auf_genug_tage(ausgabe) -> None:
+    """Sieben Tage Fenster, der Sonnenfluss wechselt einmal am Tag: Das sind
+    sieben Messpunkte, zu wenig fuer eine Aussage."""
+    zeile = _zeile(ausgabe, "=== Umgebung", "Sonnenfluss gegen Empfangsberichte")
+    assert "von 10 Tagen" in zeile, zeile
+    assert "r=" not in zeile
+
+
+def test_sonnenfluss_wird_ab_zehn_tagen_gerechnet(tmp_path_factory) -> None:
+    db = tmp_path_factory.mktemp("bilanz_lang") / "qso.sqlite"
+    _baue_db(db)
+    r = subprocess.run(
+        [sys.executable, str(SKRIPT), "--db", str(db), "--tage", "12"],
+        capture_output=True, text=True, timeout=180,
+    )
+    assert r.returncode == 0, r.stderr[-2000:]
+    zeile = _zeile(r.stdout, "=== Umgebung", "Sonnenfluss gegen Empfangsberichte")
+    assert "r=" in zeile, zeile

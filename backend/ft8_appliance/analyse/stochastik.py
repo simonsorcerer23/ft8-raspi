@@ -75,3 +75,72 @@ def n_fuer_nachweis(p_erwartet: float, p_referenz: float) -> int | None:
     # z=1,96 fuer 5 %; Referenzquote als Streuungsschaetzer.
     return int(math.ceil(
         (1.96 ** 2) * p_referenz * (1 - p_referenz) / unterschied ** 2))
+
+
+def spearman(x: list[float], y: list[float]) -> float | None:
+    """Rangkorrelation zweier gleich langer Reihen, Bindungen gemittelt.
+
+    Raenge statt Rohwerte, weil der K-Index eine Stufenskala ist: Der
+    Abstand von 1 nach 2 bedeutet nicht dasselbe wie der von 5 nach 6.
+    None, wenn eine Reihe konstant oder kuerzer als drei Werte ist.
+    """
+    if len(x) != len(y) or len(x) < 3:
+        return None
+
+    def raenge(v: list[float]) -> list[float]:
+        folge = sorted(range(len(v)), key=lambda i: v[i])
+        r = [0.0] * len(v)
+        i = 0
+        while i < len(folge):
+            j = i
+            while j + 1 < len(folge) and v[folge[j + 1]] == v[folge[i]]:
+                j += 1
+            for k in range(i, j + 1):
+                r[folge[k]] = (i + j) / 2 + 1
+            i = j + 1
+        return r
+
+    try:
+        return statistics.correlation(raenge(list(x)), raenge(list(y)))
+    except statistics.StatisticsError:
+        return None
+
+
+def urteil_korrelation(r: float | None, n: int, *, mindest_n: int = 10) -> str:
+    """Traegt eine Korrelation, oder ist sie Zufall?
+
+    t = r * sqrt((n-2) / (1-r^2)). Die Schwellen sind absichtlich streng:
+    Ein Abschnitt vergleicht mehrere Reihen auf einmal, und bei kleinem n
+    ist die Normalnaeherung zu optimistisch. Deshalb |t| >= 3 fuer
+    "deutlich" statt der ueblichen 1,96.
+    """
+    if n < mindest_n:
+        return "zu wenig"
+    if r is None:
+        return "keine Streuung"
+    if abs(r) >= 1.0:
+        return "deutlich"
+    t = r * math.sqrt((n - 2) / (1 - r * r))
+    if abs(t) >= 3.0:
+        return "deutlich"
+    if abs(t) >= 2.0:
+        return "Hinweis"
+    return "keiner erkennbar"
+
+
+def bereinige_tagesgang(werte: dict[str, float]) -> dict[str, float]:
+    """Stundenwerte durch das Mittel derselben UTC-Stunde teilen.
+
+    Schluessel "JJJJ-MM-TT HH". Ergebnis 1,0 heisst: so viel wie um diese
+    Uhrzeit ueblich. Ohne diesen Schritt korreliert alles mit allem, was
+    einen Tagesgang hat — mittags sind mehr Stationen wach, und das sieht
+    dann aus wie ein Einfluss der Sonne. Uhrzeiten, die weniger als zweimal
+    vorkommen oder im Mittel null sind, fallen heraus.
+    """
+    je_stunde: dict[str, list[float]] = {}
+    for schluessel, wert in werte.items():
+        je_stunde.setdefault(schluessel[11:13], []).append(float(wert))
+    mittel = {h: statistics.fmean(v) for h, v in je_stunde.items()
+              if len(v) >= 2 and statistics.fmean(v) > 0}
+    return {s: float(w) / mittel[s[11:13]] for s, w in werte.items()
+            if s[11:13] in mittel}

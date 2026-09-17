@@ -52,7 +52,9 @@ from pathlib import Path
 # ein Register, kein zweiter Namensraum. Nur Standardbibliothek dort.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from ft8_appliance.analyse.regelregister import REGELN, stufen as _register_stufen, ueberfaellige  # noqa: E402
-from ft8_appliance.analyse.stochastik import n_fuer_nachweis, urteil, urteil_rate  # noqa: E402
+from ft8_appliance.analyse.stochastik import (  # noqa: E402
+    bereinige_tagesgang, n_fuer_nachweis, spearman, urteil, urteil_korrelation, urteil_rate,
+)
 
 # SSH-Ziel der Station. Der Tailscale-Name genuegt; abweichende
 # Installationen setzen FT8_PI_SSH (etwa "pi@192.168.1.50").
@@ -96,6 +98,68 @@ def spalte_da(con, tabelle_name: str, spalte: str) -> bool:
         f"pragma table_info({tabelle_name})").fetchall()}
 
 
+SONNE_MIN_BLOECKE = 20
+SONNE_MIN_TAGE = 10
+
+
+def sonnen_zeilen(con, seit: str) -> list[tuple]:
+    """K-Index und Sonnenfluss gegen Empfangsberichte und Decodes."""
+    from statistics import fmean
+
+    if not hat_tabelle(con, "solar_log"):
+        return [("Sonnenindizes", 0, "-", "keine Aufzeichnung")]
+    bis = "strftime('%Y-%m-%d %H:00:00','now')"   # laufende Stunde ist unvollstaendig
+    sonne = {st: (k, sfi) for st, k, sfi in con.execute(
+        "select strftime('%Y-%m-%d %H', ts), avg(k_index), avg(sfi) from solar_log "
+        f"where ts > datetime('now',?) and ts < {bis} group by 1", (seit,),
+    ).fetchall()}
+    reihen = {}
+    if hat_tabelle(con, "psk_reporter_in"):
+        reihen["Empfangsberichte"] = dict(con.execute(
+            "select strftime('%Y-%m-%d %H', ts), count(distinct rx_call) from psk_reporter_in "
+            f"where ts > datetime('now',?) and ts < {bis} group by 1", (seit,),
+        ).fetchall())
+    reihen["Decodes"] = dict(con.execute(
+        "select strftime('%Y-%m-%d %H', ts), count(*) from decode "
+        f"where ts > datetime('now',?) and ts < {bis} group by 1", (seit,),
+    ).fetchall())
+
+    zeilen = []
+    for name, roh in reihen.items():
+        rein = bereinige_tagesgang(roh)
+
+        bloecke: dict[str, list[tuple[float, float]]] = {}
+        for st, v in rein.items():
+            k = sonne.get(st, (None, None))[0]
+            if k is not None:
+                bloecke.setdefault(f"{st[:10]}/{int(st[11:13]) // 3}", []).append((v, k))
+        paare = [(fmean(v for v, _ in l), fmean(k for _, k in l))
+                 for l in bloecke.values() if len(l) >= 2]
+        r = spearman([p[1] for p in paare], [p[0] for p in paare])
+        zeilen.append((f"K-Index gegen {name}", f"{len(paare)} Bloecke",
+                       f"r={r:+.2f}" if r is not None else "-",
+                       urteil_korrelation(r, len(paare), mindest_n=SONNE_MIN_BLOECKE)))
+
+        tage: dict[str, list[tuple[float, float]]] = {}
+        for st, v in rein.items():
+            sfi = sonne.get(st, (None, None))[1]
+            if sfi is not None:
+                tage.setdefault(st[:10], []).append((v, sfi))
+        # Nur fast volle Tage: ein halber Tag mit guten Abendstunden waere
+        # sonst ein "guter Tag", egal was die Sonne tat.
+        paare = [(fmean(v for v, _ in l), fmean(s for _, s in l))
+                 for l in tage.values() if len(l) >= 20]
+        if len(paare) < SONNE_MIN_TAGE:
+            zeilen.append((f"Sonnenfluss gegen {name}", f"{len(paare)} Tage", "-",
+                           f"{len(paare)} von {SONNE_MIN_TAGE} Tagen"))
+        else:
+            r = spearman([p[1] for p in paare], [p[0] for p in paare])
+            zeilen.append((f"Sonnenfluss gegen {name}", f"{len(paare)} Tage",
+                           f"r={r:+.2f}" if r is not None else "-",
+                           urteil_korrelation(r, len(paare), mindest_n=SONNE_MIN_TAGE)))
+    return zeilen
+
+
 def hat_tabelle(con, tabelle_name: str) -> bool:
     """Eine juengere Tabelle darf auf einer aelteren DB-Kopie nicht stuerzen."""
     return con.execute(
@@ -133,6 +197,31 @@ def tabelle(zeilen: list[tuple], kopf: tuple[str, ...]) -> None:
 # Stufe ohne jeden Treffer gar nicht auf — sie fehlt dann einfach in der
 # Tabelle und sieht aus wie nicht vorhanden.
 ALLE_FILTERSTUFEN = _register_stufen()
+# Zaehler, die ueber _buche_filter laufen, aber nichts verwerfen: Hier hat
+# eine Stufe NACHGEGEBEN, weil sonst kein einziges Ziel uebrig geblieben
+# waere. Am 17.09. stand schwach_zurueckgenommen mit 66 % "verworfen" ganz
+# oben in der Tabelle — direkt ueber dem Satz, die dominierende Stufe sei
+# der erste Verdaechtige.
+NACHGEGEBEN = {
+    "schwach_zurueckgenommen":
+        ("Schwach-Filter hat nachgegeben — sonst waere kein Ziel uebrig "
+         "geblieben. Die Zahl sagt, wie oft nur schwache Ziele da waren."),
+}
+
+
+def trenne_nachgegeben(zaehler: dict[str, int]) -> tuple[dict[str, int], dict[str, int]]:
+    """(verworfen, nachgegeben) — nur das Erste gehoert in eine Verwurfstabelle."""
+    return ({k: v for k, v in zaehler.items() if k not in NACHGEGEBEN},
+            {k: v for k, v in zaehler.items() if k in NACHGEGEBEN})
+
+
+def zeige_nachgegeben(nachgegeben: dict[str, int]) -> None:
+    if not nachgegeben:
+        return
+    print("    Nicht mitgezaehlt, weil dort nichts verworfen wurde:")
+    for k, v in sorted(nachgegeben.items(), key=lambda kv: -kv[1]):
+        text = " ".join(NACHGEGEBEN[k].split())
+        print(f"      {k} = {v}: {text}")
 # Nur Chancen-Regeln schaetzen die Erfolgsaussicht und laufen deshalb im
 # Kontrollarm nicht mit. Technische Gates und Sperren gelten in beiden
 # Armen — sie koennen im Schattenprotokoll gar nicht auftauchen.
@@ -476,6 +565,7 @@ def main() -> int:
         )
         with _u.urlopen(req, timeout=10) as r:
             drops = (_json.load(r) or {}).get("filter_drops") or {}
+        drops, nachgegeben = trenne_nachgegeben(drops)
         if drops:
             gesamt = sum(drops.values())
             tabelle(
@@ -489,6 +579,7 @@ def main() -> int:
             print("    lich inaktiv sein. Die Tageshistorie unten trennt das.")
         else:
             print("    (noch keine Verwerfungen seit dem letzten Neustart)")
+        zeige_nachgegeben(nachgegeben)
     except Exception as e:
         print(f"    (Station nicht erreichbar: {e})")
 
@@ -502,9 +593,12 @@ def main() -> int:
         "group by stufe order by sum(anzahl) desc",
         (f"-{args.tage} day",),
     ).fetchall()
+    nachgegeben = {z[0]: z[2] for z in zeilen if z[0] in NACHGEGEBEN}
+    zeilen = [z for z in zeilen if z[0] not in NACHGEGEBEN]
     if zeilen:
         tabelle([(z[0], z[1], z[2], z[3]) for z in zeilen],
                 ("Stufe", "Tage mit Daten", "verworfen gesamt", "bester Tag"))
+        zeige_nachgegeben(nachgegeben)
         bekannt = {z[0] for z in zeilen}
         stumm = sorted(ALLE_FILTERSTUFEN - bekannt)
         if stumm:
@@ -961,14 +1055,16 @@ def main() -> int:
         zeilen.append(("Rauschflur gegen Abschlussquote", len(paare), "-",
                        "zu wenige Stunden (mind. 8)"))
 
-    # 2. Sonnenindizes gegen Decode-Rate. Ob die Vorhersagewerte hier ueber-
-    #    haupt etwas erklaeren, ist offen — bisher hat es niemand geprueft.
-    solar = con.execute(
-        "select count(*), min(ts), max(ts) from solar_log where ts > datetime('now',?)",
-        (seit,),
-    ).fetchone()
-    zeilen.append(("Sonnenindizes aufgezeichnet", solar[0] if solar else 0, "-",
-                   "ab ~48 Messwerten auswertbar"))
+    # 2. Sonnenindizes. Der K-Index (Unruhe des Erdmagnetfelds) wechselt
+    #    alle drei Stunden, der Sonnenfluss einmal am Tag. Verglichen wird
+    #    deshalb je Drei-Stunden-Block bzw. je Tag, nicht je Stunde: Stunden
+    #    hintereinander sind nicht unabhaengig, und eine Korrelation ueber
+    #    hundert Stunden mit sechs Tageswerten waere Scheingenauigkeit.
+    #    Vorher faellt der Tagesgang heraus, sonst misst man nur, dass mittags
+    #    mehr los ist als nachts. Empfangsberichte zaehlen nur in Stunden mit
+    #    Berichten — ohne Sendung gibt es keine, mit Ausbreitung hat das
+    #    nichts zu tun. Bis 2026-09-17 stand hier nur die Zahl der Messwerte.
+    zeilen.extend(sonnen_zeilen(con, seit))
 
     # 3. SWR-Verlauf. Solange er flach bleibt, ist das die Aussage; ein
     #    Anstieg waere die Fruehwarnung, fuer die die Reihe gedacht ist.

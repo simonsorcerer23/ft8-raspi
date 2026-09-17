@@ -1,0 +1,59 @@
+"""Rangkorrelation und Tagesgang — die Werkzeuge fuer die Umgebungsfragen.
+
+Die Sonnenindizes liefen seit dem 12.09. ohne Auswertung mit. Wer sie gegen
+Empfangsberichte haelt, ohne vorher den Tagesgang herauszurechnen, findet
+immer einen Zusammenhang: mittags ist mehr los als nachts.
+"""
+from __future__ import annotations
+
+import pytest
+
+from ft8_appliance.analyse.stochastik import (
+    bereinige_tagesgang, spearman, urteil_korrelation,
+)
+
+
+def test_spearman_grenzfaelle() -> None:
+    assert spearman([1, 2, 3, 4], [10, 20, 30, 40]) == pytest.approx(1.0)
+    assert spearman([1, 2, 3, 4], [9, 7, 5, 1]) == pytest.approx(-1.0)
+    assert spearman([1, 2, 3], [5, 5, 5]) is None, "konstante Reihe"
+    assert spearman([1, 2], [3, 4]) is None, "zu kurz"
+
+
+def test_spearman_ist_unempfindlich_gegen_stufenabstaende() -> None:
+    """K-Index 1, 2, 9 mit monoton fallenden Werten: perfekte Rangfolge,
+    obwohl der Sprung auf 9 riesig ist."""
+    assert spearman([1, 2, 9], [300, 200, 190]) == pytest.approx(-1.0)
+
+
+def test_spearman_mittelt_bindungen() -> None:
+    r = spearman([1, 1, 2, 2, 3, 3], [1, 2, 3, 4, 5, 6])
+    assert 0.9 < r < 1.0
+
+
+def test_urteil_haengt_an_der_datenmenge() -> None:
+    assert urteil_korrelation(0.9, 5) == "zu wenig"
+    assert urteil_korrelation(0.9, 20) == "deutlich"
+    # r=0,5 bei n=20: t=2,45 — ein Hinweis, kein Befund
+    assert urteil_korrelation(0.5, 20) == "Hinweis"
+    assert urteil_korrelation(0.1, 40) == "keiner erkennbar"
+    assert urteil_korrelation(None, 40) == "keine Streuung"
+
+
+def test_tagesgang_wird_herausgerechnet() -> None:
+    """Mittags zehnmal so viele Berichte wie nachts — an beiden Tagen. Nach
+    der Bereinigung bleibt nur der Unterschied zwischen den Tagen: Tag 2 lag
+    um die Haelfte hoeher, zu jeder Uhrzeit."""
+    werte = {
+        "2026-09-15 02": 10, "2026-09-15 12": 100,
+        "2026-09-16 02": 15, "2026-09-16 12": 150,
+    }
+    rein = bereinige_tagesgang(werte)
+    assert rein["2026-09-15 02"] == pytest.approx(rein["2026-09-15 12"])
+    assert rein["2026-09-16 12"] / rein["2026-09-15 12"] == pytest.approx(1.5)
+
+
+def test_einmalige_uhrzeiten_fallen_heraus() -> None:
+    rein = bereinige_tagesgang({"2026-09-15 02": 10, "2026-09-16 02": 12,
+                                "2026-09-16 13": 99})
+    assert "2026-09-16 13" not in rein
