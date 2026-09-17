@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.168.0 — 2026-09-17
+- feat: Rufzeichen-Varianten gehen nie ins Heimat-Log — bei keinem der vier Dienste
+
 ## v0.167.3 — 2026-09-17
 - fix(sicherheit): GET /api/config lieferte das eQSL-Passwort im Klartext aus
 
