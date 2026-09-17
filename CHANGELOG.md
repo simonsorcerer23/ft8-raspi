@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.168.1 — 2026-09-17
+- feat: Decodes und Anrufversuche merken sich ihre Decoder-Stufe
+
 ## v0.168.0 — 2026-09-17
 - feat: Rufzeichen-Varianten gehen nie ins Heimat-Log — bei keinem der vier Dienste
 
