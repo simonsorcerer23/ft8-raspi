@@ -109,6 +109,75 @@ class PskHeardResponse(BaseModel):
     reports: list[PskHeardRow]
 
 
+_PROFIL_CACHE: dict[int, tuple[float, dict]] = {}
+_PROFIL_GUELTIG_S = 600.0
+
+
+@router.get("/psk/tagesprofil")
+async def psk_tagesprofil(
+    tage: int = Query(7, ge=1, le=30),
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> dict:
+    """Wer uns wann hoert: verschiedene Empfaenger je Band, Kontinent und
+    Stunde (UTC), gemittelt ueber die Tage mit Berichten. Enthaelt keine
+    Rufzeichen — nur Zahlen, Laender und Flaggen."""
+    import time
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import func, select
+
+    from ...analyse.hoerprofil import baue_profil
+    from ...db import session_scope
+    from ...db.models import PskReporterIn
+    from ...integrations.flags import iso2_for_dxcc_primary, iso2_to_flag
+
+    jetzt = time.monotonic()
+    treffer = _PROFIL_CACHE.get(tage)
+    if treffer and jetzt - treffer[0] < _PROFIL_GUELTIG_S:
+        return treffer[1]
+
+    ab = datetime.now(UTC) - timedelta(days=tage)
+    async with session_scope() as s:
+        zeilen = (await s.execute(
+            select(PskReporterIn.band, func.date(PskReporterIn.ts),
+                   func.strftime("%H", PskReporterIn.ts), PskReporterIn.rx_call)
+            .where(PskReporterIn.ts >= ab)
+            .distinct()
+        )).all()
+
+    cty = getattr(getattr(orch, "integrations", None), "cty", None)
+
+    def _eintrag(call: str):
+        if cty is None:
+            return None
+        try:
+            return cty.lookup(call)
+        except Exception:
+            return None
+
+    def kontinent_von(call: str) -> str | None:
+        r = _eintrag(call)
+        return r.entity.continent if r else None
+
+    def land_von(call: str) -> tuple[str, str] | None:
+        r = _eintrag(call)
+        if r is None:
+            return None
+        iso2 = iso2_for_dxcc_primary(r.entity.primary_prefix)
+        return (r.entity.name, iso2_to_flag(iso2) if iso2 else "")
+
+    antwort = {
+        "tage": tage,
+        "baender": baue_profil(
+            ((b, d, int(h), c) for b, d, h, c in zeilen if h is not None),
+            kontinent_von, land_von,
+        ),
+        "stand": iso_utc(datetime.now(UTC)),
+    }
+    _PROFIL_CACHE[tage] = (jetzt, antwort)
+    return antwort
+
+
 @router.get("/psk/who-heard-me", response_model=PskHeardResponse)
 async def psk_who_heard_me(
     hours: int = Query(24, ge=1, le=72),
