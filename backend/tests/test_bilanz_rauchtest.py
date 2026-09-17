@@ -67,6 +67,7 @@ def _baue_db(pfad: Path) -> None:
                 zellen_arm=bool(i % 2), fern_gate=bool(i % 3),
                 schwach_arm=bool(i % 2),
                 pre_decode=bool(i % 2), tx_offset_s=0.05 * i,
+                ziel_stufe=3 if i % 4 == 0 else 1,
             ))
         # Der Decode muss VOR dem Anruf liegen — die Bilanz ordnet die
         # Audiofrequenz ueber das letzte Signal vor dem Versuch zu.
@@ -130,6 +131,19 @@ def _baue_db(pfad: Path) -> None:
                 bail_reason=None if i % 4 == 0 else "went_silent",
                 pick_kind="cq", n_candidates=2,
             ))
+        # Gekennzeichnete Decodes (seit 17.09.): schnelle kommen nach 0,4 s,
+        # jt9-Funde nach 5 s. K1TEST hat einen Schritt, den nur jt9 empfing.
+        s.add(m.Decode(ts=t(200), call_from="W9SCH", call_to=None, message="CQ W9SCH EN52",
+                       snr_db=-10, dt_s=0.1, freq_offset_hz=900, band="20m",
+                       stufe=1, eingang_s=0.4))
+        for i in range(5):
+            s.add(m.Decode(ts=t(60 + i), call_from=f"S{i}SNELL", call_to=None,
+                           message=f"CQ S{i}SNELL JN58", snr_db=-9, dt_s=0.1,
+                           freq_offset_hz=1000, band="20m", stufe=1, eingang_s=0.4 + i * 0.01))
+        s.add(m.Decode(ts=t(50), call_from="K1TEST", call_to="DK9XR", message="DK9XR K1TEST RR73",
+                       snr_db=-21, dt_s=0.3, freq_offset_hz=1200, band="20m",
+                       stufe=3, eingang_s=5.1))
+
         # Elf Tage Stundenwerte fuer die Sonnenauswertung. Die Empfangs-
         # berichte FALLEN absichtlich mit dem K-Index; der Tagesgang ist
         # kraeftig (Faktor bis 6). Findet die Bilanz den negativen
@@ -444,3 +458,15 @@ def test_sonnenfluss_wird_ab_zehn_tagen_gerechnet(tmp_path_factory) -> None:
     assert r.returncode == 0, r.stderr[-2000:]
     zeile = _zeile(r.stdout, "=== Umgebung", "Sonnenfluss gegen Empfangsberichte")
     assert "r=" in zeile, zeile
+
+
+def test_spaete_decodes_werden_ausgewertet(ausgabe) -> None:
+    """Alle 549 ausgefallenen Aussendungen vom 13.–17.09. folgten einem
+    jt9-Decode. Der Abschnitt muss Eingangszeiten je Stufe, Anrufversuche
+    je Zielstufe und den jt9-Anteil an QSOs zeigen."""
+    teil = ausgabe.split("=== Spaete Decodes")[1].split("\n===")[0]
+    assert "3 jt9" in teil and "1 schnell" in teil
+    assert "5.1 s" in teil, "Eingang der jt9-Stufe fehlt"
+    assert "Ziel aus Stufe" in teil
+    assert "QSOs seit der Kennzeichnung: 6" in teil, teil
+    assert "nur jt9 empfangen hat: 1" in teil, teil

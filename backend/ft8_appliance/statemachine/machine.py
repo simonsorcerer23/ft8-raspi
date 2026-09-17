@@ -799,6 +799,7 @@ class StateMachine:
                     "kontroll_arm": bool(self.ctx.kontroll_arm),
                     "ew_arm": bool(self.ctx.ew_arm),
                     "target_call_raw": _roh_call,
+                    "ziel_stufe": getattr(best, "stufe", None),
                     "freq_offset_hz": best.freq_offset_hz,
                     "target_grid": best.grid,
                     # v0.64.0 — Picker-Diagnose + Kontext:
@@ -1533,6 +1534,7 @@ class StateMachine:
             "kontroll_arm": bool(self.ctx.kontroll_arm),
             "ew_arm": bool(self.ctx.ew_arm),
             "target_call_raw": _roh_call,
+            "ziel_stufe": getattr(d, "stufe", None),
         }
 
     def _stamp_outcome_meta(self) -> None:

@@ -61,6 +61,13 @@ class DecodedMsg:
     # True, wenn der Decode aus der zweiten (langsamen) Decoder-Stufe kam
     # und erst nach der TX-Entscheidung des Slots eintraf (2026-09-06).
     late: bool = False
+    # 2026-09-17 — welche Decoder-Stufe den Decode geliefert hat (1 schnell,
+    # 2 spaeter Durchgang, 3 jt9) und wie viele Sekunden nach Slotbeginn er
+    # eintraf. Alle 549 ausgefallenen Aussendungen vom 13.–17.09. folgten
+    # einem jt9-Decode; ob Stufe 3 unterm Strich QSOs bringt oder kostet,
+    # laesst sich ohne diese Kennzeichnung nicht messen.
+    stufe: int = 1
+    eingang_s: float | None = None
     # Gerichtetes CQ: Token nach "CQ" (DX, EU, NA, JA, POTA …), sonst None.
     cq_directed: str | None = None
 

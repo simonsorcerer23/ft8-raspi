@@ -160,6 +160,69 @@ def sonnen_zeilen(con, seit: str) -> list[tuple]:
     return zeilen
 
 
+_STUFEN_NAME = {1: "1 schnell", 2: "2 spaeter Pass", 3: "3 jt9"}
+
+
+def spaete_decodes_abschnitt(con, seit: str) -> None:
+    if not hat_spalte(con, "decode", "stufe"):
+        print("    (Datenbank kennt die Spalte noch nicht — Kennzeichnung seit 17.09.)")
+        return
+    werte: dict[int, list[float]] = {}
+    for stufe, eingang in con.execute(
+        "select stufe, eingang_s from decode "
+        "where stufe is not null and ts > datetime('now', ?)", (seit,),
+    ):
+        werte.setdefault(int(stufe), []).append(eingang)
+    if not werte:
+        print("    (keine gekennzeichneten Decodes im Zeitraum)")
+        return
+
+    def quantil(v: list, q: float) -> str:
+        v = sorted(x for x in v if x is not None)
+        return f"{v[min(len(v) - 1, int(q * len(v)))]:.1f} s" if v else "-"
+
+    tabelle([(_STUFEN_NAME.get(s, str(s)), len(v), quantil(v, 0.5), quantil(v, 0.9))
+             for s, v in sorted(werte.items())],
+            ("Stufe", "Decodes", "Eingang Median", "90 %"))
+    print("    Eingang = Sekunden nach der Slotgrenze. Was spaeter als rund")
+    print("    1,5 s ankommt, kann im selben Slot keine Antwort mehr ausloesen.")
+
+    if hat_spalte(con, "pick_attempt", "ziel_stufe"):
+        zeilen = con.execute(
+            "select ziel_stufe, count(*), sum(outcome='completed') from pick_attempt "
+            "where ziel_stufe is not null and ts > datetime('now', ?) "
+            "group by ziel_stufe order by ziel_stufe", (seit,),
+        ).fetchall()
+        if zeilen:
+            print()
+            tabelle([(_STUFEN_NAME.get(s, str(s)), n, k, f"{100.0 * k / n:.1f} %")
+                     for s, n, k in zeilen],
+                    ("Ziel aus Stufe", "Versuche", "fertig", "Quote"))
+            je = {s: (n, k) for s, n, k in zeilen}
+            if 1 in je and 3 in je:
+                print(f"    jt9-Ziele gegen schnelle Ziele: "
+                      f"{urteil(je[3][1], je[3][0], je[1][1], je[1][0])}")
+
+    erste = con.execute("select min(ts) from decode where stufe is not null").fetchone()[0]
+    qsos = con.execute(
+        "select call, coalesce(station_callsign, user_callsign), qso_start, qso_end "
+        "from qso where qso_start >= ? and qso_start > datetime('now', ?)",
+        (erste, seit),
+    ).fetchall()
+    mit_jt9 = 0
+    for call, eigen, start, ende in qsos:
+        treffer = con.execute(
+            "select 1 from decode where call_from = ? and call_to = ? and stufe = 3 "
+            "and ts between datetime(?, '-60 seconds') and datetime(?, '+60 seconds') limit 1",
+            (call, eigen, start, ende),
+        ).fetchone()
+        mit_jt9 += 1 if treffer else 0
+    print(f"    QSOs seit der Kennzeichnung: {len(qsos)} — davon mit mindestens einem")
+    print(f"    Schritt der Gegenstation, den nur jt9 empfangen hat: {mit_jt9}")
+    print("    Die ausgefallenen Aussendungen stehen nur im Journal:")
+    print("    journalctl -u ft8-controller | grep -c 'Burst entfaellt\\|verworfen: ein Burst'")
+
+
 def hat_tabelle(con, tabelle_name: str) -> bool:
     """Eine juengere Tabelle darf auf einer aelteren DB-Kopie nicht stuerzen."""
     return con.execute(
@@ -514,6 +577,14 @@ def main() -> int:
         print("    Spalte Kandidaten zeigt, was ihn das an Auswahl kostet.")
     else:
         print("    (keine Daten — decoder_pre_decode ist aus)")
+
+    print("\n=== Spaete Decodes: was bringt die jt9-Stufe, was kostet sie? ===")
+    # Seit 2026-09-17. Die jt9-Stufe liefert ihre Decodes 3 bis 7 s nach der
+    # Slotgrenze. Vom 13. bis 17.09. folgte JEDE der 549 ausgefallenen
+    # Aussendungen auf so einen Decode. Ob die Stufe trotzdem QSOs bringt —
+    # ein weit entferntes Ziel, das schwache RR73 am Ende —, war ohne die
+    # Kennzeichnung nicht zu sagen: decode.ts ist der Slotbeginn.
+    spaete_decodes_abschnitt(con, seit)
 
     print("\n=== Abschluss nach Signalstaerke — traegt das Schwach-Gate? ===")
     tabelle(con.execute(

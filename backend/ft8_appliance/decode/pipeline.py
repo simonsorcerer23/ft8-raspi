@@ -549,7 +549,7 @@ class DecodePipeline:
             except Exception as exc:
                 log.debug("band_resolver failed: %s, fallback band_hint=%s", exc, self.band_hint)
 
-        out = [_to_decoded_msg(r, tick, band_for_decodes) for r in raw]
+        out = [_to_decoded_msg(r, tick, band_for_decodes, stufe=1) for r in raw]
         if vorab:
             # Stufe 2 und jt9 laufen am regulaeren Durchgang — hier nicht.
             self.metrics.vorab_dauer_s = round(duration_s, 3)
@@ -646,7 +646,7 @@ class DecodePipeline:
             log.warning("jt9 brauchte %.1f s (Slot %.0f s) — Tiefe %d zu teuer?", duration_s, slot_seconds, depth)
         if not new or self.late_pass_sink is None:
             return
-        msgs = [_to_decoded_msg(r, tick, band, late=True) for r in new]
+        msgs = [_to_decoded_msg(r, tick, band, late=True, stufe=3) for r in new]
         log.info("decoder Stufe 3 (jt9, Tiefe %d): +%d Decodes fuer Slot %d", depth, len(msgs), tick.index)
         try:
             await self.late_pass_sink(msgs, tick)
@@ -708,7 +708,7 @@ class DecodePipeline:
             self._late_overruns = 0
         if not new or self.late_pass_sink is None:
             return
-        msgs = [_to_decoded_msg(r, tick, band, late=True) for r in new]
+        msgs = [_to_decoded_msg(r, tick, band, late=True, stufe=2) for r in new]
         # 2026-09-09: Stufe hier protokollieren, nicht im Sink. Stufe 2 und
         # jt9 laufen beide ueber late_pass_sink; die Meldung dort sagte
         # darum immer "Stufe 2" — auch fuer jt9-Funde, auch wenn Stufe 2
@@ -723,7 +723,10 @@ class DecodePipeline:
 
 def _to_decoded_msg(
     shim: ShimDecode, tick: SlotTick, band: str, *, late: bool = False,
+    stufe: int = 1,
 ) -> DecodedMsg:
+    import time as _time
+
     parsed = parse_message(shim.message)
     # The shim's freq_hz is the audio-band offset, not the on-air freq;
     # the orchestrator can add the rig dial later if needed.
@@ -739,6 +742,10 @@ def _to_decoded_msg(
         band=band,
         is_freetext=parsed.is_freetext,
         late=late,
+        stufe=stufe,
+        # Sekunden seit tick.posix — derselbe Bezug wie in der Meldung
+        # "manueller TX-Start N s nach der Slot-Grenze".
+        eingang_s=round(_time.time() - tick.posix, 2),
         cq_directed=parsed.cq_directed,
     )
 

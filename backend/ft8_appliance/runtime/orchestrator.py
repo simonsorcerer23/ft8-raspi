@@ -4747,6 +4747,8 @@ class Orchestrator:
                             freq_offset_hz=d.freq_offset_hz,
                             band=d.band,
                             mode=mode_str,
+                            stufe=getattr(d, "stufe", None),
+                            eingang_s=getattr(d, "eingang_s", None),
                         )
                         # Heard-Tabelle fuer die Live-Karte — nur Decodes,
                         # die den Grid des Senders verraten.
@@ -10609,6 +10611,7 @@ class Orchestrator:
                     target_grid=meta.get("target_grid"),
                     n_resends=meta.get("n_resends"),
                     n_cq_resends=meta.get("n_cq_resends"),
+                    ziel_stufe=meta.get("ziel_stufe"),
                     stale_slots=meta.get("stale_slots"),
                     mode=self.config.operating.mode,
                     tx_power_w=self._tx_power_w,

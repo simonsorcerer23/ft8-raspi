@@ -226,6 +226,10 @@ async def _migrate_decode_columns(conn) -> None:
     existing = {row[1] for row in res.fetchall()}
     if "mode" not in existing:
         await conn.exec_driver_sql("ALTER TABLE decode ADD COLUMN mode TEXT")
+    # 2026-09-17 — Decoder-Stufe und Eingangszeit (alte Zeilen: NULL)
+    for name, ddl in (("stufe", "INTEGER"), ("eingang_s", "FLOAT")):
+        if existing and name not in existing:
+            await conn.exec_driver_sql(f"ALTER TABLE decode ADD COLUMN {name} {ddl}")
     await conn.exec_driver_sql(
         "CREATE INDEX IF NOT EXISTS ix_decode_mode ON decode (mode)"
     )
@@ -296,6 +300,8 @@ async def _migrate_pick_attempt_columns(conn) -> None:
         "kontroll_arm": "BOOLEAN",
         # 2026-09-14 — Erwartungswert-Arm (A/B gegen die Kette).
         "ew_arm": "BOOLEAN",
+        # 2026-09-17 — Decoder-Stufe des ausloesenden Decodes.
+        "ziel_stufe": "INTEGER",
     }
     for name, ddl in cols.items():
         if name not in existing:

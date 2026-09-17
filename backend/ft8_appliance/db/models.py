@@ -126,6 +126,11 @@ class Decode(Base):
     freq_offset_hz: Mapped[int | None] = mapped_column(Integer, nullable=True)
     band: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     mode: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    # 2026-09-17 — Decoder-Stufe (1 schnell, 2 spaeter Durchgang, 3 jt9) und
+    # Eingang in Sekunden nach Slotbeginn. ``ts`` ist der Slotbeginn, nicht
+    # der Eingang — ohne diese Spalten sind jt9-Funde nicht zu erkennen.
+    stufe: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    eingang_s: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -579,6 +584,9 @@ class PickAttempt(Base):
     # bereits laufende QSOs — ihre hohe Vollendungsquote sagt ueber den
     # zweiten CQ-Ruf nichts. n_cq_resends traegt nur die CQ-Wiederholungen.
     n_cq_resends: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2026-09-17 — aus welcher Decoder-Stufe der Decode stammt, der diesen
+    # Versuch ausloeste (3 = jt9, kam erst Sekunden nach der Slotgrenze).
+    ziel_stufe: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stale_slots: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # v0.64.0 — "ALLES analysieren": die letzte Tranche (alle nullable):
     #  * winning_tier   — WELCHE hunt_priority-Regel den Pick entschied (erster
