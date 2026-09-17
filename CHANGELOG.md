@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.168.2 — 2026-09-17
+- feat: Antwortfrequenz und Fernziel-Gate entschieden; Ausweichen am Rand eigener Schalter
+- feat: Messplan — jede Messreihe mit Frage, Entscheidungsregel und Lesetermin
+
 ## v0.168.1 — 2026-09-17
 - feat: Decodes und Anrufversuche merken sich ihre Decoder-Stufe
 
