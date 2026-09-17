@@ -22,6 +22,12 @@ def _default_autopilot_modes() -> list[Literal["FT8", "FT4"]]:
 
 
 # ---------------------------------------------------------------------------
+class EqslKonto(BaseModel):
+    """Zugangsdaten eines angehaengten eQSL-Kontos (z.B. DK9XR/MM)."""
+    user: str
+    password: str
+
+
 class OperatorConfig(BaseModel):
     """Operator-Profil. Mehrere koennen parallel angelegt sein
     (siehe AppConfig.operators) — der aktive wird ueber active_callsign
@@ -91,10 +97,30 @@ class OperatorConfig(BaseModel):
     # bestaetigte Verbindung praktisch nicht. Fehlt der Eintrag, bleibt
     # das QSO offen und wird gemeldet. Siehe :meth:`lotw_location_for`.
     lotw_station_locations: dict[str, str] = Field(default_factory=dict)
+    # v0.168.0 — Club Log fuehrt je Rufzeichen ein eigenes Log im selben
+    # Konto (Settings → Callsigns); das Ziel bestimmt beim Upload allein der
+    # Parameter "callsign", STATION_CALLSIGN wertet Club Log nicht aus.
+    # Hier stehen die abweichenden On-Air-Calls, die dort angelegt sind.
+    # Der Heimat-Call braucht keinen Eintrag.
+    clublog_rufzeichen: list[str] = Field(default_factory=list)
+    # v0.168.0 — eQSL verlangt je Rufzeichen-Variante ein eigenes
+    # (angehaengtes) Konto. On-Air-Call → dessen Zugangsdaten. Der
+    # Heimat-Call nutzt eqsl_user/eqsl_password oben.
+    eqsl_konten: dict[str, EqslKonto] = Field(default_factory=dict)
 
     @field_validator("lotw_station_locations")
     @classmethod
     def _upper_lotw_location_keys(cls, v: dict[str, str]) -> dict[str, str]:
+        return {k.upper().strip(): val for k, val in (v or {}).items()}
+
+    @field_validator("clublog_rufzeichen")
+    @classmethod
+    def _upper_clublog_calls(cls, v: list[str]) -> list[str]:
+        return sorted({c.upper().strip() for c in (v or []) if c and c.strip()})
+
+    @field_validator("eqsl_konten")
+    @classmethod
+    def _upper_eqsl_keys(cls, v: dict) -> dict:
         return {k.upper().strip(): val for k, val in (v or {}).items()}
     # v0.22.0 — DX-Operating-Location.
     # home_country: ITU/CEPT-Country-Code des Heimat-DXCC (DL für DE).
@@ -113,9 +139,10 @@ class OperatorConfig(BaseModel):
     # EIGENES Logbuch mit eigenem API-Key (DO3XR, DO3XR/AM und 9A/DO3XR
     # sind fuer QRZ drei verschiedene Rufzeichen). Diese Map ordnet einem
     # konkreten On-Air-Call seinen Logbook-Key zu. Der Uploader waehlt den
-    # Key anhand des QSO-station_callsign (siehe :meth:`qrz_key_for`);
-    # fehlt ein Eintrag, faellt er auf qrz_logbook_api_key (Heimat-Logbuch)
-    # zurueck. ClubLog braucht das NICHT — ein Account, Call nur als Tag.
+    # Key anhand des QSO-station_callsign (siehe :meth:`qrz_key_for`).
+    # Seit v0.168.0 OHNE Rueckfall aufs Heimat-Logbuch: fehlt der Eintrag,
+    # bleibt das QSO liegen und wird gemeldet (QRZ: "XX1XX and XX1XX/M are
+    # treated as separate callsigns, each requiring its own logbook").
     qrz_logbooks: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("qrz_logbooks")
@@ -149,18 +176,52 @@ class OperatorConfig(BaseModel):
             call = f"{call}/{self.current_operating_suffix}"
         return call
 
+    def ist_heimatruf(self, station_callsign: str | None) -> bool:
+        """Ist das der Heimat-Call — oder eine Variante mit Praefix/Suffix?
+
+        Alle vier Logbuch-Dienste fuehren jede gesendete Variante als eigenes
+        Rufzeichen (QRZ, Club Log, eQSL, LoTW; Quellen in docs/lotw.md und
+        README "Logbuch-Uploads"). Ein QSO als DK9XR/MM gehoert deshalb nie
+        ins Log von DK9XR.
+        """
+        call = (station_callsign or "").upper().strip()
+        return not call or call == self.callsign
+
     def qrz_key_for(self, station_callsign: str | None) -> str | None:
         """QRZ-Logbook-API-Key fuer einen konkreten On-Air-Call.
 
-        Map-Treffer (z.B. station_callsign "DO3XR/AM" → dessen eigener
-        Key) gewinnt; sonst der Heimat-Key. So landen /AM- und
-        DX-Prefix-QSOs im richtigen QRZ-Logbuch.
+        Der Heimat-Call bekommt den Heimat-Key, jede Variante nur ihren
+        eigenen Eintrag aus ``qrz_logbooks``. **Kein Rueckfall** — bis
+        v0.167 landete ein /MM-QSO ohne eigenes Logbuch im Heimat-Logbuch,
+        obwohl der Kommentar im Drain das Gegenteil behauptete.
         """
-        if station_callsign:
-            key = self.qrz_logbooks.get(station_callsign.upper().strip())
-            if key:
-                return key
-        return self.qrz_logbook_api_key
+        call = (station_callsign or "").upper().strip()
+        treffer = self.qrz_logbooks.get(call) if call else None
+        if treffer:
+            return treffer
+        return self.qrz_logbook_api_key if self.ist_heimatruf(call) else None
+
+    def clublog_log_for(self, station_callsign: str | None) -> str | None:
+        """In welches Club-Log-Log (Parameter ``callsign``) ein QSO gehoert.
+
+        Heimat-Call → Heimat-Log; Variante nur, wenn sie in
+        ``clublog_rufzeichen`` steht. Sonst None: liegen lassen.
+        """
+        call = (station_callsign or "").upper().strip()
+        if self.ist_heimatruf(call):
+            return self.callsign
+        return call if call in self.clublog_rufzeichen else None
+
+    def eqsl_konto_for(self, station_callsign: str | None) -> tuple[str, str, str | None] | None:
+        """(Benutzer, Passwort, QTH-Nickname) fuer einen On-Air-Call, oder None."""
+        if self.ist_heimatruf(station_callsign):
+            if self.eqsl_user and self.eqsl_password:
+                return (self.eqsl_user, self.eqsl_password, self.eqsl_qth_nickname)
+            return None
+        konto = self.eqsl_konten.get((station_callsign or "").upper().strip())
+        if konto and konto.user and konto.password:
+            return (konto.user, konto.password, None)
+        return None
 
     def lotw_location_for(self, station_callsign: str | None) -> str | None:
         """LoTW Station Location fuer einen konkreten On-Air-Call.

@@ -70,6 +70,19 @@ class EqslErgebnis:
     gesamt: int
     meldungen: tuple[str, ...] = ()
 
+    @property
+    def duplikate(self) -> int:
+        return sum(1 for m in self.meldungen if "duplicate" in m.lower())
+
+    @property
+    def abgelehnt_ohne_duplikat(self) -> int:
+        """Datensaetze, die weder angenommen wurden noch schon dort lagen.
+
+        eQSL nennt nur Zahlen, nicht welche — aber jedes Duplikat einzeln.
+        Was darueber hinaus fehlt, ist wirklich abgelehnt.
+        """
+        return max(0, self.gesamt - self.angenommen - self.duplikate)
+
     def kurzfassung(self, hoechstens: int = 3) -> str:
         """Die Meldungen auf eine Logzeile eindampfen.
 

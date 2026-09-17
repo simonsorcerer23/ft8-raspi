@@ -214,6 +214,34 @@ _DE: dict[str, str] = {
         "angekommen, aeltestes: {call}. Die Uploads laufen weiter, kommen "
         "aber nicht durch — Logbuch pruefen."
     ),
+    "push.ohne_einrichtung_title": "⚠️ {dienst}: {call} nicht eingerichtet",
+    "push.ohne_einrichtung_msg": (
+        "{n} QSO(s) als {call} bleiben fuer {dienst} liegen: Dort ist {call} "
+        "noch nicht eingerichtet, und ins Heimat-Log gehoeren sie nicht. "
+        "{abhilfe} Danach laufen sie von selbst nach."
+    ),
+    "push.ohne_einrichtung_qrz": (
+        "In QRZ ein eigenes Logbuch fuer {call} anlegen und dessen API-Schluessel "
+        "in der Operator-Verwaltung eintragen."
+    ),
+    "push.ohne_einrichtung_clublog": (
+        "In Club Log unter Settings → Callsigns {call} anlegen und in der "
+        "Operator-Verwaltung eintragen."
+    ),
+    "push.ohne_einrichtung_eqsl": (
+        "Bei eQSL ein angehaengtes Konto fuer {call} anlegen und die Zugangsdaten "
+        "in der Operator-Verwaltung eintragen."
+    ),
+    "push.ohne_einrichtung_lotw": (
+        "Ein LoTW-Zertifikat fuer {call} beantragen (fuer /MM und /AM mit DXCC "
+        "-NONE-), mit 'tqsl -s' eine Station Location anlegen und sie in der "
+        "Operator-Verwaltung eintragen."
+    ),
+    "push.eqsl_abgelehnt_title": "⚠️ eQSL hat QSOs abgelehnt",
+    "push.eqsl_abgelehnt_msg": (
+        "eQSL hat {n} von {gesamt} QSOs als {call} nicht angenommen, und es "
+        "waren keine Duplikate: {meldungen}"
+    ),
     "push.upload_giveup_many_msg": (
         "{service}-Upload fuer {n} QSOs nach {attempts} Versuchen aufgegeben: "
         "{calls}. QSOs bleiben lokal im Log + ADIF — bei Bedarf manuell hochladen."
@@ -418,6 +446,34 @@ _EN: dict[str, str] = {
         "{n} QSO(s) have not reached {service} for over {stunden} hours, "
         "oldest: {call}. The uploads keep running but do not get through — "
         "check the logbook."
+    ),
+    "push.ohne_einrichtung_title": "⚠️ {dienst}: {call} not set up",
+    "push.ohne_einrichtung_msg": (
+        "{n} QSO(s) as {call} are held back for {dienst}: {call} is not set up "
+        "there yet, and they do not belong in the home log. {abhilfe} They will "
+        "upload on their own afterwards."
+    ),
+    "push.ohne_einrichtung_qrz": (
+        "Create a separate QRZ logbook for {call} and enter its API key in "
+        "operator management."
+    ),
+    "push.ohne_einrichtung_clublog": (
+        "Add {call} in Club Log under Settings → Callsigns and enter it in "
+        "operator management."
+    ),
+    "push.ohne_einrichtung_eqsl": (
+        "Create an attached eQSL account for {call} and enter its credentials "
+        "in operator management."
+    ),
+    "push.ohne_einrichtung_lotw": (
+        "Request a LoTW certificate for {call} (DXCC -NONE- for /MM and /AM), "
+        "create a station location with 'tqsl -s' and enter it in operator "
+        "management."
+    ),
+    "push.eqsl_abgelehnt_title": "⚠️ eQSL rejected QSOs",
+    "push.eqsl_abgelehnt_msg": (
+        "eQSL did not accept {n} of {gesamt} QSOs as {call}, and they were not "
+        "duplicates: {meldungen}"
     ),
     "push.upload_giveup_many_msg": (
         "{service} upload for {n} QSOs given up after {attempts} attempts: "

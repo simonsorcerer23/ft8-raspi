@@ -208,8 +208,11 @@ def _orch(ergebnis=None, fehler=None, *, monkeypatch) -> SimpleNamespace:
         _LOTW_CHARGE_MAX=Orchestrator._LOTW_CHARGE_MAX,
         _UPLOAD_MAX_ATTEMPTS=Orchestrator._UPLOAD_MAX_ATTEMPTS,
         _alert_upload_giveup_many=lambda *a: None,
-        _lotw_gemeldet=set(),
+        _ohne_einrichtung_gemeldet=None,
     )
+    for name in ("_melde_ohne_einrichtung", "_ohne_einrichtung_menge",
+                 "_ohne_einrichtung_pfad", "_speichere_ohne_einrichtung"):
+        setattr(o, name, (lambda n: lambda *a: getattr(Orchestrator, n)(o, *a))(name))
     o._lotw_melde_fehlende_location = \
         lambda *a: Orchestrator._lotw_melde_fehlende_location(o, *a)
     o._lotw_lade_charge = lambda *a: Orchestrator._lotw_lade_charge(o, *a)

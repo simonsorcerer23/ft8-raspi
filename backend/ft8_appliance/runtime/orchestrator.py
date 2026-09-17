@@ -523,7 +523,11 @@ class Orchestrator:
     _bg_tasks: list[asyncio.Task] = field(default_factory=list, init=False)
     # (Operator, On-Air-Call) ohne LoTW Station Location. Nur damit die
     # Meldung einmal kommt und nicht alle 30 Minuten erneut.
-    _lotw_gemeldet: set[tuple[str, str]] = field(default_factory=set, init=False)
+    # v0.168.0 — schon gemeldete Rufzeichen-Varianten ohne Einrichtung,
+    # je "Dienst|Operator|On-Air-Call". None = noch nicht von Platte geladen.
+    _ohne_einrichtung_gemeldet: set[str] | None = field(default=None, init=False)
+    # Locator aus dem letzten GPS-Fix, None ohne Fix. Siehe aktueller_locator().
+    _gps_locator: str | None = field(default=None, init=False)
     # Set of callsigns we've already worked at least once. Loaded from
     # DB at start(); appended to on every LOG_QSO. Used by the worked-B4
     # annotation served via /api/decodes and the SSE stream.
@@ -1388,7 +1392,8 @@ class Orchestrator:
         )
         if laeuft:
             return False
-        if not any(o.eqsl_user and o.eqsl_password for o in self.config.operators):
+        if not any((o.eqsl_user and o.eqsl_password) or o.eqsl_konten
+                   for o in self.config.operators):
             return False
         log.info("%s: eQSL-Drain-Loop wird gestartet", anlass)
         self._spawn(self._eqsl_drain_loop(), name="eqsl-drain")
@@ -1846,6 +1851,21 @@ class Orchestrator:
         except Exception as exc:
             log.info("preflight-warn ntfy fehlgeschlagen: %s", exc)
 
+    def aktueller_locator(self) -> str | None:
+        """Der Locator, von dem aus gerade gesendet wird.
+
+        Daheim gilt der eingestellte ``default_locator`` (sonst GPS). Mit
+        Praefix oder Suffix — EA8/DK9XR, /MM, /AM — ist die Station
+        woanders: dann zaehlt allein das GPS. Bis v0.167 gewann auch dort
+        der eingestellte Heimat-Locator, und GPS wurde nie gefragt; auf See
+        waere JN58 geloggt und im CQ gesendet worden. Ohne GPS-Fix gibt es
+        unterwegs lieber keinen Locator als den falschen.
+        """
+        op = self.config.operator
+        if op.operating_call() == op.callsign:
+            return op.default_locator or self._gps_locator
+        return self._gps_locator
+
     def effective_tx_call(self, op=None) -> str:
         """Der tatsaechlich gesendete Call eines Operators (Prefix + Suffix)."""
         return (op or self.config.operator).operating_call()
@@ -1914,6 +1934,11 @@ class Orchestrator:
         if not (owner.clublog_email and owner.clublog_app_password and owner.clublog_api_key):
             clublog = {"status": "not_set_up",
                        "detail": "ClubLog-Zugang unvollstaendig (Mail / App-Passwort / API-Key)."}
+        elif not owner.clublog_log_for(call):
+            clublog = {"status": "not_set_up",
+                       "detail": f"{call} ist in der Operator-Verwaltung nicht als Club-Log-"
+                                 f"Rufzeichen eingetragen — QSOs bleiben liegen. In Club Log "
+                                 f"unter Settings → Callsigns anlegen und hier eintragen."}
         else:
             try:
                 reg = await _clublog.check_callsign_registered(call, owner.clublog_api_key)
@@ -6374,7 +6399,7 @@ class Orchestrator:
         Normalfall sind das acht Abfragen je Stunde statt zweiunddreissig.
         Faellt der Dienst aus, faellt nur diese Beobachtung aus.
         """
-        mein_grid = (self.config.operator.default_locator
+        mein_grid = (self.aktueller_locator()
                      or self.state_machine.ctx.my_grid or "")[:6]
         if not mein_grid:
             log.info("Pfad-Vorhersage: kein eigener Locator — Schleife endet")
@@ -6737,6 +6762,7 @@ class Orchestrator:
                         )).scalars()
                     )
                     attempted = 0
+                    ohne_qrz: dict[tuple[str, str], int] = {}
                     for qso in rows:
                         if attempted >= 20:
                             break
@@ -6767,6 +6793,15 @@ class Orchestrator:
                             continue
                         qso_key = owner.qrz_key_for(qso.station_callsign)
                         if not qso_key:
+                            # v0.168.0 — Variante ohne eigenes Logbuch:
+                            # liegen lassen und melden. Bis v0.167 gab
+                            # qrz_key_for hier den Heimat-Key zurueck, und
+                            # das QSO landete im falschen Logbuch.
+                            if (owner.qrz_logbook_api_key
+                                    and not owner.ist_heimatruf(qso.station_callsign)):
+                                schluessel = (owner.callsign,
+                                              qso.station_callsign.upper().strip())
+                                ohne_qrz[schluessel] = ohne_qrz.get(schluessel, 0) + 1
                             continue
                         attempted += 1
                         qso.qrz_upload_attempts += 1
@@ -6802,6 +6837,8 @@ class Orchestrator:
                             qso.qrz_logbook_id = result.logbook_id
                             log.info("QRZ uploaded QSO %s (logid=%s)",
                                      qso.call, result.logbook_id)
+                    for (op_call, on_air), anzahl in sorted(ohne_qrz.items()):
+                        self._melde_ohne_einrichtung("QRZ", op_call, on_air, anzahl)
                 await self._note_drain_outcome("QRZ", None)
             except Exception as exc:
                 await self._note_drain_outcome("QRZ", exc)
@@ -6838,7 +6875,7 @@ class Orchestrator:
         while True:
             try:
                 for op in self.config.operators:
-                    if op.eqsl_user and op.eqsl_password:
+                    if (op.eqsl_user and op.eqsl_password) or op.eqsl_konten:
                         await self._eqsl_sweep_fuer_operator(op)
                 await self._note_drain_outcome("eQSL", None)
             except Exception as exc:
@@ -6846,12 +6883,17 @@ class Orchestrator:
             await asyncio.sleep(self._EQSL_INTERVALL_S)
 
     async def _eqsl_sweep_fuer_operator(self, op) -> None:
-        """Ein eQSL-Sweep fuer genau einen Operator."""
+        """Ein eQSL-Sweep fuer genau einen Operator.
+
+        v0.168.0 — je On-Air-Call getrennt: eQSL verlangt fuer jede
+        Rufzeichen-Variante ein eigenes Konto, und Karten werden nur an das
+        Konto mit genau dem gesendeten Rufzeichen zugestellt. Eine Variante
+        ohne eingetragenes Konto bleibt liegen und wird gemeldet.
+        """
         from sqlalchemy import select
 
         from ..db import session_scope
         from ..db.models import Qso
-        from ..integrations.eqsl import EqslError, upload
 
         async with session_scope() as s:
             jetzt = datetime.now(UTC)
@@ -6861,54 +6903,84 @@ class Orchestrator:
                 .where(Qso.user_callsign == op.callsign)
                 .order_by(Qso.qso_start.asc())
             )).scalars())
-            faellig = []
+            nach_call: dict[str, list] = {}
+            ohne_konto: dict[str, int] = {}
             for q in offen:
+                on_air = (q.station_callsign or op.callsign).upper().strip()
+                if op.eqsl_konto_for(on_air) is None:
+                    if not op.ist_heimatruf(on_air):
+                        ohne_konto[on_air] = ohne_konto.get(on_air, 0) + 1
+                    continue
                 backoff_s = min(3600.0, 900.0 * (2 ** q.eqsl_upload_attempts))
                 zuletzt = _as_utc(q.eqsl_last_attempt_at)
                 if zuletzt is not None and (jetzt - zuletzt).total_seconds() < backoff_s:
                     continue
-                faellig.append(q)
-                if len(faellig) >= self._EQSL_CHARGE_MAX:
-                    break
-            if not faellig:
+                charge = nach_call.setdefault(on_air, [])
+                if len(charge) < self._EQSL_CHARGE_MAX:
+                    charge.append(q)
+            for on_air, anzahl in sorted(ohne_konto.items()):
+                self._melde_ohne_einrichtung("eQSL", op.callsign, on_air, anzahl)
+            for on_air, faellig in sorted(nach_call.items()):
+                await self._eqsl_lade_charge(op, on_air, faellig, jetzt)
+
+    async def _eqsl_lade_charge(self, op, on_air: str, faellig: list, jetzt) -> None:
+        """Eine Charge gleichen On-Air-Calls mit dem passenden Konto hochladen."""
+        from ..integrations.eqsl import EqslError, upload
+
+        user, passwort, nickname = op.eqsl_konto_for(on_air)
+        for q in faellig:
+            q.eqsl_upload_attempts += 1
+            q.eqsl_last_attempt_at = jetzt
+        try:
+            ergebnis = await upload(user, passwort, faellig, qth_nickname=nickname)
+        except EqslError as exc:
+            if exc.hart:
+                # Zugangsdaten stimmen nicht. Nicht als hochgeladen
+                # verbuchen — sonst waeren die QSOs nach dem Richten
+                # der Zugangsdaten unwiederbringlich uebersprungen.
+                # Stattdessen einmal laut werden und es beim naechsten
+                # Lauf erneut versuchen.
+                log.error("eQSL lehnt %s ab: %s — Zugangsdaten pruefen",
+                          on_air, exc)
                 return
+            aufgegeben = [q.call for q in faellig
+                          if q.eqsl_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS]
             for q in faellig:
-                q.eqsl_upload_attempts += 1
-                q.eqsl_last_attempt_at = jetzt
-            try:
-                ergebnis = await upload(
-                    op.eqsl_user, op.eqsl_password, faellig,
-                    qth_nickname=op.eqsl_qth_nickname,
-                )
-            except EqslError as exc:
-                if exc.hart:
-                    # Zugangsdaten stimmen nicht. Nicht als hochgeladen
-                    # verbuchen — sonst waeren die QSOs nach dem Richten
-                    # der Zugangsdaten unwiederbringlich uebersprungen.
-                    # Stattdessen einmal laut werden und es beim naechsten
-                    # Lauf erneut versuchen.
-                    log.error("eQSL lehnt %s ab: %s — Zugangsdaten pruefen",
-                              op.callsign, exc)
-                    return
-                aufgegeben = [q.call for q in faellig
-                              if q.eqsl_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS]
-                for q in faellig:
-                    if q.eqsl_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
-                        q.eqsl_uploaded = True
-                log.warning("eQSL-Upload fehlgeschlagen (%s), %d QSOs bleiben offen",
-                            exc, len(faellig) - len(aufgegeben))
-                if aufgegeben:
-                    log.error("eQSL: %d QSOs nach %d Versuchen aufgegeben: %s",
-                              len(aufgegeben), self._UPLOAD_MAX_ATTEMPTS,
-                              ", ".join(aufgegeben))
-                    self._alert_upload_giveup_many("eQSL", aufgegeben)
-                return
-            for q in faellig:
-                q.eqsl_uploaded = True
-            kurz = ergebnis.kurzfassung()
-            log.info("eQSL %s: %d von %d Datensaetzen angenommen%s",
-                     op.callsign, ergebnis.angenommen, ergebnis.gesamt,
-                     f" ({kurz})" if kurz else "")
+                if q.eqsl_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                    q.eqsl_uploaded = True
+            log.warning("eQSL-Upload fehlgeschlagen (%s), %d QSOs bleiben offen",
+                        exc, len(faellig) - len(aufgegeben))
+            if aufgegeben:
+                log.error("eQSL: %d QSOs nach %d Versuchen aufgegeben: %s",
+                          len(aufgegeben), self._UPLOAD_MAX_ATTEMPTS,
+                          ", ".join(aufgegeben))
+                self._alert_upload_giveup_many("eQSL", aufgegeben)
+            return
+        for q in faellig:
+            q.eqsl_uploaded = True
+        kurz = ergebnis.kurzfassung()
+        log.info("eQSL %s: %d von %d Datensaetzen angenommen%s",
+                 on_air, ergebnis.angenommen, ergebnis.gesamt,
+                 f" ({kurz})" if kurz else "")
+        # v0.168.0 — eQSL sagt nicht, WELCHE Datensaetze es abgelehnt hat.
+        # Duplikate liegen dort schon; alles darueber hinaus ist verloren,
+        # wenn es niemand erfaehrt. Die Charge bleibt trotzdem erledigt —
+        # erneut schicken brachte dieselbe Ablehnung plus lauter Duplikate.
+        abgelehnt = ergebnis.abgelehnt_ohne_duplikat
+        if abgelehnt:
+            log.error("eQSL %s: %d von %d Datensaetzen abgelehnt, keine Duplikate: %s",
+                      on_air, abgelehnt, ergebnis.gesamt, kurz)
+            ntfy = getattr(getattr(self, "integrations", None), "ntfy", None)
+            if ntfy and ntfy.enabled:
+                try:
+                    asyncio.create_task(ntfy.notify(
+                        _t("push.eqsl_abgelehnt_msg", n=abgelehnt,
+                           gesamt=ergebnis.gesamt, call=on_air, meldungen=kurz),
+                        title=_t("push.eqsl_abgelehnt_title"),
+                        priority="default", tags=["warning"],
+                    ))
+                except Exception:
+                    pass
 
     # TQSL signiert und laedt in einem Aufruf; der Prozessstart kostet
     # spuerbar mehr als ein HTTP-Request, deshalb groessere Chargen und
@@ -6993,21 +7065,80 @@ class Orchestrator:
                 await self._lotw_lade_charge(op, on_air, ort, charge, jetzt)
 
     def _lotw_melde_fehlende_location(self, op, on_air: str, anzahl: int) -> None:
-        """Einmal je Operator und On-Air-Call warnen, nicht alle 30 min.
-
-        Die QSOs bleiben offen — kein Versuchszaehler, kein Aufgeben:
+        """Die QSOs bleiben offen — kein Versuchszaehler, kein Aufgeben:
         sie sind nicht fehlgeschlagen, es fehlt eine Einrichtung, die
-        nur von Hand nachzuholen ist (`tqsl -s`).
-        """
-        schluessel = (op.callsign, on_air)
-        if schluessel in self._lotw_gemeldet:
+        nur von Hand nachzuholen ist (`tqsl -s`)."""
+        self._melde_ohne_einrichtung("LoTW", op.callsign, on_air, anzahl)
+
+    # ------------------------------------ Rufzeichen-Varianten ohne Einrichtung
+    def _ohne_einrichtung_pfad(self) -> Path | None:
+        pfad = getattr(self, "_filter_drops_path", None)
+        return pfad.with_name("ohne_einrichtung.json") if pfad else None
+
+    def _ohne_einrichtung_menge(self) -> set[str]:
+        if self._ohne_einrichtung_gemeldet is None:
+            menge: set[str] = set()
+            pfad = self._ohne_einrichtung_pfad()
+            try:
+                if pfad is not None and pfad.exists():
+                    menge = set(json.loads(pfad.read_text(encoding="utf-8")))
+            except Exception as exc:
+                log.info("ohne_einrichtung.json nicht lesbar (%s) — beginne leer", exc)
+            self._ohne_einrichtung_gemeldet = menge
+        return self._ohne_einrichtung_gemeldet
+
+    def _speichere_ohne_einrichtung(self) -> None:
+        pfad = self._ohne_einrichtung_pfad()
+        if pfad is None or self._ohne_einrichtung_gemeldet is None:
             return
-        self._lotw_gemeldet.add(schluessel)
-        log.error(
-            "LoTW: %d QSOs als %s haben keine Station Location und bleiben "
-            "liegen. Mit 'ssh -X ft8-pi5 tqsl -s' eine eigene Location fuer "
-            "%s anlegen (/MM und /AM haben kein DXCC) und sie in der "
-            "Operator-Verwaltung hinterlegen.", anzahl, on_air, on_air)
+        try:
+            pfad.parent.mkdir(parents=True, exist_ok=True)
+            tmp = pfad.with_suffix(".tmp")
+            tmp.write_text(json.dumps(sorted(self._ohne_einrichtung_gemeldet)),
+                           encoding="utf-8")
+            tmp.replace(pfad)
+        except Exception as exc:
+            log.info("ohne_einrichtung.json nicht schreibbar: %s", exc)
+
+    def _melde_ohne_einrichtung(self, dienst: str, op_call: str, on_air: str,
+                                anzahl: int) -> None:
+        """Einmal je Dienst, Operator und On-Air-Call: Logzeile und Push.
+
+        Alle vier Logbuch-Dienste fuehren jede gesendete Variante (/MM, /AM,
+        EA8/…) als eigenes Rufzeichen. Ist sie dort nicht eingerichtet, bleibt
+        das QSO liegen — ins Heimat-Log gehoert es nicht. Die Meldung
+        ueberlebt Neustarts: die Station startet bei jedem Self-Update neu,
+        und dieselbe Nachricht nach jedem Update waere Laerm.
+        """
+        on_air = on_air.upper().strip()
+        schluessel = f"{dienst}|{op_call}|{on_air}"
+        menge = self._ohne_einrichtung_menge()
+        if schluessel in menge:
+            return
+        menge.add(schluessel)
+        self._speichere_ohne_einrichtung()
+        abhilfe = _t(f"push.ohne_einrichtung_{dienst.lower()}", call=on_air)
+        log.error("%s: %d QSOs als %s bleiben liegen — dort nicht eingerichtet. %s",
+                  dienst, anzahl, on_air, abhilfe)
+        ntfy = getattr(getattr(self, "integrations", None), "ntfy", None)
+        if ntfy and ntfy.enabled:
+            try:
+                asyncio.create_task(ntfy.notify(
+                    _t("push.ohne_einrichtung_msg", dienst=dienst, n=anzahl,
+                       call=on_air, abhilfe=abhilfe),
+                    title=_t("push.ohne_einrichtung_title", dienst=dienst, call=on_air),
+                    priority="default", tags=["warning"],
+                ))
+            except Exception:
+                pass
+
+    def vergiss_ohne_einrichtung(self, dienst: str, op_call: str, on_air: str) -> None:
+        """Nach dem Eintragen: kommt es wieder, soll es wieder gemeldet werden."""
+        menge = self._ohne_einrichtung_menge()
+        schluessel = f"{dienst}|{op_call}|{on_air.upper().strip()}"
+        if schluessel in menge:
+            menge.discard(schluessel)
+            self._speichere_ohne_einrichtung()
 
     async def _lotw_lade_charge(self, op, on_air: str, ort: str,
                                 faellig: list, jetzt) -> None:
@@ -7097,7 +7228,7 @@ class Orchestrator:
                     if not (email and app_pw and api_key):
                         continue
                     await self._clublog_sweep_for_operator(
-                        email, app_pw, api_key, my_call, bulk_threshold,
+                        email, app_pw, api_key, my_call, bulk_threshold, op=op,
                     )
                 await self._note_drain_outcome("ClubLog", None)
             except Exception as exc:
@@ -7111,8 +7242,16 @@ class Orchestrator:
         api_key: str,
         my_call: str,
         bulk_threshold: int,
+        *,
+        op=None,
     ) -> None:
         """Ein ClubLog-Sweep fuer genau einen Operator.
+
+        v0.168.0 — je Log getrennt: Club Log fuehrt jedes Rufzeichen als
+        eigenes Log, Ziel ist allein der Parameter ``callsign``. Bis v0.167
+        stand dort immer der Heimat-Call, ein /MM-QSO landete also im
+        Heimat-Log. Varianten ohne Eintrag in ``clublog_rufzeichen`` bleiben
+        liegen und werden gemeldet.
 
         Herausgezogen aus ``_clublog_drain_loop``, damit der Loop ueber alle
         Operatoren iterieren kann — jeder mit seinen eigenen Credentials und
@@ -7124,7 +7263,6 @@ class Orchestrator:
 
         from ..db import session_scope
         from ..db.models import Qso
-        from ..integrations.clublog import ClubLogError, bulk_upload
 
         async with session_scope() as s:
             now = datetime.now(UTC)
@@ -7140,85 +7278,106 @@ class Orchestrator:
                     .order_by(Qso.qso_start.asc())
                 )).scalars()
             )
-            eligible = []
+            nach_log: dict[str, list] = {}
+            ohne_log: dict[str, int] = {}
             for qso in rows:
+                on_air = (qso.station_callsign or my_call).upper().strip()
+                log_call = op.clublog_log_for(on_air) if op is not None else my_call
+                if log_call is None:
+                    ohne_log[on_air] = ohne_log.get(on_air, 0) + 1
+                    continue
                 backoff_s = min(3600.0, 600.0 * (2 ** qso.clublog_upload_attempts))
                 last_cl = _as_utc(qso.clublog_last_attempt_at)
                 if last_cl is not None and (now - last_cl).total_seconds() < backoff_s:
                     continue
-                eligible.append(qso)
+                nach_log.setdefault(log_call, []).append(qso)
+            for on_air, anzahl in sorted(ohne_log.items()):
+                self._melde_ohne_einrichtung("ClubLog", my_call, on_air, anzahl)
+            for log_call, eligible in sorted(nach_log.items()):
+                await self._clublog_lade_log(
+                    eligible, email, app_pw, api_key, my_call, log_call,
+                    bulk_threshold, now,
+                )
 
-            if not eligible:
-                pass  # nichts zu tun
-            elif len(eligible) >= bulk_threshold:
-                # Bulk-Pfad: 1 Request fuer alle. ClubLog-
-                # empfohlener Pfad fuer >5 QSOs.
-                for qso in eligible:
-                    qso.clublog_upload_attempts += 1
-                    qso.clublog_last_attempt_at = now
-                try:
-                    await bulk_upload(email, app_pw, api_key, my_call, eligible)
-                except ClubLogError as exc:
-                    # v0.39.0 — nur bei KLAR hartem Reject die ganze
-                    # Charge aufgeben; sonst erneut versuchen (Ceiling
-                    # je QSO). Fixt "could not reach login server" →
-                    # frueher faelschlich hart → ganze Charge verloren.
-                    # v0.123.0 — ein Dupe gilt fuer EIN QSO, nie fuer die
-                    # Charge. Frueher stand "duplicate" unter den harten
-                    # Rejects: eine Charge, die an einem einzigen bereits
-                    # vorhandenen QSO scheitert, waere komplett als
-                    # hochgeladen verbucht worden — stiller Verlust aller
-                    # uebrigen. Stattdessen einzeln nachfahren, dann zeigt
-                    # sich der Schuldige von selbst.
-                    if self._upload_reject_ist_dupe(str(exc)):
-                        nachfahren = eligible[:self._BULK_DUPE_NACHFAHREN_MAX]
-                        log.info(
-                            "ClubLog bulk: Dupe in der Charge (%s) — %d von %d "
-                            "QSOs werden einzeln nachgefahren",
-                            exc, len(nachfahren), len(eligible),
-                        )
-                        await self._clublog_einzelsweep(
-                            nachfahren, email, app_pw, api_key, my_call, now,
-                            zaehle_versuch=False,
-                        )
-                    elif self._upload_reject_is_hard(str(exc)):
-                        log.warning("ClubLog bulk hard-reject (%s) — alle %d won't-retry",
-                                    exc, len(eligible))
-                        for qso in eligible:
-                            qso.clublog_uploaded = True
-                    else:
-                        # Audit H3: im Bulk erreichen viele QSOs das Ceiling
-                        # im selben Sweep — EIN Push mit der Liste statt
-                        # einer pro QSO.
-                        given_up = []
-                        for qso in eligible:
-                            if qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
-                                qso.clublog_uploaded = True
-                                given_up.append(qso.call)
-                        if given_up:
-                            log.error("ClubLog bulk: %d QSOs nach %d Versuchen aufgegeben: %s",
-                                      len(given_up), self._UPLOAD_MAX_ATTEMPTS,
-                                      ", ".join(given_up))
-                            self._alert_upload_giveup_many("ClubLog", given_up)
-                        log.info("ClubLog bulk deferred (%d QSOs): %s",
-                                 len(eligible), exc)
-                except Exception as exc:
-                    log.info("ClubLog bulk upload deferred (%d QSOs): %s",
-                             len(eligible), exc)
-                else:
+    async def _clublog_lade_log(
+        self, eligible: list, email: str, app_pw: str, api_key: str,
+        my_call: str, log_call: str, bulk_threshold: int, now,
+    ) -> None:
+        """Offene QSOs EINES Club-Log-Logs hochladen (Bulk oder einzeln)."""
+        from ..integrations.clublog import ClubLogError, bulk_upload
+
+        if not eligible:
+            pass  # nichts zu tun
+        elif len(eligible) >= bulk_threshold:
+            # Bulk-Pfad: 1 Request fuer alle. ClubLog-
+            # empfohlener Pfad fuer >5 QSOs.
+            for qso in eligible:
+                qso.clublog_upload_attempts += 1
+                qso.clublog_last_attempt_at = now
+            try:
+                await bulk_upload(email, app_pw, api_key, my_call, eligible,
+                                  log_callsign=log_call)
+            except ClubLogError as exc:
+                # v0.39.0 — nur bei KLAR hartem Reject die ganze
+                # Charge aufgeben; sonst erneut versuchen (Ceiling
+                # je QSO). Fixt "could not reach login server" →
+                # frueher faelschlich hart → ganze Charge verloren.
+                # v0.123.0 — ein Dupe gilt fuer EIN QSO, nie fuer die
+                # Charge. Frueher stand "duplicate" unter den harten
+                # Rejects: eine Charge, die an einem einzigen bereits
+                # vorhandenen QSO scheitert, waere komplett als
+                # hochgeladen verbucht worden — stiller Verlust aller
+                # uebrigen. Stattdessen einzeln nachfahren, dann zeigt
+                # sich der Schuldige von selbst.
+                if self._upload_reject_ist_dupe(str(exc)):
+                    nachfahren = eligible[:self._BULK_DUPE_NACHFAHREN_MAX]
+                    log.info(
+                        "ClubLog bulk: Dupe in der Charge (%s) — %d von %d "
+                        "QSOs werden einzeln nachgefahren",
+                        exc, len(nachfahren), len(eligible),
+                    )
+                    await self._clublog_einzelsweep(
+                        nachfahren, email, app_pw, api_key, my_call, now,
+                        zaehle_versuch=False, log_call=log_call,
+                    )
+                elif self._upload_reject_is_hard(str(exc)):
+                    log.warning("ClubLog bulk hard-reject (%s) — alle %d won't-retry",
+                                exc, len(eligible))
                     for qso in eligible:
                         qso.clublog_uploaded = True
-                    log.info("ClubLog bulk: %d QSOs uploaded via putlogs.php",
-                             len(eligible))
+                else:
+                    # Audit H3: im Bulk erreichen viele QSOs das Ceiling
+                    # im selben Sweep — EIN Push mit der Liste statt
+                    # einer pro QSO.
+                    given_up = []
+                    for qso in eligible:
+                        if qso.clublog_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS:
+                            qso.clublog_uploaded = True
+                            given_up.append(qso.call)
+                    if given_up:
+                        log.error("ClubLog bulk: %d QSOs nach %d Versuchen aufgegeben: %s",
+                                  len(given_up), self._UPLOAD_MAX_ATTEMPTS,
+                                  ", ".join(given_up))
+                        self._alert_upload_giveup_many("ClubLog", given_up)
+                    log.info("ClubLog bulk deferred (%d QSOs): %s",
+                             len(eligible), exc)
+            except Exception as exc:
+                log.info("ClubLog bulk upload deferred (%d QSOs): %s",
+                         len(eligible), exc)
             else:
-                # Realtime-Pfad: <5 pending → einzelne QSOs durch
-                # realtime.php (Michael's Use-Case: "real-time,
-                # single QSO submissions"). Max 4 pro Sweep =
-                # max 4 req/10 min = sehr human.
-                await self._clublog_einzelsweep(
-                    eligible, email, app_pw, api_key, my_call, now,
-                    zaehle_versuch=True,
-                )
+                for qso in eligible:
+                    qso.clublog_uploaded = True
+                log.info("ClubLog bulk: %d QSOs uploaded via putlogs.php",
+                         len(eligible))
+        else:
+            # Realtime-Pfad: <5 pending → einzelne QSOs durch
+            # realtime.php (Michael's Use-Case: "real-time,
+            # single QSO submissions"). Max 4 pro Sweep =
+            # max 4 req/10 min = sehr human.
+            await self._clublog_einzelsweep(
+                eligible, email, app_pw, api_key, my_call, now,
+                zaehle_versuch=True, log_call=log_call,
+            )
 
     _BULK_DUPE_NACHFAHREN_MAX: typing.ClassVar[int] = 10
 
@@ -7232,6 +7391,7 @@ class Orchestrator:
         now,
         *,
         zaehle_versuch: bool,
+        log_call: str | None = None,
     ) -> None:
         """Laedt QSOs einzeln durch realtime.php hoch.
 
@@ -7248,7 +7408,8 @@ class Orchestrator:
                 qso.clublog_upload_attempts += 1
                 qso.clublog_last_attempt_at = now
             try:
-                await upload_qso(email, app_pw, api_key, my_call, qso)
+                await upload_qso(email, app_pw, api_key, my_call, qso,
+                                 log_callsign=log_call)
             except ClubLogError as exc:
                 if self._upload_reject_ist_dupe(str(exc)):
                     log.info("ClubLog: %s liegt dort bereits — erledigt",
@@ -8697,17 +8858,18 @@ class Orchestrator:
                     # Closure ohne settable Attribut — dann ignorieren
                     pass
 
-        # Auto-QTH from GPS (architecture.md §6.4). Only when config doesn't
-        # pin a locator. We re-compute on each slot — cheap.
-        if (
-            gps.lat is not None and gps.lon is not None
-            and self.config.operator.default_locator is None
-        ):
+        # Auto-QTH from GPS (architecture.md §6.4). Welcher Locator gilt,
+        # entscheidet aktueller_locator(); hier nur den GPS-Stand nachfuehren.
+        gps_grid = None
+        if gps.lat is not None and gps.lon is not None:
             try:
-                grid = latlon_to_locator(gps.lat, gps.lon, precision=6)
-                self.state_machine.ctx.my_grid = grid
+                gps_grid = latlon_to_locator(gps.lat, gps.lon, precision=6)
             except Exception:
-                pass
+                gps_grid = None
+        self._gps_locator = gps_grid
+        standort = self.aktueller_locator()
+        if standort:
+            self.state_machine.ctx.my_grid = standort
 
         # Mirror the worked-set into the state machine for the hunting-picker
         self.state_machine.ctx.worked = self._worked_calls
@@ -9610,7 +9772,9 @@ class Orchestrator:
             ))
         if not self.db_enabled:
             return
-        my_grid = self.config.operator.default_locator or self.state_machine.ctx.my_grid
+        # Leer statt Heimat-Locator, wenn unterwegs kein GPS-Fix da ist — ein
+        # fehlender MY_GRIDSQUARE ist ehrlich, JN58 auf See waere falsch.
+        my_grid = self.aktueller_locator() or ""
         # On-air frequency = rig dial + audio offset of the QSO. The state
         # machine carries the audio offset in the payload; if missing
         # (legacy producer), fall back to dial-only.
@@ -9848,7 +10012,8 @@ class Orchestrator:
                 if not qso.qrz_uploaded and op.qrz_key_for(qso.station_callsign):
                     stau["QRZ"].append(qso)
                 if not qso.clublog_uploaded and op.clublog_email \
-                        and op.clublog_app_password and op.clublog_api_key:
+                        and op.clublog_app_password and op.clublog_api_key \
+                        and op.clublog_log_for(qso.station_callsign):
                     stau["ClubLog"].append(qso)
 
             betroffen = {k: v for k, v in stau.items() if v}
@@ -10392,7 +10557,7 @@ class Orchestrator:
         # beide fail-soft (None bei fehlendem Grid / Lookup-Fehler).
         distance_km: int | None = None
         try:
-            my_grid = self.config.operator.default_locator or self.state_machine.ctx.my_grid
+            my_grid = self.aktueller_locator()
             tgt_grid = meta.get("target_grid")
             if my_grid:
                 from ..util.maidenhead import great_circle, locator_to_latlon

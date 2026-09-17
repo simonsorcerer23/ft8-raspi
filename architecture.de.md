@@ -545,7 +545,7 @@ Pfad via Frequenz-Drift-Watchdog mit 100-Hz-Toleranz, Rollback-Action
 ### 6.6 Integrations (online)
 
 - **QRZ.com XML API** (Callsign-Lookup) + **QRZ Logbook API** (Auto-Upload der QSOs, pro On-Air-Call eigenes Logbuch/Key via `qrz_logbooks`)
-- **Club Log** Auto-Upload (realtime + putlogs-Bulk), per-Operator-Account
+- **Club Log** Auto-Upload (realtime + putlogs-Bulk), per-Operator-Account, je Sende-Call eigenes Log (`clublog_rufzeichen`)
 - **HamQTH** als kostenloser Lookup-Fallback
 - **cty.dat** lokal als Offline-Fallback (DXCC-Präfix → Land/Kontinent)
 - **PSK Reporter:** Upload eigener Decodes + Download "wer hat mich gehört?" (speist den `psk_heard_us`-Reziprozitäts-Tier)
@@ -634,6 +634,10 @@ operators:
     clublog_api_key: "..."
     qrz_logbooks:                # On-Air-Call → eigener QRZ-Logbook-Key
       DK9XR/AM: WXYZ-9876        # QRZ braucht pro Prefix/Suffix ein Logbuch
+    clublog_rufzeichen: [DK9XR/MM]   # in Club Log unter Settings → Callsigns angelegt
+    eqsl_konten:                 # je Sende-Call ein angehaengtes eQSL-Konto
+      DK9XR/MM: {user: DK9XR/MM, password: "..."}
+    # Ohne Eintrag: QSOs der Variante bleiben liegen (kein Heimat-Log), eine Push-Meldung
     home_country: DL
     current_operating_country: null   # gesetzt bei CEPT-Auslandsbetrieb
   - callsign: DL2XYZ

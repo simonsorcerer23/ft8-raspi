@@ -149,6 +149,19 @@ QSOs nach Sende-Rufzeichen getrennt signiert; wer keine eigene Location hat
 bestätigt zu werden. Einrichtung und Fallstricke stehen in
 [docs/lotw.md](docs/lotw.md).
 
+**Abweichende Sende-Rufzeichen.** Wer mit Präfix oder Suffix sendet —
+`EA8/DK9XR`, `DK9XR/MM`, `DK9XR/AM` —, hat für alle vier Dienste ein
+eigenes Rufzeichen: QRZ, Club Log, eQSL und LoTW führen jede Variante mit
+eigenem Logbuch, Log, Konto oder Zertifikat, und bestätigt wird nur bei exakt
+gleichem Rufzeichen auf beiden Seiten. Seit v0.168.0 gilt deshalb für alle
+vier dieselbe Regel: Der Heimat-Call geht ins Heimat-Log, eine Variante nur in
+ein ausdrücklich für sie eingetragenes. Fehlt der Eintrag, bleiben ihre QSOs
+liegen, ohne Versuchszähler, und eine Push-Nachricht sagt einmal, was bei
+welchem Dienst einzurichten ist. Bis v0.167 landeten solche QSOs bei QRZ,
+Club Log und eQSL im Heimat-Log. Eingetragen wird je Variante in der
+Operator-Verwaltung. Unterwegs nimmt die Station außerdem den Locator vom GPS
+statt des eingestellten Heimat-Locators — ohne GPS-Fix lieber keinen.
+
 ### Die Gegenrichtung: eingegangene QSL-Karten
 
 Seit v0.163.0 holt die Appliance auch ab, was andere *ihr* schicken. Der

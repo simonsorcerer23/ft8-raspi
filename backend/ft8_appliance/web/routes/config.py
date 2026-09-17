@@ -19,6 +19,33 @@ _GEHEIM_NAMENSTEILE = ("password", "passwort", "api_key", "token", "secret", "ps
 _GEHEIM_OHNE_NAMEN = ("qrz_logbooks",)
 
 
+def _ist_geheim(name: str) -> bool:
+    return name in _GEHEIM_OHNE_NAMEN or any(t in name for t in _GEHEIM_NAMENSTEILE)
+
+
+def _schwaerze(modell) -> None:
+    """Geheimfelder eines Pydantic-Modells leeren, rekursiv.
+
+    Auf None bzw. "" — nicht auf eine Maske —, damit ein Speichern mit
+    leerem Feld nicht die Maske als echtes Geheimnis ablegt.
+    """
+    from pydantic import BaseModel
+
+    for name, feld in type(modell).model_fields.items():
+        wert = getattr(modell, name)
+        if isinstance(wert, BaseModel):
+            _schwaerze(wert)
+        elif isinstance(wert, dict) and any(isinstance(v, BaseModel) for v in wert.values()):
+            for v in wert.values():
+                if isinstance(v, BaseModel):
+                    _schwaerze(v)
+        elif _ist_geheim(name):
+            if isinstance(wert, dict):
+                setattr(modell, name, {k: "" for k in wert})
+            elif wert is not None:
+                setattr(modell, name, None if not feld.is_required() else "")
+
+
 def _redact_secrets(cfg: AppConfig) -> AppConfig:
     """Maskiere Secrets fuer GET /api/config (SEC-C2, Audit 2026-05-30).
 
@@ -35,16 +62,8 @@ def _redact_secrets(cfg: AppConfig) -> AppConfig:
         # eQSL-Passwort (Feld seit 14.09.) und das LoTW-Zertifikatspasswort
         # — GET /api/config lieferte das eQSL-Passwort im Klartext aus.
         # Jedes neue Operator-Feld mit einem dieser Namensteile ist ab
-        # jetzt automatisch geschwaerzt.
-        for name, feld in type(op).model_fields.items():
-            if name not in _GEHEIM_OHNE_NAMEN and not any(
-                    teil in name for teil in _GEHEIM_NAMENSTEILE):
-                continue
-            wert = getattr(op, name)
-            if isinstance(wert, dict):
-                setattr(op, name, {k: "" for k in wert})
-            elif wert is not None:
-                setattr(op, name, None if not feld.is_required() else "")
+        # jetzt automatisch geschwaerzt, auch verschachtelt (eqsl_konten).
+        _schwaerze(op)
     c.integrations.qrz.password = None
     c.integrations.qrz.logbook_api_key = None
     c.integrations.hamqth.password = None

@@ -198,8 +198,11 @@ def test_no_operators_raises_when_accessed() -> None:
 
 # ---------------------------------------------------------------------------
 def test_qrz_key_for_routes_by_on_air_call() -> None:
-    """v0.28.0 — qrz_logbooks-Map routet den Logbook-Key am On-Air-Call;
-    fehlt ein Eintrag, faellt es auf den Heimat-Key zurueck."""
+    """v0.28.0 — qrz_logbooks-Map routet den Logbook-Key am On-Air-Call.
+
+    Seit v0.168.0 OHNE Rueckfall: QRZ fuehrt jede Variante als eigenes
+    Rufzeichen mit eigenem Logbuch. Ein QSO als VK/DO3XR im Heimat-Logbuch
+    waere falsch abgelegt — ohne Eintrag bleibt es liegen."""
     op = OperatorConfig(
         callsign="DO3XR",
         qrz_logbook_api_key="HOME",
@@ -208,7 +211,7 @@ def test_qrz_key_for_routes_by_on_air_call() -> None:
     assert op.qrz_key_for("DO3XR") == "HOME"
     assert op.qrz_key_for("DO3XR/AM") == "AM"      # case-insensitiv
     assert op.qrz_key_for("9A/DO3XR") == "CRO"
-    assert op.qrz_key_for("VK/DO3XR") == "HOME"    # unbekannt → Heimat
+    assert op.qrz_key_for("VK/DO3XR") is None      # unbekannt → liegen lassen
     assert op.qrz_key_for(None) == "HOME"
     # Keys werden uppercased gespeichert
     assert set(op.qrz_logbooks) == {"DO3XR/AM", "9A/DO3XR"}

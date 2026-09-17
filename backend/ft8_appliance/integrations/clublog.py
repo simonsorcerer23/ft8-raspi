@@ -103,6 +103,7 @@ async def upload_qso(
     my_call: str,
     qso: Qso,
     *,
+    log_callsign: str | None = None,
     timeout: float = 15.0,
 ) -> None:
     """POST one QSO to ClubLog realtime endpoint. Raises on any non-OK response.
@@ -132,7 +133,9 @@ async def upload_qso(
     body = urlencode({
         "email": email,
         "password": app_password,
-        "callsign": my_call,
+        # Ziel-Log. Club Log fuehrt jedes Rufzeichen als eigenes Log und
+        # wertet STATION_CALLSIGN nicht aus — nur dieser Parameter zaehlt.
+        "callsign": log_callsign or my_call,
         "adif": adif,
         "api": api_key,
     })
@@ -198,6 +201,7 @@ async def bulk_upload(
     my_call: str,
     qsos: list[Qso],
     *,
+    log_callsign: str | None = None,
     timeout: float = 90.0,
 ) -> None:
     """Bulk-Upload via clublog.org/putlogs.php — Michael's empfohlener Weg
@@ -224,7 +228,7 @@ async def bulk_upload(
     data = {
         "email": email,
         "password": app_password,
-        "callsign": my_call,
+        "callsign": log_callsign or my_call,  # Ziel-Log, siehe upload_qso
         "api": api_key,
     }
     async with httpx.AsyncClient(timeout=timeout) as client:

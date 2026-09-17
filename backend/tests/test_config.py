@@ -281,6 +281,7 @@ def test_kein_operator_geheimnis_verlaesst_die_api() -> None:
     Dieser Test setzt JEDES Operator-Feld mit Geheimnis-Namen und prueft,
     dass keines durchkommt — auch Felder, die es heute noch nicht gibt."""
     from ft8_appliance.config import OperatorConfig
+    from ft8_appliance.config.models import EqslKonto
     from ft8_appliance.web.routes.config import (
         _GEHEIM_NAMENSTEILE, _GEHEIM_OHNE_NAMEN, _redact_secrets,
     )
@@ -294,8 +295,12 @@ def test_kein_operator_geheimnis_verlaesst_die_api() -> None:
             wert = getattr(op, n)
             setattr(op, n, {"DK9XR/MM": "GEHEIM"} if isinstance(wert, dict) else "GEHEIM")
         op.eqsl_user = "dk9xr"
+        # Eine Ebene tiefer, Feldname ohne Geheimnis-Wort (v0.168.0)
+        op.eqsl_konten = {"DK9XR/MM": EqslKonto(user="DK9XR/MM", password="GEHEIM")}
 
     red = _redact_secrets(cfg)
     assert "GEHEIM" not in red.model_dump_json()
     # Benutzernamen und die Rufzeichen-Schluessel bleiben sichtbar
     assert red.operators[0].eqsl_user == "dk9xr"
+    assert list(red.operators[0].eqsl_konten) == ["DK9XR/MM"]
+    assert red.operators[0].eqsl_konten["DK9XR/MM"].user == "DK9XR/MM"

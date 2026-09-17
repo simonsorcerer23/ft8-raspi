@@ -284,6 +284,23 @@ export const api = {
   operatorSetLotwLocation: (callsign, on_air_call, station_location) =>
                     request(`/operators/${encodeURIComponent(callsign)}/lotw-location`,
                             { method: 'PUT', body: { on_air_call, station_location } }),
+  operatorDeleteLotwLocation: (callsign, on_air_call) =>
+                    request(`/operators/${encodeURIComponent(callsign)}/lotw-location?on_air_call=${encodeURIComponent(on_air_call)}`,
+                            { method: 'DELETE' }),
+  // v0.168.0 — Club Log und eQSL je Sende-Call. Alle vier Dienste fuehren
+  // jede Variante getrennt; ohne Eintrag bleiben ihre QSOs liegen.
+  operatorAddClublogCall: (callsign, on_air_call) =>
+                    request(`/operators/${encodeURIComponent(callsign)}/clublog-rufzeichen`,
+                            { method: 'PUT', body: { on_air_call } }),
+  operatorDeleteClublogCall: (callsign, on_air_call) =>
+                    request(`/operators/${encodeURIComponent(callsign)}/clublog-rufzeichen?on_air_call=${encodeURIComponent(on_air_call)}`,
+                            { method: 'DELETE' }),
+  operatorSetEqslKonto: (callsign, on_air_call, eqsl_user, eqsl_password) =>
+                    request(`/operators/${encodeURIComponent(callsign)}/eqsl-konto`,
+                            { method: 'PUT', body: { on_air_call, eqsl_user, eqsl_password } }),
+  operatorDeleteEqslKonto: (callsign, on_air_call) =>
+                    request(`/operators/${encodeURIComponent(callsign)}/eqsl-konto?on_air_call=${encodeURIComponent(on_air_call)}`,
+                            { method: 'DELETE' }),
 
   // v0.37.0 — API-Auth
   blobUrl,                                        // Bild hinter der Token-Pruefung

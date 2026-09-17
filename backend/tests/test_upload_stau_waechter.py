@@ -35,6 +35,7 @@ def _operator(callsign: str, *, qrz: bool = True, clublog: bool = True):
         callsign=callsign,
         qrz_logbook_api_key="KEY" if qrz else None,
         qrz_key_for=lambda _s, _q=qrz: ("KEY" if _q else None),
+        clublog_log_for=lambda _s, _c=callsign: _c,
         clublog_email=f"{callsign.lower()}@example.com" if clublog else None,
         clublog_app_password="pw" if clublog else None,
         clublog_api_key="clkey" if clublog else None,

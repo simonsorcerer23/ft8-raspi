@@ -63,6 +63,8 @@ def _orch(ergebnis=None, fehler=None, monkeypatch=None) -> SimpleNamespace:
     )
     o.gesehen = gesehen
     o.op = op
+    o._eqsl_lade_charge = lambda *a: Orchestrator._eqsl_lade_charge(o, *a)
+    o._melde_ohne_einrichtung = lambda *a, **kw: None
     return o
 
 

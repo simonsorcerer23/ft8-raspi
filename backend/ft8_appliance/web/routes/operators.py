@@ -62,6 +62,10 @@ class OperatorOut(BaseModel):
     # QRZ-Keys ist hier nichts geheim: es sind Namen, die der Betreiber
     # selbst in TQSL vergeben hat.
     lotw_station_locations: dict[str, str] = Field(default_factory=dict)
+    # v0.168.0 — abweichende Sende-Calls bei Club Log (nur die Calls) und
+    # bei eQSL (nur die Calls, nie Benutzer oder Passwort).
+    clublog_rufzeichen: list[str] = Field(default_factory=list)
+    eqsl_konten: list[str] = Field(default_factory=list)
 
 
 class OperatorsResponse(BaseModel):
@@ -99,6 +103,8 @@ def _to_out(op: OperatorConfig, active: str) -> OperatorOut:
         is_active=(op.callsign == active),
         station_logbooks=sorted(op.qrz_logbooks.keys()),
         lotw_station_locations=dict(sorted(op.lotw_station_locations.items())),
+        clublog_rufzeichen=list(op.clublog_rufzeichen),
+        eqsl_konten=sorted(op.eqsl_konten.keys()),
     )
 
 
@@ -430,6 +436,28 @@ class LotwLocationRequest(BaseModel):
     station_location: str
 
 
+class ClublogRufzeichenRequest(BaseModel):
+    on_air_call: str
+
+
+class EqslKontoRequest(BaseModel):
+    on_air_call: str
+    eqsl_user: str
+    eqsl_password: str
+
+
+def _abweichender_call(op: OperatorConfig, roh: str) -> str:
+    """Nur Varianten: der Heimat-Call hat seine eigenen Felder."""
+    call = (roh or "").upper().strip()
+    if not call:
+        raise HTTPException(status_code=400, detail="on_air_call noetig")
+    if op.ist_heimatruf(call):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{call} ist der Heimat-Call — dafuer gelten die normalen Zugangsdaten")
+    return call
+
+
 def _resolve_person(orch: Orchestrator, callsign: str) -> OperatorConfig:
     target = callsign.upper().strip()
     for op in orch.config.operators:
@@ -451,6 +479,7 @@ async def upsert_station_logbook(
     if not call or not key:
         raise HTTPException(status_code=400, detail="on_air_call und Key noetig")
     op.qrz_logbooks = {**op.qrz_logbooks, call: key}
+    orch.vergiss_ohne_einrichtung("QRZ", op.callsign, call)
     await orch.persist_config()
     return _to_out(op, orch.config.active_callsign or "")
 
@@ -479,7 +508,7 @@ async def upsert_lotw_location(
         op.lotw_station_location = ort
     else:
         op.lotw_station_locations = {**op.lotw_station_locations, call: ort}
-    orch._lotw_gemeldet.discard((op.callsign, call))
+    orch.vergiss_ohne_einrichtung("LoTW", op.callsign, call)
     await orch.persist_config()
     orch.starte_lotw_loop_falls_noetig("LoTW-Station-Location gesetzt")
     return _to_out(op, orch.config.active_callsign or "")
@@ -511,5 +540,71 @@ async def delete_station_logbook(
     op = _resolve_person(orch, callsign)
     call = on_air_call.upper().strip()
     op.qrz_logbooks = {k: v for k, v in op.qrz_logbooks.items() if k != call}
+    await orch.persist_config()
+    return _to_out(op, orch.config.active_callsign or "")
+
+
+# ---------------------------------------------------------------------------
+# v0.168.0 — Club Log und eQSL je Sende-Call. Alle vier Logbuch-Dienste
+# fuehren jede Rufzeichen-Variante getrennt; ohne Eintrag bleiben QSOs der
+# Variante liegen, statt im Heimat-Log zu landen.
+@router.put("/operators/{callsign}/clublog-rufzeichen", response_model=OperatorOut)
+async def add_clublog_rufzeichen(
+    callsign: str,
+    payload: ClublogRufzeichenRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    """Einen Sende-Call eintragen, der in Club Log unter Settings → Callsigns angelegt ist."""
+    op = _resolve_person(orch, callsign)
+    call = _abweichender_call(op, payload.on_air_call)
+    op.clublog_rufzeichen = sorted({*op.clublog_rufzeichen, call})
+    orch.vergiss_ohne_einrichtung("ClubLog", op.callsign, call)
+    await orch.persist_config()
+    return _to_out(op, orch.config.active_callsign or "")
+
+
+@router.delete("/operators/{callsign}/clublog-rufzeichen", response_model=OperatorOut)
+async def delete_clublog_rufzeichen(
+    callsign: str,
+    on_air_call: str,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    op = _resolve_person(orch, callsign)
+    call = on_air_call.upper().strip()
+    op.clublog_rufzeichen = [c for c in op.clublog_rufzeichen if c != call]
+    await orch.persist_config()
+    return _to_out(op, orch.config.active_callsign or "")
+
+
+@router.put("/operators/{callsign}/eqsl-konto", response_model=OperatorOut)
+async def upsert_eqsl_konto(
+    callsign: str,
+    payload: EqslKontoRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    """Zugangsdaten eines angehaengten eQSL-Kontos fuer einen Sende-Call."""
+    from ...config.models import EqslKonto
+
+    op = _resolve_person(orch, callsign)
+    call = _abweichender_call(op, payload.on_air_call)
+    user, passwort = payload.eqsl_user.strip(), payload.eqsl_password
+    if not user or not passwort:
+        raise HTTPException(status_code=400, detail="eQSL-Benutzer und Passwort noetig")
+    op.eqsl_konten = {**op.eqsl_konten, call: EqslKonto(user=user, password=passwort)}
+    orch.vergiss_ohne_einrichtung("eQSL", op.callsign, call)
+    await orch.persist_config()
+    orch.starte_eqsl_loop_falls_noetig("eQSL-Konto fuer Sende-Call gesetzt")
+    return _to_out(op, orch.config.active_callsign or "")
+
+
+@router.delete("/operators/{callsign}/eqsl-konto", response_model=OperatorOut)
+async def delete_eqsl_konto(
+    callsign: str,
+    on_air_call: str,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> OperatorOut:
+    op = _resolve_person(orch, callsign)
+    call = on_air_call.upper().strip()
+    op.eqsl_konten = {k: v for k, v in op.eqsl_konten.items() if k != call}
     await orch.persist_config()
     return _to_out(op, orch.config.active_callsign or "")

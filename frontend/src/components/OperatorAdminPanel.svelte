@@ -13,8 +13,11 @@
   let busy = $state(false);
   let error = $state(null);
   let preflight = $state({});   // call → { busy, qrz, clublog, error }
-  let lbForm = $state({});      // person → { call, key, loc }
-  let locForm = $state({});     // 'person|call' → Station-Location-Eingabe
+  // person → Formular fuer einen neuen Sende-Call, alle vier Dienste
+  let lbForm = $state({});
+  // 'person|call' → welcher Dienst gerade nachgetragen wird, und dessen Werte
+  let svcOffen = $state({});
+  let svcForm = $state({});
   // person → Zugangsdaten-Formular. Passwoerter/Keys werden von der API
   // nie ausgeliefert, also starten die Felder leer: leer = "nicht
   // aendern". Geloescht wird ueber die expliziten Entfernen-Buttons.
@@ -34,7 +37,7 @@
       operators = data.operators;
       active = data.active_callsign;
       for (const op of operators) {
-        if (!lbForm[op.callsign]) lbForm[op.callsign] = { call: '', key: '', loc: '' };
+        if (!lbForm[op.callsign]) lbForm[op.callsign] = leeresFormular();
       }
       error = null;
     } catch (e) { error = e.message; }
@@ -52,26 +55,71 @@
     }
   }
 
-  async function addLogbook(cs) {
-    const d = lbForm[cs];
-    if (!d || !d.call.trim() || !d.key.trim() || busy) return;
-    const call = d.call.trim().toUpperCase();
+  function leeresFormular() {
+    return { call: '', key: '', loc: '', clublog: false, eqsl_user: '', eqsl_pw: '' };
+  }
+
+  // Jede Variante, die bei irgendeinem Dienst eingetragen ist — nicht mehr
+  // nur die mit QRZ-Logbuch (v0.168.0).
+  function varianten(op) {
+    return [...new Set([
+      ...op.station_logbooks,
+      ...Object.keys(op.lotw_station_locations ?? {}),
+      ...(op.clublog_rufzeichen ?? []),
+      ...(op.eqsl_konten ?? []),
+    ])].sort();
+  }
+
+  function dienste(op, call) {
+    const loc = (op.lotw_station_locations ?? {})[call];
+    return [
+      { svc: 'qrz', da: op.station_logbooks.includes(call), label: 'QRZ' },
+      { svc: 'clublog', da: (op.clublog_rufzeichen ?? []).includes(call), label: 'Club Log' },
+      { svc: 'eqsl', da: (op.eqsl_konten ?? []).includes(call), label: 'eQSL' },
+      { svc: 'lotw', da: !!loc, label: loc ? `LoTW: ${loc}` : 'LoTW' },
+    ];
+  }
+
+  function oeffne(cs, call, svc) {
+    const k = `${cs}|${call}`;
+    svcOffen[k] = svcOffen[k] === svc ? null : svc;
+    svcForm[k] = { key: '', loc: '', user: '', pw: '' };
+  }
+
+  async function speichereDienst(cs, call) {
+    const k = `${cs}|${call}`;
+    const svc = svcOffen[k];
+    const f = svcForm[k] ?? {};
+    if (!svc || busy) return;
     busy = true; error = null;
     try {
-      await api.operatorAddLogbook(cs, call, d.key.trim());
-      if (d.loc.trim()) await api.operatorSetLotwLocation(cs, call, d.loc.trim());
-      lbForm[cs] = { call: '', key: '', loc: '' };
+      if (svc === 'qrz' && f.key.trim()) await api.operatorAddLogbook(cs, call, f.key.trim());
+      else if (svc === 'lotw' && f.loc.trim()) await api.operatorSetLotwLocation(cs, call, f.loc.trim());
+      else if (svc === 'eqsl' && f.user.trim() && f.pw) {
+        await api.operatorSetEqslKonto(cs, call, f.user.trim(), f.pw);
+      } else if (svc === 'clublog') await api.operatorAddClublogCall(cs, call);
+      else return;
+      svcOffen[k] = null;
       await refresh();
     } catch (e) { error = e.message; } finally { busy = false; }
   }
 
-  async function setLotwLocation(cs, call) {
-    const wert = (locForm[`${cs}|${call}`] ?? '').trim();
-    if (!wert || busy) return;
+  async function addVariante(cs) {
+    const d = lbForm[cs];
+    if (!d || !d.call.trim() || busy) return;
+    const call = d.call.trim().toUpperCase();
+    const eqsl = d.eqsl_user.trim() && d.eqsl_pw;
+    if (!d.key.trim() && !d.loc.trim() && !d.clublog && !eqsl) {
+      error = t('opadmin.variant_needs_one', { call });
+      return;
+    }
     busy = true; error = null;
     try {
-      await api.operatorSetLotwLocation(cs, call, wert);
-      locForm[`${cs}|${call}`] = '';
+      if (d.key.trim()) await api.operatorAddLogbook(cs, call, d.key.trim());
+      if (d.loc.trim()) await api.operatorSetLotwLocation(cs, call, d.loc.trim());
+      if (d.clublog) await api.operatorAddClublogCall(cs, call);
+      if (eqsl) await api.operatorSetEqslKonto(cs, call, d.eqsl_user.trim(), d.eqsl_pw);
+      lbForm[cs] = leeresFormular();
       await refresh();
     } catch (e) { error = e.message; } finally { busy = false; }
   }
@@ -149,11 +197,15 @@
     } catch (e) { error = e.message; } finally { busy = false; }
   }
 
-  async function removeLogbook(cs, call) {
+  async function removeVariante(op, call) {
     if (busy || !confirm(t('opadmin.confirm_remove', { call }))) return;
+    const cs = op.callsign;
     busy = true; error = null;
     try {
-      await api.operatorDeleteLogbook(cs, call);
+      if (op.station_logbooks.includes(call)) await api.operatorDeleteLogbook(cs, call);
+      if ((op.lotw_station_locations ?? {})[call]) await api.operatorDeleteLotwLocation(cs, call);
+      if ((op.clublog_rufzeichen ?? []).includes(call)) await api.operatorDeleteClublogCall(cs, call);
+      if ((op.eqsl_konten ?? []).includes(call)) await api.operatorDeleteEqslKonto(cs, call);
       delete preflight[call];
       await refresh();
     } catch (e) { error = e.message; } finally { busy = false; }
@@ -259,29 +311,46 @@
 
       <div class="lb">
         <div class="lb-title">{t('opadmin.send_calls')}</div>
-        {#if op.station_logbooks.length === 0}
+        {#if varianten(op).length === 0}
           <div class="lb-empty">{t('opadmin.no_logbooks')}</div>
         {/if}
-        {#each op.station_logbooks as call (call)}
+        {#each varianten(op) as call (call)}
+          {@const k = `${op.callsign}|${call}`}
           <div class="lb-row">
             <span class="lb-call">{call}</span>
-            <span class="chip on">Key ✓</span>
-            {#if op.lotw_station_locations[call]}
-              <span class="chip on">LoTW: {op.lotw_station_locations[call]}</span>
-            {:else if op.lotw_station_location}
-              <span class="chip warn">{t('opadmin.lotw_loc_missing')}</span>
-              <input class="loc-in" type="text" placeholder={t('opadmin.lotw_loc_ph')}
-                     bind:value={locForm[`${op.callsign}|${call}`]} />
-              <button class="btn sm" onclick={() => setLotwLocation(op.callsign, call)}
-                      disabled={busy}>{t('opadmin.save')}</button>
-            {/if}
+            {#each dienste(op, call) as d (d.svc)}
+              <button class="chip {d.da ? 'on' : 'warn'} {svcOffen[k] === d.svc ? 'sel' : ''}"
+                      disabled={d.da || busy}
+                      onclick={() => oeffne(op.callsign, call, d.svc)}>
+                {d.label} {d.da ? '✓' : '–'}
+              </button>
+            {/each}
             <button class="btn sm" onclick={() => check(call)}
                     disabled={preflight[call]?.busy}>
               {preflight[call]?.busy ? '…' : t('opadmin.check')}
             </button>
-            <button class="btn sm del" onclick={() => removeLogbook(op.callsign, call)}
+            <button class="btn sm del" onclick={() => removeVariante(op, call)}
                     disabled={busy}>{t('opadmin.remove')}</button>
           </div>
+          {#if svcOffen[k] && svcForm[k]}
+            <div class="lb-add">
+              {#if svcOffen[k] === 'qrz'}
+                <input type="text" placeholder={t('opadmin.api_key_ph')} bind:value={svcForm[k].key} />
+              {:else if svcOffen[k] === 'lotw'}
+                <input type="text" placeholder={t('opadmin.lotw_loc_ph')} bind:value={svcForm[k].loc} />
+              {:else if svcOffen[k] === 'eqsl'}
+                <input type="text" placeholder={t('opadmin.eqsl_user')} autocapitalize="characters"
+                       bind:value={svcForm[k].user} />
+                <input type="password" placeholder={t('opadmin.eqsl_password')} bind:value={svcForm[k].pw} />
+              {:else if svcOffen[k] === 'clublog'}
+                <span class="lb-confirm">{t('opadmin.clublog_angelegt', { call })}</span>
+              {/if}
+              <button class="btn sm" onclick={() => (svcOffen[k] = null)}
+                      disabled={busy}>{t('opadmin.cancel')}</button>
+              <button class="btn" onclick={() => speichereDienst(op.callsign, call)}
+                      disabled={busy}>{t('opadmin.save')}</button>
+            </div>
+          {/if}
           {#if preflight[call] && !preflight[call].busy && !preflight[call].error}
             <div class="pf-line {pfClass(preflight[call].qrz.status)}">QRZ: {preflight[call].qrz.detail}</div>
             <div class="pf-line {pfClass(preflight[call].clublog.status)}">ClubLog: {preflight[call].clublog.detail}</div>
@@ -289,13 +358,21 @@
         {/each}
         {#if lbForm[op.callsign]}
           <div class="lb-add">
-            <input type="text" placeholder="{op.callsign}/AM" autocapitalize="characters"
+            <input type="text" placeholder="{op.callsign}/MM" autocapitalize="characters"
                    bind:value={lbForm[op.callsign].call} />
             <input type="text" placeholder={t('opadmin.api_key_ph')}
                    bind:value={lbForm[op.callsign].key} />
             <input type="text" placeholder={t('opadmin.lotw_loc_ph')}
                    bind:value={lbForm[op.callsign].loc} />
-            <button class="btn" onclick={() => addLogbook(op.callsign)} disabled={busy}>{t('opadmin.add')}</button>
+            <input type="text" placeholder={t('opadmin.eqsl_user')} autocapitalize="characters"
+                   bind:value={lbForm[op.callsign].eqsl_user} />
+            <input type="password" placeholder={t('opadmin.eqsl_password')}
+                   bind:value={lbForm[op.callsign].eqsl_pw} />
+            <label class="lb-check">
+              <input type="checkbox" bind:checked={lbForm[op.callsign].clublog} />
+              {t('opadmin.clublog_check')}
+            </label>
+            <button class="btn" onclick={() => addVariante(op.callsign)} disabled={busy}>{t('opadmin.add')}</button>
           </div>
         {/if}
       </div>
@@ -305,7 +382,11 @@
 
 <style>
   .panel { background: var(--panel); border-radius: 8px; padding: 0.8rem; }
-  .loc-in { width: 9rem; font-size: 0.78rem; padding: 0.15rem 0.3rem; }
+  button.chip { border: 0; cursor: pointer; font-family: inherit; }
+  button.chip:disabled { cursor: default; opacity: 1; }
+  button.chip.warn:hover, button.chip.sel { outline: 1px solid #fbbf24; }
+  .lb-confirm { font-size: 0.75rem; color: #cbd5e1; }
+  .lb-check { display: flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: #cbd5e1; }
   h3 { margin: 0 0 0.6rem; color: var(--accent); font-size: 0.95rem; }
   .op {
     border: 1px solid #1e293b; border-radius: 6px; padding: 0.6rem;
@@ -341,14 +422,14 @@
   .lb { margin-top: 0.5rem; border-top: 1px solid #1e293b; padding-top: 0.4rem; }
   .lb-title { font-size: 0.66rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.3rem; }
   .lb-empty { font-size: 0.75rem; color: #64748b; font-style: italic; }
-  .lb-row { display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; margin: 0.15rem 0; }
+  .lb-row { display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; margin: 0.15rem 0; flex-wrap: wrap; }
   .lb-call { font-family: ui-monospace, monospace; color: var(--text); }
   .lb-add { display: flex; gap: 0.4rem; margin-top: 0.4rem; flex-wrap: wrap; }
-  .lb-add input {
+  .lb-add input:not([type=checkbox]) {
     flex: 1; min-width: 8rem; background: rgba(15,23,42,0.6); border: 1px solid #334155;
     border-radius: 4px; padding: 0.3rem 0.45rem; color: var(--text); font-size: 0.78rem;
   }
-  .lb-add input:focus { outline: none; border-color: var(--accent); }
+  .lb-add input:not([type=checkbox]):focus { outline: none; border-color: var(--accent); }
   .creds-form {
     margin: 0.5rem 0; padding: 0.5rem; border: 1px solid #1e293b;
     border-radius: 6px; display: flex; flex-direction: column; gap: 0.35rem;

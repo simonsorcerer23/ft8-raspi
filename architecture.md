@@ -539,7 +539,7 @@ action "Back to XXm").
 ### 6.6 Integrations (online)
 
 - **QRZ.com XML API** (callsign lookup) + **QRZ Logbook API** (auto-upload of QSOs, a separate logbook/key per on-air call via `qrz_logbooks`)
-- **Club Log** auto-upload (realtime + putlogs bulk), per-operator account
+- **Club Log** auto-upload (realtime + putlogs bulk), per-operator account, a separate log per transmit call (`clublog_rufzeichen`)
 - **HamQTH** as a free lookup fallback
 - **cty.dat** locally as an offline fallback (DXCC prefix → country/continent)
 - **PSK Reporter:** upload of own decodes + download of "who heard me?" (feeds the `psk_heard_us` reciprocity tier)
@@ -629,6 +629,10 @@ operators:
     clublog_api_key: "..."
     qrz_logbooks:                # on-air call → its own QRZ logbook key
       DK9XR/AM: WXYZ-9876        # QRZ needs a logbook per prefix/suffix
+    clublog_rufzeichen: [DK9XR/MM]   # set up in Club Log under Settings → Callsigns
+    eqsl_konten:                 # an attached eQSL account per transmit call
+      DK9XR/MM: {user: DK9XR/MM, password: "..."}
+    # Without an entry: the variant's QSOs stay queued (never the home log), one push
     home_country: DL
     current_operating_country: null   # set during CEPT foreign operation
   - callsign: DL2XYZ

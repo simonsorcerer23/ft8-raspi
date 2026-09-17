@@ -119,18 +119,22 @@ lässt, ob überhaupt etwas gesendet wurde.
 Eine Station Location trägt genau ein DXCC-Gebiet und einen Grid. QSOs
 unter einem abweichenden On-Air-Call gehören nicht dazu: `/MM` und `/AM`
 haben überhaupt kein DXCC. Sie mit der Heimat-Location zu signieren wäre
-eine falsche Aussage gegenüber LoTW, und anders als ein QSO im falschen
-QRZ-Logbuch lässt sich das praktisch nicht zurücknehmen.
+eine falsche Aussage gegenüber LoTW, und die lässt sich praktisch nicht
+zurücknehmen. LoTW verlangt außerdem ein eigenes Callsign-Zertifikat je
+gesendeter Variante, für `/MM` und `/AM` mit DXCC „-NONE-"
+(lotw.arrl.org/lotw-help/submitting-qsos).
 
 Der Upload-Loop gruppiert deshalb seit v0.161.0 nach
 `station_callsign` und sucht für jede Gruppe eine eigene Location:
 
 - Der Heimat-Call nimmt `lotw_station_location`.
 - Jeder andere On-Air-Call braucht einen ausdrücklichen Eintrag. **Einen
-  Rückfall auf die Heimat-Location gibt es bewusst nicht** — anders als
-  bei den QRZ-Logbuch-Keys, wo ein falsch einsortiertes QSO harmlos ist.
-- Ohne Eintrag bleiben die QSOs liegen, ohne Versuchszähler, und der
-  Journaleintrag sagt einmal, welche Location fehlt. Sie zählen nicht
+  Rückfall auf die Heimat-Location gibt es bewusst nicht.** Seit v0.168.0
+  gilt dieselbe Regel auch für QRZ, Club Log und eQSL — alle vier Dienste
+  führen jede Variante als eigenes Rufzeichen.
+- Ohne Eintrag bleiben die QSOs liegen, ohne Versuchszähler. Journal und
+  eine Push-Nachricht sagen einmal, welche Location fehlt; die Meldung
+  übersteht Neustarts (`ohne_einrichtung.json` neben `filter_drops.json`). Sie zählen nicht
   gegen die Chargengrenze, sonst würden ein paar hundert liegengebliebene
   Datensätze jeden Durchgang füllen und nichts Neues käme mehr an die
   Reihe.

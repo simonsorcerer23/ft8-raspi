@@ -57,6 +57,8 @@ def _operator(callsign: str, *, qrz_key: str | None = None, clublog: bool = Fals
         callsign=callsign,
         qrz_logbook_api_key=qrz_key,
         qrz_key_for=lambda _station, _k=qrz_key: _k,
+        ist_heimatruf=lambda s, _c=callsign: not s or s.upper() == _c,
+        clublog_log_for=lambda s, _c=callsign: _c if (not s or s.upper() == _c) else None,
         clublog_email=f"{callsign.lower()}@example.com" if clublog else None,
         clublog_app_password="pw" if clublog else None,
         clublog_api_key=f"key-{callsign}" if clublog else None,
@@ -91,6 +93,8 @@ def _stub(operators: list, active: int = 0) -> SimpleNamespace:
         Orchestrator._clublog_sweep_for_operator, stub,
     )
     stub._clublog_einzelsweep = partial(Orchestrator._clublog_einzelsweep, stub)
+    stub._clublog_lade_log = partial(Orchestrator._clublog_lade_log, stub)
+    stub._melde_ohne_einrichtung = lambda *a, **kw: None
     return stub
 
 
@@ -128,7 +132,7 @@ async def test_clublog_drain_uploads_qsos_of_inactive_operator(
 
     sent: list[tuple[str, str]] = []
 
-    async def fake_upload(email, app_pw, api_key, my_call, qso):
+    async def fake_upload(email, app_pw, api_key, my_call, qso, **kw):
         sent.append((my_call, qso.call))
 
     from ft8_appliance.integrations import clublog
@@ -159,7 +163,7 @@ async def test_clublog_drain_uses_per_operator_credentials(
 
     seen: list[str] = []
 
-    async def fake_upload(email, app_pw, api_key, my_call, qso):
+    async def fake_upload(email, app_pw, api_key, my_call, qso, **kw):
         seen.append(api_key)
 
     from ft8_appliance.integrations import clublog
@@ -181,7 +185,7 @@ async def test_clublog_drain_skips_operator_without_credentials(
     await create_all(default_user_callsign="DO3XR")
     await _seed([{"call": "K1IDLE", "user_callsign": "DK9XR"}])
 
-    async def fake_upload(email, app_pw, api_key, my_call, qso):
+    async def fake_upload(email, app_pw, api_key, my_call, qso, **kw):
         raise AssertionError("darf nicht aufgerufen werden")
 
     from ft8_appliance.integrations import clublog

@@ -144,6 +144,19 @@ transmit callsign; anything without its own location — `/MM` and `/AM` have
 no DXCC at all — stays queued rather than being confirmed under the wrong
 one. Setup and pitfalls are documented in [docs/lotw.md](docs/lotw.md).
 
+**Deviating transmit callsigns.** Operating with a prefix or suffix —
+`EA8/DK9XR`, `DK9XR/MM`, `DK9XR/AM` — means a separate callsign for all four
+services: QRZ, Club Log, eQSL and LoTW keep each variant in its own logbook,
+log, account or certificate, and confirmations only match on the exact same
+callsign on both sides. Since v0.168.0 the same rule applies to all four: the
+home call goes to the home log, a variant only to a log explicitly set up for
+it. Without that entry its QSOs stay queued, without counting attempts, and a
+single push notification says what to set up at which service. Up to v0.167
+such QSOs ended up in the home log at QRZ, Club Log and eQSL. Variants are
+entered per call in the operator admin. On the road the station also takes its
+locator from GPS instead of the configured home locator — and none at all
+without a GPS fix.
+
 ### The other direction: incoming QSL cards
 
 Since v0.163.0 the appliance also fetches what others send *to it*. The eQSL

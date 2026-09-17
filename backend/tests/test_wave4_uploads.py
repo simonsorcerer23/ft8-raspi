@@ -92,6 +92,7 @@ def _stub(operators: list, active: int = 0) -> SimpleNamespace:
         Orchestrator._clublog_sweep_for_operator, stub,
     )
     stub._clublog_einzelsweep = partial(Orchestrator._clublog_einzelsweep, stub)
+    stub._clublog_lade_log = partial(Orchestrator._clublog_lade_log, stub)
     return stub
 
 
@@ -413,7 +414,7 @@ async def test_bulk_dupe_reisst_die_charge_nicht_mit(tmp_path, monkeypatch) -> N
     async def bulk_meldet_dupe(*a, **kw):
         raise clublog.ClubLogError("ClubLog rejected: Dupe")
 
-    async def einzeln(email, pw, key, my_call, qso):
+    async def einzeln(email, pw, key, my_call, qso, **kw):
         if qso.call == "K0DUPE":
             raise clublog.ClubLogError("ClubLog rejected: Dupe")
         # Alle uebrigen kommen gerade nicht durch — sie muessen liegen
@@ -453,7 +454,7 @@ async def test_bulk_dupe_zaehlt_den_versuch_nicht_doppelt(tmp_path, monkeypatch)
     async def bulk_meldet_dupe(*a, **kw):
         raise clublog.ClubLogError("Dupe")
 
-    async def einzeln(email, pw, key, my_call, qso):
+    async def einzeln(email, pw, key, my_call, qso, **kw):
         raise clublog.ClubLogError("could not reach login server")
 
     monkeypatch.setattr(clublog, "bulk_upload", bulk_meldet_dupe)
