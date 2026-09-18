@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.169.2 — 2026-09-18
+- fix: eQSL-Posteingang stuendlich statt zweimal am Tag abgleichen — neue Karten hingen bis zu 12 h, ehe sie auf dk9xr.de erschienen
+
 ## v0.169.1 — 2026-09-18
 - self-update: Kommentar zu _ft8_native.c nachgezogen — seit v0.169.1 nur noch ignoriert
 - chore: _ft8_native.c nicht mehr im Repo — Generat des cffi-Builds, machte jeden Checkout auf dem Pi dirty
