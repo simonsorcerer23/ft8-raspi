@@ -82,7 +82,9 @@ MESSPLAN: tuple[Messung, ...] = (
         "Kontrollarm: was die Lohnt-sich-Gates insgesamt bringen",
         "Ab 30 Stunden je Arm: urteil_rate auf QSOs je Stunde. 'echt' oder "
         "'Rauschen' (statt 'wahrscheinlich') beendet die Kampagne.",
-        lesen_ab=date(2026, 9, 18),
+        # 18.09. gelesen: Kontrolle 23,4 h (Regel verlangt 30), 2,05 gegen 1,89
+        # QSOs/Std, z = -0,5. Noch nicht entscheidbar — gut 7 h Kontrolle je Tag.
+        lesen_ab=date(2026, 9, 20),
         danach="hunt_kontrollarm_anteil von 0,3 zurueck auf 0,1 (Dauerbetrieb). "
                "Liegt die Kontrolle vorn: im Abschnitt 'Jede Gate-Stufe einzeln' "
                "die schuldige Stufe suchen.",
