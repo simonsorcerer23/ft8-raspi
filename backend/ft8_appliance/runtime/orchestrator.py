@@ -1401,9 +1401,14 @@ class Orchestrator:
 
     # ------------------------------------------------ eQSL-Posteingang
 
-    # Abgleich der Liste: zweimal am Tag reicht. Bestaetigungen sind keine
-    # Echtzeitware, und ein Abruf liefert den ganzen Posteingang.
-    _QSL_LISTE_INTERVALL_S: typing.ClassVar[float] = 43200.0
+    # Abgleich der Liste: stuendlich. Bis 18.09. zweimal am Tag — dann hing
+    # eine Karte, die die Gegenstation am QSO-Tag schickte (206 von 300),
+    # bis zu zwoelf Stunden, ehe sie auf dk9xr.de erschien. Nach dem ersten
+    # Lauf fragt der Abruf nur ``RcvdSince`` ab, das sind ein paar Zeilen.
+    # eQSL nennt fuer DownloadInBox keine Grenze (DownloadInBox.txt, Stand
+    # 12.10.2025); das Tempolimit gilt den Bildern (GeteQSL.txt).
+    # Gemessen wird in Runden: alle zwei Runden, also etwa alle 70 Minuten.
+    _QSL_LISTE_INTERVALL_S: typing.ClassVar[float] = 3600.0
     # Bilder tropfen einzeln herein. eQSL verlangt langsamer als sechs je
     # Minute; 12 s halten das ein. Mehr als _QSL_JE_RUNDE am Stueck holen
     # wir nicht — ganze Posteingaenge abzuraeumen ist dort ausdruecklich

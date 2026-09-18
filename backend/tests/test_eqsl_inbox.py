@@ -346,3 +346,48 @@ async def test_gruppiert_zeigt_je_station_eine_karte(tmp_path) -> None:
     # Die bebilderte gewinnt, obwohl eine juengere ohne Bild existiert.
     assert je_call["EC3A"]["schluessel"] == "EC3A_B"
     assert je_call["W3FOX"]["wie_viele"] == 1
+
+
+@pytest.mark.asyncio
+async def test_liste_wird_etwa_stuendlich_abgeglichen(monkeypatch) -> None:
+    """Bis 18.09. zweimal am Tag: Eine Karte vom QSO-Tag erschien dann bis zu
+    zwoelf Stunden spaeter auf dk9xr.de. Gezaehlt wird ueber einen simulierten
+    Tag, mit einer Uhr, die nur beim Schlafen und beim Bilderholen laeuft."""
+    import asyncio
+    import types
+
+    from ft8_appliance.runtime import orchestrator as orch_mod
+    from ft8_appliance.runtime.orchestrator import Orchestrator
+
+    uhr = [0.0]
+    abgleiche: list[float] = []
+
+    async def schlafen(s: float) -> None:
+        uhr[0] += s
+        if uhr[0] > 86400:
+            raise asyncio.CancelledError
+
+    async def abgleichen(op) -> None:
+        abgleiche.append(uhr[0])
+
+    async def bilder() -> None:
+        uhr[0] += 25 * 12      # eine Runde Bilder mit Tempolimit
+
+    async def nichts() -> None:
+        return None
+
+    monkeypatch.setattr(orch_mod.asyncio, "sleep", schlafen)
+    monkeypatch.setattr(orch_mod.time, "monotonic", lambda: uhr[0])
+    o = types.SimpleNamespace(
+        config=types.SimpleNamespace(operators=[
+            types.SimpleNamespace(eqsl_user="DK9XR", eqsl_password="x")]),
+        _QSL_LISTE_INTERVALL_S=Orchestrator._QSL_LISTE_INTERVALL_S,
+        _QSL_RUNDE_PAUSE_S=Orchestrator._QSL_RUNDE_PAUSE_S,
+        _qsl_liste_abgleichen=abgleichen, _qsl_bilder_nachholen=bilder,
+        _qsl_waisen_einsammeln=nichts,
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await Orchestrator._qsl_inbox_loop(o)
+    abstaende = [b - a for a, b in zip(abgleiche, abgleiche[1:])]
+    assert len(abgleiche) >= 18, abgleiche
+    assert max(abstaende) <= 75 * 60
