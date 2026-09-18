@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.169.1 — 2026-09-18
+- self-update: Kommentar zu _ft8_native.c nachgezogen — seit v0.169.1 nur noch ignoriert
+- chore: _ft8_native.c nicht mehr im Repo — Generat des cffi-Builds, machte jeden Checkout auf dem Pi dirty
+
 ## v0.169.0 — 2026-09-18
 - feat: jt9-Funde nicht mehr neu anrufen — 0 von 50 gegen 27 von 170; in laufenden QSOs bleibt jt9
 - messplan: Kontrollarm am 18.09. gelesen — 23,4 h Kontrolle, Regel verlangt 30; Termin 20.09.
