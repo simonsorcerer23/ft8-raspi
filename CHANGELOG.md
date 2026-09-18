@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.169.0 — 2026-09-18
+- feat: jt9-Funde nicht mehr neu anrufen — 0 von 50 gegen 27 von 170; in laufenden QSOs bleibt jt9
+- messplan: Kontrollarm am 18.09. gelesen — 23,4 h Kontrolle, Regel verlangt 30; Termin 20.09.
+
 ## v0.168.2 — 2026-09-17
 - feat: Antwortfrequenz und Fernziel-Gate entschieden; Ausweichen am Rand eigener Schalter
 - feat: Messplan — jede Messreihe mit Frage, Entscheidungsregel und Lesetermin
