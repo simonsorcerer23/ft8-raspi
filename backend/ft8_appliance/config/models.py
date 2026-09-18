@@ -763,6 +763,13 @@ class OperatingConfig(BaseModel):
     # und hunt_reply_ab_test gekoppelt — beide aus haette das Ausweichen
     # stillschweigend abgeschaltet (138 Anrufe in 14 Tagen, 18 % Abschluss).
     hunt_reply_edge_dodge: bool = True
+    # 2026-09-18: Funde der jt9-Stufe nicht als neue Anrufziele nehmen.
+    # Sie kommen rund 5 s nach Slotbeginn; 50 Anrufe an solche Ziele
+    # brachten kein QSO (schnelle Ziele: 27 von 170, z = -3,0), und jeder
+    # spaete Pick liess einen laufenden Burst ausfallen. In laufenden QSOs
+    # bleibt jt9 wirksam — dort empfing es in 6 von 27 QSOs einen Schritt,
+    # den die schnelle Stufe nicht hatte.
+    hunt_skip_late_finds: bool = True
     # 2026-09-07 Hunting-Strategie aus der Pick-Telemetrie (381 Picks, 7 %):
     # Ziele unter -13 dB kamen zu 3 % zurueck, -13..-8 zu 12 %. Schwache
     # Ziele nur noch, wenn PSK Reporter sagt, dass sie uns hoeren; sonst

@@ -153,6 +153,8 @@ class MachineContext:
     # 2026-09-17: Randstationen per ruhigem Bin anrufen — unabhaengig davon,
     # wo normale Antworten landen (s. OperatingConfig.hunt_reply_edge_dodge).
     hunt_reply_edge_dodge: bool = True
+    # 2026-09-18: jt9-Funde nicht neu anrufen (s. OperatingConfig.hunt_skip_late_finds).
+    hunt_skip_late_finds: bool = True
     # 2026-09-07 Hunting-Strategie (s. OperatingConfig)
     hunt_weak_snr_db: int = -13
     hunt_weak_requires_psk: bool = False   # Config-Default True; der Orchestrator spiegelt jeden Slot

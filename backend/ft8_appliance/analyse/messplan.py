@@ -146,18 +146,27 @@ MESSPLAN: tuple[Messung, ...] = (
         schalter=("hunt_weak_requires_psk_ab",),
     ),
     Messung(
-        "spaete_decodes", "laufend",
+        "spaete_decodes", "entschieden",
         "Bringt die jt9-Stufe unterm Strich QSOs, oder kostet sie mehr Aussendungen?",
-        ("decode.stufe", "decode.eingang_s", "pick_attempt.ziel_stufe"),
+        ("decode.stufe", "decode.eingang_s", "pick_attempt.ziel_stufe",
+         "config:hunt_skip_late_finds"),
         "Spaete Decodes: was bringt die jt9-Stufe, was kostet sie?",
         "Anrufe mit jt9-Ziel gegen schnelle Ziele (urteil), dazu QSOs mit einem "
         "Schritt, den nur jt9 empfing — gegen die ausgefallenen Aussendungen "
         "aus dem Journal (13.–17.09.: 549, alle nach einem jt9-Decode).",
-        lesen_ab=date(2026, 9, 21),
-        danach="Traegt jt9 wenig: als A/B 'spaete Funde erst im naechsten eigenen "
-               "Slot'. Traegt es viel: beschleunigen statt einbremsen.",
+        lesen_ab=date(2026, 9, 18),
+        danach="Seit 18.09. hunt_skip_late_finds: jt9-Funde werden nicht neu angerufen "
+               "(Wunschliste ausgenommen), in laufenden QSOs bleibt jt9 wirksam. "
+               "Nachsehen, ob die ausgefallenen Aussendungen damit weitgehend "
+               "verschwinden; bleiben viele, kommen sie aus laufenden QSOs — dann "
+               "'spaeter Schritt erst im naechsten eigenen Slot' pruefen.",
         seit=date(2026, 9, 17),
-        quelle="Befund 17.09. aus dem Journal",
+        ergebnis="18.09., einen Tag: 50 Anrufe an jt9-Ziele, 0 QSOs; schnelle Ziele "
+                 "27 von 170 (15,9 %), z = -3,01. Alle 50 waren CQ-Picks. Zugleich "
+                 "hatten 6 der 27 QSOs einen Schritt der Gegenstation, den nur jt9 "
+                 "empfing. Vor dem Lesetermin 21.09. entschieden, weil 0 von 50 "
+                 "gegen 16 % auch mit mehr Daten nicht mehr kippt.",
+        quelle="Befund 17.09. aus dem Journal; Entscheidung Sebastian 18.09.",
     ),
     Messung(
         "sonnenindizes", "laufend",

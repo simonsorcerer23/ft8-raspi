@@ -2625,6 +2625,19 @@ class StateMachine:
             if d.dt_s is None or abs(d.dt_s) <= 2.5
         ]
         self._buche_filter("dt_fenster", _v, cqs)
+        # 2026-09-18: Funde der jt9-Stufe kommen rund 5 s nach Slotbeginn.
+        # Als Anrufziel brachten sie 0 QSOs aus 50 Anrufen (schnelle Ziele
+        # 27 aus 170), und der spaete Pick liess den laufenden Burst
+        # ausfallen. Ruft die Station weiter CQ, faengt sie im naechsten
+        # Durchgang die schnelle Stufe. Die Wunschliste bleibt ausgenommen.
+        if self.ctx.hunt_skip_late_finds:
+            _v = list(cqs)
+            cqs = [
+                d for d in cqs
+                if getattr(d, "stufe", 1) < 3
+                or _in_watchlist(d.call_from, self.ctx.watchlist_calls)
+            ]
+            self._buche_filter("spaeter_fund", _v, cqs)
         # Audio-Frequenz-Filter: Decodes ausserhalb [min, max] uebersprungen,
         # weil unser Reply dort durch den Rig-Audio-Bandpass gedaempft
         # waere. Sebastian sah 2026-05-22 wie ein Reply auf 262 Hz (unter

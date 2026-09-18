@@ -142,6 +142,16 @@ REGELN: tuple[Regel, ...] = (
         "Bleibt als Bandgrenze, nicht als Chancen-Regel.",
         date(2026, 9, 12), "entfaellt (technisch); Bilanz-Abschnitt 'Bandrand'",
     ),
+    Regel(
+        "spaeter_fund", "technisch",
+        "Funde der jt9-Stufe (rund 5 s nach Slotbeginn) werden nicht neu angerufen.",
+        "2026-09-18: 50 Anrufe an jt9-Ziele, 0 QSOs; schnelle Ziele 27 von 170 "
+        "(15,9 %), z = -3,01. Jeder spaete Pick liess einen laufenden Burst "
+        "ausfallen. In laufenden QSOs bleibt jt9 wirksam (6 von 27 QSOs).",
+        date(2026, 9, 18),
+        "entfaellt (technisch); Bilanz-Abschnitt 'Spaete Decodes' zaehlt weiter "
+        "die ausgefallenen Aussendungen und die QSO-Schritte, die nur jt9 empfing.",
+    ),
     # ------------------------------------------------ Sperren
     Regel(
         "cooldown", "sperre",

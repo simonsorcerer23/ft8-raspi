@@ -47,7 +47,8 @@ def test_pipeline_stempelt_stufe_und_eingang() -> None:
 
 def test_anrufversuch_merkt_sich_die_stufe_seines_ziels() -> None:
     sm = StateMachine(ctx=MachineContext(callsign="DK9XR", my_grid="JN58ch",
-                                         auto_answer=True, my_continent="EU"))
+                                         auto_answer=True, my_continent="EU",
+                                         hunt_skip_late_finds=False))
     sm.on_decodes(HardwareState(), [_d("CQ K1ABC FN42", "K1ABC", stufe=3)])
     sm.drain_actions()
     assert sm.ctx.hunt_attempt_meta["K1ABC"]["ziel_stufe"] == 3
@@ -78,3 +79,33 @@ async def test_alte_datenbank_bekommt_die_spalten(tmp_path) -> None:
     con = sqlite3.connect(pfad)
     assert {"stufe", "eingang_s"} <= {r[1] for r in con.execute("pragma table_info(decode)")}
     assert "ziel_stufe" in {r[1] for r in con.execute("pragma table_info(pick_attempt)")}
+
+
+def _jaeger() -> StateMachine:
+    return StateMachine(ctx=MachineContext(callsign="DK9XR", my_grid="JN58ch",
+                                           auto_answer=True, my_continent="EU"))
+
+
+def test_jt9_fund_wird_nicht_neu_angerufen() -> None:
+    """18.09.: 50 Anrufe an jt9-Ziele, kein QSO — und jeder liess einen Burst ausfallen."""
+    sm = _jaeger()
+    assert sm._pick_hunt_target([_d("CQ K1ABC FN42", "K1ABC", stufe=3)]) is None
+    assert sm.filter_drops.get("spaeter_fund") == 1
+    assert sm._pick_hunt_target([_d("CQ K1ABC FN42", "K1ABC", stufe=1)]) is not None
+
+
+def test_jt9_fund_von_der_wunschliste_wird_angerufen() -> None:
+    sm = _jaeger()
+    sm.ctx.watchlist_calls = {"K1ABC"}
+    assert sm._pick_hunt_target([_d("CQ K1ABC FN42", "K1ABC", stufe=3)]) is not None
+
+
+def test_jt9_bleibt_im_laufenden_qso_wirksam() -> None:
+    """Die Antwort der Gegenstation, die nur jt9 empfing, fuehrt das QSO weiter."""
+    sm = _jaeger()
+    sm.on_decodes(HardwareState(), [_d("CQ K1ABC FN42", "K1ABC", stufe=1)])
+    sm.drain_actions()
+    assert sm.qso is not None and sm.qso.their_call == "K1ABC"
+    zustand = sm.state
+    sm.on_decodes(HardwareState(), [_d("DK9XR K1ABC -12", "K1ABC", stufe=3, to="DK9XR")])
+    assert sm.state is not zustand

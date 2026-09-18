@@ -287,6 +287,10 @@ Stufe 3 des Decoders: WSJT-X' `jt9` (Paket `wsjtx`) decodiert den Slot parallel 
 - `decoder_jt9_ft4` (Default an): jt9 mit `-5` auf dem 7,5-s-Slot; gemessen an synthetischen Slots 5/5 Decodes in 0,1 s (x86). jt9 will für FT4 genau 7,5 s Audio, 15 s liefern nichts.
 - `decoder_jt9_ap` / `decoder_jt9_ap_flags` (Default an, Flags 1): eigener Call/Grid (`-c`/`-G`) und im QSO der Partner (`-x`/`-g`) plus `-X 1` an jt9, also WSJT-X' eigene AP-Decodierung. Messung 8.9. (synthetisch, Antwort an uns unter der BP-Grenze): `-X 1` findet 2 von 6, `-X 2/3/7` nichts; unsichere AP-Decodes (`?`-Marke) werden verworfen. Das Memo gegen AP-Eigenbau bleibt: das hier ist K1JTs Implementierung, nicht unsere.
 
+### `hunt_skip_late_finds` (2026-09-18, Default an)
+
+Funde der jt9-Stufe werden nicht als neue Anrufziele genommen. Sie kommen rund 5 s nach Slotbeginn. Bis zum 18.09. gingen 50 Anrufe an solche Ziele, und keiner brachte ein QSO; bei Zielen aus der schnellen Stufe waren es 27 von 170 (z = −3,0). Jeder späte Pick ließ außerdem einen laufenden Burst ausfallen. In laufenden QSOs bleibt jt9 wirksam: Dort empfing es in 6 von 27 QSOs einen Schritt der Gegenstation, den die schnelle Stufe nicht hatte. Ruft die Station weiter CQ, fängt sie im nächsten Durchgang die schnelle Stufe. Stationen der Wunschliste sind ausgenommen. Filterstufe `spaeter_fund`; Regel und Stand: `analyse/messplan.py` (`spaete_decodes`).
+
 ### `hunt_sole_dx_gate` (2026-09-11, Vorgabe aus)
 
 Der **Alleingang an ein weit entferntes Ziel** ist der teuerste Leerlauf im

@@ -8889,6 +8889,9 @@ class Orchestrator:
         self.state_machine.ctx.hunt_reply_edge_dodge = bool(
             getattr(self.config.operating, "hunt_reply_edge_dodge", True)
         )
+        self.state_machine.ctx.hunt_skip_late_finds = bool(
+            getattr(self.config.operating, "hunt_skip_late_finds", True)
+        )
         # 2026-09-07 Hunting-Strategie
         _op = self.config.operating
         self.state_machine.ctx.hunt_weak_snr_db = int(getattr(_op, "hunt_weak_snr_db", -13))
