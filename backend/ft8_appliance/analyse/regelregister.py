@@ -65,17 +65,25 @@ REGELN: tuple[Regel, ...] = (
     Regel(
         "kontinent_gate", "chance",
         "Aus Kontinenten mit Abschlussquote unter 5 % nur mit PSK-Beleg anrufen.",
-        "Quoten am 2026-09-08: EU 18 %, AS 7 %, NA 3 % (>= 20 Anrufe je Kontinent); "
-        "Zellen 2026-09-12: NA mittel 1,3 %. Quote je Anruf, kein Ausbeute-Vergleich.",
-        date(2026, 9, 12), _KONTROLLE,
+        "Erster Feldbeleg 2026-09-21 aus dem Kontrollarm: Die 60 Ziele, die diese "
+        "Stufe verhindert haette, schlossen zu 3,3 % ab — gegen 16,0 % bei den 412 "
+        "Kontroll-Anrufen, die kein Gate getroffen haette (z = -2,61). Davor nur "
+        "Quoten je Anruf ohne Vergleichsgruppe (08.09.: EU 18 %, AS 7 %, NA 3 %; "
+        "Zellen 12.09.: NA mittel 1,3 %).",
+        date(2026, 9, 21), _KONTROLLE,
     ),
     Regel(
         "schwach_ohne_psk", "chance",
         "Ziele unter -13 dB nur mit PSK-Beleg; -4 dB Bonus fuer neues DXCC/seltene Ziele.",
-        "2026-09-07: unter -13 dB 3 % Abschluss, darueber 12 %. Zellen 2026-09-12: "
-        "EU schwach ohne PSK 9,0 %, EU stark mit PSK 38,6 %; PSK-Beleg z=+3,18 "
-        "(uebersteht Bonferroni ueber 11 Tests). A/B starr/adaptiv seit v0.143.0.",
-        date(2026, 9, 12),
+        "WIDERLEGT 2026-09-21, zwei Wege: Die 83 Ziele, die die Stufe verhindert "
+        "haette, schlossen zu 16,9 % ab — gegen 16,0 % ohne Gate (z = +0,19, "
+        "Kontrollarm). Und das A/B ueber 14 Tage: Filter an 165 QSOs aus 1007 "
+        "Anrufen, Filter aus 163 aus 941 (z = -0,12). Die Stufe trifft also keine "
+        "schlechteren Ziele als der Durchschnitt. Die alten Zahlen (07.09.: unter "
+        "-13 dB 3 %, darueber 12 %; Zellen 12.09.: EU schwach ohne PSK 9,0 % gegen "
+        "38,6 %) waren Quoten je Anruf ohne Vergleichsgruppe — sie massen mit, dass "
+        "schwache Ziele meist alternativlos sind (813-mal gab der Filter nach).",
+        date(2026, 9, 21),
         "A/B-Abschnitt 'Schwache Ziele ohne Empfangsbeleg' (QSO-Zahl je Arm, nicht Quote) "
         "und " + _KONTROLLE,
     ),
