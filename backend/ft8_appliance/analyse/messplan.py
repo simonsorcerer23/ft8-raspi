@@ -72,6 +72,14 @@ TELEMETRIE_TABELLEN = frozenset({
 
 _GATE_STUFEN = "Jede Gate-Stufe einzeln"
 
+# Hoechstens so viele A/B-Tests duerfen gleichzeitig laufen. Grund ist die
+# Rechnung, nicht die Ordnung: Die Zielgroesse ist QSOs je Stunde, und bei
+# rund 2,1 QSOs je Stunde braucht ein Unterschied von 10 % etwa 800 QSOs je
+# Arm — 32 Tage bei halber Zeit je Arm. Jeder weitere Arm teilt dieselbe
+# Zeit noch einmal. Am 17.09. liefen drei A/B nebeneinander; zwei davon
+# endeten nach zwei Wochen mit "Rauschen", weil keiner genug Zeit bekam.
+MAX_GLEICHZEITIGE_AB = 2
+
 MESSPLAN: tuple[Messung, ...] = (
     # ------------------------------------------------------------ laufend
     Messung(
@@ -324,12 +332,42 @@ MESSPLAN: tuple[Messung, ...] = (
         seit=date(2026, 9, 11),
     ),
     Messung(
-        "swr_verlauf", "dauerhaft",
+        "betriebsfenster", "dauerhaft",
+        "Zu welcher Tageszeit traegt das Band — und was heisst das fuer die Betriebsart?",
+        ("psk_reporter_in",),
+        "Wann kommen wir an? Was die Tageszeit fuer die Betriebsart heisst",
+        "Je Drei-Stunden-Block: Berichte ueber uns, Hoerer, Anrufe, QSOs. Wenige "
+        "Berichte heissen 'Band traegt nicht' — daran aendert keine Zielauswahl "
+        "etwas. Viele Berichte ohne Anrufe heissen das Gegenteil: dann ist CQ die "
+        "bessere Betriebsart. Ein Block, der dauerhaft unter 5 % abschliesst, "
+        "gehoert zur Frage, ob dort ueberhaupt gesendet werden soll.",
+        seit=date(2026, 9, 21),
+        ergebnis="21.09., 7 Tage: 00-02 UTC 59 Anrufe fuer 2 QSOs (Band zu), "
+                 "03-11 UTC durchgehend 22-23 %, danach fallend bis 10 % um "
+                 "21-23 UTC — bei 4031 Berichten ueber uns. Abends kommen wir "
+                 "an, setzen uns aber nicht durch.",
+        quelle="Befund 21.09.: 76 000 Empfangsberichte gingen bis dahin nur auf die Webseite",
+    ),
+    Messung(
+        "swr_verlauf", "laufend",
         "Fruehwarnung: veraendert sich das SWR schleichend?",
         ("swr_log",),
         "Umgebung: erklaert sie, wann es laeuft und wann nicht?",
-        "Spanne ueber 0,3 im Zeitraum: 'ANSTIEG PRUEFEN'.",
+        "Spanne ueber 0,3 im Zeitraum: 'ANSTIEG PRUEFEN'. Spanne GENAU null "
+        "ueber mehr als 20 Messungen: Der Sensor misst nichts — eine Reihe, "
+        "die sich nie bewegt, ist keine Entwarnung.",
+        # 21.09. gelesen: 1113 Messungen seit dem 12.09., jede exakt 1,00,
+        # waehrend das Rig zur selben Zeit 61 W und schwankende ALC meldete.
+        # Die Brueckenmessung sitzt hinter der Endstufe; ein Tuner davor
+        # meldet immer 1:1. Sebastian sieht beim naechsten Mal am Display
+        # des Rigs nach, ob dort ein echter Wert steht.
+        lesen_ab=date(2026, 10, 5),
+        danach="Steht am Rig auch 1:1, versteckt der Tuner die Antenne — dann "
+               "Reihe einstellen, sie kann ihre Frage nicht beantworten. Zeigt "
+               "das Display einen echten Wert, liefert ihn nur der CAT-Weg "
+               "nicht; dann den Abruf reparieren.",
         seit=date(2026, 9, 12),
+        quelle="Befund 21.09.: blinder Sensor, von der Bilanz als 'unauffaellig' gefuehrt",
     ),
     Messung(
         "sendeversatz", "dauerhaft",
@@ -562,6 +600,11 @@ MESSPLAN: tuple[Messung, ...] = (
 
 def nach_status(status: str) -> list[Messung]:
     return [m for m in MESSPLAN if m.status == status]
+
+
+def laufende_ab() -> tuple[str, ...]:
+    """Schalter der A/B-Tests, die gerade Zeit verbrauchen."""
+    return tuple(s for m in MESSPLAN if m.status == "laufend" for s in m.schalter)
 
 
 def faellige(heute: date | None = None) -> list[Messung]:

@@ -113,3 +113,15 @@ def test_ohne_auswertung_heisst_wirklich_ohne_leser() -> None:
             if re.search(rf"\b{re.escape(spalte)}\b", BILANZ):
                 gelesen.append((x.schluessel, spalte))
     assert not gelesen, f"wird in der Bilanz gelesen: {gelesen}"
+
+
+def test_hoechstens_zwei_ab_gleichzeitig() -> None:
+    """Zeit ist die knappe Groesse, nicht die Datenmenge: Bei 2,1 QSOs je
+    Stunde braucht ein Unterschied von 10 % rund 800 QSOs je Arm. Drei
+    A/B nebeneinander (Stand 17.09.) teilen dieselbe Zeit noch einmal —
+    zwei davon endeten mit 'Rauschen', weil keiner genug bekam."""
+    from ft8_appliance.analyse.messplan import MAX_GLEICHZEITIGE_AB, laufende_ab
+
+    laufen = laufende_ab()
+    assert len(laufen) <= MAX_GLEICHZEITIGE_AB, (
+        f"zu viele A/B gleichzeitig: {sorted(laufen)}")

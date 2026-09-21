@@ -422,6 +422,62 @@ def dranbleiben_abschnitt(con, seit: str) -> None:
                 ("Sendeleistung", "Versuche", "fertig", "Quote"))
 
 
+def betriebsfenster_abschnitt(con, seit: str, tage: int) -> None:
+    """Wann kommen wir an — und was heisst das fuer die Betriebsart?
+
+    Die 76 000 Empfangsberichte ueber unser eigenes Signal gingen bis zum
+    21.09. nur auf die Webseite. Sie sind aber die einzige direkte Evidenz,
+    dass wir irgendwo ankommen: Bei eigenen Decodes kennt man die
+    Sendeleistung der Gegenseite nicht. Hier werden sie zu einer Aussage
+    darueber, was in welcher Tageszeit ueberhaupt zu holen ist — die
+    Auswahllogik kann daran nichts aendern, die Betriebsart schon.
+    """
+    print("\n=== Wann kommen wir an? Was die Tageszeit fuer die Betriebsart heisst ===")
+    berichte = dict(con.execute(
+        "select cast(strftime('%H', ts) as int) / 3, count(*) from psk_reporter_in "
+        "where ts > datetime('now',?) group by 1", (seit,)).fetchall())
+    hoerer = dict(con.execute(
+        "select cast(strftime('%H', ts) as int) / 3, count(distinct rx_call) "
+        "from psk_reporter_in where ts > datetime('now',?) group by 1", (seit,)).fetchall())
+    picks = dict(con.execute(
+        "select cast(strftime('%H', ts) as int) / 3, count(*) from pick_attempt "
+        "where ts > datetime('now',?) group by 1", (seit,)).fetchall())
+    fertig = dict(con.execute(
+        "select cast(strftime('%H', ts) as int) / 3, sum(outcome='completed') "
+        "from pick_attempt where ts > datetime('now',?) group by 1", (seit,)).fetchall())
+    if not berichte:
+        print("    (keine Empfangsberichte im Zeitraum)")
+        return
+    mittel = sorted(berichte.values())[len(berichte) // 2]
+    zeilen = []
+    for b in range(8):
+        n_ber, n_hoer = berichte.get(b, 0), hoerer.get(b, 0)
+        n_pick, n_fertig = picks.get(b, 0), fertig.get(b or 0, 0) or 0
+        quote = f"{100.0 * n_fertig / n_pick:.0f} %" if n_pick else "-"
+        # Die Empfehlung trennt zwei Ursachen, die sich gleich anfuehlen:
+        # "niemand ruft" und "wir kommen nicht an".
+        if n_ber < mittel / 4:
+            rat = "Band zu — weder Anruf noch CQ traegt"
+        elif n_pick < 3:
+            rat = "wir kommen an, es ruft nur niemand — CQ"
+        elif n_fertig == 0:
+            rat = "gehoert, aber kein Abschluss — Pile-Up"
+        elif 100.0 * n_fertig / n_pick < 12:
+            rat = "schwache Ausbeute trotz Empfang"
+        else:
+            rat = "traegt"
+        zeilen.append((f"{b * 3:02d}-{b * 3 + 2:02d}", n_ber, n_hoer, n_pick,
+                       n_fertig, quote, rat))
+    tabelle(zeilen, ("Block UTC", "Berichte", "Hoerer", "Anrufe", "QSOs",
+                     "Quote", "Was das heisst"))
+    print(f"    Ueber {tage} Tage summiert. 'Berichte' sind Meldungen ANDERER")
+    print("    ueber unser Signal, 'Hoerer' die verschiedenen Stationen dahinter.")
+    print("    Wenige Berichte heissen: Das Band traegt nicht — daran aendert")
+    print("    keine Zielauswahl etwas. Viele Berichte ohne Anrufe heissen das")
+    print("    Gegenteil: Wir kommen an, aber es ruft niemand; dann ist CQ die")
+    print("    bessere Betriebsart als Warten auf einen Kandidaten.")
+
+
 def messplan_abschnitt() -> None:
     from datetime import UTC as _U, datetime as _D
 
@@ -876,6 +932,7 @@ def main() -> int:
     # Kennzeichnung nicht zu sagen: decode.ts ist der Slotbeginn.
     spaete_decodes_abschnitt(con, seit)
 
+    betriebsfenster_abschnitt(con, seit, args.tage)
     ziel_eigenschaften_abschnitt(con, seit)
     versuch_verlauf_abschnitt(con, seit)
     dranbleiben_abschnitt(con, seit)
@@ -1437,16 +1494,29 @@ def main() -> int:
     #    nichts zu tun. Bis 2026-09-17 stand hier nur die Zahl der Messwerte.
     zeilen.extend(sonnen_zeilen(con, seit))
 
-    # 3. SWR-Verlauf. Solange er flach bleibt, ist das die Aussage; ein
-    #    Anstieg waere die Fruehwarnung, fuer die die Reihe gedacht ist.
+    # 3. SWR-Verlauf. Ein Anstieg waere die Fruehwarnung, fuer die die Reihe
+    #    gedacht ist. Aber ein Messwert, der sich ueber Hunderte Messungen
+    #    NIE bewegt, ist keine Entwarnung, sondern ein Verdacht: Am
+    #    2026-09-21 standen hier 1113 Messungen, jede exakt 1,00 — waehrend
+    #    das Rig zur selben Zeit 61 W und eine schwankende ALC meldete. Die
+    #    Brueckenmessung sitzt hinter der Endstufe; ein Tuner davor meldet
+    #    immer 1:1, egal was die Antenne macht. Bis dahin stand hier
+    #    "unauffaellig" — die Bilanz erklaerte einen blinden Sensor fuer
+    #    gesund, und das ist schlechter als gar keine Reihe.
     swr = con.execute(
         "select count(*), min(swr), max(swr), avg(swr) from swr_log "
         "where ts > datetime('now',?)", (seit,),
     ).fetchone()
     if swr and swr[0]:
         spanne = (swr[2] or 0) - (swr[1] or 0)
+        if spanne == 0 and swr[0] >= 20:
+            urteil_swr = "IMMER DERSELBE WERT — misst nichts"
+        elif spanne < 0.3:
+            urteil_swr = "unauffaellig"
+        else:
+            urteil_swr = "ANSTIEG PRUEFEN"
         zeilen.append(("SWR-Verlauf", swr[0], f"{swr[1]:.2f} bis {swr[2]:.2f}",
-                       "unauffaellig" if spanne < 0.3 else "ANSTIEG PRUEFEN"))
+                       urteil_swr))
     else:
         zeilen.append(("SWR-Verlauf", 0, "-", "keine Messungen"))
 

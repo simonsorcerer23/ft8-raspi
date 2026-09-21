@@ -255,6 +255,7 @@ ERWARTETE_ABSCHNITTE = (
     "Wen anrufen?",
     "Woran ein Versuch scheitert",
     "Dranbleiben oder aufgeben",
+    "Wann kommen wir an?",
     "Zeit je Zustand",
     "Wartezeit",
     "Kontrollarm",
@@ -483,3 +484,27 @@ def test_spaete_decodes_werden_ausgewertet(ausgabe) -> None:
     assert "Ziel aus Stufe" in teil
     assert "QSOs seit der Kennzeichnung: 6" in teil, teil
     assert "nur jt9 empfangen hat: 1" in teil, teil
+
+
+def test_blinder_swr_sensor_wird_nicht_fuer_gesund_erklaert(tmp_path_factory) -> None:
+    """Am 21.09. standen 1113 SWR-Messungen in der Datenbank, jede exakt 1,00,
+    und die Bilanz nannte das 'unauffaellig'. Die Reihe soll eine langsam
+    schlechter werdende Antenne aufdecken; ein Sensor, der sich nie bewegt,
+    kann das nicht — und sieht dabei die ganze Zeit gesund aus."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from ft8_appliance.db import models as m
+
+    db = tmp_path_factory.mktemp("swr") / "qso.sqlite"
+    _baue_db(db)
+    eng = create_engine(f"sqlite:///{db}")
+    with Session(eng) as s:
+        s.execute(m.SwrLog.__table__.delete())
+        for i in range(40):
+            s.add(m.SwrLog(ts=datetime.now(UTC) - timedelta(minutes=10 * i),
+                           band="20m", freq_hz=14_074_000, swr=1.0))
+        s.commit()
+    zeile = _zeile(_laufe(db), "Umgebung", "SWR-Verlauf")
+    assert "IMMER DERSELBE WERT" in zeile, zeile
+    assert "unauffaellig" not in zeile
