@@ -418,11 +418,14 @@ MESSPLAN: tuple[Messung, ...] = (
         "Quote je Gruppe mit urteil, dazu die Tier-Tabelle (new_dxcc, new_dxcc_psk, "
         "new_dxcc_band). Faellt die Quote deutlich ab, ist zu entscheiden: Wert "
         "eines neuen Gebiets gegen seine Wahrscheinlichkeit.",
-        lesen_ab=date(2026, 9, 21),
+        # 21.09. vorgelegt. Sebastian: erst mehr Daten — eine Saison mit besserer
+        # Ausbreitung kann anders aussehen, und der Wert eines neuen Gebiets ist
+        # keine Frage der Quote. Bis dahin bleiben die Tiers, wie sie sind.
+        lesen_ab=date(2026, 10, 19),
         danach="Entscheidung Sebastian: DXCC-Tiers behalten (ein neues Gebiet ist mehr "
-               "wert als ein Routine-QSO) oder abstufen (sie kosten Zeit fuer Ziele, "
-               "die zu 95 % nicht zustande kommen). Stand 21.09.: 175 Anrufe, 9 QSOs "
-               "(5,1 %) gegen 19,6 % sonst, z = -4,76.",
+               "wert als ein Routine-QSO), nur mit PSK-Beleg bevorzugen, oder abstufen. "
+               "Stand 21.09.: 175 Anrufe, 9 QSOs (5,1 %) gegen 19,6 % sonst, z = -4,76; "
+               "das Tier new_dxcc gab 32-mal den Ausschlag fuer 1 QSO.",
         seit=date(2026, 5, 27),
         quelle="Modellkommentar v0.31.0",
     ),
