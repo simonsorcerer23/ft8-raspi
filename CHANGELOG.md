@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.170.0 — 2026-09-21
+- feat: Schwach-Filter abgeschaltet (widerlegt), Kontrollarm-Kampagne beendet — Anteil zurueck auf 0,1
+- regelregister: Kontinent-Gate belegt (3,3 % gegen 16,0 %), Schwach-Filter widerlegt (16,9 % gegen 16,0 %, A/B z=-0,12)
+
 ## v0.169.2 — 2026-09-18
 - fix: eQSL-Posteingang stuendlich statt zweimal am Tag abgleichen — neue Karten hingen bis zu 12 h, ehe sie auf dk9xr.de erschienen
 
