@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.170.3 — 2026-09-21
+- fix: Pfad-Vorhersage hoechstens einmal je Stunde — der Dienst rechnet alle 15 min, wir holten 1900-mal am Tag
+- messplan: DXCC-Frage vorgelegt, Sebastian sammelt erst weiter — neu lesen am 19.10.
+
 ## v0.170.2 — 2026-09-21
 - feat: die neun offenen Messreihen auswerten, MUF-Zuordnung auf 16 Empfangsfelder, MUF-Abfrage ueber ein Zeitraster (7 min -> 2 min)
 
