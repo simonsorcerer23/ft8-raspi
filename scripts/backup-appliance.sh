@@ -40,6 +40,7 @@ DEST="${DEST_BASE}/${STAMP}"
 PATHS=(
     /etc/ft8-appliance                      # config.yaml (alle Zugangsdaten), install.env
     /var/lib/ft8-appliance                  # qso.sqlite + DB-Backups, runtime_state.json (Audio-Gain!)
+    # ... OHNE den Bilderordner qsl/ — der geht als Spiegel, s.u.
     /etc/hostapd                            # AP-Fallback inkl. PSK
     /etc/NetworkManager/system-connections   # WLAN-Profile inkl. PSKs
     /etc/chrony/chrony.conf
@@ -55,12 +56,25 @@ PATHS=(
 # fiel das erst im Betrieb auf. Der Pfad kommt aus install.env, weil das
 # App-Verzeichnis nicht ueberall gleich heisst.
 
+# Die QSL-Karten (2026-09-16 ff.) sind der erste Bestand, der sich nicht
+# wiederbeschaffen laesst: eQSL erlaubt hoechstens sechs Bilder je Minute,
+# die 6400 Karten brauchten knapp sechs Tage. Sie gehoeren also gesichert —
+# aber nicht jede Nacht neu: Am 2026-09-21 waren es 218 MB, jede Sicherung
+# enthielt dieselben JPEGs noch einmal, acht Laeufe lagen bei 1,7 GB. Und
+# ein Bild aendert sich nie, nachdem es einmal da ist.
+#
+# Darum zweigeteilt: das Archiv taeglich und klein (Konfiguration, Logbuch,
+# WLAN — wenige MB), die Bilder als Spiegel daneben, der nur Neues holt.
+SPIEGEL="${DEST_BASE}/qsl-spiegel"
+# So viele Archive bleiben liegen. Der Spiegel ist davon nicht betroffen.
+BEHALTEN="${FT8_BACKUP_BEHALTEN:-14}"
+
 umask 077
 mkdir -p "$DEST"
 echo "== Backup von ${HOST} nach ${DEST}"
 
 ssh -o ConnectTimeout=20 "sebastian@${HOST}" \
-    ". /etc/ft8-appliance/install.env 2>/dev/null; sudo tar czf /tmp/ft8-backup.tgz --ignore-failed-read ${PATHS[*]} \"\${APP_DIR}/data/cty.dat\" 2>/dev/null; sudo chown \$(id -un) /tmp/ft8-backup.tgz"
+    ". /etc/ft8-appliance/install.env 2>/dev/null; sudo tar czf /tmp/ft8-backup.tgz --ignore-failed-read --exclude=/var/lib/ft8-appliance/qsl ${PATHS[*]} \"\${APP_DIR}/data/cty.dat\" 2>/dev/null; sudo chown \$(id -un) /tmp/ft8-backup.tgz"
 scp -q "sebastian@${HOST}:/tmp/ft8-backup.tgz" "${DEST}/"
 ssh "sebastian@${HOST}" 'rm -f /tmp/ft8-backup.tgz'
 chmod 600 "${DEST}/ft8-backup.tgz"
@@ -120,4 +134,36 @@ PY
     fi
 fi
 echo "== $(du -h "${DEST}/ft8-backup.tgz" | cut -f1) in ${DEST}/ft8-backup.tgz"
+
+# --- QSL-Bilder: Spiegel statt Kopie ------------------------------------
+# Kein --delete: Auf der Station geloeschte Bilder bleiben hier. Ein Backup,
+# das Loeschungen mitzieht, ist gegen genau den Fall blind, fuer den man es
+# hat. Die Dateien sind unveraenderlich, ein zweiter Lauf holt also nur Neues.
+if command -v rsync >/dev/null 2>&1; then
+    mkdir -p "$SPIEGEL"
+    echo "== Spiegele QSL-Karten"
+    rsync -a --info=stats2 "sebastian@${HOST}:/var/lib/ft8-appliance/qsl/" "${SPIEGEL}/" \
+        | grep -E "Number of .*files transferred|Total transferred" || true
+    ANZ="$(find "$SPIEGEL" -type f -name '*.jpg' | wc -l)"
+    echo "   ok   ${ANZ} Karten im Spiegel ($(du -sh "$SPIEGEL" | cut -f1))"
+    [ "$ANZ" -gt 0 ] || { echo "!! Spiegel leer"; FAIL=1; }
+else
+    echo "   WARNUNG rsync fehlt — QSL-Bilder NICHT gesichert"
+    FAIL=1
+fi
+
+# --- Aufraeumen ---------------------------------------------------------
+# Ohne das waechst das Ziel taeglich weiter; am 2026-09-21 lagen dort 1,7 GB,
+# davon 1,6 GB dieselben Bilder in acht Ausgaben. Nur automatisch angelegte
+# Staende (Zeitstempel) fallen weg — von Hand benannte wie
+# "4b-stilllegung-..." bleiben.
+mapfile -t ALT < <(find "$DEST_BASE" -mindepth 1 -maxdepth 1 -type d \
+    -regextype posix-extended -regex '.*/[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}' \
+    | sort -r | tail -n +"$((BEHALTEN + 1))")
+if [ "${#ALT[@]}" -gt 0 ]; then
+    echo "== Raeume ${#ALT[@]} alte Staende ab (behalte ${BEHALTEN})"
+    for d in "${ALT[@]}"; do rm -rf "$d"; done
+fi
+echo "== Ziel belegt jetzt $(du -sh "$DEST_BASE" | cut -f1)"
+
 [ "$FAIL" -eq 0 ] || { echo "!! Backup unvollstaendig"; exit 1; }

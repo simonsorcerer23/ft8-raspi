@@ -404,6 +404,15 @@ Commit-Log erzeugt.
   `install.sh`; ohne es bleibt die dritte Stufe schlicht aus).
 - **GPS:** optional, hilft portabel bei Zeit und Locator.
 
+## Sichern und wiederherstellen
+
+Zugangsdaten, Logbuch, QSL-Karten und WLAN-Profile stehen nicht im Repo.
+`./scripts/backup-appliance.sh` holt sie von der Station (Archiv täglich,
+die Karten als Spiegel), `./scripts/restore-appliance.sh` spielt sie auf
+eine frisch installierte Appliance zurück. Ziel ist ein beliebiges
+Verzeichnis — auch eine eingehängte NAS-Freigabe. Einzelheiten und der
+Grund für die Zweiteilung: [docs/backup.md](docs/backup.md).
+
 ## Zugänge & Datenschutz
 
 Externe Dienste (QRZ, Club Log, ntfy, HamQTH, …) brauchen Zugangsdaten je

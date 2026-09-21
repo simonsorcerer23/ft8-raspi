@@ -390,6 +390,15 @@ also generates [CHANGELOG.md](./CHANGELOG.md) from the commit log.
   `install.sh`; without it the third stage simply stays off).
 - **GPS:** optional, helps with time and grid locator when portable.
 
+## Backup and restore
+
+Credentials, the log, the QSL cards and the WLAN profiles are not in the
+repo. `./scripts/backup-appliance.sh` pulls them off the station (a small
+archive daily, the cards as an rsync mirror), `./scripts/restore-appliance.sh`
+puts them back onto a freshly installed appliance. The destination is any
+directory, a mounted NAS share included. Details and the reason for the
+split: [docs/backup.md](docs/backup.md) (German).
+
 ## Credentials & privacy
 
 External services (QRZ, Club Log, ntfy, HamQTH, …) need per-operator

@@ -53,6 +53,25 @@ else
     echo "   <APP_DIR>/data/cty.dat."
 fi
 
+# QSL-Karten liegen seit dem 2026-09-21 nicht mehr im Archiv, sondern als
+# Spiegel daneben (backup-appliance.sh: taeglich 218 MB dieselben JPEGs waren
+# Verschwendung). Sie sind der einzige Bestand, der sich nicht wiederbeschaffen
+# laesst — eQSL gibt hoechstens sechs Bilder je Minute heraus, die 6400 Karten
+# brauchten knapp sechs Tage. Der Spiegel liegt eine Ebene ueber dem Archiv;
+# FT8_QSL_SPIEGEL ueberschreibt das, etwa beim Einspielen von einer anderen Platte.
+SPIEGEL="${FT8_QSL_SPIEGEL:-$(dirname "$(dirname "$(readlink -f "$TGZ")")")/qsl-spiegel}"
+if [ -d "$SPIEGEL" ] && command -v rsync >/dev/null 2>&1; then
+    ANZ="$(find "$SPIEGEL" -type f -name '*.jpg' | wc -l)"
+    echo "== Spiele ${ANZ} QSL-Karten ein"
+    ssh "sebastian@${HOST}" 'mkdir -p /var/lib/ft8-appliance/qsl'
+    rsync -a "${SPIEGEL}/" "sebastian@${HOST}:/var/lib/ft8-appliance/qsl/"
+elif [ -d "$SPIEGEL" ]; then
+    echo "== HINWEIS: rsync fehlt — QSL-Karten nicht eingespielt (${SPIEGEL})"
+else
+    echo "== HINWEIS: kein QSL-Spiegel unter ${SPIEGEL} — die Karten fehlen dann."
+    echo "   Sie werden nicht neu geholt: Die Datenbank kennt sie als vorhanden."
+fi
+
 ssh -o ConnectTimeout=20 "sebastian@${HOST}" 'bash -s' <<'REMOTE'
 set -euo pipefail
 sudo tar xzf /tmp/ft8-restore.tgz -C / --no-same-owner
