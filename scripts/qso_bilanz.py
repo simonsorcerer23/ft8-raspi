@@ -428,9 +428,15 @@ def betriebsfenster_abschnitt(con, seit: str, tage: int) -> None:
     Die 76 000 Empfangsberichte ueber unser eigenes Signal gingen bis zum
     21.09. nur auf die Webseite. Sie sind aber die einzige direkte Evidenz,
     dass wir irgendwo ankommen: Bei eigenen Decodes kennt man die
-    Sendeleistung der Gegenseite nicht. Hier werden sie zu einer Aussage
-    darueber, was in welcher Tageszeit ueberhaupt zu holen ist — die
-    Auswahllogik kann daran nichts aendern, die Betriebsart schon.
+    Sendeleistung der Gegenseite nicht.
+
+    Die Quote steht hier GETRENNT nach Europa und Rest. Die erste Fassung
+    dieses Abschnitts tat das nicht und meldete fuer 21-23 UTC "schwache
+    Ausbeute trotz Empfang" — 10 % gegen 22 % mittags. Nach Kontinenten
+    getrennt war davon nichts uebrig: Europaeische Ziele schliessen abends
+    zu 22,7 % ab, genau wie mittags. Abends sind nur 80 % der erreichbaren
+    Stationen DX, und DX kommt zu jeder Tageszeit zu 8 bis 11 % zustande.
+    Eine Quote ueber zwei verschiedene Mischungen vergleicht nichts.
     """
     print("\n=== Wann kommen wir an? Was die Tageszeit fuer die Betriebsart heisst ===")
     berichte = dict(con.execute(
@@ -439,43 +445,54 @@ def betriebsfenster_abschnitt(con, seit: str, tage: int) -> None:
     hoerer = dict(con.execute(
         "select cast(strftime('%H', ts) as int) / 3, count(distinct rx_call) "
         "from psk_reporter_in where ts > datetime('now',?) group by 1", (seit,)).fetchall())
-    picks = dict(con.execute(
-        "select cast(strftime('%H', ts) as int) / 3, count(*) from pick_attempt "
-        "where ts > datetime('now',?) group by 1", (seit,)).fetchall())
-    fertig = dict(con.execute(
-        "select cast(strftime('%H', ts) as int) / 3, sum(outcome='completed') "
-        "from pick_attempt where ts > datetime('now',?) group by 1", (seit,)).fetchall())
+    je_block: dict[int, dict[str, tuple[int, int]]] = {}
+    for block, gruppe, n, k in con.execute(
+        "select cast(strftime('%H', ts) as int) / 3, "
+        "       case when continent = 'EU' then 'EU' else 'DX' end, "
+        "       count(*), sum(outcome='completed') "
+        "from pick_attempt where continent is not null and ts > datetime('now',?) "
+        "group by 1, 2", (seit,)).fetchall():
+        je_block.setdefault(block, {})[gruppe] = (n, k or 0)
     if not berichte:
         print("    (keine Empfangsberichte im Zeitraum)")
         return
     mittel = sorted(berichte.values())[len(berichte) // 2]
+
+    def quote(paar: tuple[int, int] | None) -> str:
+        if not paar or not paar[0]:
+            return "-"
+        return f"{paar[1]}/{paar[0]} = {100.0 * paar[1] / paar[0]:.0f} %"
+
     zeilen = []
     for b in range(8):
-        n_ber, n_hoer = berichte.get(b, 0), hoerer.get(b, 0)
-        n_pick, n_fertig = picks.get(b, 0), fertig.get(b or 0, 0) or 0
-        quote = f"{100.0 * n_fertig / n_pick:.0f} %" if n_pick else "-"
-        # Die Empfehlung trennt zwei Ursachen, die sich gleich anfuehlen:
-        # "niemand ruft" und "wir kommen nicht an".
+        n_ber = berichte.get(b, 0)
+        eu = je_block.get(b, {}).get("EU")
+        dx = je_block.get(b, {}).get("DX")
+        anrufe = (eu[0] if eu else 0) + (dx[0] if dx else 0)
+        # Die Empfehlung trennt drei Ursachen, die sich gleich anfuehlen:
+        # "wir kommen nicht an", "es ruft niemand" und "nur DX zu holen".
         if n_ber < mittel / 4:
-            rat = "Band zu — weder Anruf noch CQ traegt"
-        elif n_pick < 3:
-            rat = "wir kommen an, es ruft nur niemand — CQ"
-        elif n_fertig == 0:
-            rat = "gehoert, aber kein Abschluss — Pile-Up"
-        elif 100.0 * n_fertig / n_pick < 12:
-            rat = "schwache Ausbeute trotz Empfang"
+            rat = "Band traegt nicht"
+        elif anrufe < 10:
+            rat = "wir kommen an, es ruft niemand — CQ"
+        elif eu and eu[0] >= 20 and 100.0 * eu[1] / eu[0] < 12:
+            rat = "EU-Ziele bleiben aus — hier lohnt Nachsehen"
+        elif dx and eu and dx[0] > 2 * eu[0]:
+            rat = "fast nur DX erreichbar — niedrige Quote ist die Mischung"
         else:
             rat = "traegt"
-        zeilen.append((f"{b * 3:02d}-{b * 3 + 2:02d}", n_ber, n_hoer, n_pick,
-                       n_fertig, quote, rat))
-    tabelle(zeilen, ("Block UTC", "Berichte", "Hoerer", "Anrufe", "QSOs",
-                     "Quote", "Was das heisst"))
+        zeilen.append((f"{b * 3:02d}-{b * 3 + 2:02d}", n_ber, hoerer.get(b, 0),
+                       quote(eu), quote(dx), rat))
+    tabelle(zeilen, ("Block UTC", "Berichte", "Hoerer", "Europa", "Rest der Welt",
+                     "Was das heisst"))
     print(f"    Ueber {tage} Tage summiert. 'Berichte' sind Meldungen ANDERER")
     print("    ueber unser Signal, 'Hoerer' die verschiedenen Stationen dahinter.")
-    print("    Wenige Berichte heissen: Das Band traegt nicht — daran aendert")
-    print("    keine Zielauswahl etwas. Viele Berichte ohne Anrufe heissen das")
-    print("    Gegenteil: Wir kommen an, aber es ruft niemand; dann ist CQ die")
-    print("    bessere Betriebsart als Warten auf einen Kandidaten.")
+    print("    Die beiden Quoten stehen getrennt, weil sich die Mischung ueber")
+    print("    den Tag dreht: Eine Gesamtquote misst dann die Mischung, nicht")
+    print("    die Tageszeit. Wenige Berichte heissen 'das Band traegt nicht' —")
+    print("    daran aendert keine Zielauswahl etwas. Viele Berichte ohne")
+    print("    Anrufe heissen das Gegenteil: Wir kommen an, es ruft nur")
+    print("    niemand; dann ist CQ die bessere Betriebsart.")
 
 
 def messplan_abschnitt() -> None:

@@ -342,10 +342,15 @@ MESSPLAN: tuple[Messung, ...] = (
         "bessere Betriebsart. Ein Block, der dauerhaft unter 5 % abschliesst, "
         "gehoert zur Frage, ob dort ueberhaupt gesendet werden soll.",
         seit=date(2026, 9, 21),
-        ergebnis="21.09., 7 Tage: 00-02 UTC 59 Anrufe fuer 2 QSOs (Band zu), "
-                 "03-11 UTC durchgehend 22-23 %, danach fallend bis 10 % um "
-                 "21-23 UTC — bei 4031 Berichten ueber uns. Abends kommen wir "
-                 "an, setzen uns aber nicht durch.",
+        ergebnis="21.09., 10 Tage, nach Kontinenten getrennt: Europa schliesst zu "
+                 "jeder Tageszeit zu 19-26 % ab, auch abends (17/75 = 23 % um "
+                 "21-23 UTC). Der Rest der Welt bleibt ueberall bei 3-16 %. Die "
+                 "erste Fassung verglich die Gesamtquote und meldete daraufhin eine "
+                 "Abendschwaeche — es war die Mischung: Abends sind 80 % der "
+                 "erreichbaren Stationen DX, in 1027 von 2161 Abendslots war gar "
+                 "kein Europaeer da. Kein Auswahlproblem: Wo beides zur Wahl stand "
+                 "(132 Slots), nahmen wir 44-mal EU und 31-mal DX. Nachts (00-02 "
+                 "UTC) traegt das Band nicht: 73 Anrufe, 3 QSOs.",
         quelle="Befund 21.09.: 76 000 Empfangsberichte gingen bis dahin nur auf die Webseite",
     ),
     Messung(

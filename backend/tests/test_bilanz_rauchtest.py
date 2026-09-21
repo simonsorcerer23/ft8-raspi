@@ -508,3 +508,41 @@ def test_blinder_swr_sensor_wird_nicht_fuer_gesund_erklaert(tmp_path_factory) ->
     zeile = _zeile(_laufe(db), "Umgebung", "SWR-Verlauf")
     assert "IMMER DERSELBE WERT" in zeile, zeile
     assert "unauffaellig" not in zeile
+
+
+def test_betriebsfenster_trennt_die_kontinente(tmp_path_factory) -> None:
+    """Die erste Fassung des Abschnitts verglich eine Gesamtquote ueber den
+    Tag und meldete fuer den Abend 'schwache Ausbeute trotz Empfang'. Nach
+    Kontinenten getrennt war nichts davon uebrig: Europa schliesst abends
+    genauso ab wie mittags, es sind nur fast nur noch DX-Ziele da. Der Test
+    baut genau diese Lage nach."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from ft8_appliance.db import models as m
+
+    db = tmp_path_factory.mktemp("fenster") / "qso.sqlite"
+    _baue_db(db)
+    stunde = datetime.now(UTC) - timedelta(hours=1)
+    block = f"{stunde.hour // 3 * 3:02d}-{stunde.hour // 3 * 3 + 2:02d}"
+    eng = create_engine(f"sqlite:///{db}")
+    with Session(eng) as s:
+        for i in range(40):                      # Europa: 25 % — wie mittags
+            s.add(m.PickAttempt(ts=stunde, target_call=f"EU{i}", user_callsign="DK9XR",
+                                band="20m", continent="EU", pick_kind="cq",
+                                outcome="completed" if i % 4 == 0 else "bailed"))
+        for i in range(200):                     # DX: 5 % — und dreimal so viele
+            s.add(m.PickAttempt(ts=stunde, target_call=f"DX{i}", user_callsign="DK9XR",
+                                band="20m", continent="NA", pick_kind="cq",
+                                outcome="completed" if i % 20 == 0 else "bailed"))
+        for i in range(300):                     # gehoert werden wir gut
+            s.add(m.PskReporterIn(ts=stunde, rx_call=f"R{i}", rx_grid="FN20",
+                                  snr_db=-12, band="20m"))
+        s.commit()
+    zeile = _zeile(_laufe(db), "Wann kommen wir an?", block)
+    quoten = [int(q) for _k, _n, q in re.findall(r"(\d+)/(\d+) = (\d+) %", zeile)]
+    assert len(quoten) == 2, zeile          # Europa und Rest stehen getrennt
+    assert quoten[0] >= 20, zeile           # Europa unauffaellig
+    assert quoten[1] <= 10, zeile           # DX schwach, wie immer
+    assert "bleiben aus" not in zeile, zeile
+    assert "nur DX" in zeile, zeile
