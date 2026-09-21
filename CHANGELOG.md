@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.171.0 — 2026-09-21
+- feat: Betriebsfenster je Tageszeit aus den Empfangsberichten, blinder SWR-Sensor wird benannt, hoechstens zwei A/B gleichzeitig
+
 ## v0.170.3 — 2026-09-21
 - fix: Pfad-Vorhersage hoechstens einmal je Stunde — der Dienst rechnet alle 15 min, wir holten 1900-mal am Tag
 - messplan: DXCC-Frage vorgelegt, Sebastian sammelt erst weiter — neu lesen am 19.10.
