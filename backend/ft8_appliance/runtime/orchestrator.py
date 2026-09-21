@@ -8900,7 +8900,7 @@ class Orchestrator:
         # 2026-09-07 Hunting-Strategie
         _op = self.config.operating
         self.state_machine.ctx.hunt_weak_snr_db = int(getattr(_op, "hunt_weak_snr_db", -13))
-        self.state_machine.ctx.hunt_weak_requires_psk = bool(getattr(_op, "hunt_weak_requires_psk", True))
+        self.state_machine.ctx.hunt_weak_requires_psk = bool(getattr(_op, "hunt_weak_requires_psk", False))
         # Erwartungswert-Modell: Wertfaktoren und Zeitkosten aus der Config;
         # Tabelle und p_cq kommen aus _refresh_p_tabelle (alle 30 min).
         from ..analyse.erwartungswert import Wertfaktoren as _Wf

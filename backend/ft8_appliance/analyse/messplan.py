@@ -75,21 +75,21 @@ _GATE_STUFEN = "Jede Gate-Stufe einzeln"
 MESSPLAN: tuple[Messung, ...] = (
     # ------------------------------------------------------------ laufend
     Messung(
-        "kontrollarm", "laufend",
+        "kontrollarm", "dauerhaft",
         "Bringen die Lohnt-sich-Gates zusammen mehr QSOs je Stunde, als sie kosten?",
         ("pick_attempt.kontroll_arm", "pick_candidate.kontroll_arm",
          "pick_candidate.haette_verworfen", "config:hunt_kontrollarm_anteil"),
         "Kontrollarm: was die Lohnt-sich-Gates insgesamt bringen",
         "Ab 30 Stunden je Arm: urteil_rate auf QSOs je Stunde. 'echt' oder "
         "'Rauschen' (statt 'wahrscheinlich') beendet die Kampagne.",
-        # 18.09. gelesen: Kontrolle 23,4 h (Regel verlangt 30), 2,05 gegen 1,89
-        # QSOs/Std, z = -0,5. Noch nicht entscheidbar — gut 7 h Kontrolle je Tag.
-        lesen_ab=date(2026, 9, 20),
-        danach="hunt_kontrollarm_anteil von 0,3 zurueck auf 0,1 (Dauerbetrieb). "
-               "Liegt die Kontrolle vorn: im Abschnitt 'Jede Gate-Stufe einzeln' "
-               "die schuldige Stufe suchen.",
+        danach="Kampagne beendet am 21.09.: Regel 2,15 QSOs/Std (113 h) gegen "
+               "Kontrolle 2,22 (42 h), z = -0,2 — Rauschen. hunt_kontrollarm_anteil "
+               "zurueck auf 0,1. Der Arm laeuft dauerhaft weiter: Er ist die "
+               "Vergleichsgruppe, mit der einzelne Gates ueberhaupt zu belegen sind "
+               "(21.09. kontinent_gate belegt, schwach_ohne_psk widerlegt). Liegt die "
+               "Kontrolle einmal deutlich vorn: 'Jede Gate-Stufe einzeln' lesen.",
         seit=date(2026, 9, 14),
-        quelle="Kampagne 0,3 seit 15.09. (Sebastian: QSOs fuer schnellere Klarheit)",
+        quelle="Kampagne 0,3 vom 15. bis 21.09. (Sebastian: QSOs fuer schnellere Klarheit)",
         schalter=("hunt_kontrollarm_anteil",),
     ),
     Messung(
@@ -131,7 +131,7 @@ MESSPLAN: tuple[Messung, ...] = (
         schalter=("hunt_sole_dx_ab",),
     ),
     Messung(
-        "schwach_filter_ab", "laufend",
+        "schwach_filter_ab", "entschieden",
         "Verwirft der Filter fuer schwache Ziele ohne Empfangsbeleg mehr QSOs, als er Zeit spart?",
         ("pick_attempt.schwach_arm", "pick_candidate.schwach_arm",
          "config:hunt_weak_requires_psk_ab"),
@@ -139,9 +139,16 @@ MESSPLAN: tuple[Messung, ...] = (
         "QSO-Zahl je Arm, nicht die Quote. Dieselbe Frage beantwortet seit 16.09. "
         "das Schattenprotokoll des Kontrollarms (Stufe schwach_ohne_psk).",
         lesen_ab=date(2026, 9, 21),
-        danach="Sobald 'Jede Gate-Stufe einzeln' fuer schwach_ohne_psk ein Urteil hat: "
-               "A/B abschalten — zwei Messungen fuer eine Frage verduennen beide.",
+        danach="Filter und A/B aus (hunt_weak_requires_psk: false, "
+               "hunt_weak_requires_psk_ab: false). Das Schattenprotokoll des "
+               "Kontrollarms sieht weiter zu; ein neuer Beleg muesste den Filter "
+               "zurueckholen.",
         seit=date(2026, 9, 14),
+        ergebnis="21.09., 14 Tage, zwei Wege: A/B 165 QSOs aus 1007 Anrufen mit "
+                 "Filter gegen 163 aus 941 ohne (z = -0,12); Schattenprotokoll: die "
+                 "83 verhinderten Ziele schlossen zu 16,9 % ab gegen 16,0 % ohne "
+                 "Gate (z = +0,19). Der alte Beleg war eine Quote ohne "
+                 "Vergleichsgruppe.",
         quelle="Modellkommentar pick_attempt.schwach_arm; Commit 4f933f3",
         schalter=("hunt_weak_requires_psk_ab",),
     ),

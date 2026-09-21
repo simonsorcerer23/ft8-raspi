@@ -157,7 +157,7 @@ class MachineContext:
     hunt_skip_late_finds: bool = True
     # 2026-09-07 Hunting-Strategie (s. OperatingConfig)
     hunt_weak_snr_db: int = -13
-    hunt_weak_requires_psk: bool = False   # Config-Default True; der Orchestrator spiegelt jeden Slot
+    hunt_weak_requires_psk: bool = False   # seit 21.09. auch Config-Default aus; der Orchestrator spiegelt jeden Slot
     hunt_cq_fallback: bool = True
     hunt_cq_fallback_after_slots: int = 2
     hunt_cq_fallback_max_cqs: int = 20

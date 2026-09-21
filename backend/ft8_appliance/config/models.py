@@ -775,17 +775,26 @@ class OperatingConfig(BaseModel):
     # Ziele nur noch, wenn PSK Reporter sagt, dass sie uns hoeren; sonst
     # nach N leeren Slots selbst CQ rufen, bis wieder ein Rufer da ist.
     hunt_weak_snr_db: int = Field(default=-13, ge=-30, le=0)
-    hunt_weak_requires_psk: bool = True
-    # A/B ab 2026-09-14: Der Filter laeuft nur in jedem zweiten Zeitblock.
-    # Zielgroesse ist NICHT die Abschlussquote — die steigt zwangslaeufig,
-    # wenn man weniger anruft —, sondern die Zahl der QSOs je Arm. Beide
-    # Arme bekommen gleich viele 15-Minuten-Bloecke, deshalb ist die reine
-    # QSO-Zahl direkt die Ausbeute pro Zeit.
-    hunt_weak_requires_psk_ab: bool = True
+    # 2026-09-21 WIDERLEGT, Default jetzt False: A/B ueber 14 Tage 165 QSOs
+    # mit gegen 163 ohne Filter (z = -0,12), und die 83 Ziele, die er im
+    # Schattenprotokoll verworfen haette, schlossen zu 16,9 % ab gegen 16,0 %
+    # ohne Gate. Der alte Beleg war eine Quote je Anruf ohne Vergleichsgruppe
+    # und mass mit, dass schwache Ziele meist alternativlos sind (813-mal gab
+    # der Filter selbst nach). Siehe analyse/regelregister.py.
+    hunt_weak_requires_psk: bool = False
+    # A/B ab 2026-09-14, beendet am 2026-09-21: Der Filter lief nur in jedem
+    # zweiten Zeitblock. Zielgroesse war NICHT die Abschlussquote — die steigt
+    # zwangslaeufig, wenn man weniger anruft —, sondern die Zahl der QSOs je
+    # Arm. Beide Arme bekamen gleich viele 15-Minuten-Bloecke.
+    hunt_weak_requires_psk_ab: bool = False
     # Permanenter Kontrollarm (seit 2026-09-14): Zeitanteil der Bloecke,
     # in denen die "lohnt sich das?"-Gates nicht laufen. Der Massstab
     # fuer jede Filterregel — QSOs je Stunde Regel gegen Kontrolle.
     # 0 schaltet ab. Ueber 0.5 waere die Regel selbst die Ausnahme.
+    # Kampagne 15.-21.09. auf 0,3: Regel 2,15 QSOs/Std (113 h) gegen Kontrolle
+    # 2,22 (42 h), z = -0,2 — die Gates bringen zusammen nichts und kosten
+    # nichts. Seit 21.09. wieder 0,1 im Dauerbetrieb; die Belege fuer die
+    # einzelnen Gates kommen aus dem Schattenprotokoll.
     hunt_kontrollarm_anteil: float = Field(default=0.1, ge=0.0, le=0.5)
     # Erwartungswert-Modell (v0.150.0) als A/B gegen die Kette: P(Erfolg)
     # x Wert je Kandidat gegen den CQ-Ertrag statt der sieben Lohnt-sich-
