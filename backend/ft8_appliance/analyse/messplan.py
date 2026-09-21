@@ -207,9 +207,16 @@ MESSPLAN: tuple[Messung, ...] = (
         "FT8-MUF: wie weit ueber die Vorhersage traegt FT8?",
         "Die FT8-MUF liegt dort, wo es Gelegenheiten gab und trotzdem keine Berichte "
         "kamen. Zuordnung der Berichte muss dafuer ueber 80 % liegen.",
-        lesen_ab=date(2026, 9, 19),
+        # 21.09. gelesen und NICHT entscheidbar: nur 75 % der Berichte zugeordnet
+        # (Regel verlangt 80), und die oberste Lage hatte null Gelegenheiten. Seit
+        # v0.170.2 fragt die Vorhersage 16 statt 10 Empfangsfelder ab, das deckt
+        # 91 % der Berichte. Neu lesen, wenn eine Woche damit gelaufen ist.
+        lesen_ab=date(2026, 9, 28),
         danach="Liegt die Grenze erkennbar: als Picker-Signal fuer Fernziele pruefen. "
-               "Sonst Frage verwerfen und path_prediction nur noch fuer die Karte halten.",
+               "Sonst Frage verwerfen und path_prediction nur noch fuer die Karte halten. "
+               "Bleibt die Lage 'mehr als 80 % darueber' auch dann ohne Gelegenheit, "
+               "ist die Frage auf 20 m gar nicht zu beantworten — dann erst mit einem "
+               "zweiten Band wieder aufnehmen.",
         seit=date(2026, 9, 12),
         quelle="Tiefenpruefung 12.09. ('FT8-MUF-Frage in ~1 Woche neu')",
     ),
@@ -388,62 +395,155 @@ MESSPLAN: tuple[Messung, ...] = (
     ),
     # ----------------------------------------------------- ohne_auswertung
     Messung(
-        "dupe_anrufe", "ohne_auswertung",
+        "dupe_anrufe", "entschieden",
         "Bringen Anrufe an schon gearbeitete Stationen ueberhaupt Abschluesse?",
         ("pick_attempt.was_worked",),
-        None, "", seit=date(2026, 5, 30),
+        "Wen anrufen? Was die Ziel-Eigenschaften zum Abschluss beitragen",
+        "Quoten je Gruppe mit urteil. 'sicher' zugunsten neuer Stationen wuerde "
+        "hunt_skip_worked rechtfertigen; umgekehrt bleibt der Schalter aus.",
+        seit=date(2026, 5, 27),
+        danach="hunt_skip_worked bleibt aus, jetzt mit Beleg statt mit Bauchgefuehl. "
+               "Die Spalte bleibt: Sie trennt in jeder anderen Auswertung die "
+               "bewaehrten Pfade von den neuen.",
+        ergebnis="21.09., 14 Tage: schon gearbeitet 301 von 1273 (23,6 %), neu 390 von "
+                 "2388 (16,3 %), z = +5,39. Wer schon einmal geantwortet hat, antwortet "
+                 "wieder — der Pfad ist belegt.",
         quelle="Modellkommentar v0.31.0 (skip_worked-Frage)",
     ),
     Messung(
-        "neu_dxcc", "ohne_auswertung",
+        "neu_dxcc", "laufend",
         "Schliessen Anrufe an neue DXCC-Gebiete anders ab?",
         ("pick_attempt.was_new_dxcc",),
-        None, "", seit=date(2026, 5, 30), quelle="Modellkommentar v0.31.0",
+        "Wen anrufen? Was die Ziel-Eigenschaften zum Abschluss beitragen",
+        "Quote je Gruppe mit urteil, dazu die Tier-Tabelle (new_dxcc, new_dxcc_psk, "
+        "new_dxcc_band). Faellt die Quote deutlich ab, ist zu entscheiden: Wert "
+        "eines neuen Gebiets gegen seine Wahrscheinlichkeit.",
+        lesen_ab=date(2026, 9, 21),
+        danach="Entscheidung Sebastian: DXCC-Tiers behalten (ein neues Gebiet ist mehr "
+               "wert als ein Routine-QSO) oder abstufen (sie kosten Zeit fuer Ziele, "
+               "die zu 95 % nicht zustande kommen). Stand 21.09.: 175 Anrufe, 9 QSOs "
+               "(5,1 %) gegen 19,6 % sonst, z = -4,76.",
+        seit=date(2026, 5, 27),
+        quelle="Modellkommentar v0.31.0",
     ),
     Messung(
-        "bandbelegung", "ohne_auswertung",
+        "bandbelegung", "dauerhaft",
         "Stoergroesse: haengt der Abschluss an der Bandbelegung (Decodes im Slot)?",
         ("pick_attempt.n_decodes",),
-        None, "", seit=date(2026, 5, 30), quelle="Modellkommentar v0.31.0",
+        "Woran ein Versuch scheitert: Alter, Bandbelegung, Dauer",
+        "Quote je Belegungsklasse und Rangkorrelation. Kein Schalter haengt daran; "
+        "die Groesse sagt, ob ein Vergleich zwischen ruhigen und vollen Baendern "
+        "zulaessig ist. Kehrt sich das Vorzeichen um, ist jede laufende Messung "
+        "daraufhin nachzusehen.",
+        seit=date(2026, 5, 27),
+        ergebnis="21.09., 14 Tage: unter 5 Decodes 16,0 %, 5-14 20,5 %, 15-29 25,0 %; "
+                 "r = +0,06 ueber 3661 Versuche. Ein volles Band ist eher ein gutes "
+                 "Zeichen (offene Ausbreitung) als Konkurrenz.",
+        quelle="Modellkommentar v0.31.0",
     ),
     Messung(
-        "veraltete_picks", "ohne_auswertung",
+        "veraltete_picks", "entschieden",
         "Liegt went_silent an veralteten Picks oder an der Gegenstation?",
         ("pick_attempt.pick_age_s",),
-        None, "", seit=date(2026, 6, 1), quelle="Modellkommentar v0.62.0",
+        "Woran ein Versuch scheitert: Alter, Bandbelegung, Dauer",
+        "Quote und Anteil 'went_silent' je Altersklasse des Decodes beim Pick. "
+        "Bleibt eine Klasse mit hohem Alter uebrig, gehoert ein Hoechstalter in "
+        "den Picker.",
+        seit=date(2026, 8, 30),
+        danach="Kein eigener Schalter noetig: hunt_skip_late_finds hat die Ursache "
+               "beseitigt. Die Altersklassen bleiben in der Auswertung — taucht "
+               "wieder eine aeltere auf, ist etwas zurueckgefallen.",
+        ergebnis="21.09., 14 Tage: unter 3 s 21,2 % Abschluss und 30 % stumm, 3-8 s "
+                 "3,7 % und 55 % stumm, 8-20 s 4,1 %. Ein Pick aelter als 3 s war "
+                 "praktisch aussichtslos. Seit dem jt9-Filter vom 18.09. ist jeder "
+                 "der 702 Picks juenger als 3 s — die alten waren jt9-Funde.",
+        quelle="Modellkommentar v0.62.0",
     ),
     Messung(
-        "wiederholungen", "ohne_auswertung",
+        "wiederholungen", "entschieden",
         "Lohnt ein zweiter CQ- bzw. Report-Ruf — 'nie geantwortet' gegen 'engagiert, dann verloren'?",
-        ("pick_attempt.n_resends", "pick_attempt.n_cq_resends", "pick_attempt.stale_slots"),
-        None, "", seit=date(2026, 6, 1),
+        ("pick_attempt.n_resends", "pick_attempt.n_cq_resends",
+         "pick_attempt.stale_slots"),
+        "Dranbleiben oder aufgeben: Wiederholungen und unsere Lautstaerke",
+        "Anteil der Abschluesse, die erst nach einer Wiederholung kamen, und "
+        "Wiederholungen je Verlaufsart. Unter 5 % waeren die Wiederholungen "
+        "verlorene Sendezeit.",
+        seit=date(2026, 8, 30),
+        danach="Wiederholungen bleiben. Die Quote je Wiederholungszahl taeuscht — wer "
+               "zweimal wiederholt, hatte schon Kontakt; nur der Anteil an allen "
+               "Abschluessen zaehlt.",
+        ergebnis="21.09., 14 Tage: 173 von 691 Abschluessen (25,0 %) kamen erst nach "
+                 "mindestens einer Wiederholung. Wer nie geantwortet hat, bekam im "
+                 "Mittel 0,2 Wiederholungen und 7,0 leere Slots; 'engagiert, dann "
+                 "verloren' 0,8 und 4,8.",
         quelle="Modellkommentare v0.62.0 und 15.09. (qso_max_cq_resends)",
     ),
     Messung(
-        "laut_genug", "ohne_auswertung",
+        "laut_genug", "entschieden",
         "Sind wir laut genug — erklaert unser eigenes SNR bei der Gegenstation went_silent?",
-        ("pick_attempt.psk_snr", "pick_attempt.our_snr_received", "pick_attempt.tx_power_w"),
-        None, "", seit=date(2026, 6, 1), quelle="Modellkommentar v0.64.0",
+        ("pick_attempt.psk_snr", "pick_attempt.our_snr_received",
+         "pick_attempt.tx_power_w"),
+        "Dranbleiben oder aufgeben: Wiederholungen und unsere Lautstaerke",
+        "Quote und Anteil 'stumm' je Klasse, dazu Rangkorrelation. Traegt unser "
+        "eigenes Signal, waere mehr Leistung oder eine bessere Antenne der Hebel.",
+        seit=date(2026, 9, 1),
+        danach="our_snr_received taugt nicht als Erklaerung fuer stumme Partner: Die "
+               "Spalte gibt es nur, WENN einer geantwortet hat (Ueberlebensfehler). "
+               "psk_snr bleibt als Signal, es steht auch ohne Antwort zur Verfuegung. "
+               "tx_power_w ist unveraendert (70 W) und zeigt damit nur, dass die "
+               "Leistung als Erklaerung ausscheidet.",
+        ergebnis="21.09., 14 Tage: our_snr_received r = +0,06 und in allen Klassen 0 % "
+                 "stumm — der Ueberlebensfehler. psk_snr dagegen: ab -5 dB 27,6 % "
+                 "Abschluss, unter -18 dB 15,5 %, r = +0,11 ueber 1192 Versuche; der "
+                 "Anteil stummer Partner bleibt dabei konstant bei 35 %.",
+        quelle="Modellkommentar v0.64.0",
     ),
     Messung(
-        "entfernung", "ohne_auswertung",
+        "entfernung", "entschieden",
         "Haengt der Abschluss an der Entfernung zum Ziel?",
         ("pick_attempt.distance_km", "pick_attempt.target_grid"),
-        None, "", seit=date(2026, 6, 1),
-        quelle="Modellkommentar v0.64.0; in der Tiefenpruefung 12.09. einmalig "
-               "genutzt (wirkt nur ueber den Kontinent)",
+        "Wen anrufen? Was die Ziel-Eigenschaften zum Abschluss beitragen",
+        "Quote je Entfernungsklasse und Rangkorrelation, dieselbe Korrelation noch "
+        "einmal nur innerhalb Europas. Verschwindet sie dort, wirkt die Entfernung "
+        "nur ueber den Kontinent und taugt nicht als eigenes Signal.",
+        seit=date(2026, 9, 1),
+        danach="Kein eigenes Picker-Signal; die Kontinent- und Zellen-Historie deckt es "
+               "ab. Spalte bleibt fuer das Fernziel-Gate und die Karte.",
+        ergebnis="21.09., 14 Tage: unter 1000 km 18,3 %, 1000-2500 km 22,9 %, "
+                 "2500-4000 km 12,5 %, ueber 4000 km 7,2 %; r = -0,13. Nur innerhalb "
+                 "Europas bleibt r = -0,04. Bestaetigt die Tiefenpruefung vom 12.09.",
+        quelle="Modellkommentar v0.64.0; Tiefenpruefung 12.09.",
     ),
     Messung(
-        "prioritaeten", "ohne_auswertung",
+        "prioritaeten", "dauerhaft",
         "Welche Prioritaetsregel entscheidet den Pick — wirken die Tiers?",
-        ("pick_attempt.winning_tier", "pick_attempt.hunt_priority", "pick_attempt.was_tailend"),
-        None, "", seit=date(2026, 6, 1), quelle="Modellkommentar v0.64.0",
+        ("pick_attempt.winning_tier", "pick_attempt.hunt_priority",
+         "pick_attempt.was_tailend"),
+        "Wen anrufen? Was die Ziel-Eigenschaften zum Abschluss beitragen",
+        "Haeufigkeit und Quote je Tier. Ein Tier, das selten den Ausschlag gibt UND "
+        "dabei keine bessere Quote hat als der Durchschnitt, ist Ballast. 'sole' ist "
+        "kein Tier, sondern die Ansage, dass es nichts zu waehlen gab.",
+        seit=date(2026, 9, 1),
+        ergebnis="21.09., 14 Tage: 2694 von 3381 Picks (80 %) waren 'sole' — die "
+                 "Prioritaeten entscheiden also selten ueberhaupt etwas. Darueber "
+                 "psk_snr 37,5 % (n=24), active_hour 30,8 % (39), psk_heard_us 25,7 % "
+                 "(74), new_dxcc 3,1 % (32). Tail-End-Ziele gegen den Rest z = +3,34.",
+        quelle="Modellkommentar v0.64.0",
     ),
     Messung(
-        "qso_dauer", "ohne_auswertung",
+        "qso_dauer", "dauerhaft",
         "Wie lange dauert ein Versuch bis zum Ausgang?",
         ("pick_attempt.qso_duration_s",),
-        None, "", seit=date(2026, 6, 1), quelle="Modellkommentar v0.64.0",
+        "Woran ein Versuch scheitert: Alter, Bandbelegung, Dauer",
+        "Mittlere und laengste Dauer je Ausgang. Zeit ist die knappe Groesse: Ein "
+        "haeufiger Abbruchgrund mit langer Dauer blockiert die Station und gehoert "
+        "frueher beendet.",
+        seit=date(2026, 9, 1),
+        ergebnis="21.09., 14 Tage: went_silent 1319-mal, im Mittel 105 s — zusammen "
+                 "rund 38 Stunden. report_never_closed 255-mal mit 158 s ist der "
+                 "teuerste Einzelfall, picked_another 1150-mal mit 60 s der billigste. "
+                 "Ein Abschluss braucht im Mittel 79 s.",
+        quelle="Modellkommentar v0.64.0",
     ),
     Messung(
         "kandidatenprotokoll", "dauerhaft",

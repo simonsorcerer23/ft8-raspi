@@ -225,6 +225,203 @@ def spaete_decodes_abschnitt(con, seit: str) -> None:
     print("    journalctl -u ft8-controller | grep -c 'Burst entfaellt\\|verworfen: ein Burst'")
 
 
+def _quote_gruppen(con, seit: str, ausdruck: str, *, wo: str = "1=1",
+                   sortierung: str = "1") -> list[tuple]:
+    """(Gruppe, Versuche, fertig, Quote) fuer einen beliebigen Gruppenausdruck."""
+    return con.execute(
+        f"select {ausdruck}, count(*), sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %' "
+        f"from pick_attempt where {wo} and ts > datetime('now',?) "
+        f"group by 1 order by {sortierung}", (seit,)
+    ).fetchall()
+
+
+def _zwei_gruppen_urteil(con, seit: str, spalte: str, *, wo: str = "1=1") -> str:
+    """urteil() fuer eine Ja/Nein-Spalte: Gruppe 1 gegen Gruppe 0."""
+    je = {int(g): (n, k) for g, n, k in con.execute(
+        f"select {spalte}, count(*), sum(outcome='completed') from pick_attempt "
+        f"where {spalte} is not null and {wo} and ts > datetime('now',?) group by 1",
+        (seit,)).fetchall()}
+    if 0 not in je or 1 not in je:
+        return "zu wenig"
+    return urteil(je[1][1], je[1][0], je[0][1], je[0][0])
+
+
+def _spearman_gegen_abschluss(con, seit: str, spalte: str, *, wo: str = "1=1") -> str:
+    """Rangkorrelation einer Messgroesse mit dem Abschluss, mit Urteil."""
+    paare = con.execute(
+        f"select {spalte}, case when outcome='completed' then 1 else 0 end "
+        f"from pick_attempt where {spalte} is not null and {wo} "
+        "and ts > datetime('now',?)", (seit,)).fetchall()
+    if len(paare) < 10:
+        return "zu wenig"
+    r = spearman([float(x) for x, _ in paare], [float(y) for _, y in paare])
+    if r is None:
+        return "zu wenig"
+    return f"r={r:+.2f} {urteil_korrelation(r, len(paare))}"
+
+
+def ziel_eigenschaften_abschnitt(con, seit: str) -> None:
+    """dupe_anrufe, neu_dxcc, entfernung, prioritaeten — vier Fragen aus den
+    Modellkommentaren, die seit v0.31.0 bzw. v0.64.0 Daten sammelten, ohne
+    dass sie jemand las."""
+    print("\n=== Wen anrufen? Was die Ziel-Eigenschaften zum Abschluss beitragen ===")
+    print("    Schon gearbeitet? (hunt_skip_worked steht auf aus)")
+    tabelle([("ja" if int(g) else "nein", n, k, q)
+             for g, n, k, q in _quote_gruppen(con, seit, "was_worked",
+                                              wo="was_worked is not null")],
+            ("schon gearbeitet", "Versuche", "fertig", "Quote"))
+    print(f"    Gearbeitet gegen neu: {_zwei_gruppen_urteil(con, seit, 'was_worked')}")
+
+    print("\n    Neues DXCC-Gebiet?")
+    tabelle([("ja" if int(g) else "nein", n, k, q)
+             for g, n, k, q in _quote_gruppen(con, seit, "was_new_dxcc",
+                                              wo="was_new_dxcc is not null")],
+            ("neues DXCC", "Versuche", "fertig", "Quote"))
+    print(f"    Neues DXCC gegen bekanntes: {_zwei_gruppen_urteil(con, seit, 'was_new_dxcc')}")
+
+    print("\n    Entfernung zum Ziel")
+    tabelle(_quote_gruppen(
+        con, seit,
+        "case when distance_km < 1000 then '1 unter 1000 km' "
+        "     when distance_km < 2500 then '2 1000-2500 km' "
+        "     when distance_km < 4000 then '3 2500-4000 km' "
+        "     else '4 ueber 4000 km' end",
+        wo="distance_km is not null"),
+        ("Entfernung", "Versuche", "fertig", "Quote"))
+    print(f"    Entfernung gegen Abschluss: {_spearman_gegen_abschluss(con, seit, 'distance_km')}")
+    nur_eu = _spearman_gegen_abschluss(con, seit, "distance_km", wo="continent='EU'")
+    print("    Nur innerhalb Europas (trennt Entfernung vom Kontinent):")
+    print(f"      {nur_eu}")
+    print("    Die Tiefenpruefung am 12.09. fand: Entfernung wirkt nur ueber den")
+    print("    Kontinent. Bleibt die Korrelation innerhalb Europas aus, ist die")
+    print("    Entfernung als eigenes Picker-Signal erledigt.")
+
+    print("\n    Welche Prioritaetsregel gab den Ausschlag?")
+    tabelle([(g or "(keine)", n, k, q) for g, n, k, q in _quote_gruppen(
+        con, seit, "winning_tier", wo="winning_tier is not null",
+        sortierung="2 desc")][:12],
+        ("Tier", "Versuche", "fertig", "Quote"))
+    print("    'sole' heisst: es gab nur einen Kandidaten. Dann entscheidet keine")
+    print("    Regel, sondern die Lage. Ein Tier taugt nur als Signal, wenn es")
+    print("    oft genug vorkommt UND eine andere Quote hat als der Rest.")
+    print(f"    Tail-End-Ziele gegen den Rest: {_zwei_gruppen_urteil(con, seit, 'was_tailend')}")
+
+
+def versuch_verlauf_abschnitt(con, seit: str) -> None:
+    """veraltete_picks, bandbelegung, qso_dauer."""
+    print("\n=== Woran ein Versuch scheitert: Alter, Bandbelegung, Dauer ===")
+    print("    Alter des Decodes beim Pick — 'went_silent' koennte heissen, dass")
+    print("    wir eine Station anrufen, die laengst weiter ist.")
+    tabelle(con.execute(
+        "select case when pick_age_s < 3 then '1 unter 3 s' "
+        "            when pick_age_s < 8 then '2 3-8 s' "
+        "            when pick_age_s < 20 then '3 8-20 s' "
+        "            else '4 ueber 20 s' end, count(*), "
+        "  sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %', "
+        "  round(100.0*sum(bail_reason='went_silent')/count(*),1)||' %' "
+        "from pick_attempt where pick_age_s is not null and ts > datetime('now',?) "
+        "group by 1 order by 1", (seit,)).fetchall(),
+        ("Alter beim Pick", "Versuche", "fertig", "Quote", "davon stumm"))
+    print(f"    Alter gegen Abschluss: {_spearman_gegen_abschluss(con, seit, 'pick_age_s')}")
+
+    print("\n    Bandbelegung: Decodes im Slot, in dem gepickt wurde")
+    tabelle(con.execute(
+        "select case when n_decodes < 5 then '1 unter 5' "
+        "            when n_decodes < 15 then '2 5-14' "
+        "            when n_decodes < 30 then '3 15-29' "
+        "            else '4 ab 30' end, count(*), sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %' "
+        "from pick_attempt where n_decodes is not null and ts > datetime('now',?) "
+        "group by 1 order by 1", (seit,)).fetchall(),
+        ("Decodes im Slot", "Versuche", "fertig", "Quote"))
+    print(f"    Belegung gegen Abschluss: {_spearman_gegen_abschluss(con, seit, 'n_decodes')}")
+    print("    Stoergroesse, kein Schalter: Sie sagt, ob ein Vergleich zwischen")
+    print("    ruhigen und vollen Baendern ueberhaupt zulaessig ist.")
+
+    print("\n    Dauer eines Versuchs bis zum Ausgang")
+    tabelle(con.execute(
+        "select coalesce(bail_reason, 'abgeschlossen'), count(*), "
+        "  round(avg(qso_duration_s)) || ' s', "
+        "  round(max(qso_duration_s)) || ' s' "
+        "from pick_attempt where qso_duration_s is not null "
+        "and ts > datetime('now',?) group by 1 order by 2 desc", (seit,)).fetchall(),
+        ("Ausgang", "Faelle", "Dauer im Mittel", "laengster"))
+    print("    Ein Abbruchgrund, der im Mittel lange dauert, blockiert die Station.")
+
+
+def dranbleiben_abschnitt(con, seit: str) -> None:
+    """wiederholungen, laut_genug."""
+    print("\n=== Dranbleiben oder aufgeben: Wiederholungen und unsere Lautstaerke ===")
+    print("    Wiederholte Aussendungen im selben Versuch")
+    tabelle(con.execute(
+        "select n_resends, count(*), sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %' "
+        "from pick_attempt where n_resends is not null and ts > datetime('now',?) "
+        "group by 1 order by 1", (seit,)).fetchall(),
+        ("Wiederholungen", "Versuche", "fertig", "Quote"))
+    gesamt, spaet = con.execute(
+        "select sum(outcome='completed'), "
+        "  sum(outcome='completed' and n_resends > 0) from pick_attempt "
+        "where n_resends is not null and ts > datetime('now',?)", (seit,)).fetchone()
+    if gesamt:
+        print(f"    Von {gesamt} Abschluessen kamen {spaet} erst nach mindestens einer")
+        print(f"    Wiederholung zustande ({100.0 * spaet / gesamt:.1f} %).")
+    print("    Nie geantwortet gegen engagiert, dann verloren:")
+    tabelle(con.execute(
+        "select case when bail_reason='went_silent' then 'nie geantwortet' "
+        "            when bail_reason in ('report_never_closed','max_resends') "
+        "                 then 'engagiert, dann verloren' "
+        "            when outcome='completed' then 'abgeschlossen' "
+        "            else 'anderer Ausgang' end, count(*), "
+        "  round(avg(n_resends),1), round(avg(stale_slots),1) "
+        "from pick_attempt where ts > datetime('now',?) group by 1 order by 2 desc",
+        (seit,)).fetchall(),
+        ("Verlauf", "Faelle", "Wiederholungen", "leere Slots"))
+
+    print("\n    Sind wir laut genug? Unser eigenes Signal bei der Gegenstation")
+    tabelle(con.execute(
+        "select case when our_snr_received >= -5 then '1 ab -5 dB' "
+        "            when our_snr_received >= -12 then '2 -6..-12 dB' "
+        "            when our_snr_received >= -18 then '3 -13..-18 dB' "
+        "            else '4 unter -18 dB' end, count(*), "
+        "  sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %', "
+        "  round(100.0*sum(bail_reason='went_silent')/count(*),1)||' %' "
+        "from pick_attempt where our_snr_received is not null "
+        "and ts > datetime('now',?) group by 1 order by 1", (seit,)).fetchall(),
+        ("unser SNR dort", "Versuche", "fertig", "Quote", "davon stumm"))
+    print(f"    Unser SNR gegen Abschluss: "
+          f"{_spearman_gegen_abschluss(con, seit, 'our_snr_received')}")
+    print("    Die Spalte steht nur, wenn die Gegenstation uns einen Rapport")
+    print("    geschickt hat — also nie fuer die Faelle, die gleich stumm blieben.")
+    print("    Deshalb daneben der Empfangsbeleg von PSK Reporter, den es auch")
+    print("    ohne Antwort gibt:")
+    tabelle(con.execute(
+        "select case when psk_snr >= -5 then '1 ab -5 dB' "
+        "            when psk_snr >= -12 then '2 -6..-12 dB' "
+        "            when psk_snr >= -18 then '3 -13..-18 dB' "
+        "            else '4 unter -18 dB' end, count(*), "
+        "  sum(outcome='completed'), "
+        "  round(100.0*sum(outcome='completed')/count(*),1)||' %', "
+        "  round(100.0*sum(bail_reason='went_silent')/count(*),1)||' %' "
+        "from pick_attempt where psk_snr is not null and ts > datetime('now',?) "
+        "group by 1 order by 1", (seit,)).fetchall(),
+        ("PSK-Beleg", "Versuche", "fertig", "Quote", "davon stumm"))
+    print(f"    PSK-Beleg gegen Abschluss: {_spearman_gegen_abschluss(con, seit, 'psk_snr')}")
+    leistung = con.execute(
+        "select count(distinct tx_power_w) from pick_attempt "
+        "where tx_power_w is not null and ts > datetime('now',?)", (seit,)).fetchone()[0]
+    if leistung and leistung < 2:
+        print("    Sendeleistung: im Zeitraum unveraendert — als Erklaerung nicht")
+        print("    pruefbar, die Spalte taugt hier nur als Beleg dafuer.")
+    else:
+        tabelle(_quote_gruppen(con, seit, "tx_power_w || ' W'",
+                               wo="tx_power_w is not null", sortierung="2 desc"),
+                ("Sendeleistung", "Versuche", "fertig", "Quote"))
+
+
 def messplan_abschnitt() -> None:
     from datetime import UTC as _U, datetime as _D
 
@@ -404,32 +601,33 @@ def main() -> int:
     print("\n=== FT8-MUF: wie weit ueber die Vorhersage traegt FT8? ===")
     # Jede Referenzrichtung deckt ein Grid-Feld-Gebiet ab; die Zuordnung
     # ist grob, reicht aber fuer die Frage "offen oder zu".
+    # Je Bericht genau EINE Vorhersage. Frueher stand hier eine korrelierte
+    # Unterabfrage ueber die ganze Vorhersage-Tabelle: 58 000 Berichte mal
+    # 12 000 Vorhersagen, gemessen 2026-09-21 knapp sieben Minuten fuer die
+    # Bilanz. Stattdessen erst ein Raster (Grid-Feld, Viertelstunde) mit
+    # Index, dann je Bericht der Mittelwert seiner drei Nachbarzellen —
+    # dieselbe Glaettung wie vorher, nur nicht mehr quadratisch.
+    con.execute("drop table if exists temp.muf_raster")
+    con.execute(
+        "create temp table muf_raster as "
+        "select substr(upper(ziel_grid),1,2) feld, "
+        "       cast(julianday(ts)*96 as int) viertel, "
+        "       avg(max(muf_sp, muf_lp)) muf "
+        "from path_prediction where muf_sp is not null and ts > datetime('now',?) "
+        "group by 1,2", (seit,))
+    con.execute("create index temp.ix_muf_raster on muf_raster(feld, viertel)")
     zeilen = con.execute(
-        # Je Bericht genau EINE Vorhersage — die zeitlich naechste. Ohne das
-        # trifft der Verbund alle Vorhersagen im +/-15-Minuten-Fenster und
-        # zaehlt denselben Bericht mehrfach, im Schnitt 2,3-mal und bis zu
-        # viermal (gemessen 2026-09-12: 636 Berichte wurden zu 1452 Paaren).
-        # Das blaeht nicht nur die Zahlen auf, es verwischt auch die Grenzen
-        # zwischen den Lagen, weil ein Bericht in mehreren Klassen landet.
         "with paare as ("
         "  select r.snr_db,"
-        # Mittelwert ueber das Fenster statt "die zeitlich naechste": ein
-        # Bericht zaehlt so genau einmal, und die Glaettung ist hier sogar
-        # richtiger, weil die Vorhersage selbst im Stundenraster kommt.
-        # (SQLite laesst die aeussere Spalte nicht im ORDER BY einer
-        # korrelierten Unterabfrage zu, eine Auswahl "die naechste" ginge
-        # also ohnehin nur ueber einen zweiten Durchgang.)
-        "         14.074 / nullif((select avg(max(p2.muf_sp, p2.muf_lp))"
-        "             from path_prediction p2"
-        "             where substr(upper(p2.ziel_grid),1,2) = substr(upper(r.rx_grid),1,2)"
-        "               and abs(julianday(p2.ts) - julianday(r.ts)) < 0.0105), 0)"
+        "         14.074 / nullif((select avg(x.muf) from muf_raster x"
+        "             where x.feld = substr(upper(r.rx_grid),1,2)"
+        "               and x.viertel between cast(julianday(r.ts)*96 as int) - 1"
+        "                                 and cast(julianday(r.ts)*96 as int) + 1), 0)"
         "         as ueber_muf"
         "  from psk_reporter_in r"
-        "  where 1=1"
-        # 0,0105 Tage = gut 15 Minuten, der Takt der Vorhersage-Abfrage
-        "    and r.ts > datetime('now',?) and r.snr_db is not null)"
+        "  where r.ts > datetime('now',?) and r.snr_db is not null)"
         # Berichte ohne passende Vorhersage im Fenster liefern NULL. Ohne
-        # diesen Filter fallen sie in der Fallunterscheidung in den
+        # diesen Zweig fallen sie in der Fallunterscheidung in den
         # else-Zweig und erscheinen als "mehr als 80 % darueber" — am
         # 2026-09-12 waren das 5390 angebliche Berichte bei null
         # Gelegenheiten. Aufgefallen ist es nur, weil die Gelegenheiten
@@ -677,6 +875,10 @@ def main() -> int:
     # ein weit entferntes Ziel, das schwache RR73 am Ende —, war ohne die
     # Kennzeichnung nicht zu sagen: decode.ts ist der Slotbeginn.
     spaete_decodes_abschnitt(con, seit)
+
+    ziel_eigenschaften_abschnitt(con, seit)
+    versuch_verlauf_abschnitt(con, seit)
+    dranbleiben_abschnitt(con, seit)
 
     print("\n=== Abschluss nach Signalstaerke — traegt das Schwach-Gate? ===")
     tabelle(con.execute(

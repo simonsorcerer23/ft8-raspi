@@ -68,6 +68,16 @@ def _baue_db(pfad: Path) -> None:
                 schwach_arm=bool(i % 2),
                 pre_decode=bool(i % 2), tx_offset_s=0.05 * i,
                 ziel_stufe=3 if i % 4 == 0 else 1,
+                # Die neun Fragen aus dem Messplan, die bis 21.09. niemand
+                # auswertete: Jede ihrer Spalten braucht hier Werte, sonst
+                # laufen die drei neuen Abschnitte nur im Leerzweig.
+                was_worked=bool(i % 2), was_new_dxcc=(i % 5 == 0),
+                n_decodes=2 + i * 3, pick_age_s=0.8 + i * 1.5,
+                n_resends=i % 3, n_cq_resends=i % 2, stale_slots=i % 4,
+                psk_snr=-4 - i, our_snr_received=-3 - i if i % 3 == 0 else None,
+                tx_power_w=70, distance_km=400 + i * 600,
+                was_tailend=(i % 6 == 1), qso_duration_s=40.0 + i * 12,
+                hunt_priority="snr,not_worked", target_grid="JN58",
             ))
         # Der Decode muss VOR dem Anruf liegen — die Bilanz ordnet die
         # Audiofrequenz ueber das letzte Signal vor dem Versuch zu.
@@ -242,6 +252,9 @@ ERWARTETE_ABSCHNITTE = (
     "Umentscheiden",
     "Stunden-Tier",
     "Schwache Ziele ohne Empfangsbeleg",
+    "Wen anrufen?",
+    "Woran ein Versuch scheitert",
+    "Dranbleiben oder aufgeben",
     "Zeit je Zustand",
     "Wartezeit",
     "Kontrollarm",

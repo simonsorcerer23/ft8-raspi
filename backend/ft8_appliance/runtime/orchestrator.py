@@ -6326,11 +6326,15 @@ class Orchestrator:
     )
 
     # So viele der haeufigsten Empfangsfelder kommen zusaetzlich dran.
-    # Zehn Felder deckten am 2026-09-12 achtzig Prozent aller Berichte ab;
-    # mit acht festen Richtungen sind das hoechstens achtzehn Abfragen je
-    # Stundenlauf, was gegenueber einem kostenlos betriebenen Dienst
-    # vertretbar bleibt.
-    _PFAD_EMPFANGSFELDER_MAX: typing.ClassVar[int] = 10
+    # Zehn Felder deckten am 2026-09-12 achtzig Prozent aller Berichte ab.
+    # Gemessen am 2026-09-21 reichte das nicht: nur 75 % der Berichte
+    # liessen sich einer Vorhersage zuordnen, die Auswertung verlangt 80 %.
+    # Sechzehn Felder decken 91 % ab (FN, KP, JO, JN, JP, EM, KM, JM …).
+    # Mit den acht festen Richtungen sind das hoechstens 24 Abfragen je
+    # Lauf, bei 5 s Abstand gut zwei Minuten. prop.kc2g.com nennt keine
+    # Grenze fuer den Abruf (Stand 2026-09-21); die Karte selbst entsteht
+    # alle 15 Minuten, oefter als ihr Takt zu fragen brachte nichts.
+    _PFAD_EMPFANGSFELDER_MAX: typing.ClassVar[int] = 16
 
     async def _haeufigste_empfangsfelder(self) -> list[str]:
         """Die Grid-Felder, aus denen uns zuletzt am meisten gehoert haben.
