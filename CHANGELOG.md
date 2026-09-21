@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.171.1 — 2026-09-21
+- fix: Betriebsfenster nach Kontinenten trennen — die gemeldete Abendschwaeche war die Mischung, nicht die Tageszeit
+
 ## v0.171.0 — 2026-09-21
 - feat: Betriebsfenster je Tageszeit aus den Empfangsberichten, blinder SWR-Sensor wird benannt, hoechstens zwei A/B gleichzeitig
 
