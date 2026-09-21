@@ -73,20 +73,18 @@ def test_pfad_vorhersage_ist_schonend():
     assert len(orch_mod.Orchestrator._PFAD_REFERENZEN) <= 10
 
 
-def test_abruf_folgt_dem_stundenlauf_des_dienstes():
-    """Die Vorhersage wird stuendlich gerechnet — latest_run.json nennt
-    eine run_id und 25 Karten im Stundenraster. Haeufiger abzufragen
-    liefert dieselben Zahlen; ein Viertelstundentakt haette viermal je
-    Stunde umsonst angeklopft.
-
-    Deshalb zuerst die winzige run_id-Abfrage, und die acht Richtungen nur
-    bei einem neuen Lauf."""
+def test_abruf_haengt_am_lauf_des_dienstes_und_nicht_am_takt():
+    """Zuerst die winzige run_id-Abfrage, die Richtungen nur bei einem neuen
+    Lauf. Der Kommentar hier behauptete bis zum 21.09., der Dienst rechne
+    stuendlich — gemessen wurde dann eine neue Karte alle 15 Minuten
+    (prop.kc2g.com/about), und die Schleife holte jedes Mal alle Richtungen:
+    rund 1900 Abrufe am Tag. Wie oft eine Runde hoechstens laeuft, prueft
+    test_hoechstens_eine_runde_je_stunde am laufenden Code."""
     q = inspect.getsource(orch_mod.Orchestrator._pfad_vorhersage_loop)
     assert "_hole_lauf_id" in q
     assert "letzter_lauf" in q
-    # Die Richtungsabfragen haengen an der Pruefung, nicht am Takt
-    vor_pruefung = q.split("if lauf is not None and lauf != letzter_lauf:", 1)[0]
-    assert "_hole_pfad_vorhersage" not in vor_pruefung
+    kopf = q.split("if lauf is not None and lauf != letzter_lauf", 1)[0]
+    assert "_hole_pfad_vorhersage" not in kopf
 
 
 def test_pfad_vorhersage_nennt_sich_beim_namen():

@@ -6401,9 +6401,9 @@ class Orchestrator:
 
         **Abrufrhythmus am Dienst ausgerichtet, nicht geraten.** Die
         Vorhersage wird stuendlich gerechnet: ``latest_run.json`` nennt
-        eine ``run_id`` und 25 Karten im Stundenraster (04:15, 05:15 …).
-        Haeufiger abzufragen liefert dieselben Zahlen — ein
-        Viertelstundentakt haette viermal am Tag umsonst angeklopft.
+        eine ``run_id``; eine neue Karte entsteht alle 15 Minuten
+        (prop.kc2g.com/about, Stand 2026-09-21). Fuer die Auswertung
+        genuegt ein Wert je Stunde und Richtung.
 
         Deshalb wird zuerst die ``run_id`` geholt (eine kleine Abfrage) und
         nur bei einem neuen Lauf werden die Richtungen abgefragt. Im
@@ -6417,11 +6417,20 @@ class Orchestrator:
             return
         await asyncio.sleep(120)          # Boot-Schonfrist
         letzter_lauf: int | None = None
+        letzte_runde = 0.0
         while True:
             try:
                 lauf = await asyncio.to_thread(self._hole_lauf_id)
-                if lauf is not None and lauf != letzter_lauf:
+                # Gemessen am 2026-09-21: Der Dienst rechnet alle 15 Minuten
+                # eine neue Karte, nicht stuendlich wie der Kommentar oben
+                # annahm. Mit 21 Richtungen waren das rund 1900 Abrufe am Tag
+                # bei einem kostenlos betriebenen Dienst — fuer Zahlen, die
+                # die Auswertung einmal in der Woche liest. Eine Runde je
+                # Stunde genuegt dafuer und macht daraus rund 500.
+                faellig = time.monotonic() - letzte_runde >= 3300
+                if lauf is not None and lauf != letzter_lauf and faellig:
                     letzter_lauf = lauf
+                    letzte_runde = time.monotonic()
                     ziele = [z for _n, z in self._PFAD_REFERENZEN]
                     # Dazu die Felder, aus denen uns wirklich jemand hoert —
                     # ohne sie bleibt der groesste Teil der Empfangsberichte
@@ -6437,7 +6446,7 @@ class Orchestrator:
                             await self._persist_pfad(ziel, werte)
                         await asyncio.sleep(5)
                     log.info("Pfad-Vorhersage: Lauf %d fuer %d Richtungen geholt",
-                             lauf, len(self._PFAD_REFERENZEN))
+                             lauf, len(ziele))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

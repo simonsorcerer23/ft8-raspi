@@ -127,3 +127,48 @@ async def test_je_feld_der_haeufigste_locator(tmp_path):
     await _seed([("CC11AA", "SELTEN", 3), ("CC99ZZ", "OFT", 30)])
     felder = await _stub()._haeufigste_empfangsfelder()
     assert felder == ["CC99"], felder
+
+
+@pytest.mark.asyncio
+async def test_hoechstens_eine_runde_je_stunde(monkeypatch) -> None:
+    """Der Dienst rechnet alle 15 Minuten eine neue Karte, und die Schleife
+    fragte bei jeder einzelnen alle Richtungen ab: am 2026-09-21 rund 1900
+    Abrufe taeglich bei einem kostenlos betriebenen Dienst, fuer Zahlen, die
+    die Auswertung einmal woechentlich liest."""
+    import asyncio
+
+    from ft8_appliance.runtime import orchestrator as orch_mod
+
+    uhr = [0.0]
+    runden: list[float] = []
+
+    async def schlafen(s: float) -> None:
+        uhr[0] += s
+        if uhr[0] > 86400 + 200:
+            raise asyncio.CancelledError
+
+    o = SimpleNamespace(
+        _PFAD_REFERENZEN=(("EU", "IO91"),),
+        aktueller_locator=lambda: "JN58ch",
+        state_machine=SimpleNamespace(ctx=SimpleNamespace(my_grid="JN58ch")),
+        # Jede Viertelstunde ein neuer Lauf, wie beim echten Dienst.
+        _hole_lauf_id=lambda: int(uhr[0] // 900),
+        _hole_pfad_vorhersage=lambda *_a: {"muf_sp": 14.0},
+    )
+
+    async def keine_felder():
+        return []
+
+    async def persist(ziel, werte):
+        runden.append(uhr[0])
+
+    o._haeufigste_empfangsfelder = keine_felder
+    o._persist_pfad = persist
+    monkeypatch.setattr(orch_mod.asyncio, "sleep", schlafen)
+    monkeypatch.setattr(orch_mod.time, "monotonic", lambda: uhr[0])
+
+    with pytest.raises(asyncio.CancelledError):
+        await Orchestrator._pfad_vorhersage_loop(o)
+    assert 20 <= len(runden) <= 26, len(runden)      # rund eine je Stunde
+    abstaende = [b - a for a, b in zip(runden, runden[1:])]
+    assert min(abstaende) >= 3300, min(abstaende)
