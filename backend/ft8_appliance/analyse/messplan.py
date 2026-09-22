@@ -190,7 +190,11 @@ MESSPLAN: tuple[Messung, ...] = (
         "Umgebung: erklaert sie, wann es laeuft und wann nicht?",
         "Nach Herausrechnen des Tagesgangs: Rangkorrelation je Drei-Stunden-Block "
         "(K) bzw. je Tag (Sonnenfluss, ab 10 vollen Tagen). |t| ≥ 3 = deutlich.",
-        lesen_ab=date(2026, 9, 22),
+        # 22.09. gelesen, nicht deutlich: K-Index gegen Empfangsberichte r = +0,17
+        # (80 Bloecke, keiner erkennbar), gegen Decodes r = +0,25 (t = 2,3, nur
+        # Hinweis). Sonnenfluss braucht 10 volle Tage, vorhanden sind 9.
+        # Naechster Termin ist das 30-Tage-Ende der Reihe.
+        lesen_ab=date(2026, 10, 12),
         danach="Deutlich: als Picker-Signal pruefen. Bleibt es bei 'keiner erkennbar' "
                "ueber 30 Tage: Frage verwerfen, solar_log einstellen.",
         seit=date(2026, 9, 12),
