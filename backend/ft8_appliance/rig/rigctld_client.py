@@ -46,6 +46,12 @@ class RigSnapshot:
     preamp_on: bool | None = None
     att_on: bool | None = None
     nb_on: bool | None = None            # noise blanker
+    # 2026-09-28: Ob NR AN ist, stand nirgends — nr_level ist nur die Staerke
+    # und steht auch bei ausgeschalteter Unterdrueckung auf einem Wert. So
+    # blieb unbemerkt, dass NR und NB den Empfang auf ein Zehntel drueckten.
+    nr_on: bool | None = None            # noise reduction
+    anf_on: bool | None = None           # automatic notch
+    att_db: int | None = None            # attenuator, 0 = aus
     agc_mode: str | None = None          # OFF | SLOW | MEDIUM | FAST | AUTO
     vfo: str | None = None               # VFOA | VFOB | MEM …
     split_on: bool | None = None
@@ -186,6 +192,7 @@ class RigctldClient:
             ("af_gain",       "AF",           float),
             ("rf_gain",       "RF",           float),
             ("nr_level",      "NR",           float),
+            ("att_db",        "ATT",          int),
         ):
             try:
                 setattr(snap, attr, cast(await self.get_level(level_name)))
@@ -196,6 +203,8 @@ class RigctldClient:
             ("preamp_on", "PREAMP"),
             ("att_on",    "ATT"),
             ("nb_on",     "NB"),
+            ("nr_on",     "NR"),
+            ("anf_on",    "ANF"),
         ):
             try:
                 setattr(snap, attr, await self.get_func(func_name))
@@ -225,6 +234,12 @@ class RigctldClient:
         async with self._lock:
             line = await self._send(f"u {name}")
         return line.strip() == "1"
+
+    async def set_func(self, name: str, on: bool) -> None:
+        async with self._lock:
+            line = await self._send(f"U {name} {1 if on else 0}")
+        if line.strip() not in ("RPRT 0", ""):
+            raise RuntimeError(f"U {name}: {line.strip()}")
 
     async def get_agc_mode(self) -> str | None:
         # Hamlib 'l AGC' returns numeric — we map back to strings

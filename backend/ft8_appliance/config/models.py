@@ -386,6 +386,15 @@ class OperatingConfig(BaseModel):
     # Tamper-Erkennung fremde Werte sieht (Dad am Rig: USB statt PKTUSB,
     # 350-Hz-Filter). Nur Mode + Filter + Dial, nie die Leistung.
     rig_auto_restore: bool = False
+    # 2026-09-28: Rauschunterdrueckung, Stoeraustaster und Auto-Notch am Rig
+    # abschalten, sobald sie im Datenbetrieb (PKTUSB) auftauchen. Alle drei
+    # verformen die schwachen FT8-Toene: Am 28.09. drueckten NR+NB, am Geraet
+    # eingeschaltet, die Decodes eine Stunde lang auf ein Zehntel — bei
+    # unveraendertem Audiopegel, also ohne dass eine Anzeige anschlug.
+    # Unabhaengig von rig_auto_restore; in anderen Betriebsarten (jemand hoert
+    # auf SSB mit) bleibt es bei der Meldung. Das Daempfungsglied wird nur
+    # gemeldet: Es kann bei starken Stoerern gewollt sein.
+    rig_empfang_schuetzen: bool = True
     autopilot_enabled: bool = False
     autopilot_allowed_bands: list[str] = Field(default_factory=lambda: ["15m"])
     autopilot_allowed_modes: list[Literal["FT8", "FT4"]] = Field(

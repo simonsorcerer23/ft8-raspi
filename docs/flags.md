@@ -199,6 +199,10 @@ Wenn ISO selbst sich ändert (sehr selten — Eswatini=SZ war 2018):
 Sieht die Tamper-Erkennung eine fremde Betriebsart (nicht PKTUSB) oder eine Filterbreite unter 2000 Hz, setzt die App nach spätestens 15 s Betriebsart, 2700 Hz und den konfigurierten Dial des aktuellen Bands zurück, nie während eines eigenen Bursts und nie die Leistung. Ohne das Flag gibt es dafür den Button „Rig zurücksetzen“ im Steuerpanel (`POST /api/control/restore-rig`). Anlass: Bedienung am IC-7300 mit USB und 350-Hz-Filter.
 
 
+### `operating.rig_empfang_schuetzen` (2026-09-28, Default `true`)
+
+Rauschunterdrückung (NR), Störaustaster (NB) und Auto-Notch (ANF) werden abgeschaltet, sobald sie im Datenbetrieb (PKTUSB) am Rig auftauchen, und es kommt eine Push-Meldung. Alle drei verformen die schwachen FT8-Töne, ohne den Audiopegel zu ändern — am 28.09. drückten NR und NB, am Gerät eingeschaltet, die Decodes eine Stunde lang auf ein Zehntel, und keine Anzeige schlug an. In anderen Betriebsarten (jemand hört auf SSB mit) bleibt es bei der Meldung. Das Dämpfungsglied (ATT) wird nur gemeldet, weil es bei starken Störern gewollt sein kann. Unabhängig von `rig_auto_restore`. Der Status zeigt jetzt auch, ob NR an ist (`nr_on`) — vorher nur ihre Stärke, die auch bei ausgeschalteter NR einen Wert hat.
+
 ### Antwortstrategie (2026-09-07): `hunt_weak_requires_psk`, `hunt_weak_snr_db`, `hunt_cq_fallback`, `hunt_cq_fallback_after_slots`, `hunt_reply_ab_test`
 
 Aus der Pick-Telemetrie des 6.9. (381 Picks, 7 % vollendet): Ziele unter −13 dB kamen zu 3 % zurück, −13…−8 dB zu 12 %; fast die Hälfte der Sendezeit ging an Grenzfälle. Deshalb, alle Default `true`:

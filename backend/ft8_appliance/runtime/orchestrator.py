@@ -135,6 +135,26 @@ def _kontroll_block(block: int, anteil: float) -> bool:
     return ziffer < anteil * 256.0
 
 
+# Empfaengerfunktionen, die FT8-Decodes kosten (2026-09-28). Schluessel =
+# Hamlib-Name, Wert = Anzeige in der Meldung.
+_EMPFANG_STOERER_AUS = {"NR": "Rauschunterdrueckung (NR)", "NB": "Stoeraustaster (NB)",
+                        "ANF": "Auto-Notch (ANF)"}
+
+
+def _empfangs_stoerer(snap) -> list[str]:
+    """Hamlib-Namen der eingeschalteten Empfaengerfunktionen, die FT8 schaden.
+
+    ATT steht mit drin, wird aber nur gemeldet, nie abgeschaltet.
+    Unbekannte Werte (None: das Rig kennt die Funktion nicht) zaehlen nicht.
+    """
+    aktiv = [n for n, attr in (("NR", "nr_on"), ("NB", "nb_on"), ("ANF", "anf_on"))
+             if getattr(snap, attr, None) is True]
+    att = getattr(snap, "att_db", None)
+    if att is not None and att > 0:
+        aktiv.append("ATT")
+    return aktiv
+
+
 def _rig_profil_von(config) -> "RigProfil":
     """Das Profil des konfigurierten Rigs (hamlib-ID, was setzbar ist).
 
@@ -679,6 +699,8 @@ class Orchestrator:
     _last_power_alert_w: int | None = field(default=None, init=False)
     _last_mode_alert: str | None = field(default=None, init=False)
     _last_bandwidth_alert_hz: int | None = field(default=None, init=False)
+    _last_empfang_alert: tuple | None = field(default=None, init=False)
+    _empfang_restore_last_at: float = field(default=0.0, init=False)
     # Boot-Gate: beim ersten Sync nach Service-Start wissen wir nicht
     # was am Rig steht (es koennte vom letzten Boot uebrig sein oder
     # gerade frisch verstellt worden sein). Erste Iteration syncen wir
@@ -3793,6 +3815,58 @@ class Orchestrator:
             priority="default",
             tags=["warning"],
         )
+
+    def _pruefe_empfang(self, rig_mode: str | None, expected_mode: str) -> None:
+        """NR/NB/ANF/ATT am Rig: einmal melden je neuem Zustand, NR/NB/ANF im
+        Datenbetrieb abschalten. In anderen Betriebsarten hoert vielleicht
+        jemand mit — dann bleibt es bei der Meldung."""
+        stoerer = _empfangs_stoerer(self._last_rig)
+        if not stoerer:
+            self._last_empfang_alert = None
+            return
+        if not self._tamper_armed:
+            return
+        abschalten = [s for s in stoerer if s in _EMPFANG_STOERER_AUS]
+        aus = bool(abschalten) and rig_mode == expected_mode and \
+            getattr(self.config.operating, "rig_empfang_schuetzen", True)
+        if self._last_empfang_alert != tuple(stoerer):
+            self._last_empfang_alert = tuple(stoerer)
+            log.warning("Empfangs-Tamper: %s am Rig eingeschaltet (Betriebsart %s)",
+                        ", ".join(stoerer), rig_mode)
+            asyncio.create_task(self._notify_empfang_tamper(stoerer, abgeschaltet=aus),
+                                name="empfang-tamper-push")
+        if aus:
+            self._schedule_empfang_restore(abschalten)
+
+    async def _notify_empfang_tamper(self, stoerer: list[str], *, abgeschaltet: bool) -> None:
+        """Push: NR/NB/ANF/ATT am Rig eingeschaltet."""
+        ntfy = self.integrations.ntfy
+        if ntfy is None or not ntfy.enabled:
+            return
+        was = ", ".join(_EMPFANG_STOERER_AUS.get(s, "Daempfungsglied (ATT)") for s in stoerer)
+        await ntfy.notify(
+            _t("push.rx_tamper_aus" if abgeschaltet else "push.rx_tamper_msg", was=was),
+            title=_t("push.rx_tamper_title"),
+            priority="default",
+            tags=["warning"],
+        )
+
+    def _schedule_empfang_restore(self, namen: list[str]) -> None:
+        """NR/NB/ANF abschalten, hoechstens alle 15 s, nie waehrend eines Bursts."""
+        if self._tx_burst_active:
+            return
+        if time.monotonic() - self._empfang_restore_last_at < 15.0:
+            return
+        self._empfang_restore_last_at = time.monotonic()
+        self._spawn(self._empfang_aus(list(namen)), name="empfang-restore")
+
+    async def _empfang_aus(self, namen: list[str]) -> None:
+        for n in namen:
+            try:
+                await self.rig.set_func(n, False)
+                log.info("Empfangs-Tamper: %s abgeschaltet", n)
+            except Exception as exc:   # Rig kennt die Funktion nicht o. ae.
+                log.info("Empfangs-Tamper: %s nicht abschaltbar: %s", n, exc)
 
     async def _notify_bandwidth_tamper(self, rig_bw: int, expected_bw: int) -> None:
         """Push: Filterbreite wurde am Rig verstellt."""
@@ -7831,6 +7905,11 @@ class Orchestrator:
                         )
             elif rig_bw is not None:
                 self._last_bandwidth_alert_hz = None
+
+            # Empfaenger-Tamper (2026-09-28): NR/NB/ANF/ATT. Sieht keine
+            # Pegelanzeige — der Audiopegel bleibt gleich, nur die Decodes
+            # verschwinden.
+            self._pruefe_empfang(rig_mode, expected_mode)
 
             # Boot-Gate: nach dem ersten kompletten Sync-Durchlauf
             # Tamper-Detection scharfschalten.
