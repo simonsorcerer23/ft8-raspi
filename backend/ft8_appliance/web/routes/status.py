@@ -34,6 +34,9 @@ class RigSnapshotOut(BaseModel):
     preamp_on: bool | None = None
     att_on: bool | None = None
     nb_on: bool | None = None
+    nr_on: bool | None = None
+    anf_on: bool | None = None
+    att_db: int | None = None
     agc_mode: str | None = None
     vfo: str | None = None
     split_on: bool | None = None
@@ -163,6 +166,8 @@ async def get_status(
             nr_level=s.rig.nr_level,
             preamp_on=s.rig.preamp_on, att_on=s.rig.att_on,
             nb_on=s.rig.nb_on, agc_mode=s.rig.agc_mode,
+            nr_on=getattr(s.rig, "nr_on", None), anf_on=getattr(s.rig, "anf_on", None),
+            att_db=getattr(s.rig, "att_db", None),
             vfo=s.rig.vfo, split_on=s.rig.split_on,
             battery_v=s.rig.battery_v,
             internal_temp_c=s.rig.internal_temp_c,

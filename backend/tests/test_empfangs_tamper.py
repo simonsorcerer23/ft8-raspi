@@ -101,3 +101,10 @@ def test_status_liest_ob_nr_an_ist() -> None:
     from ft8_appliance.rig.rigctld_client import RigctldClient
     quelle = inspect.getsource(RigctldClient.snapshot)
     assert '("nr_on",     "NR")' in quelle and '("anf_on",    "ANF")' in quelle
+
+
+def test_status_reicht_die_werte_durch() -> None:
+    """Sonst sieht niemand in der Oberflaeche, dass NR an ist."""
+    from ft8_appliance.web.routes.status import RigSnapshotOut
+    for feld in ("nr_on", "anf_on", "att_db"):
+        assert feld in RigSnapshotOut.model_fields, feld
