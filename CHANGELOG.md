@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.173.0 — 2026-09-28
+- feat: Controller und rigctld unter eigenem Dienstbenutzer ohne sudo (SERVICE_USER); Umstellung per deploy/dienstbenutzer-einrichten.sh
+
 ## v0.172.1 — 2026-09-28
 - fix: Notfall-Hotspot sendet mit der Passphrase aus config.yaml statt mit dem Platzhalter aus dem Repo; ohne gueltige Passphrase kein Hotspot
 
