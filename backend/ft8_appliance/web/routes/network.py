@@ -168,9 +168,10 @@ async def get_ap_fallback(orch: Orchestrator = Depends(get_orchestrator)) -> APF
     except Exception:
         active = False  # Dev-Rechner ohne systemctl
     if cfg.network is None or cfg.network.ap_fallback is None:
-        # Fallback-Defaults wenn Config-Block fehlt — User kann das
-        # dann im UI auf gewünschte Werte überschreiben.
-        return APFallbackOut(ssid="ft8-hotspot", psk="ft8setup1", active=active)
+        # Ohne Config-Block gibt es keine Passphrase — und dann startet der
+        # Hotspot nicht (deploy/scripts/render-ap-conf.py). Bis 2026-09-28
+        # stand hier eine erfundene Vorgabe, die hostapd nie benutzt hat.
+        return APFallbackOut(ssid="ft8-hotspot", psk="", active=active)
     return APFallbackOut(
         ssid=cfg.network.ap_fallback.ssid,
         psk=cfg.network.ap_fallback.psk,
@@ -218,12 +219,12 @@ async def set_ap_fallback(
     validiert (Längen-Constraints), File-Write atomisch, dann
     Orchestrator.on_config_changed.
 
-    Ehrlich gesagt (Audit 2026-09-06): es gibt KEINEN hostapd-Reload-Hook.
-    Der Wert landet in der config.yaml und in der UI, hostapd liest ihn
-    nie — die Passphrase des Fallback-APs steht in
-    /etc/hostapd/ft8-ap.conf auf dem Pi und wird dort gesetzt (siehe
-    deploy/hostapd/ap.conf). Bewusst so belassen, damit das oeffentliche
-    Repo nur einen Platzhalter traegt.
+    Seit 2026-09-28 ist das der Wert, den hostapd tatsaechlich benutzt:
+    start-ap-fallback.sh erzeugt bei jedem Start /run/ft8-ap.conf aus der
+    config.yaml (deploy/scripts/render-ap-conf.py). Bis dahin landete er nur
+    in config.yaml und Oberflaeche, hostapd las die Vorlage aus dem Repo —
+    mit deren oeffentlicher Platzhalter-Passphrase. Eine Aenderung wirkt
+    beim naechsten Start des Hotspots.
     """
     # Audit 2026-09-06 C6: Lesen-Aendern-Schreiben unter dem Orchestrator-Lock.
     async with orch._config_rmw_lock:

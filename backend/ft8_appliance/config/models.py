@@ -1000,6 +1000,10 @@ class ApFallbackConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ssid: str = "ft8-hotspot"
+    # Platzhalter, der nie benutzt wird: Beim Start ersetzt web/app.py ihn
+    # durch eine zufaellige Passphrase und speichert sie, und
+    # deploy/scripts/render-ap-conf.py lehnt ihn ab. Bis 2026-09-28 sendete
+    # der Hotspot tatsaechlich mit dem Platzhalter aus deploy/hostapd/ap.conf.
     psk: str = "changeme-please"
 
 

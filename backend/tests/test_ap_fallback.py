@@ -202,7 +202,10 @@ def test_ap_scripts_use_our_own_hostapd_unit() -> None:
     unit = (ROOT / "deploy/systemd/ft8-hostapd.service").read_text()
     directives = [ln.strip() for ln in unit.splitlines() if ln.strip() and not ln.startswith("#")]
     assert not any(d.startswith("BindsTo=") for d in directives)
-    assert "ExecStart=/usr/sbin/hostapd /etc/hostapd/ft8-ap.conf" in directives
+    # Seit 2026-09-28 die aus der config.yaml erzeugte Datei, nicht mehr die
+    # Vorlage aus dem Repo — die trug eine oeffentliche Platzhalter-Passphrase
+    # (s. test_hotspot_passphrase.py).
+    assert "ExecStart=/usr/sbin/hostapd /run/ft8-ap.conf" in directives
 
 
 def test_start_script_waits_for_networkmanager_to_release_wlan0() -> None:

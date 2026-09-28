@@ -84,7 +84,7 @@ async def _production_lifespan(app: FastAPI):
             from .. import i18n as _i18n
             _i18n.set_default_lang(getattr(getattr(cfg, "ui", None), "language", "de"))
             # v0.37.0 — API-Auth-Token beim ersten Start generieren.
-            from .auth import generate_token
+            from .auth import PLATZHALTER_PSK, generate_token, neue_hotspot_passphrase
             _tokens_generated = False
             if not cfg.api_token:
                 cfg.api_token = generate_token()
@@ -93,6 +93,14 @@ async def _production_lifespan(app: FastAPI):
             if not cfg.api_read_token:
                 cfg.api_read_token = generate_token()
                 _tokens_generated = True
+            # 2026-09-28: Hotspot-Passphrase nie als bekannter Platzhalter.
+            # render-ap-conf.py lehnt ihn ab; ohne Ersatz gaebe es dann gar
+            # keinen Notfall-Hotspot. Die Oberflaeche zeigt den erzeugten Wert.
+            if cfg.network.ap_fallback.psk in PLATZHALTER_PSK or \
+                    len(cfg.network.ap_fallback.psk or "") < 8:
+                cfg.network.ap_fallback.psk = neue_hotspot_passphrase()
+                _tokens_generated = True
+                logger.info("Hotspot-Passphrase war ein Platzhalter — zufaellige erzeugt")
             # 2026-09-13: Der ntfy-Aktions-Token wird nicht mehr erzeugt und
             # nicht mehr akzeptiert (s. web/auth). Ein vorhandener wird
             # geloescht, damit er nicht in der config.yaml liegen bleibt —

@@ -4,11 +4,16 @@
 # no upstream connection — neither WiFi nor Ethernet — has been up for
 # network.fallback_delay_s, or by hand via POST /api/network/ap-fallback/start.
 #
-# Does NOT touch /etc/hostapd/ft8-ap.conf: SSID, passphrase and country code
-# come from that file as installed; config.yaml's ap_fallback block is not
-# rendered into it (deliberate, 2026-09-06 — see deploy/hostapd/ap.conf).
+# SSID und Passphrase kommen seit 2026-09-28 aus network.ap_fallback der
+# config.yaml (render-ap-conf.py → /run/ft8-ap.conf). Vorher las hostapd die
+# Vorlage aus dem Repo — mit deren oeffentlicher Platzhalter-Passphrase.
 
 set -euo pipefail
+
+# ZUERST die Konfiguration, erst danach das WLAN anfassen. Scheitert das
+# Erzeugen (keine oder eine bekannte Passphrase), bleibt wlan0 im
+# Client-Modus — sonst waere die Station ohne Hotspot UND ohne WLAN.
+/usr/bin/python3 "$(dirname "$(readlink -f "$0")")/render-ap-conf.py"
 
 AP_IP=192.168.66.1/24
 IFACE=wlan0

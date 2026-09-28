@@ -66,6 +66,18 @@ def generate_token() -> str:
     return secrets.token_urlsafe(24)
 
 
+# Stehen oder standen im Repo bzw. als Vorgabe im Code (deploy/hostapd/ap.conf,
+# ApFallbackConfig, frueher web/routes/network.py). Dieselbe Liste pflegt
+# deploy/scripts/render-ap-conf.py, das ohne App-Umgebung laufen muss.
+PLATZHALTER_PSK: frozenset[str] = frozenset({"changeme-please", "ft8setup1"})
+
+
+def neue_hotspot_passphrase() -> str:
+    # 20 Zeichen aus Buchstaben und Ziffern: abtippbar, WPA-tauglich (8..63).
+    alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(20))
+
+
 def _presented_token(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer "):

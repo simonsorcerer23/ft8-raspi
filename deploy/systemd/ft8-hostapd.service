@@ -12,6 +12,11 @@ After=NetworkManager.service
 
 [Service]
 Type=simple
-ExecStart=/usr/sbin/hostapd /etc/hostapd/ft8-ap.conf
+# /etc/hostapd/ft8-ap.conf ist seit 2026-09-28 nur noch die Vorlage mit
+# Platzhalter-Passphrase. start-ap-fallback.sh erzeugt daraus mit den Werten
+# der config.yaml /run/ft8-ap.conf. Fehlt die Datei, startet hostapd nicht —
+# nie mit der Vorlage.
+ExecStartPre=/usr/bin/test -s /run/ft8-ap.conf
+ExecStart=/usr/sbin/hostapd /run/ft8-ap.conf
 Restart=on-failure
 RestartSec=3
