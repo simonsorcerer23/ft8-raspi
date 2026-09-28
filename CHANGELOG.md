@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.174.0 — 2026-09-28
+- feat: Self-Update prueft die Tag-Signatur vor dem Update; release.sh signiert mit dem SSH-Schluessel
+- fix: MUF-Zuordnung im Stundentakt der Vorhersage (+/-2 Viertelstunden) — 66 % statt 91 % zugeordnet
+
 ## v0.173.0 — 2026-09-28
 - feat: Controller und rigctld unter eigenem Dienstbenutzer ohne sudo (SERVICE_USER); Umstellung per deploy/dienstbenutzer-einrichten.sh
 
