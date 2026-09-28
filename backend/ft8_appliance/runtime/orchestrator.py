@@ -1181,7 +1181,9 @@ class Orchestrator:
         # liefert 0 (no boost), kein Crash.
         if self.integrations.hamqsl is not None and self.integrations.hamqsl.enabled:
             self._spawn(self._solar_refresh_loop(), name="solar-refresh")
-            self._spawn(self._pfad_vorhersage_loop(), name="pfad-vorhersage")
+            # 2026-09-28: nur noch auf Wunsch (integrations.pfad_vorhersage).
+            if getattr(self.config.integrations, "pfad_vorhersage", False):
+                self._spawn(self._pfad_vorhersage_loop(), name="pfad-vorhersage")
 
         # v0.38.0 — taegliche Wartung: Telemetrie-Retention (DATA-M1) +
         # QSO-DB-Backup (DATA-C3). Schuetzt die unersetzlichen Logdaten

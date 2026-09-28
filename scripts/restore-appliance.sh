@@ -38,7 +38,8 @@ tar czf "${WORK}/payload.tgz" -C "$WORK" \
     etc/ft8-appliance/config.yaml \
     var/lib/ft8-appliance \
     $([ -d "${WORK}/etc/hostapd" ] && echo etc/hostapd) \
-    $([ -d "${WORK}/etc/NetworkManager/system-connections" ] && echo etc/NetworkManager/system-connections)
+    $([ -d "${WORK}/etc/NetworkManager/system-connections" ] && echo etc/NetworkManager/system-connections) \
+    $([ -f "${WORK}/etc/ft8-self-update/allowed_signers" ] && echo etc/ft8-self-update)
 scp -q "${WORK}/payload.tgz" "sebastian@${HOST}:/tmp/ft8-restore.tgz"
 
 # cty.dat separat: im Archiv liegt sie unter dem App-Verzeichnis des
@@ -95,6 +96,15 @@ else
     sudo chown root:root /etc/ft8-appliance/install.env 2>/dev/null || true
 fi
 sudo chown root:root /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
+# Release-Schluessel: root-eigen, sonst koennte der Dienstbenutzer ihn tauschen.
+if [ -f /etc/ft8-self-update/allowed_signers ]; then
+    sudo chown -R root:root /etc/ft8-self-update
+    sudo chmod 755 /etc/ft8-self-update
+    sudo chmod 644 /etc/ft8-self-update/allowed_signers
+    echo "Release-Schluessel eingespielt — Updates werden weiter geprueft"
+else
+    echo "HINWEIS: kein Release-Schluessel im Backup — Updates laufen ungeprueft"
+fi
 sudo chmod 600 /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
 sudo nmcli connection reload 2>/dev/null || true
 

@@ -26,6 +26,7 @@ set -euo pipefail
 usage() {
     cat >&2 <<'EOF'
 usage: sudo ./deploy/install.sh [--user USER] [--dir APP_DIR] [--enable-services]
+                                [--release-key KEY.pub]
 
 Defaults:
   --dir   repository root containing this script
@@ -36,6 +37,14 @@ Defaults:
           timer. Off by default: without it the units are installed but stay
           disabled, so nothing can key the rig until you have verified the
           real hardware and TX limits.
+
+  --release-key KEY.pub
+          Public SSH key of whoever signs the releases this station should
+          accept. Written to /etc/ft8-self-update/allowed_signers (root-owned,
+          outside the repo); self-update then rejects any tag not signed with
+          it. Without this option updates are taken UNVERIFIED — a warning
+          says so at the end. No key is built in: a fork with its own
+          releases must not depend on someone else's key.
 EOF
 }
 
@@ -44,6 +53,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 APP_DIR="${FT8_APP_DIR:-${REPO_ROOT}}"
 APP_USER="${FT8_APP_USER:-${SUDO_USER:-}}"
 ENABLE_SERVICES=0
+RELEASE_KEY=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -58,6 +68,10 @@ while [ "$#" -gt 0 ]; do
         --enable-services)
             ENABLE_SERVICES=1
             shift
+            ;;
+        --release-key)
+            RELEASE_KEY="${2:-}"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -352,6 +366,22 @@ systemctl restart chrony
 # would otherwise autostart at boot, read our ft8-ap-fallback.conf, fail to
 # bind the still-down wlan0 and leave a failed unit behind on every boot.
 # Disable (not mask) — masking would break the on-demand restart.
+# ----------------------------------------------------------------------------
+# Signierte Releases (seit 2026-09-28): self-update.sh prueft jeden Tag gegen
+# diese Datei. Root-eigen und ausserhalb des Repos — ein Schluessel aus dem
+# Repo wuerde genau das pruefen, was er absichern soll.
+SIGNERS=/etc/ft8-self-update/allowed_signers
+if [ -n "${RELEASE_KEY}" ]; then
+    if ! ssh-keygen -l -f "${RELEASE_KEY}" >/dev/null 2>&1; then
+        echo "--release-key: ${RELEASE_KEY} ist kein oeffentlicher SSH-Schluessel" >&2
+        exit 2
+    fi
+    install -d -m 755 -o root -g root /etc/ft8-self-update
+    printf 'ft8-release namespaces="git" %s\n' "$(head -1 "${RELEASE_KEY}")" \
+        | install -m 644 -o root -g root /dev/stdin "${SIGNERS}"
+    echo "release key installed: $(ssh-keygen -l -f "${RELEASE_KEY}" | awk '{print $2}')"
+fi
+
 systemctl disable dnsmasq >/dev/null 2>&1 || true
 systemctl stop dnsmasq >/dev/null 2>&1 || true
 echo "dnsmasq disabled at boot — started on demand by ft8-ap-fallback"
@@ -371,6 +401,12 @@ fi
 echo
 echo "------------------------------------------------------------"
 echo "Install done. Service state: ${STATE}"
+if [ ! -s "${SIGNERS}" ]; then
+    echo
+    echo "WARNUNG: kein Release-Schluessel (${SIGNERS})."
+    echo "         Self-Update uebernimmt neue Tags OHNE Signaturpruefung."
+    echo "         Nachholen: sudo ${APP_DIR}/deploy/install.sh --release-key <schluessel.pub>"
+fi
 echo "Edit:         ${ETC_DIR}/config.yaml"
 if [ "${ENABLE_SERVICES}" -eq 1 ]; then
     echo "UI:           http://ft8.local/ (or http://$(hostname -I | awk '{print $1}'):8000/)"

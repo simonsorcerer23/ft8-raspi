@@ -1086,6 +1086,12 @@ class IntegrationsConfig(BaseModel):
     blitzortung: BlitzortungConfig = Field(default_factory=BlitzortungConfig)
     ntfy: NtfyConfig = Field(default_factory=NtfyConfig)
     dx_cluster: DxClusterConfig = Field(default_factory=DxClusterConfig)
+    # Punkt-zu-Punkt-Vorhersagen von prop.kc2g.com (Tabelle path_prediction).
+    # Seit 2026-09-28 aus: Ihr einziger Leser war die Messreihe ft8_muf, und
+    # die ist entschieden (analyse/messplan.py). Die MUF-Ebene der Karte holt
+    # ein eigenes Bild und braucht diese Abfragen nicht. Fuer den Vergleich mit
+    # einem zweiten Band oder einer anderen Antenne wieder einschalten.
+    pfad_vorhersage: bool = False
 
 
 # ---------------------------------------------------------------------------

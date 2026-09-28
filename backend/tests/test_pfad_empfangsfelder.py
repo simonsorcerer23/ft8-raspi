@@ -172,3 +172,16 @@ async def test_hoechstens_eine_runde_je_stunde(monkeypatch) -> None:
     assert 20 <= len(runden) <= 26, len(runden)      # rund eine je Stunde
     abstaende = [b - a for a, b in zip(runden, runden[1:])]
     assert min(abstaende) >= 3300, min(abstaende)
+
+
+def test_vorhersage_nur_auf_wunsch() -> None:
+    """Seit 28.09. aus: Die Tabelle hatte ausser der entschiedenen Messreihe
+    ft8_muf keinen Leser, und prop.kc2g.com ist ein kostenloser Dienst."""
+    import inspect
+
+    from ft8_appliance.config.models import IntegrationsConfig
+
+    assert IntegrationsConfig().pfad_vorhersage is False
+    quelle = inspect.getsource(Orchestrator.start)
+    zeile = quelle.index('self._spawn(self._pfad_vorhersage_loop()')
+    assert "pfad_vorhersage" in quelle[zeile - 200:zeile]

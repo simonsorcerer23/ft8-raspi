@@ -213,23 +213,27 @@ MESSPLAN: tuple[Messung, ...] = (
         quelle="Bilanz-Abschnitt 'Umgebung' (Reihen ohne Leser, 12.09.)",
     ),
     Messung(
-        "ft8_muf", "laufend",
+        "ft8_muf", "entschieden",
         "Wie weit ueber die vorhergesagte MUF traegt FT8?",
         ("path_prediction",),
         "FT8-MUF: wie weit ueber die Vorhersage traegt FT8?",
         "Die FT8-MUF liegt dort, wo es Gelegenheiten gab und trotzdem keine Berichte "
         "kamen. Zuordnung der Berichte muss dafuer ueber 80 % liegen.",
-        # 21.09. gelesen und NICHT entscheidbar: nur 75 % der Berichte zugeordnet
-        # (Regel verlangt 80), und die oberste Lage hatte null Gelegenheiten. Seit
-        # v0.170.2 fragt die Vorhersage 16 statt 10 Empfangsfelder ab, das deckt
-        # 91 % der Berichte. Neu lesen, wenn eine Woche damit gelaufen ist.
         lesen_ab=date(2026, 9, 28),
-        danach="Liegt die Grenze erkennbar: als Picker-Signal fuer Fernziele pruefen. "
-               "Sonst Frage verwerfen und path_prediction nur noch fuer die Karte halten. "
-               "Bleibt die Lage 'mehr als 80 % darueber' auch dann ohne Gelegenheit, "
-               "ist die Frage auf 20 m gar nicht zu beantworten — dann erst mit einem "
-               "zweiten Band wieder aufnehmen.",
+        danach="Frage auf 20 m verworfen, Abfrage abgeschaltet "
+               "(integrations.pfad_vorhersage: false) — die Tabelle hatte ausser "
+               "dieser Auswertung keinen Leser, die MUF-Ebene der Karte holt ein "
+               "eigenes Bild. Daten bleiben. Wieder aufnehmen mit einem zweiten Band "
+               "oder Raymonds Antenne: Schalter an, eine Woche sammeln, neu lesen.",
         seit=date(2026, 9, 12),
+        ergebnis="28.09., 7 Tage, 91 % der Berichte zugeordnet (Fenster an den "
+                 "Stundentakt angepasst): klar unter der MUF 21 Berichte je "
+                 "Gelegenheit, knapp unter 18, bis 30 % darueber 3,0, bis 80 % "
+                 "darueber 1,8. FT8 traegt also deutlich ueber die Vorhersage hinaus, "
+                 "rund siebenmal duenner, aber ohne Abriss. Die Lage 'mehr als 80 % "
+                 "darueber', in der die Grenze liegen muesste, kam nur viermal vor — "
+                 "auf 20 m nicht messbar. Als Picker-Signal ueberfluessig: Die "
+                 "Zellen-Historie sagt dasselbe, und 83 % der Slots bieten keine Wahl.",
         quelle="Tiefenpruefung 12.09. ('FT8-MUF-Frage in ~1 Woche neu')",
     ),
     Messung(

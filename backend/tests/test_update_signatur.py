@@ -90,3 +90,23 @@ def test_pruefung_kommt_vor_wartemodus_und_checkout() -> None:
 def test_release_signiert_wenn_ein_schluessel_eingerichtet_ist() -> None:
     r = (WURZEL / "scripts" / "release.sh").read_text()
     assert 'run "git tag -s ${TAG}' in r
+
+
+def test_schluessel_wandert_mit_sicherung_und_wiederherstellung() -> None:
+    """Ohne allowed_signers laeuft das Update still ungeprueft. Am 28.09.
+    fehlte der Pfad in der Sicherung — eine aus ihr aufgebaute Station haette
+    die Pruefung verloren, ohne dass es jemand merkt."""
+    backup = (WURZEL / "scripts" / "backup-appliance.sh").read_text()
+    restore = (WURZEL / "scripts" / "restore-appliance.sh").read_text()
+    assert "/etc/ft8-self-update" in backup.split("PATHS=(", 1)[1].split("\n)", 1)[0]
+    assert "etc/ft8-self-update" in restore
+    assert "sudo chown -R root:root /etc/ft8-self-update" in restore
+
+
+def test_install_nimmt_einen_schluessel_und_warnt_ohne() -> None:
+    inst = (WURZEL / "deploy" / "install.sh").read_text()
+    assert "--release-key)" in inst
+    assert "/etc/ft8-self-update/allowed_signers" in inst
+    assert "OHNE Signaturpruefung" in inst
+    # Kein Schluessel fest im Repo: Forks mit eigenen Releases
+    assert "ssh-ed25519 AAAA" not in inst

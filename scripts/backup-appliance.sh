@@ -43,6 +43,7 @@ PATHS=(
     # ... OHNE den Bilderordner qsl/ — der geht als Spiegel, s.u.
     /etc/hostapd                            # AP-Fallback inkl. PSK
     /etc/NetworkManager/system-connections   # WLAN-Profile inkl. PSKs
+    /etc/ft8-self-update                    # allowed_signers: ohne sie prueft das Update keine Signatur
     /etc/chrony/chrony.conf
     /etc/default/gpsd
     /boot/firmware/config.txt
@@ -145,6 +146,13 @@ for f in etc/ft8-appliance/config.yaml var/lib/ft8-appliance/runtime_state.json 
         FAIL=1
     fi
 done
+# Ohne den Release-Schluessel liefe eine aus dieser Sicherung aufgebaute
+# Station ohne Signaturpruefung — still. Kein Fehler (fremde Installationen
+# haben keinen), aber sichtbar.
+case "$LIST" in
+    *etc/ft8-self-update/allowed_signers*) echo "   ok   Release-Schluessel (allowed_signers)" ;;
+    *) echo "   HINWEIS kein Release-Schluessel — eine Wiederherstellung prueft keine Update-Signaturen" ;;
+esac
 WLAN=$(grep -c "system-connections/.*\.nmconnection" <<<"$LIST" || true)
 echo "   WLAN-Profile: ${WLAN}"
 
