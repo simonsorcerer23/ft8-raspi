@@ -69,8 +69,55 @@ SPIEGEL="${DEST_BASE}/qsl-spiegel"
 # So viele Archive bleiben liegen. Der Spiegel ist davon nicht betroffen.
 BEHALTEN="${FT8_BACKUP_BEHALTEN:-14}"
 
+# Exit-Codes, damit der Timer Fehler von Abwesenheit trennt:
+#   0  alles gesichert
+#   75 Station nicht erreichbar, der letzte Stand ist aber juenger als
+#      OFFLINE_FRIST_H — kein Fehler, der Pi darf auch mal aus sein
+#   1  alles andere: Sicherung unvollstaendig, defekt, oder die Station ist
+#      schon so lange weg, dass die letzte Sicherung veraltet
+# Bis 2026-09-28 wertete die Unit Exit 1 als Erfolg ("ein Fehlschlag ist
+# kein Drama") — und damit auch eine defekte qso.sqlite, fehlende
+# Pflichtdateien und einen leeren QSL-Spiegel. Gemeldet wurde nichts.
+OFFLINE_FRIST_H="${FT8_BACKUP_OFFLINE_FRIST_H:-48}"
+
+# Nur echte Staende zaehlen: Verzeichnisse mit Zeitstempel UND Archiv.
+echte_staende() {
+    # Beim allerersten Lauf gibt es das Ziel noch nicht; unter pipefail
+    # brach der Offline-Zweig dann wortlos ab, statt es zu sagen.
+    [ -d "$DEST_BASE" ] || return 0
+    find "$DEST_BASE" -mindepth 1 -maxdepth 1 -type d \
+        -regextype posix-extended -regex '.*/[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}' \
+        -exec test -s '{}/ft8-backup.tgz' ';' -print 2>/dev/null | sort -r
+}
+
 umask 077
+if ! ssh -o ConnectTimeout=20 -o BatchMode=yes "sebastian@${HOST}" true 2>/dev/null; then
+    LETZTER="$(echte_staende | head -1)"
+    if [ -n "$LETZTER" ]; then
+        ALTER_H=$(( ( $(date +%s) - $(stat -c %Y "$LETZTER/ft8-backup.tgz") ) / 3600 ))
+    else
+        ALTER_H=999999
+    fi
+    if [ "$ALTER_H" -lt "$OFFLINE_FRIST_H" ]; then
+        echo "== ${HOST} nicht erreichbar — letzter Stand ${ALTER_H} h alt, kein Handlungsbedarf"
+        exit 75
+    fi
+    if [ -z "$LETZTER" ]; then
+        echo "!! ${HOST} nicht erreichbar, und unter ${DEST_BASE} liegt noch kein Stand."
+    else
+        echo "!! ${HOST} nicht erreichbar, und der letzte Stand ist ${ALTER_H} h alt"
+        echo "   (Frist ${OFFLINE_FRIST_H} h) — die Sicherung veraltet."
+    fi
+    exit 1
+fi
+
+# Das Ziel erst anlegen, wenn die Station antwortet. Vorher entstand bei
+# jedem Offline-Lauf ein leeres Zeitstempel-Verzeichnis — nach zwei Wochen
+# Pause haette der naechste erfolgreiche Lauf beim Aufraeumen alle echten
+# Staende fuer die leeren geopfert. Scheitert der Lauf danach, raeumt die
+# Falle das halbe Verzeichnis wieder weg.
 mkdir -p "$DEST"
+trap '[ -s "${DEST}/ft8-backup.tgz" ] || rm -rf "$DEST"' EXIT
 echo "== Backup von ${HOST} nach ${DEST}"
 
 ssh -o ConnectTimeout=20 "sebastian@${HOST}" \
@@ -110,10 +157,12 @@ echo "   WLAN-Profile: ${WLAN}"
 # auf, an dem man es braucht.
 if [ "$FAIL" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
     PRUEF_DIR="$(mktemp -d)"
-    trap 'rm -rf "$PRUEF_DIR"' EXIT
+    trap 'rm -rf "$PRUEF_DIR"; [ -s "${DEST}/ft8-backup.tgz" ] || rm -rf "$DEST"' EXIT
     if tar xzf "${DEST}/ft8-backup.tgz" -C "$PRUEF_DIR" \
             var/lib/ft8-appliance/ 2>/dev/null; then
-        python3 - "$PRUEF_DIR/var/lib/ft8-appliance/qso.sqlite" <<'PY'
+        # Als Bedingung, nicht als nackter Befehl: Unter set -e beendete ein
+        # Exit 1 der Pruefung sonst das ganze Skript, bevor FAIL gesetzt war.
+        if ! python3 - "$PRUEF_DIR/var/lib/ft8-appliance/qso.sqlite" <<'PY'
 import sqlite3, sys
 try:
     con = sqlite3.connect(sys.argv[1])
@@ -128,7 +177,9 @@ if ergebnis != "ok":
     raise SystemExit(1)
 print(f"   ok   qso.sqlite ist heil ({n} QSOs)")
 PY
-        [ $? -eq 0 ] || FAIL=1
+        then
+            FAIL=1
+        fi
     else
         echo "   WARNUNG qso.sqlite liess sich zur Pruefung nicht entpacken"
     fi
@@ -157,9 +208,9 @@ fi
 # davon 1,6 GB dieselben Bilder in acht Ausgaben. Nur automatisch angelegte
 # Staende (Zeitstempel) fallen weg — von Hand benannte wie
 # "4b-stilllegung-..." bleiben.
-mapfile -t ALT < <(find "$DEST_BASE" -mindepth 1 -maxdepth 1 -type d \
-    -regextype posix-extended -regex '.*/[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}' \
-    | sort -r | tail -n +"$((BEHALTEN + 1))")
+# Gezaehlt werden nur Staende mit Archiv (echte_staende); ein leeres
+# Verzeichnis darf keinen echten Stand verdraengen.
+mapfile -t ALT < <(echte_staende | tail -n +"$((BEHALTEN + 1))")
 if [ "${#ALT[@]}" -gt 0 ]; then
     echo "== Raeume ${#ALT[@]} alte Staende ab (behalte ${BEHALTEN})"
     for d in "${ALT[@]}"; do rm -rf "$d"; done

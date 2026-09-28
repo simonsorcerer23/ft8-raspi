@@ -1,14 +1,18 @@
 [Unit]
 Description=Sicherung der FT8-Appliance (Konfiguration, Zugangsdaten, QSO-Datenbank)
-Documentation=file:scripts/backup-appliance.sh
+Documentation=https://github.com/simonsorcerer23/ft8-raspi/blob/main/docs/backup.md
 # Ohne Netz kommt das Skript nicht an den Pi — dann lieber gar nicht starten.
 After=network-online.target
+# Ein Fehlschlag meldet sich. Bis 2026-09-28 zaehlte Exit 1 als Erfolg und
+# damit auch eine defekte qso.sqlite oder ein leerer QSL-Spiegel — still.
+OnFailure=ft8-backup-fehler.service
 
 [Service]
 Type=oneshot
 # Pfad anpassen, falls das Repo woanders liegt.
 ExecStart=%h/Dokumente/GitHub/ft8-raspi/scripts/backup-appliance.sh
-# Der Pi kann aus sein oder schlafen; ein Fehlschlag ist kein Drama,
-# der Timer versucht es am naechsten Tag wieder.
-SuccessExitStatus=0 1
+# 75 = Station nicht erreichbar, der letzte Stand ist aber noch frisch
+# (Frist im Skript, Vorgabe 48 h). Der Pi darf auch mal aus sein; erst
+# wenn die Sicherung dadurch veraltet, endet das Skript mit 1.
+SuccessExitStatus=0 75
 Nice=10

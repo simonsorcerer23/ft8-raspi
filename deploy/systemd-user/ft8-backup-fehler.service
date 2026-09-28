@@ -1,0 +1,8 @@
+[Unit]
+Description=Meldung: Sicherung der FT8-Appliance fehlgeschlagen
+
+[Service]
+Type=oneshot
+# Die letzten Zeilen des gescheiterten Laufs gleich mitgeben — die Meldung
+# soll sagen, WAS fehlt, nicht nur DASS etwas fehlt.
+ExecStart=/bin/sh -c 'notify-send -u critical -a "FT8-Sicherung" "FT8-Sicherung fehlgeschlagen" "$(journalctl --user -u ft8-backup.service -n 6 --no-pager -o cat | tail -n 4)"'

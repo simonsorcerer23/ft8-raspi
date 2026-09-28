@@ -48,7 +48,7 @@ benannte Verzeichnisse bleiben liegen — nur Zeitstempel fallen weg.
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp deploy/systemd-user/ft8-backup.{service,timer} ~/.config/systemd/user/
+cp deploy/systemd-user/ft8-backup{,-fehler}.service deploy/systemd-user/ft8-backup.timer ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now ft8-backup.timer
 ```
@@ -56,6 +56,18 @@ systemctl --user enable --now ft8-backup.timer
 Die Units laufen als Benutzer, brauchen kein root und holen einen verpassten
 Tag nach. **Der Rechner muss dafür laufen.** Wer das nicht garantieren kann,
 legt den Timer auf ein Gerät, das durchläuft, und gibt ihm das Ziel mit.
+
+**Fehlschläge melden sich** als Desktop-Benachrichtigung
+(`ft8-backup-fehler.service`, per `OnFailure=`). Das Skript unterscheidet:
+
+| Exit | Bedeutung | für den Timer |
+|---|---|---|
+| 0 | alles gesichert und geprüft | Erfolg |
+| 75 | Station nicht erreichbar, letzter Stand jünger als 48 h (`FT8_BACKUP_OFFLINE_FRIST_H`) | Erfolg — der Pi darf auch mal aus sein |
+| 1 | unvollständig, defekt, oder die Station ist so lange weg, dass die Sicherung veraltet | **Fehler, wird gemeldet** |
+
+Bis zum 28.09.2026 zählte Exit 1 als Erfolg — damit auch eine defekte
+`qso.sqlite` oder ein leerer QSL-Spiegel, ohne dass es jemand erfuhr.
 
 ### Ziel auf einem NAS
 
