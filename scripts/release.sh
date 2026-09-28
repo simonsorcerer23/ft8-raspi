@@ -191,7 +191,16 @@ fi
 step "Tag + Push"
 
 # Annotation = der Changelog-Eintrag (echte Änderungen statt "Release X").
-run "git tag -a ${TAG} -F ${ENTRY_FILE}"
+# Signiert, wenn ein Signaturschluessel eingerichtet ist (git config
+# user.signingkey, bei SSH-Schluesseln gpg.format=ssh). Die Station prueft
+# seit 2026-09-28 jeden Tag vor dem Update gegen ihre allowed_signers; ein
+# unsignierter Tag wird dort abgelehnt.
+if [ -n "$(git config --get user.signingkey || true)" ]; then
+    run "git tag -s ${TAG} -F ${ENTRY_FILE}"
+else
+    echo "WARNUNG: kein user.signingkey — Tag ${TAG} wird NICHT signiert"
+    run "git tag -a ${TAG} -F ${ENTRY_FILE}"
+fi
 
 if [ "${DRY_RUN}" = "0" ]; then
     echo

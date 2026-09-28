@@ -203,6 +203,31 @@ fi
 
 # -----------------------------------------------------------------------------
 # Idle-Check via API
+# -----------------------------------------------------------------------------
+# Signatur des Tags pruefen — VOR allem anderen, auch vor dem Wartemodus
+# weiter unten: Ein abgelehnter Tag darf die Station nicht angehalten
+# zuruecklassen.
+#
+# Bis 2026-09-28 checkte dieses Skript jeden neueren v*-Tag von GitHub ohne
+# Pruefung aus. Wer das GitHub-Konto (oder den Transport) uebernahm, spielte
+# Code auf die Station, und der Self-Update-Lauf baut und installiert mit
+# sudo. Jetzt muss der Tag mit einem Schluessel aus ALLOWED_SIGNERS signiert
+# sein. Die Datei liegt root-eigen ausserhalb des Repos — ein Schluessel aus
+# dem Repo wuerde genau das pruefen, was er absichern soll.
+#
+# Ohne die Datei (fremde Installationen) bleibt es beim alten Verhalten,
+# mit einem Hinweis im Log. Einrichtung: docs/self_update.md.
+ALLOWED_SIGNERS="${FT8_ALLOWED_SIGNERS:-/etc/ft8-self-update/allowed_signers}"
+if [ -s "${ALLOWED_SIGNERS}" ]; then
+    if ! git -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=${ALLOWED_SIGNERS}" \
+            verify-tag "${LATEST_TAG}" >/dev/null 2>&1; then
+        die "Tag ${LATEST_TAG} ist nicht mit einem zugelassenen Schluessel signiert — kein Update, Pi bleibt auf ${CURRENT_DESC}"
+    fi
+    log "Signatur von ${LATEST_TAG} geprueft"
+else
+    log "  ⚠ keine ${ALLOWED_SIGNERS} — Tag ${LATEST_TAG} wird OHNE Signaturpruefung uebernommen"
+fi
+
 log "checking orchestrator idle-state via ${API_BASE}/status"
 STATUS_JSON="$(curl -fsS -m 5 "${API_BASE}/status" 2>/dev/null || echo '')"
 

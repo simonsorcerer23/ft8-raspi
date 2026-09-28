@@ -227,6 +227,37 @@ weder Code noch `.deploy-rendered/` noch `install.env` ändern. Die
 Self-Update fährt. rigctld läuft ebenfalls als Dienstbenutzer, weil seine
 Argumente aus der `config.yaml` stammen.
 
+## Signierte Releases
+
+Seit 2026-09-28 übernimmt die Station nur Tags, die mit einem zugelassenen
+Schlüssel signiert sind. Vorher checkte `self-update.sh` jeden neueren
+`v*`-Tag von GitHub ungeprüft aus — wer das GitHub-Konto übernahm, spielte
+Code auf die Station.
+
+**Auf dem Rechner, der Releases baut** (einmalig, nur in diesem Repo):
+
+```bash
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/id_ed25519.pub
+```
+
+`scripts/release.sh` signiert dann jeden Tag (`git tag -s`). Ohne
+`user.signingkey` warnt es und baut einen unsignierten Tag.
+
+**Auf der Station** (einmalig, als root): den öffentlichen Schlüssel in eine
+root-eigene Datei außerhalb des Repos legen. Ein Schlüssel aus dem Repo würde
+genau das prüfen, was er absichern soll.
+
+```bash
+sudo install -d -m 755 /etc/ft8-self-update
+echo "ft8-release namespaces=\"git\" $(cat id_ed25519.pub)" \
+    | sudo tee /etc/ft8-self-update/allowed_signers
+```
+
+Das Self-Update prüft den Tag **vor** dem Wartemodus und vor dem Checkout;
+ein abgelehnter Tag lässt die Station unverändert und meldet sich. Fehlt die
+Datei, bleibt es beim alten Verhalten, mit Warnung im Log.
+
 ## Einmalige Migration: rsync-Pi → git-Pi
 
 Wurde 2026-05-24 für ft8 + ft8-2 durchgeführt. Vorgehen pro Pi:
