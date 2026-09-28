@@ -21,6 +21,15 @@ fi
 APP_HOME="${APP_HOME:-$(getent passwd "${APP_USER}" | cut -d: -f6)}"
 APP_GROUP="${APP_GROUP:-$(id -gn "${APP_USER}")}"
 
+# Unter welchem Benutzer der Controller (und damit die Weboberflaeche) laeuft.
+# Seit 2026-09-28 darf das ein eigener Dienstbenutzer ohne sudo sein
+# (deploy/dienstbenutzer-einrichten.sh). Ohne Angabe bleibt es APP_USER —
+# bestehende Installationen aendern sich dadurch nicht.
+# Anlass: Die Station lief als Benutzer mit "NOPASSWD: ALL". Wer die
+# Weboberflaeche uebernahm, war root.
+SERVICE_USER="${SERVICE_USER:-${APP_USER}}"
+SERVICE_GROUP="${SERVICE_GROUP:-$(id -gn "${SERVICE_USER}" 2>/dev/null || echo "${APP_GROUP}")}"
+
 if [ -z "${APP_HOME}" ] || [ -z "${APP_GROUP}" ]; then
     echo "could not resolve APP_HOME/APP_GROUP for ${APP_USER}" >&2
     exit 1
@@ -40,6 +49,8 @@ render() {
         -e "s|@APP_GROUP@|$(sed_escape "${APP_GROUP}")|g" \
         -e "s|@APP_HOME@|$(sed_escape "${APP_HOME}")|g" \
         -e "s|@APP_DIR@|$(sed_escape "${APP_DIR}")|g" \
+        -e "s|@SERVICE_USER@|$(sed_escape "${SERVICE_USER}")|g" \
+        -e "s|@SERVICE_GROUP@|$(sed_escape "${SERVICE_GROUP}")|g" \
         "${src}" > "${dst}"
 }
 

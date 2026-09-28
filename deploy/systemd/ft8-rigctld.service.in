@@ -5,7 +5,11 @@ Wants=systemd-udev-settle.service
 
 [Service]
 Type=simple
-User=@APP_USER@
+# Dienstbenutzer, nicht APP_USER (seit 2026-09-28): Die Argumente kommen
+# aus der config.yaml, die der Dienstbenutzer schreiben darf, und
+# $RIG_PTT_ARGS wird unzitiert in Woerter geteilt. Lief rigctld als APP_USER
+# (mit sudo), waere das ein Weg vom Dienstbenutzer zurueck zu root.
+User=@SERVICE_USER@
 Group=dialout
 
 # RIG_MODEL / RIG_DEVICE / RIG_BAUD / RIG_PTT_ARGS are rendered from RigConfig

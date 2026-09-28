@@ -63,8 +63,10 @@ SPIEGEL="${FT8_QSL_SPIEGEL:-$(dirname "$(dirname "$(readlink -f "$TGZ")")")/qsl-
 if [ -d "$SPIEGEL" ] && command -v rsync >/dev/null 2>&1; then
     ANZ="$(find "$SPIEGEL" -type f -name '*.jpg' | wc -l)"
     echo "== Spiele ${ANZ} QSL-Karten ein"
-    ssh "sebastian@${HOST}" 'mkdir -p /var/lib/ft8-appliance/qsl'
-    rsync -a "${SPIEGEL}/" "sebastian@${HOST}:/var/lib/ft8-appliance/qsl/"
+    ssh "sebastian@${HOST}" 'sudo mkdir -p /var/lib/ft8-appliance/qsl'
+    # Per sudo: Mit eigenem Dienstbenutzer gehoert das Verzeichnis nicht dem
+    # Anmeldebenutzer; die Rechte zieht der Block unten gerade.
+    rsync -a --rsync-path="sudo rsync" "${SPIEGEL}/" "sebastian@${HOST}:/var/lib/ft8-appliance/qsl/"
 elif [ -d "$SPIEGEL" ]; then
     echo "== HINWEIS: rsync fehlt — QSL-Karten nicht eingespielt (${SPIEGEL})"
 else
@@ -78,9 +80,20 @@ sudo tar xzf /tmp/ft8-restore.tgz -C / --no-same-owner
 rm -f /tmp/ft8-restore.tgz
 
 # Eigentuemer/Rechte geradeziehen: NetworkManager verweigert Profile, die
-# nicht root:root 0600 sind; die App laeuft als APP_USER.
+# nicht root:root 0600 sind; die App laeuft als SERVICE_USER (Vorgabe
+# APP_USER). Mit eigenem Dienstbenutzer ist /etc/ft8-appliance root-eigen mit
+# Sticky-Bit, damit er install.env nicht ersetzen kann
+# (deploy/dienstbenutzer-einrichten.sh).
 APP_USER="$(. /etc/ft8-appliance/install.env 2>/dev/null && echo "${APP_USER:-sebastian}")"
-sudo chown -R "${APP_USER}:${APP_USER}" /var/lib/ft8-appliance /etc/ft8-appliance
+DIENST="$(. /etc/ft8-appliance/install.env 2>/dev/null && echo "${SERVICE_USER:-${APP_USER:-sebastian}}")"
+sudo chown -R "${DIENST}:${DIENST}" /var/lib/ft8-appliance
+if [ "${DIENST}" = "${APP_USER}" ]; then
+    sudo chown -R "${APP_USER}:${APP_USER}" /etc/ft8-appliance
+else
+    sudo chown root:"${DIENST}" /etc/ft8-appliance && sudo chmod 1775 /etc/ft8-appliance
+    sudo chown "${DIENST}:${DIENST}" /etc/ft8-appliance/config.yaml
+    sudo chown root:root /etc/ft8-appliance/install.env 2>/dev/null || true
+fi
 sudo chown root:root /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
 sudo chmod 600 /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
 sudo nmcli connection reload 2>/dev/null || true

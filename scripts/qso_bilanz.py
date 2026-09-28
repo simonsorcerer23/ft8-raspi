@@ -81,7 +81,8 @@ def _token() -> str:
     """API-Token der Station — nur lesen, nie ausgeben."""
     roh = subprocess.run(
         ["ssh", "-o", "BatchMode=yes", PI,
-         "grep -m1 -E '^\\s*api_token' /etc/ft8-appliance/config.yaml"],
+         # sudo: config.yaml gehoert seit 2026-09-28 dem Dienstbenutzer (600)
+         "sudo -n grep -m1 -E '^\\s*api_token' /etc/ft8-appliance/config.yaml"],
         capture_output=True, text=True, timeout=30,
     ).stdout
     wert = roh.split(":", 1)[1].strip() if ":" in roh else ""

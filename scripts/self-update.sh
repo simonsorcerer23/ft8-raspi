@@ -127,6 +127,15 @@ sync_rigctld_envfile() {
     [ -f "${cfg}" ] || return 0
     mkdir -p "${APP_DIR}/.deploy-rendered"
     local dev
+    # Seit 2026-09-28 gehoert config.yaml dem Dienstbenutzer (600); der
+    # Self-Update-Lauf liest sie dann ueber sudo in eine eigene Kopie.
+    local kopie
+    kopie="$(mktemp)"
+    if [ -r "${cfg}" ]; then cat "${cfg}" > "${kopie}"
+    elif ! sudo -n /bin/cat "${cfg}" > "${kopie}" 2>/dev/null; then
+        rm -f "${kopie}"; log "  ⚠ rigctld-envfile: config.yaml nicht lesbar"; return 0
+    fi
+    cfg="${kopie}"
     dev="$("${APP_DIR}/backend/.venv/bin/python" - "${cfg}" "${out}" <<'PY' 2>/dev/null
 import sys
 from ft8_appliance.config import load_config
@@ -135,7 +144,8 @@ cfg = load_config(sys.argv[1])
 write_rigctld_envfile(cfg.rig, sys.argv[2])
 print(cfg.rig.serial_device)
 PY
-)" || { log "  ⚠ rigctld-envfile: render fehlgeschlagen"; return 0; }
+)" || { rm -f "${kopie}"; log "  ⚠ rigctld-envfile: render fehlgeschlagen"; return 0; }
+    rm -f "${kopie}"
     if [ ! -e "${dev}" ]; then
         log "  rigctld-envfile: ${dev} nicht vorhanden — bleibt beim bisherigen Rig"
         return 0

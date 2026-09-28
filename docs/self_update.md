@@ -207,7 +207,25 @@ selbst noch nicht geladen ist):
 - `visudo -c -f` auf repo-pfad und auf installiertem pfad
 
 Nichts sonst. Kein `sudo rm`, kein `sudo apt`, kein `sudo systemctl
-restart <beliebig>`. Minimal-Scope, leicht zu auditieren.
+restart <beliebig>`.
+
+**Das war bis 2026-09-28 keine Sicherheitsgrenze.** Zwei Gründe:
+
+1. Der App-Benutzer, unter dem auch die Weboberfläche lief, hatte auf der
+   Station zusätzlich `NOPASSWD: ALL`. Wer die Oberfläche übernahm, war root —
+   die schmalen Regeln oben spielten daneben keine Rolle.
+2. Die `install`-Regeln kopieren Dateien aus `.deploy-rendered/`, einem
+   Verzeichnis, das dem App-Benutzer gehört. Wer dort schreiben kann, legt
+   eine beliebige sudoers-Datei hinein; `visudo -c` prüft nur die Syntax.
+
+Seitdem läuft der Controller unter einem eigenen **Dienstbenutzer**
+(`SERVICE_USER` in `install.env`, eingerichtet mit
+`deploy/dienstbenutzer-einrichten.sh`). Er hat kein sudo außer den Befehlen,
+die die Oberfläche auslöst (zweiter Block im sudoers-Snippet), und er kann
+weder Code noch `.deploy-rendered/` noch `install.env` ändern. Die
+`install`-Regeln oben gelten nur noch für den App-Benutzer, der das
+Self-Update fährt. rigctld läuft ebenfalls als Dienstbenutzer, weil seine
+Argumente aus der `config.yaml` stammen.
 
 ## Einmalige Migration: rsync-Pi → git-Pi
 

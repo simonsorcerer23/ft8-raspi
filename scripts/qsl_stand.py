@@ -72,7 +72,8 @@ for teil in roh.split("&"):
 
 def frag_qrz(call: str) -> dict[str, str]:
     lauf = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", PI, "python3", "-", call],
+        # sudo: config.yaml gehoert seit 2026-09-28 dem Dienstbenutzer (600)
+        ["ssh", "-o", "BatchMode=yes", PI, "sudo", "-n", "python3", "-", call],
         input=FERNPROGRAMM, capture_output=True, text=True, timeout=90,
     )
     if lauf.returncode != 0 and not lauf.stdout.strip():

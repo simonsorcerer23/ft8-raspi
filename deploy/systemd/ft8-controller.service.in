@@ -8,8 +8,11 @@ StartLimitBurst=5
 
 [Service]
 Type=notify
-User=@APP_USER@
-Group=@APP_GROUP@
+# Dienstbenutzer (SERVICE_USER in install.env, Vorgabe APP_USER). Auf der
+# Station seit 2026-09-28 ein eigener Benutzer ohne sudo: Die Weboberflaeche
+# laeuft hier, und wer sie uebernimmt, soll nicht root sein.
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
 WorkingDirectory=@APP_DIR@/backend
 
 Environment=PYTHONUNBUFFERED=1
@@ -29,7 +32,9 @@ ProtectSystem=full
 ProtectHome=false
 ReadWritePaths=/var/lib/ft8-appliance /var/log/ft8-appliance /etc/ft8-appliance
 PrivateTmp=true
-SupplementaryGroups=plugdev dialout netdev
+# audio: USB-Soundkarte des Rigs; video: vcgencmd (Temperatur, Drosselung).
+# Hier statt in /etc/group, damit ein Dienstbenutzer sie nicht dauerhaft traegt.
+SupplementaryGroups=plugdev dialout netdev audio video
 
 NotifyAccess=main
 WatchdogSec=30

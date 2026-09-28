@@ -38,3 +38,26 @@
     /usr/bin/install -m 644 @APP_DIR@/.deploy-rendered/ft8-rigctld.env /etc/default/ft8-rigctld
 
 @APP_USER@ ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f @APP_DIR@/.deploy-rendered/sudoers.d/ft8-self-update, /usr/sbin/visudo -c -f /etc/sudoers.d/ft8-self-update
+
+# ---------------------------------------------------------------------------
+# Dienstbenutzer des Controllers (SERVICE_USER, seit 2026-09-28). Unter ihm
+# laeuft die Weboberflaeche. Er bekommt genau die Befehle, die die Oberflaeche
+# ausloest — und KEINE install-/visudo-Regeln: System-Dateien schreibt nur
+# der Self-Update-Lauf unter APP_USER. Ist SERVICE_USER gleich APP_USER,
+# doppeln sich die Regeln nur.
+@SERVICE_USER@ ALL=(root) NOPASSWD: \
+    /bin/systemctl restart --no-block ft8-controller.service, \
+    /bin/systemctl start --no-block ft8-self-update.service, \
+    /bin/systemctl start ft8-ap-fallback.service, \
+    /bin/systemctl stop ft8-ap-fallback.service, \
+    /sbin/shutdown -h +0 *, \
+    /sbin/shutdown -r +0 *
+
+# WLAN-Profile aus der Oberflaeche (web/routes/network.py). Nur nmcli und nur
+# dessen Verbindungsverwaltung; NetworkManager fuehrt dabei keine Befehle aus.
+@SERVICE_USER@ ALL=(root) NOPASSWD: \
+    /usr/bin/nmcli device wifi rescan, \
+    /usr/bin/nmcli connection add *, \
+    /usr/bin/nmcli connection modify *, \
+    /usr/bin/nmcli connection delete *, \
+    /usr/bin/nmcli connection up *
