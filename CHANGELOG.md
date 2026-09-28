@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.172.0 — 2026-09-28
+- feat: Lese-Token fuer den dk9xr.de-Spiegel — der Webserver bekommt nicht mehr den Master-Token
+- fix: Sicherung meldet Fehlschlaege statt sie als Erfolg zu zaehlen; Offline-Fall mit Frist, keine leeren Staende mehr
+- messplan: Sonnenindizes am 22.09. gelesen — K-Index nur Hinweis (r=+0,25), Sonnenfluss braucht 10 Tage; neu am 12.10.
+- feat: Sicherung zweigeteilt (Archiv taeglich, QSL-Karten als Spiegel), Aufraeumen und Doku
+
 ## v0.171.1 — 2026-09-21
 - fix: Betriebsfenster nach Kontinenten trennen — die gemeldete Abendschwaeche war die Mischung, nicht die Tageszeit
 
