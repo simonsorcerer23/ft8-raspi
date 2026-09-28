@@ -101,3 +101,47 @@ def test_set_password_rejects_short(client_authed: TestClient) -> None:
 def test_set_password_requires_auth(client_authed: TestClient) -> None:
     r = client_authed.post("/api/auth/token", json={"token": "longenough123"})
     assert r.status_code == 401
+
+
+LESEN = "lese-token-spiegel"
+
+
+@pytest.fixture
+def client_mit_lesetoken() -> TestClient:
+    set_config_for_tests(AppConfig.model_validate({
+        "operators": [{"callsign": "DK9XR", "license_class": "A"}],
+        "active_callsign": "DK9XR",
+        "api_token": MASTER,
+        "api_read_token": LESEN,
+    }))
+    app = create_app()
+    app.state.orchestrator = FakeOrchestrator()
+    # Serverfehler als Antwort statt als Ausnahme: Hier zaehlt nur, ob die
+    # Anfrage an der Auth vorbeikommt, nicht ob die Route ohne Datenbank laeuft.
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_lesetoken_oeffnet_die_abrufe_des_spiegels(client_mit_lesetoken: TestClient) -> None:
+    """Der Spiegel fuer dk9xr.de lag bis 28.09. mit dem Master-Token auf dem
+    Webserver. Er braucht nur diese Abrufe — und bekommt nur diese."""
+    h = {"Authorization": f"Bearer {LESEN}"}
+    for pfad in ("/api/status", "/api/stats", "/api/map", "/api/psk/who-heard-me",
+                 "/api/psk/tagesprofil?tage=7", "/api/qsl?limit=5", "/api/qsl/7/bild"):
+        assert client_mit_lesetoken.get(pfad, headers=h).status_code != 401, pfad
+
+
+def test_lesetoken_oeffnet_nichts_sonst(client_mit_lesetoken: TestClient) -> None:
+    h = {"Authorization": f"Bearer {LESEN}"}
+    for pfad in ("/api/config", "/api/auth/token", "/api/operators", "/api/log"):
+        assert client_mit_lesetoken.get(pfad, headers=h).status_code == 401, pfad
+    for pfad in ("/api/control/shutdown", "/api/control/stop", "/api/auth/token",
+                 "/api/status"):
+        assert client_mit_lesetoken.post(pfad, headers=h).status_code == 401, pfad
+    # Kein Umweg ueber ein Suffix des erlaubten Musters
+    assert client_mit_lesetoken.get("/api/qsl/7/bild/../../config", headers=h).status_code == 401
+
+
+def test_lesetoken_steht_nicht_in_der_konfiguration(client_mit_lesetoken: TestClient) -> None:
+    r = client_mit_lesetoken.get("/api/config", headers={"Authorization": f"Bearer {MASTER}"})
+    assert r.status_code == 200
+    assert LESEN not in r.text

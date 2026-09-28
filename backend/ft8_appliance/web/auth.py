@@ -22,6 +22,10 @@ an ASGI middleware:
     Klartext. Erreichbar war er nur deshalb nicht, weil die Knopf-Adresse
     auf einen von aussen nicht aufloesbaren Hostnamen zeigte. Benutzt
     wurden die Knoepfe nie.
+  * Seit 2026-09-28 gibt es zusaetzlich einen **Lese-Token**
+    (``api_read_token``) fuer den Spiegel auf dk9xr.de. Er oeffnet nur die
+    GET-Abrufe in ``LESE_PFADE`` — keine Konfiguration, keine Zugangsdaten,
+    keine Steuerung. Vorher lag auf dem Webserver der Master-Token.
   * If no ``api_token`` is configured at all, auth fails OPEN (the appliance
     stays reachable) — startup always generates one, so this is only a
     brief first-boot / misconfig safety valve, logged loudly.
@@ -30,6 +34,7 @@ an ASGI middleware:
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 
 from starlette.requests import Request
@@ -39,6 +44,22 @@ log = logging.getLogger(__name__)
 
 
 _LOCALHOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
+
+# Was der Lese-Token (``api_read_token``) oeffnet — und sonst nichts. Genau
+# die Abrufe von scripts/spiegel.py fuer dk9xr.de, nur per GET. Bis
+# 2026-09-28 lag dort der Master-Token, der auch Konfiguration,
+# Zugangsdaten und Shutdown freigibt. Wer hier einen Pfad ergaenzt, gibt
+# ihn einem Webserver frei: Nichts eintragen, was Geheimnisse liefert.
+LESE_PFADE: frozenset[str] = frozenset({
+    "/api/status", "/api/stats", "/api/map",
+    "/api/psk/who-heard-me", "/api/psk/tagesprofil",
+    "/api/qsl", "/api/qsl/stand",
+})
+_LESE_MUSTER = re.compile(r"^/api/qsl/\d+/bild$")
+
+
+def lese_pfad(method: str, path: str) -> bool:
+    return method in ("GET", "HEAD") and (path in LESE_PFADE or bool(_LESE_MUSTER.match(path)))
 
 
 def generate_token() -> str:
@@ -98,5 +119,8 @@ async def auth_middleware(request: Request, call_next):
 
     presented = _presented_token(request)
     if _eq(presented, master):
+        return await call_next(request)
+    lesen = getattr(cfg, "api_read_token", None) if cfg else None
+    if lesen and _eq(presented, lesen) and lese_pfad(request.method, path):
         return await call_next(request)
     return JSONResponse(status_code=401, content={"detail": "unauthorized"})

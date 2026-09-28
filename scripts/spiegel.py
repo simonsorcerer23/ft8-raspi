@@ -49,6 +49,12 @@ from pathlib import Path
 # nicht in ein oeffentliches Repository — sie ist fuer jeden Nachbauer
 # falsch und verraet fuer nichts die eigene Netzstruktur.
 PI = os.environ.get("FT8_PI", "http://ft8-pi5:8000").rstrip("/")
+# Die Datei enthaelt den LESE-Token der Station (api_read_token), nicht den
+# Master-Token: Der Webserver ist der exponierteste Rechner der Kette, und
+# der Spiegel braucht nur lesende Abrufe (web/auth.LESE_PFADE). Bis
+# 2026-09-28 lag hier der Master-Token, der auch Konfiguration, Zugangsdaten
+# und Shutdown freigibt. Lese-Token der Station, ohne ihn anzuzeigen:
+#   ssh <station> 'curl -s localhost:8000/api/auth/token' | jq -r .api_read_token
 TOKEN_DATEI = Path(os.environ.get("FT8_SPIEGEL_TOKEN", "/etc/dk9xr-spiegel/token"))
 
 # Was vom Geraetestatus nach draussen darf. Alles andere bleibt hier.

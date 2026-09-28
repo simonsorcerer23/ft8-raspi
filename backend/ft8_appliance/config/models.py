@@ -1253,6 +1253,13 @@ class AppConfig(BaseModel):
     # localhost (127.0.0.1/::1) umgeht die Auth komplett (wer auf dem Pi
     # ist, hat eh via SSH vollen Zugriff — und self-update lebt dort).
     api_token: str | None = None
+    # 2026-09-28 — Lese-Token fuer den Spiegel auf dk9xr.de. Bis dahin lag
+    # dort der Master-Token, der auch Konfiguration, Zugangsdaten und
+    # Shutdown freigibt — auf einem Webserver, also dem exponiertesten
+    # Rechner der ganzen Kette. Dieser Token oeffnet NUR die GET-Abrufe,
+    # die der Spiegel braucht (web/auth.py: LESE_PFADE). Wird beim Start
+    # erzeugt, wenn er fehlt.
+    api_read_token: str | None = None
     # 2026-09-13 ausser Dienst: Das Feld bleibt, damit bestehende
     # config.yaml-Dateien weiter laden; gelesen wird es nirgends mehr, und
     # beim Start wird ein vorhandener Wert geloescht. Grund: Er steckte in

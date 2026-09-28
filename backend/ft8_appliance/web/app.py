@@ -89,6 +89,10 @@ async def _production_lifespan(app: FastAPI):
             if not cfg.api_token:
                 cfg.api_token = generate_token()
                 _tokens_generated = True
+            # 2026-09-28: Lese-Token fuer den Spiegel (s. web/auth.LESE_PFADE).
+            if not cfg.api_read_token:
+                cfg.api_read_token = generate_token()
+                _tokens_generated = True
             # 2026-09-13: Der ntfy-Aktions-Token wird nicht mehr erzeugt und
             # nicht mehr akzeptiert (s. web/auth). Ein vorhandener wird
             # geloescht, damit er nicht in der config.yaml liegen bleibt —
@@ -171,7 +175,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         localhost (z.B. 'curl localhost:8000/api/auth/token' per SSH)."""
         from ..config import get_config
         cfg = get_config()
-        return {"api_token": cfg.api_token}
+        return {"api_token": cfg.api_token, "api_read_token": cfg.api_read_token}
 
     @app.post("/api/auth/token", include_in_schema=False)
     async def _set_auth_token(payload: dict) -> dict:
