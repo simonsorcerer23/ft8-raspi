@@ -394,7 +394,7 @@ Was nach v0.2.0-Deploy zu beobachten ist (über mehrere Tage):
 | pi-check.sh QSO-Counts | wächst tagsüber (Sebastian: ~100/Tag) | Stagnation → Pi tot / Band tot |
 
 Sebastian's reguläres "Pi-Check"-Trigger-Phrase liefert das alles in
-einem Rutsch — daher: bei Zweifel `ssh ft8 'bash -s' < scripts/pi-check.sh`
+einem Rutsch — daher: bei Zweifel `ssh ft8-pi5 'bash -s' < scripts/pi-check.sh`
 laufen lassen.
 
 **Worauf besonders achten in den nächsten 24-72 h:**
@@ -407,7 +407,7 @@ laufen lassen.
    bei jedem Boot wegen `OnBootSec=2min`-Race). Sollte stumm bleiben
    bis nächste Tag-Push.
 3. **Memory creep** — sdnotify selbst ist trivial, aber neue task ist
-   neue task. `ssh ft8 'ps -o rss= -p $(pgrep -f uvicorn) | numfmt --to=iec --from-unit=K'`
+   neue task. `ssh ft8-pi5 'ps -o rss= -p $(pgrep -f uvicorn) | numfmt --to=iec --from-unit=K'`
    sollte stabil bei ~150-200 MB bleiben.
 
 ## Was Self-Update NICHT macht

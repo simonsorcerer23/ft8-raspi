@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Health-Check der FT8-Appliance — wird per SSH vom Workstation ausgeführt.
-# Aufruf:  ssh ft8 'bash -s' < scripts/pi-check.sh
+# Aufruf:  ssh ft8-pi5 'bash -s' < scripts/pi-check.sh   ('ft8' ist der tote alte Knoten)
 # Output ist als Eingabe für Claudes Pi-Check-Workflow gedacht (struktur. Block-Tags).
 
 set -u

@@ -11,25 +11,30 @@ Der Pi wird mit aktiviertem SSH-Server ausgeliefert. Damit Claude (über das Bas
 ```bash
 # Auf der Workstation, einmalig:
 ssh-keygen -t ed25519 -C "ft8-appliance-workstation"    # falls noch kein Key
-ssh-copy-id pi@ft8.local                                 # Pubkey installieren
-ssh pi@ft8.local 'hostname && uptime'                    # Funktioniert ohne Passwort?
+ssh-copy-id <benutzer>@<station>                         # Pubkey installieren
+ssh <benutzer>@<station> 'hostname && uptime'            # Funktioniert ohne Passwort?
 ```
+
+`<benutzer>` ist der Anmeldebenutzer aus `install.env` (`APP_USER`), nicht
+der Dienstbenutzer des Controllers — der hat keine Anmeldung.
 
 ## Komfort-Alias (empfohlen)
 
 In `~/.ssh/config` der Workstation:
 
 ```sshconfig
-Host ft8
-    HostName ft8.local
-    User pi
+Host ft8-pi5
+    HostName ft8-pi5          # Tailscale-Name; im LAN auch <hostname>.local
+    User <benutzer>
     IdentityFile ~/.ssh/id_ed25519
     ServerAliveInterval 30
     ServerAliveCountMax 3
     ConnectTimeout 10
 ```
 
-Dann reicht `ssh ft8` statt `ssh pi@ft8.local`.
+Dann reicht `ssh ft8-pi5`. **Nicht `ft8`:** Unter diesem Namen steht im
+Tailnet noch der alte, abgeschaltete Knoten — ein Aufruf läuft still ins
+Timeout.
 
 ---
 
@@ -53,7 +58,7 @@ Dann reicht `ssh ft8` statt `ssh pi@ft8.local`.
 Eine einzige zusammengefasste Bash-Pipeline läuft via SSH, deckt alles ab:
 
 ```bash
-ssh ft8 'bash -s' < scripts/pi-check.sh
+ssh ft8-pi5 'bash -s' < scripts/pi-check.sh
 ```
 
 Inhalt (gekürzt — vollständig in `scripts/pi-check.sh`):
@@ -85,7 +90,7 @@ Pi-Check 14:32 — alles grün
 Pi-Check 14:32 — Auffälligkeit
   Decode-Rate seit 2h auf 0, vorher ~80/h
   → Audio-Stream weg? Antenne?
-  Vorschlag: ssh ft8 'aplay -l' prüfen, ggf. USB neu plugged
+  Vorschlag: ssh ft8-pi5 'aplay -l' prüfen, ggf. USB neu plugged
   Sonst alles ok.
 ```
 
@@ -96,7 +101,7 @@ Pi-Check 14:32 — PROBLEM
   Letzter Error: "ALSA capture device disappeared"
   Pi insgesamt online, SSH ok, andere Services laufen.
   Empfehlung: USB-Kabel IC-705 prüfen, dann
-    ssh ft8 'sudo systemctl restart ft8-controller'
+    ssh ft8-pi5 'sudo systemctl restart ft8-controller'
 ```
 
 ---
@@ -106,14 +111,14 @@ Pi-Check 14:32 — PROBLEM
 Falls du selbst mal hinschauen willst ohne Claude:
 
 ```bash
-ssh ft8 systemctl status ft8-controller
-ssh ft8 journalctl -u ft8-controller -n 200 --no-pager
-ssh ft8 journalctl -u ft8-controller -p err --since "1 hour ago"
-ssh ft8 'gpspipe -n 5 -w | head'                    # GPS-Daten
-ssh ft8 'chronyc tracking; chronyc sources'         # Zeit-Status
-ssh ft8 'sensors 2>/dev/null; vcgencmd measure_temp; vcgencmd get_throttled'
-ssh ft8 'nmcli -t -f NAME,DEVICE,STATE connection show --active'
-ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
+ssh ft8-pi5 systemctl status ft8-controller
+ssh ft8-pi5 journalctl -u ft8-controller -n 200 --no-pager
+ssh ft8-pi5 journalctl -u ft8-controller -p err --since "1 hour ago"
+ssh ft8-pi5 'gpspipe -n 5 -w | head'                    # GPS-Daten
+ssh ft8-pi5 'chronyc tracking; chronyc sources'         # Zeit-Status
+ssh ft8-pi5 'sensors 2>/dev/null; vcgencmd measure_temp; vcgencmd get_throttled'
+ssh ft8-pi5 'nmcli -t -f NAME,DEVICE,STATE connection show --active'
+ssh ft8-pi5 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
    "select count(*) qso_today from qso where date(qso_start)=date('now')"
 ```
 
@@ -155,11 +160,11 @@ Claude führt **kein eigenes State-Tracking** zwischen Sessions (Memory ist für
 
 ```bash
 # QSO-Verlauf der letzten 7 Tage
-ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
+ssh ft8-pi5 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
   "select date(qso_start), count(*) from qso where qso_start > date('now','-7 days') group by 1"
 
 # Decode-Rate pro Stunde der letzten 24h
-ssh ft8 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
+ssh ft8-pi5 sqlite3 /var/lib/ft8-appliance/qso.sqlite \
   "select strftime('%Y-%m-%d %H', ts) h, coalesce(mode,'legacy') mode, count(*) from decode where ts > datetime('now','-1 day') group by 1,2"
 ```
 
