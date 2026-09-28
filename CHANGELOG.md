@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.174.1 — 2026-09-28
+- docs: SSH-Ziel ft8-pi5 statt des toten Knotens ft8
+
 ## v0.174.0 — 2026-09-28
 - feat: Self-Update prueft die Tag-Signatur vor dem Update; release.sh signiert mit dem SSH-Schluessel
 - fix: MUF-Zuordnung im Stundentakt der Vorhersage (+/-2 Viertelstunden) — 66 % statt 91 % zugeordnet
