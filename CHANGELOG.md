@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.172.1 — 2026-09-28
+- fix: Notfall-Hotspot sendet mit der Passphrase aus config.yaml statt mit dem Platzhalter aus dem Repo; ohne gueltige Passphrase kein Hotspot
+
 ## v0.172.0 — 2026-09-28
 - feat: Lese-Token fuer den dk9xr.de-Spiegel — der Webserver bekommt nicht mehr den Master-Token
 - fix: Sicherung meldet Fehlschlaege statt sie als Erfolg zu zaehlen; Offline-Fall mit Frist, keine leeren Staende mehr
