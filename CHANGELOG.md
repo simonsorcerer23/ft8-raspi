@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.176.1 — 2026-09-28
+- fix: Status zeigt, ob NR/ANF an sind und das Daempfungsglied steht
+
 ## v0.176.0 — 2026-09-28
 - feat: NR, NB und Auto-Notch am Rig im Datenbetrieb erkennen und abschalten, Daempfungsglied melden
 
