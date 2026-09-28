@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.175.0 — 2026-09-28
+- feat: Release-Schluessel in Sicherung, Wiederherstellung und install.sh (--release-key); Pfad-Vorhersage abgeschaltet, MUF-Frage entschieden
+
 ## v0.174.1 — 2026-09-28
 - docs: SSH-Ziel ft8-pi5 statt des toten Knotens ft8
 
