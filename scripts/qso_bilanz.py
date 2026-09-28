@@ -695,8 +695,12 @@ def main() -> int:
         "  select r.snr_db,"
         "         14.074 / nullif((select avg(x.muf) from muf_raster x"
         "             where x.feld = substr(upper(r.rx_grid),1,2)"
-        "               and x.viertel between cast(julianday(r.ts)*96 as int) - 1"
-        "                                 and cast(julianday(r.ts)*96 as int) + 1), 0)"
+        # +/-2 Viertelstunden: Seit 2026-09-21 kommt die Vorhersage nur noch
+        # einmal je Stunde (vorher alle 15 min). Mit +/-1 fiel jeder Bericht
+        # aus der zweiten Stundenhaelfte durch — am 28.09. waren nur 66 %
+        # zugeordnet, weniger als vor der Erweiterung auf 16 Felder.
+        "               and x.viertel between cast(julianday(r.ts)*96 as int) - 2"
+        "                                 and cast(julianday(r.ts)*96 as int) + 2), 0)"
         "         as ueber_muf"
         "  from psk_reporter_in r"
         "  where r.ts > datetime('now',?) and r.snr_db is not null)"
