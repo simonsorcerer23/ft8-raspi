@@ -191,5 +191,5 @@ def test_auch_die_alten_meldungen_schweigen_nach_stop() -> None:
     Stop — Raymond am Geraet haette eine Push-Serie ausgeloest."""
     import inspect
     quelle = inspect.getsource(Orchestrator._rig_poll_loop)
-    assert quelle.count("self._station_aktiv()") >= 3
-    assert "if not self._station_aktiv():" in inspect.getsource(Orchestrator._frequency_tamper_ready)
+    # Leistung, Betriebsart, Filter, Frequenz
+    assert quelle.count("self._station_aktiv()") >= 4

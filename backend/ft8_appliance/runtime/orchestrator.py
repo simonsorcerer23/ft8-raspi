@@ -5828,8 +5828,6 @@ class Orchestrator:
         band_name: str,
     ) -> bool:
         """Gate frequency-tamper pushes until boot mode/dial state settled."""
-        if not self._station_aktiv():
-            return False
         if self._freq_tamper_reconciled:
             return True
 
@@ -7997,11 +7995,13 @@ class Orchestrator:
                     # "Frequenz wurde verstellt".
                     expected_hz = band.freq_for_mode(self.config.operating.mode) * 1000
                     delta_hz = actual_hz - expected_hz
+                    # Nach "Stop" keine Frequenzmeldung — erst NACH der
+                    # Reconciliation pruefen, die soll auch gestoppt laufen.
                     if not self._frequency_tamper_ready(
                         actual_hz,
                         expected_hz,
                         band.name,
-                    ):
+                    ) or not self._station_aktiv():
                         pass
                     elif abs(delta_hz) > 100:
                         last = getattr(self, "_last_logged_drift_hz", None)
