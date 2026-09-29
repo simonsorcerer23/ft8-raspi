@@ -52,6 +52,17 @@ class RigSnapshot:
     nr_on: bool | None = None            # noise reduction
     anf_on: bool | None = None           # automatic notch
     att_db: int | None = None            # attenuator, 0 = aus
+    # 2026-09-29: weitere Einstellungen, die am Frontpanel den FT8-Betrieb
+    # verderben koennen (s. orchestrator._RIG_REGELN).
+    mn_on: bool | None = None            # manuelle Notch
+    rit_on: bool | None = None
+    xit_on: bool | None = None           # Delta-TX
+    tuner_on: bool | None = None
+    comp_on: bool | None = None
+    vox_on: bool | None = None
+    pbt_in: float | None = None          # 0..1, Mitte ~0.502
+    pbt_out: float | None = None
+    usb_af: float | None = None          # USB-Audiopegel zum Decoder
     agc_mode: str | None = None          # OFF | SLOW | MEDIUM | FAST | AUTO
     vfo: str | None = None               # VFOA | VFOB | MEM …
     split_on: bool | None = None
@@ -193,6 +204,9 @@ class RigctldClient:
             ("rf_gain",       "RF",           float),
             ("nr_level",      "NR",           float),
             ("att_db",        "ATT",          int),
+            ("pbt_in",        "PBT_IN",       float),
+            ("pbt_out",       "PBT_OUT",      float),
+            ("usb_af",        "USB_AF",       float),
         ):
             try:
                 setattr(snap, attr, cast(await self.get_level(level_name)))
@@ -205,6 +219,12 @@ class RigctldClient:
             ("nb_on",     "NB"),
             ("nr_on",     "NR"),
             ("anf_on",    "ANF"),
+            ("mn_on",     "MN"),
+            ("rit_on",    "RIT"),
+            ("xit_on",    "XIT"),
+            ("tuner_on",  "TUNER"),
+            ("comp_on",   "COMP"),
+            ("vox_on",    "VOX"),
         ):
             try:
                 setattr(snap, attr, await self.get_func(func_name))
@@ -234,6 +254,18 @@ class RigctldClient:
         async with self._lock:
             line = await self._send(f"u {name}")
         return line.strip() == "1"
+
+    async def set_level(self, name: str, value: float) -> None:
+        async with self._lock:
+            line = await self._send(f"L {name} {value:.6f}")
+        if line.strip() not in ("RPRT 0", ""):
+            raise RuntimeError(f"L {name}: {line.strip()}")
+
+    async def set_split_aus(self) -> None:
+        async with self._lock:
+            line = await self._send("S 0 VFOA")
+        if line.strip() not in ("RPRT 0", ""):
+            raise RuntimeError(f"S 0: {line.strip()}")
 
     async def set_func(self, name: str, on: bool) -> None:
         async with self._lock:

@@ -117,9 +117,9 @@ _DE: dict[str, str] = {
     ),
     "push.cq_idle_title": "📡 CQ-Idle ohne Antwort",
     "push.bw_tamper_msg": "Filterbreite am Rig auf {rig} Hz verstellt (Soll {expected} Hz).",
-    "push.rx_tamper_title": "Empfang am Rig verstellt",
-    "push.rx_tamper_msg": "{was} am Rig eingeschaltet — das kostet FT8-Decodes.",
-    "push.rx_tamper_aus": "{was} am Rig eingeschaltet und wieder abgeschaltet — das kostet FT8-Decodes.",
+    "push.rx_tamper_title": "Rig-Einstellung verstellt",
+    "push.rx_tamper_msg": "Am Rig verstellt: {was} — das kostet FT8-Betrieb.",
+    "push.rx_tamper_aus": "Am Rig verstellt und zurueckgestellt: {was}.",
     "push.tamper_filter_title": "🛠 Rig-Filter extern geaendert",
     "push.silence_msg": (
         "Keine Decodes seit {stale} min UND kein RX-Audio seit {audio} min — "
@@ -353,9 +353,9 @@ _EN: dict[str, str] = {
     ),
     "push.cq_idle_title": "📡 CQ idle, no answer",
     "push.bw_tamper_msg": "Filter width changed at the rig to {rig} Hz (should be {expected} Hz).",
-    "push.rx_tamper_title": "Receiver settings changed at the rig",
-    "push.rx_tamper_msg": "{was} switched on at the rig — this costs FT8 decodes.",
-    "push.rx_tamper_aus": "{was} switched on at the rig and switched off again — it costs FT8 decodes.",
+    "push.rx_tamper_title": "Rig setting changed",
+    "push.rx_tamper_msg": "Changed at the rig: {was} — this costs FT8 operation.",
+    "push.rx_tamper_aus": "Changed at the rig and reset: {was}.",
     "push.tamper_filter_title": "🛠 Rig filter changed externally",
     "push.silence_msg": (
         "No decodes for {stale} min AND no RX audio for {audio} min — "

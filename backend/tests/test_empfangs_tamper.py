@@ -15,20 +15,65 @@ from unittest.mock import AsyncMock
 import pytest
 
 from ft8_appliance.runtime import orchestrator as orch_mod
-from ft8_appliance.runtime.orchestrator import Orchestrator, _empfangs_stoerer
+from ft8_appliance.runtime.orchestrator import _RIG_REGELN, Orchestrator, _rig_abweichungen
+
+
+MITTE = 128 / 255
 
 
 def _snap(**kw):
-    basis = dict(nr_on=False, nb_on=False, anf_on=False, att_db=0)
+    """Ein Rig im FT8-Soll."""
+    basis = dict(nr_on=False, nb_on=False, anf_on=False, att_db=0, mn_on=False,
+                 rit_on=False, xit_on=False, split_on=False, rf_gain=1.0,
+                 pbt_in=MITTE, pbt_out=MITTE, tuner_on=True, comp_on=False,
+                 vox_on=False, usb_af=0.502)
     return SimpleNamespace(**{**basis, **kw})
 
 
 def test_erkennt_was_fuer_ft8_schadet() -> None:
-    assert _empfangs_stoerer(_snap()) == []
-    assert _empfangs_stoerer(_snap(nr_on=True, nb_on=True)) == ["NR", "NB"]
-    assert _empfangs_stoerer(_snap(anf_on=True, att_db=20)) == ["ANF", "ATT"]
+    assert _rig_abweichungen(_snap()) == []
+    assert _rig_abweichungen(_snap(nr_on=True, nb_on=True)) == ["NR", "NB"]
+    assert _rig_abweichungen(_snap(anf_on=True, att_db=20)) == ["ANF", "ATT"]
+    assert _rig_abweichungen(_snap(rf_gain=0.4)) == ["RF"]
+    assert _rig_abweichungen(_snap(pbt_in=0.7)) == ["PBT"]
+    assert _rig_abweichungen(_snap(xit_on=True, split_on=True)) == ["XIT", "SPLIT"]
+    assert _rig_abweichungen(_snap(tuner_on=False, vox_on=True)) == ["TUNER", "VOX"]
     # Rig kennt die Funktion nicht → None → kein Alarm
-    assert _empfangs_stoerer(_snap(nr_on=None, att_db=None)) == []
+    leer = SimpleNamespace(**{k: None for k in _snap().__dict__})
+    assert _rig_abweichungen(leer) == []
+
+
+def test_lautstaerke_und_mithoerton_fasst_die_station_nie_an() -> None:
+    """Der Lautsprecher steht bei Raymond; ein falscher Wert waere laut."""
+    for schluessel, _anzeige, _pruef, korrektur in _RIG_REGELN:
+        if korrektur is None:
+            continue
+        assert not any(str(x).upper() in ("AF", "MONITOR_GAIN", "MON") for x in korrektur), schluessel
+
+
+@pytest.mark.asyncio
+async def test_zurueckstellen_nutzt_den_richtigen_weg() -> None:
+    o = _stub(_snap(rf_gain=0.3, pbt_out=0.8, split_on=True, mn_on=True))
+    o.rig.set_level = AsyncMock()
+    o.rig.set_split_aus = AsyncMock()
+    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.gather(*o.gestartet)
+    levels = {c.args for c in o.rig.set_level.await_args_list}
+    assert ("RF", 1.0) in levels
+    assert ("PBT_IN", MITTE) in levels and ("PBT_OUT", MITTE) in levels
+    o.rig.set_split_aus.assert_awaited_once()
+    assert ("MN", False) in {c.args for c in o.rig.set_func.await_args_list}
+
+
+@pytest.mark.asyncio
+async def test_nur_melden_heisst_nicht_anfassen() -> None:
+    o = _stub(_snap(tuner_on=False, comp_on=True, vox_on=True, usb_af=0.9))
+    o.rig.set_level = AsyncMock()
+    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.sleep(0)
+    o.rig.set_func.assert_not_called()
+    o.rig.set_level.assert_not_called()
+    o._notify_empfang_tamper.assert_called_once()
 
 
 def _stub(snap, *, schuetzen=True, burst=False):
@@ -101,10 +146,12 @@ def test_status_liest_ob_nr_an_ist() -> None:
     from ft8_appliance.rig.rigctld_client import RigctldClient
     quelle = inspect.getsource(RigctldClient.snapshot)
     assert '("nr_on",     "NR")' in quelle and '("anf_on",    "ANF")' in quelle
+    assert '("xit_on",    "XIT")' in quelle and '"PBT_IN"' in quelle
 
 
 def test_status_reicht_die_werte_durch() -> None:
     """Sonst sieht niemand in der Oberflaeche, dass NR an ist."""
     from ft8_appliance.web.routes.status import RigSnapshotOut
-    for feld in ("nr_on", "anf_on", "att_db"):
+    for feld in ("nr_on", "anf_on", "att_db", "mn_on", "rit_on", "xit_on", "tuner_on",
+                 "comp_on", "vox_on", "pbt_in", "pbt_out", "usb_af"):
         assert feld in RigSnapshotOut.model_fields, feld

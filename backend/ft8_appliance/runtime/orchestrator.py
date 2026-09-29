@@ -135,24 +135,58 @@ def _kontroll_block(block: int, anteil: float) -> bool:
     return ziffer < anteil * 256.0
 
 
-# Empfaengerfunktionen, die FT8-Decodes kosten (2026-09-28). Schluessel =
-# Hamlib-Name, Wert = Anzeige in der Meldung.
-_EMPFANG_STOERER_AUS = {"NR": "Rauschunterdrueckung (NR)", "NB": "Stoeraustaster (NB)",
-                        "ANF": "Auto-Notch (ANF)"}
+# Frontpanel-Einstellungen, die den FT8-Betrieb verderben (2026-09-28/29).
+# Anlass: Am 28.09. drueckten NR und NB, am Geraet eingeschaltet, die Decodes
+# auf ein Zehntel; wie sich danach zeigte, war der Empfang schon seit etwa
+# 14.09. gedrosselt. Keine Anzeige schlug an, weil der Audiopegel gleich blieb.
+#
+# Je Zeile: Schluessel, Anzeige in der Meldung, Pruefung am Rig-Snapshot,
+# Korrektur. Korrektur None = nur melden (dort kann ein Eingriff gewollt sein,
+# oder Zurueckstellen waere heikel). Werte, die das Rig nicht liefert (None),
+# loesen nie etwas aus.
+_PBT_MITTE = 128 / 255
 
 
-def _empfangs_stoerer(snap) -> list[str]:
-    """Hamlib-Namen der eingeschalteten Empfaengerfunktionen, die FT8 schaden.
+def _verschoben(v) -> bool:
+    return v is not None and abs(v - _PBT_MITTE) > 0.03
 
-    ATT steht mit drin, wird aber nur gemeldet, nie abgeschaltet.
-    Unbekannte Werte (None: das Rig kennt die Funktion nicht) zaehlen nicht.
-    """
-    aktiv = [n for n, attr in (("NR", "nr_on"), ("NB", "nb_on"), ("ANF", "anf_on"))
-             if getattr(snap, attr, None) is True]
-    att = getattr(snap, "att_db", None)
-    if att is not None and att > 0:
-        aktiv.append("ATT")
-    return aktiv
+
+_RIG_REGELN: tuple = (
+    ("NR",    "Rauschunterdrueckung (NR)",   lambda s: getattr(s, "nr_on", None) is True,  ("func", "NR")),
+    ("NB",    "Stoeraustaster (NB)",         lambda s: getattr(s, "nb_on", None) is True,  ("func", "NB")),
+    ("ANF",   "Auto-Notch (ANF)",            lambda s: getattr(s, "anf_on", None) is True, ("func", "ANF")),
+    ("MN",    "manuelle Notch",              lambda s: getattr(s, "mn_on", None) is True,  ("func", "MN")),
+    ("RIT",   "RIT",                         lambda s: getattr(s, "rit_on", None) is True, ("func", "RIT")),
+    ("XIT",   "Delta-TX (XIT)",              lambda s: getattr(s, "xit_on", None) is True, ("func", "XIT")),
+    # Split: Die Aussendung ginge auf VFO B — im Zweifel auf ein Band, das die
+    # Lizenzklasse nicht abdeckt.
+    ("SPLIT", "Split",                       lambda s: getattr(s, "split_on", None) is True, ("split",)),
+    ("RF",    "HF-Verstaerkung zurueckgedreht",
+     lambda s: getattr(s, "rf_gain", None) is not None and s.rf_gain < 0.99,  ("level", "RF", 1.0)),
+    ("PBT",   "Passband-Verschiebung (PBT)",
+     lambda s: _verschoben(getattr(s, "pbt_in", None)) or _verschoben(getattr(s, "pbt_out", None)),
+     ("pbt",)),
+    ("ATT",   "Daempfungsglied (ATT)",
+     lambda s: getattr(s, "att_db", None) is not None and s.att_db > 0,  None),
+    ("TUNER", "Antennentuner aus",           lambda s: getattr(s, "tuner_on", None) is False, None),
+    ("COMP",  "Kompressor",                  lambda s: getattr(s, "comp_on", None) is True, None),
+    ("VOX",   "VOX",                         lambda s: getattr(s, "vox_on", None) is True, None),
+    ("USB_AF", "USB-Audiopegel verstellt",
+     lambda s: getattr(s, "usb_af", None) is not None and abs(s.usb_af - 0.5) > 0.1, None),
+)
+_RIG_REGEL = {r[0]: r for r in _RIG_REGELN}
+
+
+def _rig_abweichungen(snap) -> list[str]:
+    """Schluessel aller Frontpanel-Einstellungen, die gerade vom FT8-Soll abweichen."""
+    aus = []
+    for schluessel, _anzeige, pruef, _korrektur in _RIG_REGELN:
+        try:
+            if pruef(snap):
+                aus.append(schluessel)
+        except Exception:
+            continue
+    return aus
 
 
 def _rig_profil_von(config) -> "RigProfil":
@@ -3820,13 +3854,13 @@ class Orchestrator:
         """NR/NB/ANF/ATT am Rig: einmal melden je neuem Zustand, NR/NB/ANF im
         Datenbetrieb abschalten. In anderen Betriebsarten hoert vielleicht
         jemand mit — dann bleibt es bei der Meldung."""
-        stoerer = _empfangs_stoerer(self._last_rig)
+        stoerer = _rig_abweichungen(self._last_rig)
         if not stoerer:
             self._last_empfang_alert = None
             return
         if not self._tamper_armed:
             return
-        abschalten = [s for s in stoerer if s in _EMPFANG_STOERER_AUS]
+        abschalten = [s for s in stoerer if _RIG_REGEL[s][3] is not None]
         aus = bool(abschalten) and rig_mode == expected_mode and \
             getattr(self.config.operating, "rig_empfang_schuetzen", True)
         if self._last_empfang_alert != tuple(stoerer):
@@ -3843,7 +3877,7 @@ class Orchestrator:
         ntfy = self.integrations.ntfy
         if ntfy is None or not ntfy.enabled:
             return
-        was = ", ".join(_EMPFANG_STOERER_AUS.get(s, "Daempfungsglied (ATT)") for s in stoerer)
+        was = ", ".join(_RIG_REGEL[s][1] for s in stoerer if s in _RIG_REGEL)
         await ntfy.notify(
             _t("push.rx_tamper_aus" if abgeschaltet else "push.rx_tamper_msg", was=was),
             title=_t("push.rx_tamper_title"),
@@ -3861,12 +3895,25 @@ class Orchestrator:
         self._spawn(self._empfang_aus(list(namen)), name="empfang-restore")
 
     async def _empfang_aus(self, namen: list[str]) -> None:
+        """Abweichende Einstellungen auf das FT8-Soll zurueckstellen."""
         for n in namen:
+            korrektur = _RIG_REGEL.get(n, (None, None, None, None))[3]
+            if korrektur is None:
+                continue
             try:
-                await self.rig.set_func(n, False)
-                log.info("Empfangs-Tamper: %s abgeschaltet", n)
+                art = korrektur[0]
+                if art == "func":
+                    await self.rig.set_func(korrektur[1], False)
+                elif art == "level":
+                    await self.rig.set_level(korrektur[1], korrektur[2])
+                elif art == "pbt":
+                    await self.rig.set_level("PBT_IN", _PBT_MITTE)
+                    await self.rig.set_level("PBT_OUT", _PBT_MITTE)
+                elif art == "split":
+                    await self.rig.set_split_aus()
+                log.info("Rig-Einstellung zurueckgestellt: %s", n)
             except Exception as exc:   # Rig kennt die Funktion nicht o. ae.
-                log.info("Empfangs-Tamper: %s nicht abschaltbar: %s", n, exc)
+                log.info("Rig-Einstellung %s nicht zurueckstellbar: %s", n, exc)
 
     async def _notify_bandwidth_tamper(self, rig_bw: int, expected_bw: int) -> None:
         """Push: Filterbreite wurde am Rig verstellt."""
