@@ -3855,7 +3855,10 @@ class Orchestrator:
         Datenbetrieb abschalten. In anderen Betriebsarten hoert vielleicht
         jemand mit — dann bleibt es bei der Meldung."""
         stoerer = _rig_abweichungen(self._last_rig)
-        if not stoerer:
+        # Nach "Stop" gehoert das Rig dem, der davor sitzt: nichts melden,
+        # nichts zurueckstellen. Den Merker loeschen, damit nach dem naechsten
+        # Start eine noch bestehende Abweichung wieder gemeldet und korrigiert wird.
+        if not stoerer or not self._station_aktiv():
             self._last_empfang_alert = None
             return
         if not self._tamper_armed:
@@ -5806,6 +5809,18 @@ class Orchestrator:
             tags=["warning"],
         )
 
+    def _station_aktiv(self) -> bool:
+        """Faehrt die Station gerade Betrieb (Hunt, CQ oder ein laufendes QSO)?
+
+        Nach "Stop" gehoert das Rig dem, der davor sitzt (2026-09-29, Sebastian:
+        "wenn ich auf Stop druecke, kann Raymond mit dem Funkgeraet auch was
+        anderes machen?"). Dann meldet die Station keine Verstellungen und
+        stellt nichts zurueck; beim naechsten Start prueft sie alles neu.
+        """
+        from ..statemachine.states import State
+        sm = self.state_machine
+        return bool(sm.ctx.auto_answer or sm.ctx.auto_cq or sm.state is not State.IDLE)
+
     def _frequency_tamper_ready(
         self,
         actual_hz: int,
@@ -5813,6 +5828,8 @@ class Orchestrator:
         band_name: str,
     ) -> bool:
         """Gate frequency-tamper pushes until boot mode/dial state settled."""
+        if not self._station_aktiv():
+            return False
         if self._freq_tamper_reconciled:
             return True
 
@@ -7887,7 +7904,7 @@ class Orchestrator:
                         # Throttle: nur EIN Push pro neuem Wert. Wenn er
                         # weiter dreht (24 → 30 → 5), kriegt jeder Schritt
                         # einen Push. Wenn er auf 24 stehen bleibt, nicht.
-                        if self._last_power_alert_w != rig_watts:
+                        if self._last_power_alert_w != rig_watts and self._station_aktiv():
                             self._last_power_alert_w = rig_watts
                             asyncio.create_task(
                                 self._notify_power_tamper(rig_watts, self._tx_power_w),
@@ -7914,7 +7931,8 @@ class Orchestrator:
             expected_mode = "PKTUSB"  # FT8 = data mode
             if rig_mode is not None:
                 if rig_mode != expected_mode:
-                    if not self._is_app_echo("mode", rig_mode) and self._tamper_armed:
+                    if not self._is_app_echo("mode", rig_mode) and self._tamper_armed \
+                            and self._station_aktiv():
                         if self._last_mode_alert != rig_mode:
                             log.info("Mode-Tamper: rig=%s (Soll %s) — EXTERN verstellt",
                                      rig_mode, expected_mode)
@@ -7940,7 +7958,7 @@ class Orchestrator:
             )
             if bw_problematic:
                 if not self._is_app_echo("bandwidth_hz", rig_bw, tolerance=200) \
-                        and self._tamper_armed:
+                        and self._tamper_armed and self._station_aktiv():
                     if self._last_bandwidth_alert_hz != rig_bw:
                         log.info("Filter-Tamper: bandwidth=%d Hz (Schmal-Filter?) — EXTERN",
                                  rig_bw)

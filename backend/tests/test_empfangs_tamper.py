@@ -76,7 +76,7 @@ async def test_nur_melden_heisst_nicht_anfassen() -> None:
     o._notify_empfang_tamper.assert_called_once()
 
 
-def _stub(snap, *, schuetzen=True, burst=False):
+def _stub(snap, *, schuetzen=True, burst=False, aktiv=True):
     o = SimpleNamespace(
         _last_rig=snap, _tamper_armed=True, _last_empfang_alert=None,
         _empfang_restore_last_at=0.0, _tx_burst_active=burst,
@@ -84,6 +84,7 @@ def _stub(snap, *, schuetzen=True, burst=False):
         rig=SimpleNamespace(set_func=AsyncMock()),
         _notify_empfang_tamper=AsyncMock(),
         gestartet=[],
+        _station_aktiv=lambda: aktiv,
     )
     o._spawn = lambda coro, name=None: o.gestartet.append(asyncio.ensure_future(coro))
     o._schedule_empfang_restore = lambda n: Orchestrator._schedule_empfang_restore(o, n)
@@ -155,3 +156,40 @@ def test_status_reicht_die_werte_durch() -> None:
     for feld in ("nr_on", "anf_on", "att_db", "mn_on", "rit_on", "xit_on", "tuner_on",
                  "comp_on", "vox_on", "pbt_in", "pbt_out", "usb_af"):
         assert feld in RigSnapshotOut.model_fields, feld
+
+
+@pytest.mark.asyncio
+async def test_nach_stop_gehoert_das_rig_raymond() -> None:
+    """Nach "Stop" darf Raymond am Geraet machen, was er will — keine Meldung,
+    kein Zurueckstellen. Beim naechsten Start wird wieder geprueft."""
+    o = _stub(_snap(nr_on=True, split_on=True), aktiv=False)
+    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.sleep(0)
+    o.rig.set_func.assert_not_called()
+    o._notify_empfang_tamper.assert_not_called()
+    # wieder gestartet: jetzt greift es
+    o._station_aktiv = lambda: True
+    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.gather(*o.gestartet)
+    o._notify_empfang_tamper.assert_called_once()
+    assert ("NR", False) in {c.args for c in o.rig.set_func.await_args_list}
+
+
+def test_station_aktiv_heisst_hunt_cq_oder_laufendes_qso() -> None:
+    from ft8_appliance.statemachine.states import State
+    def o(answer=False, cq=False, state=State.IDLE):
+        return SimpleNamespace(state_machine=SimpleNamespace(
+            ctx=SimpleNamespace(auto_answer=answer, auto_cq=cq), state=state))
+    assert not Orchestrator._station_aktiv(o())                     # nach Stop
+    assert Orchestrator._station_aktiv(o(answer=True))              # Hunt
+    assert Orchestrator._station_aktiv(o(cq=True))                  # CQ
+    assert Orchestrator._station_aktiv(o(state=State.QSO_REPORT))   # QSO laeuft aus
+
+
+def test_auch_die_alten_meldungen_schweigen_nach_stop() -> None:
+    """Leistung, Betriebsart, Filter und Frequenz meldeten bisher auch nach
+    Stop — Raymond am Geraet haette eine Push-Serie ausgeloest."""
+    import inspect
+    quelle = inspect.getsource(Orchestrator._rig_poll_loop)
+    assert quelle.count("self._station_aktiv()") >= 3
+    assert "if not self._station_aktiv():" in inspect.getsource(Orchestrator._frequency_tamper_ready)
