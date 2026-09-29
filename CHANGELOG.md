@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.177.0 — 2026-09-29
+- feat: Rig-Ueberwachung auf Notch, RIT, Delta-TX, Split, HF-Verstaerkung und PBT erweitert; Tuner, Kompressor, VOX und USB-Pegel melden; Lautstaerke nie
+
 ## v0.176.1 — 2026-09-28
 - fix: Status zeigt, ob NR/ANF an sind und das Daempfungsglied steht
 
