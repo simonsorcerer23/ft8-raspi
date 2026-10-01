@@ -237,7 +237,7 @@ MESSPLAN: tuple[Messung, ...] = (
         quelle="Tiefenpruefung 12.09. ('FT8-MUF-Frage in ~1 Woche neu')",
     ),
     Messung(
-        "bandrand", "laufend",
+        "bandrand", "entschieden",
         "Kosten Stationen knapp ueber der unteren Audiogrenze Abschluesse?",
         ("pick_attempt.freq_offset_hz",),
         "Bandrand: sitzt hunt_audio_freq_min_hz an der richtigen Stelle?",
@@ -246,6 +246,12 @@ MESSPLAN: tuple[Messung, ...] = (
         lesen_ab=date(2026, 10, 1),
         danach="Echt schlechter: Grenze anheben. Rauschen bei erreichter Fallzahl: "
                "Nicht-Effekt bestaetigt, Abschnitt kann weg.",
+        ergebnis="01.10.2026: Grenze bleibt bei 400 Hz. Unter 500 Hz roh 16,5 % gegen "
+                 "22,6 % (n = 407, z = −2,88), aber Mischeffekt: am Rand rufen mehr DX. "
+                 "Getrennt bleibt Europa 22 % gegen 27 % (z ≈ −1,6), DX 6 % gegen 9 %. "
+                 "Unter 400 Hz (Ausweichen auf ruhigen Platz) und 400–499 Hz (Antwort "
+                 "auf seiner Frequenz) schliessen gleich ab (Europa je 22,3 %) — unsere "
+                 "Sendeposition ist nicht die Ursache, Anheben braechte nichts.",
         quelle="Gemessene Nicht-Effekte (z = −1,08 bei n = 58)",
     ),
     # ---------------------------------------------------------- dauerhaft
