@@ -3,6 +3,11 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.178.0 — 2026-10-06
+- feat: Versorgungsspannung und Endstufenstrom des Rigs mitschreiben, plotten und bei Abweichung melden — nach dem Ausfall des IC-7300 am 02.10. liess sich das Netzteil nicht belegen
+- messplan: Bandrand entschieden — Grenze bleibt bei 400 Hz (Mischeffekt, Sendeposition nicht ursaechlich)
+- fix(bilanz): Bandrand-Abschnitt trennt Anrufe unter 400 Hz vom Bereich 400-499 Hz
+
 ## v0.177.1 — 2026-09-29
 - feat: nach Stop keine Rig-Meldungen und kein Zuruecksetzen — das Rig gehoert dann dem, der davor sitzt
 - feat: nach Stop keine Rig-Meldungen und kein Zuruecksetzen — das Rig gehoert dann dem, der davor sitzt
