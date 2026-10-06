@@ -26,6 +26,7 @@
   import QsoConversation from './components/QsoConversation.svelte';
   import RigPanel       from './components/RigPanel.svelte';
   import SwrTrendChart  from './components/SwrTrendChart.svelte';
+  import VersorgungChart from './components/VersorgungChart.svelte';
   import QslGalerie    from './components/QslGalerie.svelte';
   import WhoHeardMe     from './components/WhoHeardMe.svelte';
   import LoginGate      from './components/LoginGate.svelte';
@@ -213,6 +214,7 @@
     <QsoConversation />
     <DecodeList onReply={handleReply} onTailEnd={handleTailEnd} />
     <SwrTrendChart hours={24} />
+    <VersorgungChart hours={24} />
     <BestTimeChart band={currentBandName} />
     <ActiveHoursChart />
     <SystemPanel />

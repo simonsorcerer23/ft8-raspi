@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import statistics
 import sqlite3
 import subprocess
 import sys
@@ -1546,6 +1547,55 @@ def main() -> int:
     print("    Eine Reihe ohne Abnehmer ist Ballast. Steht hier dauerhaft")
     print("    'zu wenige' oder 'keiner erkennbar', gehoert die Frage")
     print("    verworfen und die Aufzeichnung eingestellt.")
+
+    print("\n=== Versorgung: haelt das Netzteil die Spannung, auch unter Last? ===")
+    # Seit 2026-10-06. Je Kalenderwoche: Median im Empfang, Median beim
+    # Senden, der Einbruch dazwischen und die Extremwerte. Der Einbruch ist
+    # die Fruehwarnung — ein durchgehender Regler kuendigt sich nicht an.
+    try:
+        wochen = con.execute(
+            "select strftime('%Y-W%W', ts), senden, vd_v, id_a from versorgung_log"
+            " order by ts").fetchall()
+    except sqlite3.OperationalError:
+        wochen = []
+    if not wochen:
+        print("    keine Messwerte (Tabelle leer oder Rig liefert keine Spannung)")
+    else:
+        je: dict[str, dict[int, list[float]]] = {}
+        strom: dict[str, list[float]] = {}
+        for woche, senden, vd, ida in wochen:
+            je.setdefault(woche, {0: [], 1: []})[1 if senden else 0].append(vd)
+            if senden and ida is not None:
+                strom.setdefault(woche, []).append(ida)
+        zeilen = []
+        erster_einbruch = None
+        alle = [w[2] for w in wochen]
+        for woche in sorted(je):
+            rx, tx = je[woche][0], je[woche][1]
+            m_rx = statistics.median(rx) if rx else None
+            m_tx = statistics.median(tx) if tx else None
+            einbruch = (m_rx - m_tx) if (m_rx is not None and m_tx is not None) else None
+            if erster_einbruch is None and einbruch is not None:
+                erster_einbruch = einbruch
+            if einbruch is not None and einbruch - erster_einbruch > 0.3:
+                wort = "EINBRUCH WAECHST — Netzteil/Kabel pruefen"
+            else:
+                wort = "-"
+            zeilen.append((
+                woche, len(rx) + len(tx),
+                f"{m_rx:.2f} V" if m_rx is not None else "-",
+                f"{m_tx:.2f} V" if m_tx is not None else "-",
+                f"{einbruch:.2f} V" if einbruch is not None else "-",
+                f"{min(rx + tx):.1f}–{max(rx + tx):.1f} V",
+                f"{statistics.median(strom[woche]):.1f} A" if strom.get(woche) else "-",
+                wort,
+            ))
+        tabelle(zeilen, ("Woche", "Messungen", "Empfang", "Senden", "Einbruch",
+                         "Spanne", "Strom TX", "Urteil"))
+        if len(alle) > 20 and max(alle) == min(alle):
+            print("    Die Reihe bewegt sich nie — sie misst nichts.")
+        print("    Die Anzeige des IC-7300 endet bei rund 16 V; ein Wert am")
+        print("    Anschlag heisst 'mindestens', nicht 'genau'.")
 
     print("\n=== Wunschliste: gesehen und versucht? ===")
     tabelle(con.execute(

@@ -395,6 +395,12 @@ class OperatingConfig(BaseModel):
     # auf SSB mit) bleibt es bei der Meldung. Das Daempfungsglied wird nur
     # gemeldet: Es kann bei starken Stoerern gewollt sein.
     rig_empfang_schuetzen: bool = True
+    # Versorgungsspannung am Rig (2026-10-06). Ausserhalb der Spanne geht eine
+    # Meldung aufs Handy. Arbeitswerte um die ueblichen 13,8 V, KEINE
+    # Herstellergrenze — die steht im Handbuch des Geraets. Abschalten kann
+    # die Station nichts; die Anzeige des IC-7300 endet zudem bei rund 16 V.
+    rig_vd_min_v: float = Field(default=12.0, ge=9.0, le=13.8)
+    rig_vd_max_v: float = Field(default=15.0, ge=13.8, le=17.0)
     autopilot_enabled: bool = False
     autopilot_allowed_bands: list[str] = Field(default_factory=lambda: ["15m"])
     autopilot_allowed_modes: list[Literal["FT8", "FT4"]] = Field(

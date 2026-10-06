@@ -68,6 +68,7 @@ KERN_PICK_ATTEMPT = frozenset({
 TELEMETRIE_TABELLEN = frozenset({
     "pick_attempt", "pick_candidate", "state_time_daily", "filter_drop_daily",
     "band_noise", "solar_log", "swr_log", "path_prediction", "psk_reporter_in",
+    "versorgung_log",
 })
 
 _GATE_STUFEN = "Jede Gate-Stufe einzeln"
@@ -255,6 +256,20 @@ MESSPLAN: tuple[Messung, ...] = (
         quelle="Gemessene Nicht-Effekte (z = −1,08 bei n = 58)",
     ),
     # ---------------------------------------------------------- dauerhaft
+    Messung(
+        "versorgung", "dauerhaft",
+        "Bleibt die Versorgungsspannung am Rig stabil, und waechst der Einbruch beim Senden?",
+        ("versorgung_log",),
+        "Versorgung: haelt das Netzteil die Spannung, auch unter Last?",
+        "Einbruch beim Senden (Median Empfang minus Median Senden) waechst gegen "
+        "die erste Woche um mehr als 0,3 V: Netzteil, Kabel und Stecker pruefen. "
+        "Ein Wert ausserhalb rig_vd_min_v/rig_vd_max_v: sofort pruefen — die "
+        "Station meldet das auch aufs Handy. Bewegt sich die Reihe nie, misst "
+        "sie nichts.",
+        seit=date(2026, 10, 6),
+        quelle="Ausfall des IC-7300 am 02.10.2026 am Ende einer Aussendung; "
+               "die Spannung stand nirgends, das Netzteil liess sich nicht belegen.",
+    ),
     Messung(
         "zeit_je_zustand", "dauerhaft",
         "Wie viele QSOs bringt eine Stunde Betrieb — der Nenner fuer jeden Filtervergleich.",

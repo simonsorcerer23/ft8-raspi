@@ -322,6 +322,18 @@ class SwrLog(Base):
 
 
 # ---------------------------------------------------------------------------
+class VersorgungLog(Base):
+    """Versorgungsspannung und Endstufenstrom des Rigs, getrennt nach RX/TX."""
+    __tablename__ = "versorgung_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    senden: Mapped[bool] = mapped_column(Boolean, default=False)
+    vd_v: Mapped[float] = mapped_column(Float)
+    id_a: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 class Blacklist(Base):
     __tablename__ = "blacklist"
 

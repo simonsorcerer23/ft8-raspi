@@ -505,7 +505,7 @@ def test_blinder_swr_sensor_wird_nicht_fuer_gesund_erklaert(tmp_path_factory) ->
             s.add(m.SwrLog(ts=datetime.now(UTC) - timedelta(minutes=10 * i),
                            band="20m", freq_hz=14_074_000, swr=1.0))
         s.commit()
-    zeile = _zeile(_laufe(db), "Umgebung", "SWR-Verlauf")
+    zeile = _zeile(_laufe(db), "=== Umgebung", "SWR-Verlauf")
     assert "IMMER DERSELBE WERT" in zeile, zeile
     assert "unauffaellig" not in zeile
 

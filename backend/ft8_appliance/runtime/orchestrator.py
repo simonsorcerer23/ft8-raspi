@@ -735,6 +735,10 @@ class Orchestrator:
     _last_bandwidth_alert_hz: int | None = field(default=None, init=False)
     _last_empfang_alert: tuple | None = field(default=None, init=False)
     _empfang_restore_last_at: float = field(default=0.0, init=False)
+    # Versorgung: letzter gebuchter Wert und Zeitpunkt je Zustand (False=RX,
+    # True=TX) und wann zuletzt gewarnt wurde — s. _buche_versorgung.
+    _vd_log: dict = field(default_factory=dict, init=False)
+    _vd_warn_at: float = field(default=0.0, init=False)
     # Boot-Gate: beim ersten Sync nach Service-Start wissen wir nicht
     # was am Rig steht (es koennte vom letzten Boot uebrig sein oder
     # gerade frisch verstellt worden sein). Erste Iteration syncen wir
@@ -3886,6 +3890,76 @@ class Orchestrator:
             title=_t("push.rx_tamper_title"),
             priority="default",
             tags=["warning"],
+        )
+
+    _VD_SCHRITT_V = 0.2
+    _VD_GRUNDLINIE_S = 600.0
+    _VD_WARN_ABSTAND_S = 1800.0
+
+    def _buche_versorgung(self) -> None:
+        """Versorgungsspannung und Endstufenstrom mitschreiben und warnen.
+
+        Am 02.10.2026 fiel das Rig am Ende einer Aussendung aus; ob das
+        Netzteil die Ursache war, liess sich nicht belegen, weil die Spannung
+        nirgends stand. Empfang und Senden werden getrennt gebucht: Der
+        Einbruch unter Last ist die Groesse, an der ein alterndes Netzteil
+        oder ein Uebergangswiderstand im Kabel sichtbar wird.
+
+        Sparsam wie beim SWR: ein Eintrag bei merklicher Aenderung, sonst
+        alle zehn Minuten einer je Zustand. Die Warnung gilt auch nach Stop —
+        Ueberspannung schadet dem Geraet, gleich wer es bedient.
+        """
+        rig = self._last_rig
+        vd = getattr(rig, "vd_v", None)
+        if not isinstance(vd, (int, float)) or vd <= 0:
+            return
+        senden = bool(getattr(rig, "ptt", False))
+        jetzt = time.monotonic()
+        # Direkt nach dem Tasten steht noch der Wert davor im Messwerk.
+        if senden and self._ptt_on_at > 0 and jetzt - self._ptt_on_at < 1.5:
+            return
+        op = self.config.operating
+        if vd > op.rig_vd_max_v or vd < op.rig_vd_min_v:
+            if jetzt - self._vd_warn_at >= self._VD_WARN_ABSTAND_S or self._vd_warn_at == 0.0:
+                self._vd_warn_at = jetzt
+                hoch = vd > op.rig_vd_max_v
+                log.warning("Versorgungsspannung am Rig %.1f V ausserhalb %.1f–%.1f V",
+                            vd, op.rig_vd_min_v, op.rig_vd_max_v)
+                self._spawn(self._notify_versorgung(
+                    float(vd), op.rig_vd_max_v if hoch else op.rig_vd_min_v, hoch=hoch),
+                    name="versorgung-warnung")
+        if not self.db_enabled:
+            return
+        vorher = self._vd_log.get(senden)
+        if (vorher is not None and abs(vd - vorher[0]) < self._VD_SCHRITT_V
+                and jetzt - vorher[1] < self._VD_GRUNDLINIE_S):
+            return
+        self._vd_log[senden] = (float(vd), jetzt)
+        id_a = getattr(rig, "id_a", None)
+        self._spawn(self._persist_versorgung(
+            senden, float(vd), float(id_a) if isinstance(id_a, (int, float)) else None),
+            name="versorgung-log")
+
+    async def _persist_versorgung(self, senden: bool, vd_v: float, id_a: float | None) -> None:
+        """Fail-soft — eine Messreihe darf den Sendebetrieb nie kosten."""
+        try:
+            from ..db.models import VersorgungLog
+            async with session_scope() as s:
+                s.add(VersorgungLog(ts=datetime.now(UTC), senden=senden,
+                                    vd_v=vd_v, id_a=id_a))
+        except Exception as exc:
+            log.debug("Versorgung nicht gespeichert: %s", exc)
+
+    async def _notify_versorgung(self, vd_v: float, grenze: float, *, hoch: bool) -> None:
+        ntfy = self.integrations.ntfy
+        if ntfy is None or not ntfy.enabled:
+            return
+        await ntfy.notify(
+            _t("push.vd_hoch" if hoch else "push.vd_tief",
+               v=f"{vd_v:.1f}", grenze=f"{grenze:.1f}"),
+            title=_t("push.vd_title"),
+            priority="high",
+            tags=["warning", "zap"],
         )
 
     def _schedule_empfang_restore(self, namen: list[str]) -> None:
@@ -7973,6 +8047,7 @@ class Orchestrator:
             # Pegelanzeige — der Audiopegel bleibt gleich, nur die Decodes
             # verschwinden.
             self._pruefe_empfang(rig_mode, expected_mode)
+            self._buche_versorgung()
 
             # Boot-Gate: nach dem ersten kompletten Sync-Durchlauf
             # Tamper-Detection scharfschalten.

@@ -120,6 +120,9 @@ _DE: dict[str, str] = {
     "push.rx_tamper_title": "Rig-Einstellung verstellt",
     "push.rx_tamper_msg": "Am Rig verstellt: {was} — das kostet FT8-Betrieb.",
     "push.rx_tamper_aus": "Am Rig verstellt und zurueckgestellt: {was}.",
+    "push.vd_title": "Versorgungsspannung am Rig",
+    "push.vd_hoch": "Das Rig meldet {v} V (Grenze {grenze} V) — Netzteil pruefen, bevor etwas Schaden nimmt.",
+    "push.vd_tief": "Das Rig meldet nur {v} V (Grenze {grenze} V) — Netzteil, Kabel und Stecker pruefen.",
     "push.tamper_filter_title": "🛠 Rig-Filter extern geaendert",
     "push.silence_msg": (
         "Keine Decodes seit {stale} min UND kein RX-Audio seit {audio} min — "
@@ -356,6 +359,9 @@ _EN: dict[str, str] = {
     "push.rx_tamper_title": "Rig setting changed",
     "push.rx_tamper_msg": "Changed at the rig: {was} — this costs FT8 operation.",
     "push.rx_tamper_aus": "Changed at the rig and reset: {was}.",
+    "push.vd_title": "Rig supply voltage",
+    "push.vd_hoch": "The rig reports {v} V (limit {grenze} V) — check the power supply before anything gets damaged.",
+    "push.vd_tief": "The rig reports only {v} V (limit {grenze} V) — check power supply, cable and connectors.",
     "push.tamper_filter_title": "🛠 Rig filter changed externally",
     "push.silence_msg": (
         "No decodes for {stale} min AND no RX audio for {audio} min — "

@@ -560,6 +560,44 @@ async def swr_trend(
 
 
 # ---------------------------------------------------------------------------
+class VersorgungPunkt(BaseModel):
+    ts: str          # ISO-8601 UTC
+    senden: bool
+    vd_v: float
+    id_a: float | None = None
+
+
+class VersorgungResponse(BaseModel):
+    """Versorgungsspannung des Rigs, Empfang und Senden getrennt."""
+    points: list[VersorgungPunkt]
+    vd_min_v: float
+    vd_max_v: float
+
+
+@router.get("/stats/versorgung", response_model=VersorgungResponse)
+async def versorgung(
+    hours: int = Query(default=24, ge=1, le=720),
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> VersorgungResponse:
+    from ...db.models import VersorgungLog
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
+    async with session_scope() as s:
+        rows = (await s.execute(
+            select(VersorgungLog.ts, VersorgungLog.senden,
+                   VersorgungLog.vd_v, VersorgungLog.id_a)
+            .where(VersorgungLog.ts >= cutoff)
+            .order_by(VersorgungLog.ts.asc())
+        )).all()
+    op = orch.config.operating
+    return VersorgungResponse(
+        points=[VersorgungPunkt(
+            ts=iso_utc(r.ts), senden=bool(r.senden), vd_v=round(float(r.vd_v), 2),
+            id_a=None if r.id_a is None else round(float(r.id_a), 1)) for r in rows],
+        vd_min_v=op.rig_vd_min_v, vd_max_v=op.rig_vd_max_v,
+    )
+
+
+# ---------------------------------------------------------------------------
 class CoveragePoint(BaseModel):
     azimuth_deg: int      # Bin-Mitte 0..355 (in 5°-Schritten)
     distance_km: int      # Distanz zur weitesten Station in diesem Bin

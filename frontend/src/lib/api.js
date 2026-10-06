@@ -218,6 +218,7 @@ export const api = {
   stats:        ()       => request('/stats'),
   systemInfo:   ()       => request('/system/info'),
   swrTrend:     (hours = 24) => request('/stats/swr-trend', { query: { hours } }),
+  versorgung:   (hours = 24) => request('/stats/versorgung', { query: { hours } }),
   whoHeardMe:   (hours=24) => request(`/psk/who-heard-me?hours=${hours}`),
   bandSuggestions: ()    => request('/stats/band-suggestions'),
   bestTime:     (band)   => request(`/stats/best-time/${encodeURIComponent(band)}`),

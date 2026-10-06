@@ -63,6 +63,11 @@ class RigSnapshot:
     pbt_in: float | None = None          # 0..1, Mitte ~0.502
     pbt_out: float | None = None
     usb_af: float | None = None          # USB-Audiopegel zum Decoder
+    # 2026-10-06: Versorgung. Am 02.10. fiel das Rig am Ende einer Aussendung
+    # schlagartig aus (Netzteil), und nichts war aufgezeichnet. Hamlib liefert
+    # beim IC-7300 Volt und Ampere (ic7300.c, Eichtabelle bis 16 V / 25 A).
+    vd_v: float | None = None            # Versorgungsspannung am Geraet
+    id_a: float | None = None            # Drainstrom der Endstufe (nur TX)
     agc_mode: str | None = None          # OFF | SLOW | MEDIUM | FAST | AUTO
     vfo: str | None = None               # VFOA | VFOB | MEM …
     split_on: bool | None = None
@@ -207,6 +212,8 @@ class RigctldClient:
             ("pbt_in",        "PBT_IN",       float),
             ("pbt_out",       "PBT_OUT",      float),
             ("usb_af",        "USB_AF",       float),
+            ("vd_v",          "VD_METER",     float),
+            ("id_a",          "ID_METER",     float),
         ):
             try:
                 setattr(snap, attr, cast(await self.get_level(level_name)))
