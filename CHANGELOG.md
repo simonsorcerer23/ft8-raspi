@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.179.0 — 2026-10-08
+- feat: Profil fuer das IC-7300MK2 vorbereitet (hamlib 4.7.2 neben dem der Distribution, deploy/hamlib-bauen.sh); Erstinstallation schlaegt die halbe Rig-Leistung als Anfangswert vor
+
 ## v0.178.0 — 2026-10-06
 - feat: Versorgungsspannung und Endstufenstrom des Rigs mitschreiben, plotten und bei Abweichung melden — nach dem Ausfall des IC-7300 am 02.10. liess sich das Netzteil nicht belegen
 - messplan: Bandrand entschieden — Grenze bleibt bei 400 Hz (Mischeffekt, Sendeposition nicht ursaechlich)
