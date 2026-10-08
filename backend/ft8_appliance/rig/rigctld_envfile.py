@@ -13,6 +13,13 @@ from pathlib import Path
 from ..config import RigConfig
 
 
+# Die zwei erlaubten rigctld: das der Distribution und ein selbst gebautes
+# neueres unter /opt/hamlib (deploy/hamlib-bauen.sh). Bewusst zwei feste
+# Pfade und kein Feld in der Konfiguration.
+RIGCTLD_SYSTEM = "/usr/bin/rigctld"
+RIGCTLD_NEU = "/opt/hamlib/bin/rigctld"
+
+
 def render_rigctld_envfile(rig: RigConfig) -> str:
     """Return the env-file content (one ``KEY=VALUE`` per line)."""
     # PTT ausserhalb von CAT: der Digirig schaltet PTT ueber RTS desselben
@@ -20,7 +27,9 @@ def render_rigctld_envfile(rig: RigConfig) -> str:
     # Unit setzt $RIG_PTT_ARGS ungequotet ein, damit es zwei Argumente werden.
     ptt = rig.effective_ptt_type
     ptt_args = "" if ptt == "cat" else f"--ptt-type={ptt.upper()} --ptt-file={rig.serial_device}"
+    rigctld = RIGCTLD_NEU if rig.profil.neues_hamlib else RIGCTLD_SYSTEM
     return (
+        f"RIGCTLD={rigctld}\n"
         f"RIG_MODEL={rig.hamlib_id}\n"
         f"RIG_DEVICE={rig.serial_device}\n"
         f"RIG_BAUD={rig.effective_cat_baud}\n"

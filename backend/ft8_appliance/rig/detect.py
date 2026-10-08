@@ -51,7 +51,7 @@ _PATTERNS: list[tuple[re.Pattern[str], str, str, str]] = [
 class RigDetection:
     """One detected USB serial device that might be a supported rig."""
 
-    model: Literal["ic705", "ic7300", "ic9700", "ic7610", "qmx_plus", "ft817", "ft818"]
+    model: Literal["ic705", "ic7300", "ic7300mk2", "ic9700", "ic7610", "qmx_plus", "ft817", "ft818"]
     confidence: Literal["high", "low"]
     serial_device: str           # /dev/serial/by-id/usb-...
     description: str             # human-readable

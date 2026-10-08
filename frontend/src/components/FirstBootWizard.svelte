@@ -11,6 +11,7 @@
   const RIG_DEFAULTS = {
     ic705:  { label: 'Icom IC-705 (QRP portable, 10 W)',  max_power_w: 10  },
     ic7300: { label: 'Icom IC-7300 (Desktop, 100 W)',     max_power_w: 100 },
+    ic7300mk2: { label: 'Icom IC-7300MK2 (Desktop, 100 W)', max_power_w: 100 },
     ic9700: { label: 'Icom IC-9700 (VHF/UHF, 100 W)',     max_power_w: 100 },
     ic7610: { label: 'Icom IC-7610 (Top-Class, 100 W)',   max_power_w: 100 },
     qmx_plus: { label: 'QRP Labs QMX/QMX+ (5 W)',         max_power_w: 5 },
@@ -58,9 +59,9 @@
   }
 
   function onRigChange() {
-    // When the rig switches, snap default_power_w to the new rig's stock
-    // max so we don't ship a 100W Default into a 10W radio (or vice versa).
-    cfg.operator.default_power_w = RIG_DEFAULTS[cfg.rig.model].max_power_w;
+    // When the rig switches, snap default_power_w to half the new rig's
+    // stock max (2026-10-08: Anfangswert 50 %, hochregeln bleibt moeglich).
+    cfg.operator.default_power_w = Math.max(1, Math.floor(RIG_DEFAULTS[cfg.rig.model].max_power_w / 2));
     // Adjust the serial-by-id hint to match (operator can edit on page 1).
     if (cfg.rig.model === 'ic705') {
       cfg.rig.serial_device = '/dev/serial/by-id/usb-Icom_Inc._IC-705-if00';

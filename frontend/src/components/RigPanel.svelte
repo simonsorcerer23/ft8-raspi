@@ -29,6 +29,7 @@
   const MODEL_LABELS = {
     ic705:  'IC-705',
     ic7300: 'IC-7300',
+    ic7300mk2: 'IC-7300MK2',
     ic9700: 'IC-9700',
     ic7610: 'IC-7610',
     qmx_plus: 'QMX/QMX+',
@@ -36,7 +37,7 @@
     ft818: 'FT-818 (Digirig)',
   };
   const MODEL_MAX_W = {
-    ic705: 10, ic7300: 100, ic9700: 100, ic7610: 100, qmx_plus: 5, ft817: 5, ft818: 5,
+    ic705: 10, ic7300: 100, ic7300mk2: 100, ic9700: 100, ic7610: 100, qmx_plus: 5, ft817: 5, ft818: 5,
   };
   onMount(async () => {
     try {

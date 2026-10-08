@@ -69,7 +69,10 @@ def test_envfile_ohne_ptt_args_bei_cat() -> None:
 def test_unit_setzt_ptt_args_ungequotet_ein() -> None:
     for f in ("deploy/systemd/ft8-rigctld.service.in", "deploy/systemd/ft8-rigctld.service"):
         s = (WURZEL / f).read_text()
-        assert re.search(r"^\s+\$RIG_PTT_ARGS \\$", s, re.M), f
+        zeile = next(z for z in s.splitlines() if z.startswith("ExecStart="))
+        # Unzitiert, damit die Shell es in Woerter teilt; alles andere zitiert.
+        assert " $$RIG_PTT_ARGS " in zeile, f
+        assert '-r "$$RIG_DEVICE"' in zeile and '-m "$$RIG_MODEL"' in zeile, f
 
 
 def test_self_update_gleicht_das_envfile_ab() -> None:
@@ -155,3 +158,22 @@ def test_frontend_listen_kennen_jedes_backend_modell() -> None:
         assert block, (f, muster)
         keys = set(re.findall(r"(?:^|[{,\s])([a-z0-9_]+)\s*:", block.group(1), re.M))
         assert keys >= set(RIG_MODELS), (f, set(RIG_MODELS) - keys)
+
+
+def test_mk2_bekommt_das_neue_rigctld_alle_anderen_das_der_distribution() -> None:
+    """Das IC-7300MK2 kennt hamlib erst ab 4.7.0 (Modell 3094, CI-V B6h);
+    Debian liefert 4.6.2. Nur dieses Profil nimmt /opt/hamlib."""
+    from ft8_appliance.rig.rigctld_envfile import RIGCTLD_NEU, RIGCTLD_SYSTEM
+    mk2 = render_rigctld_envfile(RigConfig(model="ic7300mk2"))
+    assert f"RIGCTLD={RIGCTLD_NEU}\n" in mk2 and "RIG_MODEL=3094\n" in mk2
+    for modell in RIG_MODELS:
+        if modell == "ic7300mk2":
+            continue
+        assert f"RIGCTLD={RIGCTLD_SYSTEM}\n" in render_rigctld_envfile(RigConfig(model=modell)), modell
+
+
+def test_unit_faellt_ohne_rigctld_zeile_auf_die_distribution_zurueck() -> None:
+    """Eine Env-Datei von vor dem 08.10.2026 hat keine RIGCTLD-Zeile."""
+    for f in ("deploy/systemd/ft8-rigctld.service.in", "deploy/systemd/ft8-rigctld.service"):
+        s = (WURZEL / f).read_text()
+        assert '"$${RIGCTLD:-/usr/bin/rigctld}"' in s, f

@@ -9,6 +9,7 @@
   const RIG_DEFAULTS = {
     ic705:    { label: 'Icom IC-705 (QRP, 10 W)',         max_power_w: 10  },
     ic7300:   { label: 'Icom IC-7300 (Desktop, 100 W)',   max_power_w: 100 },
+    ic7300mk2: { label: 'Icom IC-7300MK2 (Desktop, 100 W)', max_power_w: 100 },
     ic9700:   { label: 'Icom IC-9700 (VHF/UHF, 100 W)',   max_power_w: 100 },
     ic7610:   { label: 'Icom IC-7610 (Top-Class, 100 W)', max_power_w: 100 },
     qmx_plus: { label: 'QRP Labs QMX/QMX+ (QRP, 5 W)',    max_power_w: 5   },

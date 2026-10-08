@@ -203,6 +203,13 @@ Yaesu FT-817/818 via Digirig Mobile (CAT over MiniDin8, PTT over RTS, audio via
 the Digirig sound card; power is selected at the rig and only read back).
 Details and preparation: [docs/rig_yaesu_digirig.md](docs/rig_yaesu_digirig.md).
 
+The **IC-7300MK2** has had its own profile since v0.179.0 but is not yet
+tested on real hardware. Hamlib only knows it from 4.7.0 on (CI-V address B6h
+instead of 94h); Debian ships 4.6.2. `deploy/hamlib-bauen.sh` builds a newer
+Hamlib into `/opt/hamlib`, next to the distribution's — only this profile uses
+it. The MK2's USB name and sound card still have to be added to detection when
+one is first plugged in.
+
 ### Every rule carries a number
 
 Each transmit decision writes a `pick_attempt` row: the deciding tier, the

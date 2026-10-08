@@ -1145,11 +1145,20 @@ class RigProfil:
     # Datenmodus fuer die rueckwaertige Buchse: bei Icom PKTUSB (USB-D),
     # bei Yaesu ebenfalls PKTUSB laut hamlib-Modusliste ("DIG" am Geraet).
     digital_mode: str = "PKTUSB"
+    # Braucht ein neueres hamlib als das der Distribution: rigctld kommt dann
+    # aus /opt/hamlib (deploy/hamlib-bauen.sh), s. rig/rigctld_envfile.py.
+    neues_hamlib: bool = False
 
 
 _RIG_TABLE: dict[str, RigProfil] = {
     "ic705":    RigProfil(3085,  10, "Icom IC-705"),
     "ic7300":   RigProfil(3073, 100, "Icom IC-7300"),
+    # IC-7300MK2 (2026-10-08): eigenes hamlib-Modell 3094 erst ab hamlib
+    # 4.7.0 (riglist.h: RIG_MAKE_MODEL(RIG_ICOM, 94), Status Beta), CI-V-
+    # Adresse ab Werk B6h statt 94h. Debian liefert 4.6.2 — daher
+    # neues_hamlib. Am Geraet noch NICHT erprobt: USB-Name und Name der
+    # Soundkarte sind erst bekannt, wenn eines angesteckt ist.
+    "ic7300mk2": RigProfil(3094, 100, "Icom IC-7300MK2", neues_hamlib=True),
     "ic9700":   RigProfil(3081, 100, "Icom IC-9700"),
     "ic7610":   RigProfil(3079, 100, "Icom IC-7610"),
     # QRP Labs QMX/QMX+ — hamlib 2053 seit 4.5; aeltere hamlib: 2014
@@ -1180,7 +1189,7 @@ class RigConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # Friendly identifier; the Hamlib ID and stock max-power are derived from it.
-    model: Literal["ic705", "ic7300", "ic9700", "ic7610", "qmx_plus", "ft817", "ft818"] = "ic705"
+    model: Literal["ic705", "ic7300", "ic7300mk2", "ic9700", "ic7610", "qmx_plus", "ft817", "ft818"] = "ic705"
 
     # Stable serial device path. The IC-705 default works for a single rig
     # connected via its USB-C data port. IC-7300 default also works via USB-B.
