@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.187.0 — 2026-10-10
+- feat: eine ruhige Meldung, wenn das Rig vom USB verschwindet (mit Indizien: ausgeschaltet oder Stoerung), keine Wiederholung nach Neustarts, Meldung beim Wiedereinschalten; Verstell-Meldungen hoechstens alle zehn Minuten je Einstellung
+
 ## v0.186.2 — 2026-10-10
 - fix: rigctld-Waechter wartet still auf das Rig, statt ueber systemd alle zehn Sekunden neu zu starten
 
