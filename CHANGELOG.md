@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.184.0 — 2026-10-10
+- fix: Testlauf blieb haengen — liegen gelassene DB-Engines werden nach jedem Test und beim Ersetzen geschlossen; Filter unter 2500 Hz wird auf den breiten zurueckgestellt (WSJT-X-Handbuch: breitester Filter)
+
 ## v0.183.0 — 2026-10-10
 - feat: Rauschsperre (SQL) am Rig wird ueberwacht und geoeffnet — am Ersatzgeraet stand sie auf 39 %
 
