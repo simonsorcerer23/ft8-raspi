@@ -63,6 +63,7 @@ class RigSnapshot:
     pbt_in: float | None = None          # 0..1, Mitte ~0.502
     pbt_out: float | None = None
     usb_af: float | None = None          # USB-Audiopegel zum Decoder
+    sql: float | None = None             # Rauschsperre, 0 = offen
     # 2026-10-06: Versorgung. Am 02.10. fiel das Rig am Ende einer Aussendung
     # schlagartig aus (Netzteil), und nichts war aufgezeichnet. Hamlib liefert
     # beim IC-7300 Volt und Ampere (ic7300.c, Eichtabelle bis 16 V / 25 A).
@@ -212,6 +213,7 @@ class RigctldClient:
             ("pbt_in",        "PBT_IN",       float),
             ("pbt_out",       "PBT_OUT",      float),
             ("usb_af",        "USB_AF",       float),
+            ("sql",           "SQL",          float),
             ("vd_v",          "VD_METER",     float),
             ("id_a",          "ID_METER",     float),
         ):

@@ -26,7 +26,7 @@ def _snap(**kw):
     basis = dict(nr_on=False, nb_on=False, anf_on=False, att_db=0, mn_on=False,
                  rit_on=False, xit_on=False, split_on=False, rf_gain=1.0,
                  pbt_in=MITTE, pbt_out=MITTE, tuner_on=True, comp_on=False,
-                 vox_on=False, usb_af=0.502)
+                 vox_on=False, usb_af=0.502, sql=0.0)
     return SimpleNamespace(**{**basis, **kw})
 
 
@@ -221,3 +221,15 @@ async def test_ausgeschalteter_tuner_wird_wieder_eingeschaltet() -> None:
     await asyncio.gather(*o.gestartet)
     await asyncio.sleep(0)
     o.rig.set_func.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_rauschsperre_wird_geoeffnet() -> None:
+    """Am Ersatzgeraet stand sie am 10.10.2026 auf 39 %."""
+    assert _rig_abweichungen(_snap(sql=0.39)) == ["SQL"]
+    o = _stub(_snap(sql=0.39))
+    o.rig.set_level = AsyncMock()
+    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.gather(*o.gestartet)
+    await asyncio.sleep(0)
+    assert {c.args for c in o.rig.set_level.await_args_list} == {("SQL", 0.0)}

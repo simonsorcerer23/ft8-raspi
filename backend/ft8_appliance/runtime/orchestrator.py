@@ -180,6 +180,11 @@ _RIG_REGELN: tuple = (
     ("USB_AF", "USB-Audiopegel verstellt",
      lambda s: getattr(s, "usb_af", None) is not None and abs(s.usb_af - 0.5) > 0.1,
      ("level", "USB_AF", 0.5)),
+    # Rauschsperre: Der Knopf am IC-7300 ist ab Werk mit der HF-Verstaerkung
+    # gekoppelt (links RF, rechts SQL). Eine geschlossene Sperre nimmt dem
+    # Decoder schwache Signale oder alles — wieder ohne dass ein Pegel anschlaegt.
+    ("SQL",   "Rauschsperre (SQL)",
+     lambda s: getattr(s, "sql", None) is not None and s.sql > 0.05, ("level", "SQL", 0.0)),
 )
 # 2026-10-10 (Sebastian): Solange die Station laeuft, stellt sie ALLES in
 # dieser Tabelle auf das FT8-Soll zurueck — auch Daempfungsglied, Kompressor

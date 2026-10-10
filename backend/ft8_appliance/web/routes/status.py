@@ -46,6 +46,7 @@ class RigSnapshotOut(BaseModel):
     pbt_in: float | None = None
     pbt_out: float | None = None
     usb_af: float | None = None
+    sql: float | None = None
     vd_v: float | None = None
     id_a: float | None = None
     agc_mode: str | None = None
@@ -181,7 +182,7 @@ async def get_status(
             att_db=getattr(s.rig, "att_db", None),
             **{k: getattr(s.rig, k, None) for k in (
                 "mn_on", "rit_on", "xit_on", "tuner_on", "comp_on", "vox_on",
-                "pbt_in", "pbt_out", "usb_af", "vd_v", "id_a")},
+                "pbt_in", "pbt_out", "usb_af", "sql", "vd_v", "id_a")},
             vfo=s.rig.vfo, split_on=s.rig.split_on,
             battery_v=s.rig.battery_v,
             internal_temp_c=s.rig.internal_temp_c,
