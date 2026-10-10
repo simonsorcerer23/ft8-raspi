@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.182.0 — 2026-10-10
+- feat: solange die Station laeuft, stellt sie alle ueberwachten Rig-Einstellungen auf das FT8-Soll zurueck — auch Daempfungsglied, Kompressor und USB-Audiopegel
+
 ## v0.181.0 — 2026-10-10
 - feat: Station schaltet den eingebauten Antennentuner wieder ein und VOX ab, statt beides nur zu melden (rig_tuner_einschalten)
 
