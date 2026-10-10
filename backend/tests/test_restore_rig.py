@@ -38,7 +38,7 @@ async def test_button_restores_mode_filter_and_leaves_power_alone() -> None:
     o = _orch()
     r = await o.handle_restore_rig_settings("button")
     assert r["ok"] is True
-    o.rig.set_mode.assert_awaited_with("PKTUSB", 2700)
+    o.rig.set_mode.assert_awaited_with("PKTUSB", 3600)   # breitester Filter seit 10.10.2026
     o.rig.set_power.assert_not_awaited() if hasattr(o.rig, "set_power") else None
 
 

@@ -255,6 +255,23 @@ MESSPLAN: tuple[Messung, ...] = (
                  "Sendeposition ist nicht die Ursache, Anheben braechte nichts.",
         quelle="Gemessene Nicht-Effekte (z = −1,08 bei n = 58)",
     ),
+    Messung(
+        "agc_vergleich", "laufend",
+        "Hoert die Station mit langsamer oder abgeschalteter AGC mehr als mit schneller?",
+        ("decode.call_from", "config:rig_agc_ab"),
+        "AGC-Vergleich: schnell, langsam oder aus?",
+        "Decodes je 15-Minuten-Block, Bloecke als Einheit. Ein Arm gewinnt, wenn "
+        "er gegen 'schnell' mit |z| >= 2 vorn liegt UND jeder Arm mindestens 60 "
+        "Bloecke hat. Kein Arm vorn: es bleibt bei 'schnell'.",
+        lesen_ab=date(2026, 10, 13),
+        danach="rig_agc_ab aus. Den Gewinner als festes Soll in _RIG_REGELN "
+               "aufnehmen (AGC wird dann wie NR/NB zurueckgestellt). Gewinnt 'aus', "
+               "vorher pruefen, ob die Regel 'HF-Verstaerkung voll' dazu passt.",
+        seit=date(2026, 10, 10),
+        quelle="WSJT-X User Guide, 'Transceiver Setup' (AGC aus oder HF-Verstaerkung "
+               "zurueck); G. Hinson ZL2IFB, FT8 Operating Guide 10.15 (AGC langsam)",
+        schalter=("rig_agc_ab",),
+    ),
     # ---------------------------------------------------------- dauerhaft
     Messung(
         "versorgung", "dauerhaft",

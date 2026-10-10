@@ -64,6 +64,7 @@ class RigSnapshot:
     pbt_out: float | None = None
     usb_af: float | None = None          # USB-Audiopegel zum Decoder
     sql: float | None = None             # Rauschsperre, 0 = offen
+    agc_zeit_s: float | None = None      # AGC-Zeitkonstante der Stufe, 0 = AGC aus
     # 2026-10-06: Versorgung. Am 02.10. fiel das Rig am Ende einer Aussendung
     # schlagartig aus (Netzteil), und nichts war aufgezeichnet. Hamlib liefert
     # beim IC-7300 Volt und Ampere (ic7300.c, Eichtabelle bis 16 V / 25 A).
@@ -214,6 +215,7 @@ class RigctldClient:
             ("pbt_out",       "PBT_OUT",      float),
             ("usb_af",        "USB_AF",       float),
             ("sql",           "SQL",          float),
+            ("agc_zeit_s",    "AGC_TIME",     float),
             ("vd_v",          "VD_METER",     float),
             ("id_a",          "ID_METER",     float),
         ):
@@ -290,8 +292,17 @@ class RigctldClient:
             v = int(float(line))
         except ValueError:
             return None
-        return {0: "OFF", 1: "SUPERFAST", 2: "FAST",
-                3: "MEDIUM", 4: "SLOW", 5: "AUTO"}.get(v)
+        # hamlib ``enum agc_level_e`` (rig.h). Bis 2026-10-10 standen hier
+        # 3=MEDIUM und 4=SLOW — vertauscht gegenueber hamlib (3=SLOW,
+        # 4=USER, 5=MEDIUM); aufgefallen ist es nie, weil niemand den Wert las.
+        return {0: "OFF", 1: "SUPERFAST", 2: "FAST", 3: "SLOW",
+                4: "USER", 5: "MEDIUM", 6: "AUTO"}.get(v)
+
+    async def set_agc(self, hamlib_wert: int) -> None:
+        async with self._lock:
+            line = await self._send(f"L AGC {int(hamlib_wert)}")
+        if line.strip() not in ("RPRT 0", ""):
+            raise RuntimeError(f"L AGC: {line.strip()}")
 
     async def get_vfo(self) -> str | None:
         async with self._lock:

@@ -1548,6 +1548,47 @@ def main() -> int:
     print("    'zu wenige' oder 'keiner erkennbar', gehoert die Frage")
     print("    verworfen und die Aufzeichnung eingestellt.")
 
+    print("\n=== AGC-Vergleich: schnell, langsam oder aus? ===")
+    # Seit 2026-10-10. Der Arm jedes Decodes ergibt sich aus seinem
+    # Zeitstempel (analyse/agc_vergleich.py). Einheit ist der 15-Minuten-
+    # Block: Decodes eines Blocks sind nicht unabhaengig voneinander.
+    from ft8_appliance.analyse import agc_vergleich as agc
+    AGC_START = "2026-10-10 12:48:00"
+    je_block: dict[int, list[int]] = {}
+    for epoche, n, rufer in con.execute(
+        "select cast(strftime('%s', ts) as integer) / ?, count(*), count(distinct call_from)"
+        " from decode where ts >= ? group by 1", (agc.BLOCK_S, AGC_START),
+    ):
+        je_block[int(epoche)] = [n, rufer]
+    if not je_block:
+        print("    noch keine Decodes seit Beginn des Vergleichs")
+    else:
+        # Auch Bloecke ganz ohne Decode zaehlen — ein Arm, der nichts hoert,
+        # darf nicht dadurch gut aussehen, dass seine leeren Bloecke fehlen.
+        # Der laufende Block und der erste bleiben aussen vor (unvollstaendig).
+        bloecke = range(min(je_block) + 1, max(je_block))
+        arme: dict[str, list[list[int]]] = {a: [] for a in agc.ARME}
+        for b in bloecke:
+            arme[agc.arm_von_block(b)].append(je_block.get(b, [0, 0]))
+        zeilen = []
+        basis = [float(x[0]) for x in arme["FAST"]]
+        for a in agc.ARME:
+            werte = [float(x[0]) for x in arme[a]]
+            rufer = [float(x[1]) for x in arme[a]]
+            m, se = agc.mittel_und_fehler(werte)
+            mr, _ = agc.mittel_und_fehler(rufer)
+            z = None if a == "FAST" else agc.z_wert(werte, basis)
+            zeilen.append((
+                agc.ANZEIGE[a], len(werte), f"{m:.0f}",
+                f"± {se:.0f}" if se != float("inf") else "-", f"{mr:.0f}",
+                "Bezug" if a == "FAST" else ("-" if z is None else f"z={z:+.2f}"),
+            ))
+        tabelle(zeilen, ("AGC", "Bloecke", "Decodes/Block", "Fehler", "Rufer/Block",
+                         "gegen schnell"))
+        knapp = min(len(v) for v in arme.values())
+        if knapp < 60:
+            print(f"    Der kleinste Arm hat {knapp} Bloecke; das Urteil zaehlt ab 60.")
+
     print("\n=== Versorgung: haelt das Netzteil die Spannung, auch unter Last? ===")
     # Seit 2026-10-06. Je Kalenderwoche: Median im Empfang, Median beim
     # Senden, der Einbruch dazwischen und die Extremwerte. Der Einbruch ist

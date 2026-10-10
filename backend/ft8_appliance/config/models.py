@@ -395,6 +395,10 @@ class OperatingConfig(BaseModel):
     # auf SSB mit) bleibt es bei der Meldung. Das Daempfungsglied wird nur
     # gemeldet: Es kann bei starken Stoerern gewollt sein.
     rig_empfang_schuetzen: bool = True
+    # AGC-Vergleich (2026-10-10): alle 15 Minuten wechselt die Station
+    # zwischen schneller, langsamer und abgeschalteter AGC; gezaehlt werden
+    # die Decodes je Block (analyse/agc_vergleich.py, Messplan "agc_vergleich").
+    rig_agc_ab: bool = False
     # Eingebauten Antennentuner wieder einschalten, wenn er am Rig aus ist
     # (2026-10-10). Aus, wenn die Antenne ohne ihn betrieben werden soll
     # (resonant oder externer Tuner) — dann bleibt es bei der Meldung.
@@ -1145,6 +1149,9 @@ class RigProfil:
     # Filterbreite per CAT: Icom ja; beim FT-817 nicht dokumentiert, also
     # Modus ohne Breite setzen (0 = Normalfilter) und keinen Filter-Alarm.
     bandwidth_settable: bool = True
+    # Icom: 3600 Hz, der breiteste SSB-Filter (seit 2026-10-10). Das
+    # WSJT-X-Handbuch raet zum breitesten Filter bis rund 5 kHz; die Station
+    # stellt jeden schmaleren darauf zurueck.
     mode_width_hz: int = 2700
     # Datenmodus fuer die rueckwaertige Buchse: bei Icom PKTUSB (USB-D),
     # bei Yaesu ebenfalls PKTUSB laut hamlib-Modusliste ("DIG" am Geraet).
@@ -1155,16 +1162,16 @@ class RigProfil:
 
 
 _RIG_TABLE: dict[str, RigProfil] = {
-    "ic705":    RigProfil(3085,  10, "Icom IC-705"),
-    "ic7300":   RigProfil(3073, 100, "Icom IC-7300"),
+    "ic705":    RigProfil(3085,  10, "Icom IC-705", mode_width_hz=3600),
+    "ic7300":   RigProfil(3073, 100, "Icom IC-7300", mode_width_hz=3600),
     # IC-7300MK2 (2026-10-08): eigenes hamlib-Modell 3094 erst ab hamlib
     # 4.7.0 (riglist.h: RIG_MAKE_MODEL(RIG_ICOM, 94), Status Beta), CI-V-
     # Adresse ab Werk B6h statt 94h. Debian liefert 4.6.2 — daher
     # neues_hamlib. Am Geraet noch NICHT erprobt: USB-Name und Name der
     # Soundkarte sind erst bekannt, wenn eines angesteckt ist.
-    "ic7300mk2": RigProfil(3094, 100, "Icom IC-7300MK2", neues_hamlib=True),
-    "ic9700":   RigProfil(3081, 100, "Icom IC-9700"),
-    "ic7610":   RigProfil(3079, 100, "Icom IC-7610"),
+    "ic7300mk2": RigProfil(3094, 100, "Icom IC-7300MK2", neues_hamlib=True, mode_width_hz=3600),
+    "ic9700":   RigProfil(3081, 100, "Icom IC-9700", mode_width_hz=3600),
+    "ic7610":   RigProfil(3079, 100, "Icom IC-7610", mode_width_hz=3600),
     # QRP Labs QMX/QMX+ — hamlib 2053 seit 4.5; aeltere hamlib: 2014
     # (Kenwood TS-480), dessen CAT die QMX-Firmware emuliert.
     "qmx_plus": RigProfil(2053,   5, "QRP Labs QMX/QMX+"),

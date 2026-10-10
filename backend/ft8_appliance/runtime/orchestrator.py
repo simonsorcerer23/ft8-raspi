@@ -757,6 +757,7 @@ class Orchestrator:
     # True=TX) und wann zuletzt gewarnt wurde — s. _buche_versorgung.
     _vd_log: dict = field(default_factory=dict, init=False)
     _vd_warn_at: float = field(default=0.0, init=False)
+    _agc_gesetzt_at: float = field(default=0.0, init=False)
     # Boot-Gate: beim ersten Sync nach Service-Start wissen wir nicht
     # was am Rig steht (es koennte vom letzten Boot uebrig sein oder
     # gerade frisch verstellt worden sein). Erste Iteration syncen wir
@@ -3914,6 +3915,42 @@ class Orchestrator:
             priority="default",
             tags=["warning"],
         )
+
+    def _agc_vergleich(self, rig_mode: str | None, expected_mode: str) -> None:
+        """A/B: die AGC auf den Arm des laufenden 15-Minuten-Blocks stellen.
+
+        Nur solange die Station laeuft, im Datenbetrieb und nie waehrend
+        einer Aussendung. Der Arm haengt allein an der Uhr
+        (analyse/agc_vergleich.py) — die Auswertung ordnet jeden Decode
+        ueber seinen Zeitstempel zu.
+        """
+        if not getattr(self.config.operating, "rig_agc_ab", False):
+            return
+        if not self._tamper_armed or not self._station_aktiv() or self._tx_burst_active:
+            return
+        if rig_mode != expected_mode:
+            return
+        from ..analyse import agc_vergleich as agc
+        soll = agc.arm_zu(time.time())
+        if getattr(self._last_rig, "agc_mode", None) is None:
+            return                      # Rig meldet keine AGC
+        ist = agc.arm_von_rig(self._last_rig.agc_mode,
+                              getattr(self._last_rig, "agc_zeit_s", None))
+        if ist == soll:
+            return
+        jetzt = time.monotonic()
+        if jetzt - self._agc_gesetzt_at < 10.0:
+            return
+        self._agc_gesetzt_at = jetzt
+        log.info("AGC-Vergleich: %s -> %s", ist, soll)
+        asyncio.create_task(self._agc_setzen(*agc.EINSTELLUNG[soll]), name="agc-vergleich")
+
+    async def _agc_setzen(self, stufe: int, zeit_s: float) -> None:
+        try:
+            await self.rig.set_agc(stufe)
+            await self.rig.set_level("AGC_TIME", zeit_s)
+        except Exception as exc:
+            log.info("AGC nicht setzbar: %s", exc)
 
     _VD_SCHRITT_V = 0.2
     _VD_GRUNDLINIE_S = 600.0
@@ -8050,11 +8087,14 @@ class Orchestrator:
             # filter (z.B. CW-500-Hz-Filter) der die meisten Decodes
             # wegschneidet. Sebastian 2026-05-24.
             rig_bw = self._last_rig.bandwidth_hz
-            # 2026-10-10: 2500 statt 2000. Das WSJT-X-Handbuch (Abschnitt
-            # "Transceiver Setup") raet zum breitesten Filter bis rund 5 kHz;
-            # mit dem 2,4-kHz-Filter fehlen die Stationen an beiden Raendern
-            # (bei uns 3–4 % der Decodes ausserhalb 300–2700 Hz).
-            BW_MIN_OK = 2500
+            # 2026-10-10 (Sebastian): immer der breiteste Filter. Das WSJT-X-
+            # Handbuch ("Transceiver Setup") raet dazu, bis rund 5 kHz; mit
+            # dem 2,4-kHz-Filter fehlen die Stationen an beiden Raendern (bei
+            # uns 3–4 % der Decodes ausserhalb 300–2700 Hz). Alles unter der
+            # Sollbreite des Profils wird zurueckgestellt; 150 Hz Spiel, weil
+            # hamlib die Breite aus der Filterstufe errechnet.
+            _soll_bw = _rig_profil_von(self.config).mode_width_hz or 2700
+            BW_MIN_OK = _soll_bw - 150
             BW_MAX_OK = 6000   # alles drunter ist normal SSB-Breite
             bw_problematic = _rig_profil_von(self.config).bandwidth_settable and rig_bw is not None and (
                 rig_bw < BW_MIN_OK or rig_bw > BW_MAX_OK
@@ -8068,7 +8108,7 @@ class Orchestrator:
                         self._schedule_rig_restore("filter-tamper")
                         self._last_bandwidth_alert_hz = rig_bw
                         asyncio.create_task(
-                            self._notify_bandwidth_tamper(rig_bw, 2700),
+                            self._notify_bandwidth_tamper(rig_bw, _soll_bw),
                             name="bandwidth-tamper-push",
                         )
             elif rig_bw is not None:
@@ -8079,6 +8119,7 @@ class Orchestrator:
             # verschwinden.
             self._pruefe_empfang(rig_mode, expected_mode)
             self._buche_versorgung()
+            self._agc_vergleich(rig_mode, expected_mode)
 
             # Boot-Gate: nach dem ersten kompletten Sync-Durchlauf
             # Tamper-Detection scharfschalten.

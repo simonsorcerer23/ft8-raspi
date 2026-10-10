@@ -37,7 +37,7 @@ def test_ft818_ist_eigenes_hamlib_modell() -> None:
 def test_icom_profil_unveraendert() -> None:
     r = RigConfig(model="ic7300")
     assert (r.hamlib_id, r.effective_cat_baud, r.effective_ptt_type) == (3073, 19200, "cat")
-    assert r.profil.power_settable and r.profil.mode_width_hz == 2700
+    assert r.profil.power_settable and r.profil.mode_width_hz == 3600
 
 
 def test_explizite_werte_schlagen_das_profil() -> None:
