@@ -167,18 +167,26 @@ _RIG_REGELN: tuple = (
      lambda s: _verschoben(getattr(s, "pbt_in", None)) or _verschoben(getattr(s, "pbt_out", None)),
      ("pbt",)),
     ("ATT",   "Daempfungsglied (ATT)",
-     lambda s: getattr(s, "att_db", None) is not None and s.att_db > 0,  None),
+     lambda s: getattr(s, "att_db", None) is not None and s.att_db > 0,  ("level", "ATT", 0)),
     # 2026-10-10: Tuner wird wieder eingeschaltet (rig_tuner_einschalten),
     # VOX abgeschaltet. Beides wurde bis dahin nur gemeldet — am Ersatzgeraet
     # stand der Tuner aus, und die Station sah zu.
     ("TUNER", "Antennentuner aus",           lambda s: getattr(s, "tuner_on", None) is False,
      ("func_an", "TUNER")),
-    ("COMP",  "Kompressor",                  lambda s: getattr(s, "comp_on", None) is True, None),
+    ("COMP",  "Kompressor",                  lambda s: getattr(s, "comp_on", None) is True,
+     ("func", "COMP")),
     ("VOX",   "VOX",                         lambda s: getattr(s, "vox_on", None) is True,
      ("func", "VOX")),
     ("USB_AF", "USB-Audiopegel verstellt",
-     lambda s: getattr(s, "usb_af", None) is not None and abs(s.usb_af - 0.5) > 0.1, None),
+     lambda s: getattr(s, "usb_af", None) is not None and abs(s.usb_af - 0.5) > 0.1,
+     ("level", "USB_AF", 0.5)),
 )
+# 2026-10-10 (Sebastian): Solange die Station laeuft, stellt sie ALLES in
+# dieser Tabelle auf das FT8-Soll zurueck — auch Daempfungsglied, Kompressor
+# und USB-Audiopegel, die bis dahin nur gemeldet wurden. Nach "Stop" und in
+# einer fremden Betriebsart bleibt es bei der Meldung. Nicht in der Tabelle
+# und nie angefasst: Leistung (uebernimmt die Station vom Geraet), Lautstaerke
+# und Mithoerton.
 _RIG_REGEL = {r[0]: r for r in _RIG_REGELN}
 
 

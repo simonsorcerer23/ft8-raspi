@@ -66,16 +66,23 @@ async def test_zurueckstellen_nutzt_den_richtigen_weg() -> None:
 
 
 @pytest.mark.asyncio
-async def test_nur_melden_heisst_nicht_anfassen() -> None:
-    # Tuner und VOX stehen seit 10.10.2026 nicht mehr hier: Die Station
-    # stellt sie zurueck (s. test_ausgeschalteter_tuner_wird_wieder_eingeschaltet).
+async def test_auch_daempfung_kompressor_und_usb_pegel_werden_zurueckgestellt() -> None:
+    """Bis 10.10.2026 nur gemeldet. Sebastian: Solange die Station laeuft,
+    soll alles auf dem FT8-Soll stehen."""
     o = _stub(_snap(comp_on=True, att_db=20, usb_af=0.9))
     o.rig.set_level = AsyncMock()
     Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.gather(*o.gestartet)
     await asyncio.sleep(0)
-    o.rig.set_func.assert_not_called()
-    o.rig.set_level.assert_not_called()
-    o._notify_empfang_tamper.assert_called_once()
+    assert {c.args for c in o.rig.set_func.await_args_list} == {("COMP", False)}
+    assert {c.args for c in o.rig.set_level.await_args_list} == {("ATT", 0), ("USB_AF", 0.5)}
+    assert o._notify_empfang_tamper.call_args.kwargs["abgeschaltet"] is True
+
+
+def test_jede_regel_hat_eine_korrektur() -> None:
+    """Keine Regel mehr, die nur meldet — wer eine neue anlegt, sagt auch,
+    wie die Station sie zurueckstellt."""
+    assert [r[0] for r in _RIG_REGELN if r[3] is None] == []
 
 
 def _stub(snap, *, schuetzen=True, burst=False, aktiv=True):
