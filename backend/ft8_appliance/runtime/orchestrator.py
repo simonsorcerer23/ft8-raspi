@@ -771,6 +771,13 @@ class Orchestrator:
     _vd_log: dict = field(default_factory=dict, init=False)
     _vd_warn_at: float = field(default=0.0, init=False)
     _agc_gesetzt_at: float = field(default=0.0, init=False)
+    # Rig vom USB verschwunden (2026-10-10): seit wann (Epoche, ueberlebt
+    # Neustarts — sonst kaeme die Meldung nach jedem Update erneut), wann
+    # zuletzt jemand am Geraet bedient hat, und wann welche Verstell-Meldung
+    # zuletzt hinausging.
+    _rig_weg_seit: float = field(default=0.0, init=False)
+    _rig_bedient_at: float = field(default=0.0, init=False)
+    _empfang_push_at: dict = field(default_factory=dict, init=False)
     # Boot-Gate: beim ersten Sync nach Service-Start wissen wir nicht
     # was am Rig steht (es koennte vom letzten Boot uebrig sein oder
     # gerade frisch verstellt worden sein). Erste Iteration syncen wir
@@ -3906,13 +3913,20 @@ class Orchestrator:
             getattr(self.config.operating, "rig_empfang_schuetzen", True)
         if self._last_empfang_alert != tuple(stoerer):
             self._last_empfang_alert = tuple(stoerer)
+            self._rig_bedient_at = time.monotonic()
             # Anzeigenamen statt Schluessel: "TUNER ... eingeschaltet" stand
             # am 10.10. im Protokoll, als der Tuner AUS war.
             log.warning("Empfangs-Tamper: am Rig abweichend: %s (Betriebsart %s)",
                         ", ".join(_RIG_REGEL[s][1] for s in stoerer if s in _RIG_REGEL),
                         rig_mode)
-            asyncio.create_task(self._notify_empfang_tamper(stoerer, abgeschaltet=aus),
-                                name="empfang-tamper-push")
+            # Hoechstens eine Meldung je Einstellung in zehn Minuten. Am
+            # 10.10.2026 drehte jemand fuenf Minuten lang am RF/SQL-Knopf, die
+            # Station stellte jedes Mal zurueck — neun Meldungen.
+            schluessel = tuple(sorted(stoerer))
+            if time.monotonic() - self._empfang_push_at.get(schluessel, -1e9) >= 600.0:
+                self._empfang_push_at[schluessel] = time.monotonic()
+                asyncio.create_task(self._notify_empfang_tamper(stoerer, abgeschaltet=aus),
+                                    name="empfang-tamper-push")
         if aus:
             self._schedule_empfang_restore(abschalten)
 
@@ -5687,6 +5701,8 @@ class Orchestrator:
         self, dauer_min: float, grund: str, *, pendelt: bool,
     ) -> None:
         """Push aufs Handy — hoechstens stuendlich, damit es nicht nervt."""
+        if "rig_link_guard" in grund and self._rig_am_usb() is False:
+            return      # Rig ist aus; das ist gemeldet (s. _melde_rig_weg)
         jetzt = time.monotonic()
         if jetzt - self._lock_push_at < 3600.0:
             return
@@ -7995,6 +8011,8 @@ class Orchestrator:
             # Lebenszeichen, und die Sperre feuerte nie.
             if self._last_rig.freq_hz is not None:
                 self._last_rig_at = time.monotonic()
+                if self._rig_weg_seit:
+                    self._spawn(self._melde_rig_da(), name="rig-wieder-da")
                 if not self._boot_ptt_checked:
                     self._boot_ptt_checked = True
                     # Steht PTT an, obwohl dieser Prozess noch nie gesendet
@@ -8815,6 +8833,7 @@ class Orchestrator:
                 self._upload_stau_gemeldet_at = float(
                     data.get("upload_stau_gemeldet_at") or 0.0)
                 self._maintenance_at = float(data.get("maintenance_at") or 0.0)
+                self._rig_weg_seit = float(data.get("rig_weg_seit") or 0.0)
             except Exception:
                 self._qrz_sync_at = 0.0
                 self._upload_stau_gemeldet_at = 0.0
@@ -8912,6 +8931,7 @@ class Orchestrator:
                     # Ohne diesen Wert lief die "taegliche" Wartung fuenf
                     # Minuten nach jedem Neustart erneut.
                     "maintenance_at": round(self._maintenance_at, 0),
+                    "rig_weg_seit": round(self._rig_weg_seit, 0),
                 }),
                 encoding="utf-8",
             )
@@ -11306,9 +11326,104 @@ class Orchestrator:
         except Exception as exc:
             log.warning("reputation success-update failed for %s: %s", call, exc)
 
+    def _rig_am_usb(self) -> bool | None:
+        """Ist die serielle Schnittstelle des Rigs da? None = nicht zu sagen.
+
+        Ein ausgeschaltetes IC-7300 verschwindet ganz vom USB (10.10.2026).
+        Antwortet das Rig dagegen nicht, obwohl es am USB haengt, ist das
+        eine Stoerung — die soll weiter laut gemeldet werden.
+        """
+        if getattr(self.config, "demo_mode", False):
+            return None
+        pfad = getattr(self.config.rig, "serial_device", None)
+        if not pfad:
+            return None
+        try:
+            return Path(pfad).exists()
+        except OSError:
+            return None
+
+    def _rig_weg_indizien(self) -> tuple[list[str], bool]:
+        """Was beim Verschwinden des Rigs zu sehen war — und ob es verdaechtig ist.
+
+        Ausschalten und Ausfall sehen am USB gleich aus. Unterscheiden laesst
+        es sich nur an den Umstaenden: Am 02.10.2026 fiel das Rig eine Sekunde
+        nach dem Ende einer Aussendung aus; am 10.10. wurde es im Empfang
+        ausgeschaltet, nachdem jemand minutenlang am Geraet bedient hatte.
+        """
+        jetzt = time.monotonic()
+        letzter_kontakt = self._last_rig_at or jetzt
+        gruende: list[str] = []
+        verdacht = False
+        if self._ptt_on_at > 0 and letzter_kontakt - self._ptt_on_at < 20.0:
+            gruende.append(_t("push.rig_weg_g_tx"))
+            verdacht = True
+        else:
+            gruende.append(_t("push.rig_weg_g_kein_tx"))
+        werte = [w for w in self._vd_log.values() if w]
+        if werte:
+            vd = max(werte, key=lambda w: w[1])[0]
+            op = self.config.operating
+            if vd > op.rig_vd_max_v or vd < op.rig_vd_min_v:
+                gruende.append(_t("push.rig_weg_g_spannung_schlecht", v=f"{vd:.1f}"))
+                verdacht = True
+            else:
+                gruende.append(_t("push.rig_weg_g_spannung_ok", v=f"{vd:.1f}"))
+        if self._rig_bedient_at > 0 and jetzt - self._rig_bedient_at < 900.0:
+            gruende.append(_t("push.rig_weg_g_bedient"))
+        return gruende, verdacht
+
+    async def _melde_rig_weg(self) -> None:
+        """EINE Meldung, wenn das Rig vom USB verschwindet — statt TX-Lock in
+        hoechster Dringlichkeit bei jedem Neustart und stuendlich 'Sendesperre
+        haengt'. Dringend nur, wenn es nicht nach Ausschalten aussieht."""
+        if self._rig_weg_seit:
+            return
+        self._rig_weg_seit = time.time()
+        self._maybe_persist_runtime_state(force=True)
+        gruende, verdacht = self._rig_weg_indizien()
+        log.warning("Rig vom USB verschwunden (%s): %s",
+                    "verdaechtig" if verdacht else "vermutlich ausgeschaltet",
+                    "; ".join(gruende))
+        ntfy = self.integrations.ntfy
+        if ntfy is None or not ntfy.enabled:
+            return
+        try:
+            await ntfy.notify(
+                _t("push.rig_weg_verdacht" if verdacht else "push.rig_weg_aus",
+                   gruende="; ".join(gruende)),
+                title=_t("push.rig_weg_title"),
+                priority="urgent" if verdacht else "default",
+                tags=["warning"] if verdacht else ["electric_plug"],
+            )
+        except Exception as exc:
+            log.debug("Rig-weg-Push nicht zugestellt: %s", exc)
+
+    async def _melde_rig_da(self) -> None:
+        seit = self._rig_weg_seit
+        if not seit:
+            return
+        self._rig_weg_seit = 0.0
+        self._maybe_persist_runtime_state(force=True)
+        minuten = max(0.0, (time.time() - seit) / 60.0)
+        dauer = f"{minuten:.0f} min" if minuten < 120 else f"{minuten / 60.0:.1f} h"
+        log.info("Rig wieder da nach %s", dauer)
+        ntfy = self.integrations.ntfy
+        if ntfy is None or not ntfy.enabled:
+            return
+        try:
+            await ntfy.notify(_t("push.rig_da_msg", dauer=dauer),
+                              title=_t("push.rig_da_title"),
+                              priority="default", tags=["white_check_mark"])
+        except Exception as exc:
+            log.debug("Rig-da-Push nicht zugestellt: %s", exc)
+
     async def _do_tx_locked(self, payload: dict) -> None:
         reason = payload.get("reason") or "unbekannt"
         log.warning("TX_LOCKED: %s", reason)
+        if "rig_link_guard" in reason and self._rig_am_usb() is False:
+            await self._melde_rig_weg()
+            return
         # ntfy-Push wenn aktiviert. Wichtig bei SWR/PA-Schutz-Locks
         # weil Dad sonst evtl. nicht merkt dass die Kiste still steht.
         # priority=urgent damit das Handy klingelt auch bei stumm-Modus.

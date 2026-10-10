@@ -89,6 +89,7 @@ def _stub(snap, *, schuetzen=True, burst=False, aktiv=True):
     o = SimpleNamespace(
         _last_rig=snap, _tamper_armed=True, _last_empfang_alert=None,
         _empfang_restore_last_at=0.0, _tx_burst_active=burst,
+        _rig_bedient_at=0.0, _empfang_push_at={},
         config=SimpleNamespace(operating=SimpleNamespace(rig_empfang_schuetzen=schuetzen)),
         rig=SimpleNamespace(set_func=AsyncMock()),
         _notify_empfang_tamper=AsyncMock(),
