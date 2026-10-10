@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.186.1 — 2026-10-10
+- fix: Waechter beendet rigctld, wenn das Rig vom USB verschwindet, und systemd startet es neu, sobald es wieder da ist
+
 ## v0.186.0 — 2026-10-10
 - fix: Station kommt nach Aus- und Wiedereinschalten des Rigs von selbst zurueck — rigctld wird immer neu gestartet, die Tonaufnahme wartet auf die Soundkarte statt beim Dienststart aufzugeben; AGC-Vergleich zaehlt Bloecke ohne Rig nicht mit
 
