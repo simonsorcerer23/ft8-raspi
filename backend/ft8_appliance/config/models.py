@@ -395,6 +395,10 @@ class OperatingConfig(BaseModel):
     # auf SSB mit) bleibt es bei der Meldung. Das Daempfungsglied wird nur
     # gemeldet: Es kann bei starken Stoerern gewollt sein.
     rig_empfang_schuetzen: bool = True
+    # Eingebauten Antennentuner wieder einschalten, wenn er am Rig aus ist
+    # (2026-10-10). Aus, wenn die Antenne ohne ihn betrieben werden soll
+    # (resonant oder externer Tuner) — dann bleibt es bei der Meldung.
+    rig_tuner_einschalten: bool = True
     # Versorgungsspannung am Rig (2026-10-06). Ausserhalb der Spanne geht eine
     # Meldung aufs Handy. Arbeitswerte um die ueblichen 13,8 V, KEINE
     # Herstellergrenze — die steht im Handbuch des Geraets. Abschalten kann

@@ -168,9 +168,14 @@ _RIG_REGELN: tuple = (
      ("pbt",)),
     ("ATT",   "Daempfungsglied (ATT)",
      lambda s: getattr(s, "att_db", None) is not None and s.att_db > 0,  None),
-    ("TUNER", "Antennentuner aus",           lambda s: getattr(s, "tuner_on", None) is False, None),
+    # 2026-10-10: Tuner wird wieder eingeschaltet (rig_tuner_einschalten),
+    # VOX abgeschaltet. Beides wurde bis dahin nur gemeldet — am Ersatzgeraet
+    # stand der Tuner aus, und die Station sah zu.
+    ("TUNER", "Antennentuner aus",           lambda s: getattr(s, "tuner_on", None) is False,
+     ("func_an", "TUNER")),
     ("COMP",  "Kompressor",                  lambda s: getattr(s, "comp_on", None) is True, None),
-    ("VOX",   "VOX",                         lambda s: getattr(s, "vox_on", None) is True, None),
+    ("VOX",   "VOX",                         lambda s: getattr(s, "vox_on", None) is True,
+     ("func", "VOX")),
     ("USB_AF", "USB-Audiopegel verstellt",
      lambda s: getattr(s, "usb_af", None) is not None and abs(s.usb_af - 0.5) > 0.1, None),
 )
@@ -3868,6 +3873,8 @@ class Orchestrator:
         if not self._tamper_armed:
             return
         abschalten = [s for s in stoerer if _RIG_REGEL[s][3] is not None]
+        if not getattr(self.config.operating, "rig_tuner_einschalten", True):
+            abschalten = [s for s in abschalten if s != "TUNER"]
         aus = bool(abschalten) and rig_mode == expected_mode and \
             getattr(self.config.operating, "rig_empfang_schuetzen", True)
         if self._last_empfang_alert != tuple(stoerer):
@@ -3986,6 +3993,8 @@ class Orchestrator:
                 art = korrektur[0]
                 if art == "func":
                     await self.rig.set_func(korrektur[1], False)
+                elif art == "func_an":
+                    await self.rig.set_func(korrektur[1], True)
                 elif art == "level":
                     await self.rig.set_level(korrektur[1], korrektur[2])
                 elif art == "pbt":

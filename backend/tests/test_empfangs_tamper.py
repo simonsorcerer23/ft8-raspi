@@ -67,7 +67,9 @@ async def test_zurueckstellen_nutzt_den_richtigen_weg() -> None:
 
 @pytest.mark.asyncio
 async def test_nur_melden_heisst_nicht_anfassen() -> None:
-    o = _stub(_snap(tuner_on=False, comp_on=True, vox_on=True, usb_af=0.9))
+    # Tuner und VOX stehen seit 10.10.2026 nicht mehr hier: Die Station
+    # stellt sie zurueck (s. test_ausgeschalteter_tuner_wird_wieder_eingeschaltet).
+    o = _stub(_snap(comp_on=True, att_db=20, usb_af=0.9))
     o.rig.set_level = AsyncMock()
     Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
     await asyncio.sleep(0)
@@ -193,3 +195,22 @@ def test_auch_die_alten_meldungen_schweigen_nach_stop() -> None:
     quelle = inspect.getsource(Orchestrator._rig_poll_loop)
     # Leistung, Betriebsart, Filter, Frequenz
     assert quelle.count("self._station_aktiv()") >= 4
+
+
+@pytest.mark.asyncio
+async def test_ausgeschalteter_tuner_wird_wieder_eingeschaltet() -> None:
+    """Am 10.10.2026 stand am Ersatzgeraet der Tuner aus; die Station meldete
+    es nur. Jetzt schaltet sie ihn ein — ausser es ist abgewaehlt."""
+    o = _stub(_snap(tuner_on=False, vox_on=True))
+    o.config.operating.rig_tuner_einschalten = True
+    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.gather(*o.gestartet)
+    await asyncio.sleep(0)
+    assert {c.args for c in o.rig.set_func.await_args_list} == {("TUNER", True), ("VOX", False)}
+
+    o = _stub(_snap(tuner_on=False))
+    o.config.operating.rig_tuner_einschalten = False
+    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.gather(*o.gestartet)
+    await asyncio.sleep(0)
+    o.rig.set_func.assert_not_called()
