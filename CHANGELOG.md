@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.180.0 — 2026-10-10
+- feat: alle Rig-Profile nehmen das neuere hamlib unter /opt/hamlib, wenn es da ist — am IC-7300 gegen 4.6.2 verglichen und im Sendebetrieb erprobt; Versorgungs-Protokoll ohne Zeile je Messwert, Tamper-Meldung nennt die Abweichung richtig
+
 ## v0.179.0 — 2026-10-08
 - feat: Profil fuer das IC-7300MK2 vorbereitet (hamlib 4.7.2 neben dem der Distribution, deploy/hamlib-bauen.sh); Erstinstallation schlaegt die halbe Rig-Leistung als Anfangswert vor
 
