@@ -66,13 +66,15 @@ def test_envfile_ohne_ptt_args_bei_cat() -> None:
     assert "RIG_PTT_ARGS=\n" in render_rigctld_envfile(RigConfig(model="ic7300"))
 
 
-def test_unit_setzt_ptt_args_ungequotet_ein() -> None:
+def test_waechter_setzt_ptt_args_ungequotet_ein() -> None:
+    """Seit 2026-10-10 startet ein Waechter-Skript rigctld; die Unit ruft es nur auf."""
     for f in ("deploy/systemd/ft8-rigctld.service.in", "deploy/systemd/ft8-rigctld.service"):
         s = (WURZEL / f).read_text()
-        zeile = next(z for z in s.splitlines() if z.startswith("ExecStart="))
-        # Unzitiert, damit die Shell es in Woerter teilt; alles andere zitiert.
-        assert " $$RIG_PTT_ARGS " in zeile, f
-        assert '-r "$$RIG_DEVICE"' in zeile and '-m "$$RIG_MODEL"' in zeile, f
+        assert re.search(r"^ExecStart=\S+/deploy/scripts/rigctld-waechter\.sh$", s, re.M), f
+    w = (WURZEL / "deploy/scripts/rigctld-waechter.sh").read_text()
+    # Unzitiert, damit die Shell es in Woerter teilt; alles andere zitiert.
+    assert ' -s "$RIG_BAUD" $RIG_PTT_ARGS -t 4532' in w
+    assert '-m "$RIG_MODEL" -r "$RIG_DEVICE"' in w
 
 
 def test_self_update_gleicht_das_envfile_ab() -> None:
@@ -177,8 +179,7 @@ def test_mk2_braucht_das_neue_rigctld_die_anderen_nehmen_es_wenn_es_da_ist() -> 
         assert f"RIGCTLD={RIGCTLD_NEU}\n" in mit, modell
 
 
-def test_unit_faellt_ohne_rigctld_zeile_auf_die_distribution_zurueck() -> None:
+def test_waechter_faellt_ohne_rigctld_zeile_auf_die_distribution_zurueck() -> None:
     """Eine Env-Datei von vor dem 08.10.2026 hat keine RIGCTLD-Zeile."""
-    for f in ("deploy/systemd/ft8-rigctld.service.in", "deploy/systemd/ft8-rigctld.service"):
-        s = (WURZEL / f).read_text()
-        assert '"$${RIGCTLD:-/usr/bin/rigctld}"' in s, f
+    w = (WURZEL / "deploy/scripts/rigctld-waechter.sh").read_text()
+    assert 'BIN="${RIGCTLD:-/usr/bin/rigctld}"' in w

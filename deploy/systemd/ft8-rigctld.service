@@ -16,12 +16,10 @@ Group=dialout
 # initial bootstrap. -T 127.0.0.1 binds loopback only — the controller is
 # the only client, Hamlib is never exposed to the LAN.
 EnvironmentFile=/etc/default/ft8-rigctld
-# RIGCTLD (seit 2026-10-08) waehlt zwischen dem rigctld der Distribution und
-# einem neueren unter /opt/hamlib, das z. B. das IC-7300MK2 kennt. systemd
-# setzt im Programmpfad keine Variablen ein, deshalb der Umweg ueber sh; "$$"
-# reicht ein "$" an die Shell durch. Fehlt RIGCTLD (alte Env-Datei), gilt das
-# rigctld der Distribution.
-ExecStart=/bin/sh -c 'exec "$${RIGCTLD:-/usr/bin/rigctld}" -m "$$RIG_MODEL" -r "$$RIG_DEVICE" -s "$$RIG_BAUD" $$RIG_PTT_ARGS -t 4532 -T 127.0.0.1'
+# Der Waechter startet rigctld (RIGCTLD waehlt zwischen dem der Distribution
+# und einem neueren unter /opt/hamlib; fehlt die Zeile, gilt /usr/bin/rigctld)
+# und beendet es, sobald das Rig vom USB verschwindet — s. das Skript.
+ExecStart=/home/sebastian/ft8-appliance/deploy/scripts/rigctld-waechter.sh
 
 # Restart=always (seit 2026-10-10): Wird das Rig ausgeschaltet, beendet sich
 # rigctld mitunter sauber (02.10.2026: "Deactivated successfully") — und

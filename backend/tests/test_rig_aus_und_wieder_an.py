@@ -91,3 +91,38 @@ def test_senden_ohne_soundkarte_scheitert_laut() -> None:
     with pytest.raises(RuntimeError, match="keine Soundkarte"):
         alsa_io._geraet(lambda: None)
     assert alsa_io._geraet("default") == "default"
+
+
+def _waechter(tmp_path, geraet: Path, attrappe: str):
+    import subprocess
+    rigctld = tmp_path / "rigctld"
+    rigctld.write_text("#!/bin/sh\n" + attrappe + "\n")
+    rigctld.chmod(0o755)
+    return subprocess.Popen(
+        ["/bin/sh", str(WURZEL / "deploy/scripts/rigctld-waechter.sh")],
+        env={"RIGCTLD": str(rigctld), "RIG_MODEL": "1", "RIG_DEVICE": str(geraet),
+             "RIG_BAUD": "4800", "RIG_PTT_ARGS": "", "PATH": "/usr/bin:/bin"},
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+
+
+def test_waechter_startet_nicht_ohne_geraet(tmp_path) -> None:
+    p = _waechter(tmp_path, tmp_path / "fehlt", "sleep 30")
+    assert p.wait(timeout=5) == 75
+    assert "warte" in p.stdout.read()
+
+
+def test_waechter_beendet_rigctld_wenn_das_geraet_verschwindet(tmp_path) -> None:
+    """Am 10.10.2026 lief rigctld nach dem Ausschalten des Rigs einfach weiter."""
+    geraet = tmp_path / "ttyUSB0"
+    geraet.write_text("")
+    merker = tmp_path / "laeuft"
+    p = _waechter(tmp_path, geraet, f"echo an > {merker}; exec sleep 60")
+    for _ in range(50):
+        if merker.exists():
+            break
+        time.sleep(0.1)
+    assert merker.exists() and p.poll() is None
+    geraet.unlink()                       # Rig wird ausgeschaltet
+    assert p.wait(timeout=10) == 75
+    assert "verschwunden" in p.stdout.read()

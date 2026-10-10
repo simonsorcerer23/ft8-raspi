@@ -135,8 +135,8 @@ class AlsaCapture:
                     fehler_seit = jetzt
                 if jetzt - gemeldet_at >= 600.0 or gemeldet_at == 0.0:
                     gemeldet_at = jetzt
-                    log.warning("ALSA capture failed: %s — versuche es alle %.0f s wieder",
-                                exc, min(backoff * 2, 10.0))
+                    log.warning("ALSA capture failed: %s — warte auf das Geraet "
+                                "(neuer Versuch spaetestens alle 10 s)", exc)
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 10.0)
 
