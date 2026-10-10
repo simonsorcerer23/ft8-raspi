@@ -106,23 +106,41 @@ def _waechter(tmp_path, geraet: Path, attrappe: str):
     )
 
 
-def test_waechter_startet_nicht_ohne_geraet(tmp_path) -> None:
-    p = _waechter(tmp_path, tmp_path / "fehlt", "sleep 30")
-    assert p.wait(timeout=5) == 75
-    assert "warte" in p.stdout.read()
+def _warte_auf(bedingung, sekunden: float = 10.0) -> bool:
+    ende = time.monotonic() + sekunden
+    while time.monotonic() < ende:
+        if bedingung():
+            return True
+        time.sleep(0.1)
+    return False
 
 
-def test_waechter_beendet_rigctld_wenn_das_geraet_verschwindet(tmp_path) -> None:
-    """Am 10.10.2026 lief rigctld nach dem Ausschalten des Rigs einfach weiter."""
+def test_waechter_faehrt_rigctld_mit_dem_rig_hoch_und_runter(tmp_path) -> None:
+    """Abends aus, morgens an: Am 10.10.2026 lief rigctld nach dem Ausschalten
+    mit toter Verbindung weiter, und am 02.10. hatte es sich beendet, ohne je
+    neu gestartet zu werden."""
+    geraet = tmp_path / "ttyUSB0"
+    starts = tmp_path / "starts"
+    p = _waechter(tmp_path, geraet, f"echo x >> {starts}; exec sleep 60")
+    try:
+        time.sleep(1.0)
+        assert p.poll() is None and not starts.exists()        # Rig aus: wartet still
+        geraet.write_text("")                                   # Rig an
+        assert _warte_auf(starts.exists)
+        geraet.unlink()                                         # Rig aus
+        time.sleep(5.0)
+        assert p.poll() is None                                 # Waechter bleibt, rigctld ist weg
+        geraet.write_text("")                                   # Rig wieder an
+        assert _warte_auf(lambda: starts.read_text().count("x") == 2)
+    finally:
+        p.terminate()
+        assert p.wait(timeout=5) == 0
+    aus = p.stdout.read()
+    assert "warte" in aus and "verschwunden" in aus and "wieder am USB" in aus
+
+
+def test_waechter_meldet_wenn_rigctld_von_selbst_stirbt(tmp_path) -> None:
     geraet = tmp_path / "ttyUSB0"
     geraet.write_text("")
-    merker = tmp_path / "laeuft"
-    p = _waechter(tmp_path, geraet, f"echo an > {merker}; exec sleep 60")
-    for _ in range(50):
-        if merker.exists():
-            break
-        time.sleep(0.1)
-    assert merker.exists() and p.poll() is None
-    geraet.unlink()                       # Rig wird ausgeschaltet
-    assert p.wait(timeout=10) == 75
-    assert "verschwunden" in p.stdout.read()
+    p = _waechter(tmp_path, geraet, "exit 3")
+    assert p.wait(timeout=10) == 3        # systemd startet neu (Restart=always)
