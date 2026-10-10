@@ -118,3 +118,17 @@ async def test_snapshot_fragt_spannung_und_strom_ab() -> None:
 def test_grenzen_liegen_um_die_nennspannung() -> None:
     op = OperatingConfig()
     assert op.rig_vd_min_v < 13.8 < op.rig_vd_max_v
+
+
+@pytest.mark.asyncio
+async def test_uebergang_zwischen_senden_und_empfang_wird_nicht_gebucht() -> None:
+    """Am 10.10.2026 standen 22 von 116 Zeilen im falschen Zustand: PTT schon
+    aus, Messwerk noch bei 11,8 A — und umgekehrt."""
+    for ptt, strom in ((False, 11.8), (True, 0.0), (True, 2.0), (False, 2.0)):
+        o = _stub(13.2, ptt=ptt, id_a=strom)
+        await _lauf(o)
+        o._persist_versorgung.assert_not_called()
+    for ptt, strom in ((False, 0.0), (True, 10.0), (True, None)):
+        o = _stub(13.5, ptt=ptt, id_a=strom)
+        await _lauf(o)
+        assert o._persist_versorgung.await_count == 1

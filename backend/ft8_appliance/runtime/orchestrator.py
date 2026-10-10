@@ -97,6 +97,19 @@ from ..integrations import (
 from ..integrations.mf_lookup import get_mf_lookup
 
 
+# Endstufenstrom, unter dem sicher empfangen und ueber dem sicher gesendet
+# wird; dazwischen liegt der Uebergang.
+VERSORGUNG_RX_MAX_A = 1.0
+VERSORGUNG_TX_MIN_A = 3.0
+
+
+def versorgung_passt(senden: bool, id_a: float | None) -> bool:
+    """Passt der Endstufenstrom zum gemeldeten Zustand? Ohne Strom: ja."""
+    if id_a is None:
+        return True
+    return id_a >= VERSORGUNG_TX_MIN_A if senden else id_a <= VERSORGUNG_RX_MAX_A
+
+
 def _arm_aus_block(block: int, salz: str = "") -> bool:
     """Welcher A/B-Arm gilt in diesem Zeitblock?
 
@@ -3989,6 +4002,13 @@ class Orchestrator:
                     float(vd), op.rig_vd_max_v if hoch else op.rig_vd_min_v, hoch=hoch),
                     name="versorgung-warnung")
         if not self.db_enabled:
+            return
+        # Am Uebergang passen PTT-Meldung und Messwerk kurz nicht zusammen:
+        # Am 10.10.2026 standen 22 von 116 Zeilen im falschen Zustand (z. B.
+        # "Empfang" mit 11,8 A). Der Endstufenstrom entscheidet; was nicht
+        # dazu passt, wird nicht gebucht.
+        id_roh = getattr(rig, "id_a", None)
+        if isinstance(id_roh, (int, float)) and not versorgung_passt(senden, float(id_roh)):
             return
         vorher = self._vd_log.get(senden)
         if (vorher is not None and abs(vd - vorher[0]) < self._VD_SCHRITT_V

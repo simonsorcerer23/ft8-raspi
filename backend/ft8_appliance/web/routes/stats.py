@@ -589,6 +589,9 @@ async def versorgung(
             .order_by(VersorgungLog.ts.asc())
         )).all()
     op = orch.config.operating
+    # Zeilen vom Uebergang Senden/Empfang (bis v0.185.0 mitgebucht) auslassen.
+    from ...runtime.orchestrator import versorgung_passt
+    rows = [r for r in rows if versorgung_passt(bool(r.senden), r.id_a)]
     return VersorgungResponse(
         points=[VersorgungPunkt(
             ts=iso_utc(r.ts), senden=bool(r.senden), vd_v=round(float(r.vd_v), 2),

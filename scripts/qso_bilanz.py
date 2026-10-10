@@ -1596,6 +1596,10 @@ def main() -> int:
     try:
         wochen = con.execute(
             "select strftime('%Y-W%W', ts), senden, vd_v, id_a from versorgung_log"
+            # Zeilen vom Uebergang Senden/Empfang auslassen (bis v0.185.0
+            # mitgebucht): Empfang nur ohne, Senden nur mit Endstufenstrom.
+            " where id_a is null or (senden = 0 and id_a <= 1.0)"
+            "    or (senden = 1 and id_a >= 3.0)"
             " order by ts").fetchall()
     except sqlite3.OperationalError:
         wochen = []
