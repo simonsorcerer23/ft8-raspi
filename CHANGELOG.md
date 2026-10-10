@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.185.0 — 2026-10-10
+- feat: AGC-Vergleich (schnell, langsam, aus) im 15-Minuten-Wechsel mit Messplan-Eintrag und Bilanz-Abschnitt; Icom-Profile stellen immer den breitesten Filter (3600 Hz) ein; AGC-Namen folgen hamlib
+
 ## v0.184.0 — 2026-10-10
 - fix: Testlauf blieb haengen — liegen gelassene DB-Engines werden nach jedem Test und beim Ersetzen geschlossen; Filter unter 2500 Hz wird auf den breiten zurueckgestellt (WSJT-X-Handbuch: breitester Filter)
 
