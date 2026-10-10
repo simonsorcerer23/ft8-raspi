@@ -59,6 +59,30 @@ async def backup_database(keep: int = 7) -> Path | None:
     return dest
 
 
+_schliessende: set = set()
+
+
+def _alte_engine_schliessen(alt: AsyncEngine | None) -> None:
+    """Eine ersetzte Engine schliessen, statt sie liegen zu lassen.
+
+    Im Betrieb wird die Engine einmal angelegt. In Tests wird sie laufend
+    ersetzt; jede liegen gelassene Verbindung behaelt einen aiosqlite-
+    Arbeits-Thread, der an einen Event-Loop gebunden ist, den es bald nicht
+    mehr gibt (s. tests/conftest.py, Haenger vom 10.10.2026). Ohne laufenden
+    Loop laesst sich nichts abwarten — dann bleibt es beim alten Verhalten.
+    """
+    if alt is None:
+        return
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    aufgabe = loop.create_task(alt.dispose(), name="db-engine-schliessen")
+    _schliessende.add(aufgabe)
+    aufgabe.add_done_callback(_schliessende.discard)
+
+
 def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
     """Create (or replace) the global engine.
 
@@ -75,6 +99,7 @@ def init_engine(db_path: Path | str | None = None) -> AsyncEngine:
       * synchronous=FULL (seit 2026-09-12; vorher NORMAL fuer SD-Karten).
     """
     global _engine, _sessionmaker, _db_path
+    _alte_engine_schliessen(_engine)
     is_memory = db_path is None or str(db_path) == ":memory:"
     if is_memory:
         url = "sqlite+aiosqlite:///:memory:"

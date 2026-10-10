@@ -44,3 +44,29 @@ def synced_clock(monkeypatch: pytest.MonkeyPatch):
         return ChronyStatus(offset_s=0.001, stratum=3, ref_id_name="test-ntp")
 
     monkeypatch.setattr(orchestrator_mod, "read_chrony_tracking", _synced)
+
+
+@pytest.fixture(autouse=True)
+async def _db_engine_aufraeumen():
+    """Die DB-Engine nach jedem Test schliessen, solange sein Event-Loop lebt.
+
+    ``init_engine`` ersetzt die globale Engine, ohne die alte zu schliessen.
+    Ihre aiosqlite-Verbindungen behalten je einen Arbeits-Thread, der an den
+    Event-Loop des Tests gebunden ist — und der ist nach dem Test zu. Der
+    Thread stirbt dann irgendwann spaeter mit "Event loop is closed" (rund
+    hundert Warnungen je Lauf, dem gerade laufenden Test zugeschrieben), und
+    wer in dem Moment auf seine Antwort wartet, wartet fuer immer: Am
+    10.10.2026 blieb der Testlauf von release.sh so ueber zehn Minuten haengen.
+    """
+    yield
+    from ft8_appliance.db import session as db_session
+
+    engine = db_session._engine
+    if engine is None:
+        return
+    db_session._engine = None
+    db_session._sessionmaker = None
+    try:
+        await engine.dispose()
+    except Exception:
+        pass

@@ -8050,7 +8050,11 @@ class Orchestrator:
             # filter (z.B. CW-500-Hz-Filter) der die meisten Decodes
             # wegschneidet. Sebastian 2026-05-24.
             rig_bw = self._last_rig.bandwidth_hz
-            BW_MIN_OK = 2000   # alles drueber ist breit genug fuer FT8
+            # 2026-10-10: 2500 statt 2000. Das WSJT-X-Handbuch (Abschnitt
+            # "Transceiver Setup") raet zum breitesten Filter bis rund 5 kHz;
+            # mit dem 2,4-kHz-Filter fehlen die Stationen an beiden Raendern
+            # (bei uns 3–4 % der Decodes ausserhalb 300–2700 Hz).
+            BW_MIN_OK = 2500
             BW_MAX_OK = 6000   # alles drunter ist normal SSB-Breite
             bw_problematic = _rig_profil_von(self.config).bandwidth_settable and rig_bw is not None and (
                 rig_bw < BW_MIN_OK or rig_bw > BW_MAX_OK

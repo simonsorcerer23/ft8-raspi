@@ -93,7 +93,9 @@ step "Test-Gate (die komplette Suite)"
 # Test, der die Startstellen eines Loops zählte und nach dem Hinzufügen der
 # zweiten fehlschlug. Aufgefallen ist es erst beim nächsten Lauf von Hand.
 # Siebzig Sekunden sind billiger als ein Release, dem niemand mehr traut.
-run "cd backend && .venv/bin/python -m pytest tests/ -q -p no:cacheprovider"
+# faulthandler_timeout: bleibt ein Test haengen (10.10.2026, liegen gelassene
+# DB-Verbindungen), stehen nach fuenf Minuten die Stacks aller Threads da.
+run "cd backend && .venv/bin/python -m pytest tests/ -q -p no:cacheprovider -o faulthandler_timeout=300"
 
 # -----------------------------------------------------------------------------
 step "Typ-Gate (Crash-Bugklasse: attr-defined/call-arg/…)"
