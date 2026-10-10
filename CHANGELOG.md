@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.183.0 — 2026-10-10
+- feat: Rauschsperre (SQL) am Rig wird ueberwacht und geoeffnet — am Ersatzgeraet stand sie auf 39 %
+
 ## v0.182.0 — 2026-10-10
 - feat: solange die Station laeuft, stellt sie alle ueberwachten Rig-Einstellungen auf das FT8-Soll zurueck — auch Daempfungsglied, Kompressor und USB-Audiopegel
 
