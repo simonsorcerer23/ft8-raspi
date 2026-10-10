@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.186.0 — 2026-10-10
+- fix: Station kommt nach Aus- und Wiedereinschalten des Rigs von selbst zurueck — rigctld wird immer neu gestartet, die Tonaufnahme wartet auf die Soundkarte statt beim Dienststart aufzugeben; AGC-Vergleich zaehlt Bloecke ohne Rig nicht mit
+
 ## v0.185.1 — 2026-10-10
 - fix: Versorgungs-Protokoll bucht keine Messwerte vom Uebergang Senden/Empfang mehr; Diagramm und Bilanz lassen die schon gebuchten aus
 
