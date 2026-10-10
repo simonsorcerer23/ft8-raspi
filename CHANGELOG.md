@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.186.2 — 2026-10-10
+- fix: rigctld-Waechter wartet still auf das Rig, statt ueber systemd alle zehn Sekunden neu zu starten
+
 ## v0.186.1 — 2026-10-10
 - fix: Waechter beendet rigctld, wenn das Rig vom USB verschwindet, und systemd startet es neu, sobald es wieder da ist
 
