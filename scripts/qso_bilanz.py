@@ -1567,8 +1567,23 @@ def main() -> int:
         # darf nicht dadurch gut aussehen, dass seine leeren Bloecke fehlen.
         # Der laufende Block und der erste bleiben aussen vor (unvollstaendig).
         bloecke = range(min(je_block) + 1, max(je_block))
+        # ... aber nur, wenn das Rig in dem Block an war. Es wird abends
+        # ausgeschaltet; diese Stunden sagen nichts ueber die AGC. "An" heisst:
+        # Die Versorgungsmessung hat im Block oder in den zehn Minuten davor
+        # einen Wert gebucht (im Empfang mindestens alle zehn Minuten einer).
+        try:
+            an = {int(r[0]) for r in con.execute(
+                "select distinct cast(strftime('%s', ts) as integer) from versorgung_log"
+                " where ts >= ?", (AGC_START,))}
+        except sqlite3.OperationalError:
+            an = set()
+        rig_an = {t // agc.BLOCK_S for t in an} | {(t + 600) // agc.BLOCK_S for t in an}
         arme: dict[str, list[list[int]]] = {a: [] for a in agc.ARME}
+        aus_bloecke = 0
         for b in bloecke:
+            if rig_an and b not in rig_an:
+                aus_bloecke += 1
+                continue
             arme[agc.arm_von_block(b)].append(je_block.get(b, [0, 0]))
         zeilen = []
         basis = [float(x[0]) for x in arme["FAST"]]
@@ -1585,6 +1600,8 @@ def main() -> int:
             ))
         tabelle(zeilen, ("AGC", "Bloecke", "Decodes/Block", "Fehler", "Rufer/Block",
                          "gegen schnell"))
+        if aus_bloecke:
+            print(f"    {aus_bloecke} Bloecke ohne Rig (ausgeschaltet) nicht mitgezaehlt.")
         knapp = min(len(v) for v in arme.values())
         if knapp < 60:
             print(f"    Der kleinste Arm hat {knapp} Bloecke; das Urteil zaehlt ab 60.")

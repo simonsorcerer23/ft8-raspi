@@ -37,6 +37,16 @@ def alsa_available() -> bool:
     return _ALSA_AVAILABLE
 
 
+def _geraet(device: "str | Callable[[], str | None]") -> str:
+    """Den ALSA-Namen jetzt bestimmen. *device* ist ein fester Name oder eine
+    Funktion, die ihn sucht — die Soundkarte des Rigs gibt es nur, solange
+    das Rig eingeschaltet ist."""
+    name = device() if callable(device) else device
+    if not name:
+        raise RuntimeError("keine Soundkarte gefunden (Rig aus?)")
+    return name
+
+
 # ---------------------------------------------------------------------------
 class AlsaCapture:
     """Blocking ALSA capture from the IC-705 USB sound card.
@@ -53,7 +63,7 @@ class AlsaCapture:
         self,
         sink: Callable[[bytes, float], None],
         *,
-        device: str = "default",
+        device: "str | Callable[[], str | None]" = "default",
         sample_rate: int = SAMPLE_RATE_HZ,
         period_frames: int = PERIOD_FRAMES,
     ) -> None:
@@ -80,18 +90,29 @@ class AlsaCapture:
     # ------------------------------------------------------------------ inner
     def _run(self) -> None:
         backoff = 1.0
+        # Wird das Rig abends ausgeschaltet, ist die Soundkarte stundenlang
+        # weg. Dann genuegt eine Zeile am Anfang und alle zehn Minuten eine —
+        # nicht eine alle zehn Sekunden (02.–10.10.2026: rund 70 000 Zeilen).
+        fehler_seit = 0.0
+        gemeldet_at = 0.0
         while not self._stop.is_set():
             try:
+                geraet = _geraet(self.device)
                 pcm = alsaaudio.PCM(  # type: ignore[union-attr]
                     type=alsaaudio.PCM_CAPTURE,  # type: ignore[union-attr]
                     mode=alsaaudio.PCM_NORMAL,  # type: ignore[union-attr]
-                    device=self.device,
+                    device=geraet,
                     channels=CHANNELS,
                     rate=self.sample_rate,
                     format=alsaaudio.PCM_FORMAT_S16_LE,  # type: ignore[union-attr]
                     periodsize=self.period_frames,
                 )
-                log.info("ALSA capture open device=%s rate=%d", self.device, self.sample_rate)
+                if fehler_seit:
+                    log.info("ALSA capture wieder da nach %.0f s: device=%s",
+                             time.monotonic() - fehler_seit, geraet)
+                else:
+                    log.info("ALSA capture open device=%s rate=%d", geraet, self.sample_rate)
+                fehler_seit = 0.0
                 backoff = 1.0
                 while not self._stop.is_set():
                     length, data = pcm.read()
@@ -109,7 +130,13 @@ class AlsaCapture:
                         log.exception("capture sink raised")
                 pcm.close()
             except Exception as exc:
-                log.warning("ALSA capture failed: %s — retrying in %.1fs", exc, backoff)
+                jetzt = time.monotonic()
+                if not fehler_seit:
+                    fehler_seit = jetzt
+                if jetzt - gemeldet_at >= 600.0 or gemeldet_at == 0.0:
+                    gemeldet_at = jetzt
+                    log.warning("ALSA capture failed: %s — versuche es alle %.0f s wieder",
+                                exc, min(backoff * 2, 10.0))
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 10.0)
 
@@ -126,7 +153,7 @@ class AlsaPlayback:
     def __init__(
         self,
         *,
-        device: str = "default",
+        device: "str | Callable[[], str | None]" = "default",
         sample_rate: int = SAMPLE_RATE_HZ,
         period_frames: int = PERIOD_FRAMES,
     ) -> None:
@@ -140,7 +167,7 @@ class AlsaPlayback:
         out = alsaaudio.PCM(  # type: ignore[union-attr]
             type=alsaaudio.PCM_PLAYBACK,  # type: ignore[union-attr]
             mode=alsaaudio.PCM_NORMAL,  # type: ignore[union-attr]
-            device=self.device,
+            device=_geraet(self.device),
             channels=CHANNELS,
             rate=self.sample_rate,
             format=alsaaudio.PCM_FORMAT_S16_LE,  # type: ignore[union-attr]

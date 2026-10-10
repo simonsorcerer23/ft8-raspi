@@ -2,6 +2,7 @@
 Description=Hamlib rigctld (configured from /etc/default/ft8-rigctld)
 After=systemd-udev-settle.service
 Wants=systemd-udev-settle.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -25,8 +26,12 @@ EnvironmentFile=/etc/default/ft8-rigctld
 # rigctld der Distribution.
 ExecStart=/bin/sh -c 'exec "$${RIGCTLD:-/usr/bin/rigctld}" -m "$$RIG_MODEL" -r "$$RIG_DEVICE" -s "$$RIG_BAUD" $$RIG_PTT_ARGS -t 4532 -T 127.0.0.1'
 
-Restart=on-failure
-RestartSec=5
+# Restart=always (seit 2026-10-10): Wird das Rig ausgeschaltet, beendet sich
+# rigctld mitunter sauber (02.10.2026: "Deactivated successfully") — und
+# on-failure startete es dann nie wieder. Jetzt versucht systemd es alle zehn
+# Sekunden, bis das Rig wieder da ist.
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

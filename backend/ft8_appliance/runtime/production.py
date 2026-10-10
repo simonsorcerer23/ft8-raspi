@@ -33,7 +33,7 @@ async def _noop_decode_source(_: SlotTick) -> list[DecodedMsg]:
     return []
 
 
-def _resolve_capture_device(hint: str) -> str | None:
+def _resolve_capture_device(hint: str, *, still: bool = False) -> str | None:
     """Pick the ALSA device string for the rig's USB sound card.
 
     Strategy:
@@ -48,7 +48,8 @@ def _resolve_capture_device(hint: str) -> str | None:
             ["arecord", "-L"], capture_output=True, text=True, timeout=2, check=True
         ).stdout
     except Exception as exc:
-        log.warning("arecord -L failed: %s — cannot resolve capture device", exc)
+        if not still:
+            log.warning("arecord -L failed: %s — cannot resolve capture device", exc)
         return None
 
     candidates: list[str] = []
@@ -62,13 +63,39 @@ def _resolve_capture_device(hint: str) -> str | None:
         for c in candidates:
             if needle in c.lower():
                 return c
-        log.warning("audio_card_hint %r not found among %s", hint, candidates)
+        if not still:
+            log.warning("audio_card_hint %r not found among %s", hint, candidates)
 
     # Fall back to first non-HDMI device
     for c in candidates:
         if "hdmi" not in c.lower() and "vc4" not in c.lower():
             return c
     return None
+
+
+class _GeraeteSuche:
+    """Sucht die Soundkarte des Rigs bei jedem Aufruf — mit kurzem Gedaechtnis,
+    damit nicht jede Aussendung ``arecord -L`` startet."""
+
+    _HALTBAR_S = 30.0
+
+    def __init__(self, hint: str) -> None:
+        self.hint = hint
+        self._name: str | None = None
+        self._at = 0.0
+
+    def __call__(self) -> str | None:
+        import time as _time
+        jetzt = _time.monotonic()
+        if self._name is not None and jetzt - self._at < self._HALTBAR_S:
+            return self._name
+        # Still suchen: ohne Rig faende jede Runde nichts und meldete es.
+        self._name = _resolve_capture_device(self.hint, still=True)
+        self._at = jetzt
+        return self._name
+
+    def __str__(self) -> str:
+        return self._name or "?"
 
 
 def _build_decode_source(config: AppConfig):
@@ -108,10 +135,15 @@ def _build_decode_source(config: AppConfig):
         log.warning("pyalsaaudio not available — decode source disabled (noop)")
         return _noop_decode_source
 
-    device = _resolve_capture_device(config.rig.audio_card_hint)
-    if device is None:
-        log.warning("no usable ALSA capture device — decode source disabled (noop)")
-        return _noop_decode_source
+    # Die Soundkarte ist die des Rigs: Sie gibt es nur, solange es an ist.
+    # Bis 2026-10-10 blieb der Empfang fuer immer aus, wenn der Dienst ohne
+    # Soundkarte startete ("decode source disabled") — nach acht Tagen ohne
+    # Rig kam er erst nach einem Neustart von Hand zurueck. Jetzt sucht die
+    # Aufnahme das Geraet bei jedem Versuch neu.
+    hint = config.rig.audio_card_hint
+    device = _GeraeteSuche(hint)
+    if device() is None:
+        log.warning("noch keine Soundkarte (Rig aus?) — die Aufnahme wartet darauf")
 
     # Determine band hint from the first configured band (single-band
     # appliance for now; band-switching is a later sweep).
@@ -157,11 +189,8 @@ def _build_playback(config: AppConfig):
         return None
     if not alsa_available():
         return None
-    device = _resolve_capture_device(config.rig.audio_card_hint)
-    if device is None:
-        log.warning("no usable ALSA playback device — TX disabled")
-        return None
-    log.info("ALSA playback adapter ready: device=%s", device)
+    device = _GeraeteSuche(config.rig.audio_card_hint)
+    log.info("ALSA playback adapter ready: device=%s", device() or "noch keine Soundkarte")
     return AlsaPlayback(device=device)
 
 
