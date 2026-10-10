@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.181.0 — 2026-10-10
+- feat: Station schaltet den eingebauten Antennentuner wieder ein und VOX ab, statt beides nur zu melden (rig_tuner_einschalten)
+
 ## v0.180.0 — 2026-10-10
 - feat: alle Rig-Profile nehmen das neuere hamlib unter /opt/hamlib, wenn es da ist — am IC-7300 gegen 4.6.2 verglichen und im Sendebetrieb erprobt; Versorgungs-Protokoll ohne Zeile je Messwert, Tamper-Meldung nennt die Abweichung richtig
 
