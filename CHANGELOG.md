@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.185.1 — 2026-10-10
+- fix: Versorgungs-Protokoll bucht keine Messwerte vom Uebergang Senden/Empfang mehr; Diagramm und Bilanz lassen die schon gebuchten aus
+
 ## v0.185.0 — 2026-10-10
 - feat: AGC-Vergleich (schnell, langsam, aus) im 15-Minuten-Wechsel mit Messplan-Eintrag und Bilanz-Abschnitt; Icom-Profile stellen immer den breitesten Filter (3600 Hz) ein; AGC-Namen folgen hamlib
 
