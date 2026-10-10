@@ -206,8 +206,9 @@ Details and preparation: [docs/rig_yaesu_digirig.md](docs/rig_yaesu_digirig.md).
 The **IC-7300MK2** has had its own profile since v0.179.0 but is not yet
 tested on real hardware. Hamlib only knows it from 4.7.0 on (CI-V address B6h
 instead of 94h); Debian ships 4.6.2. `deploy/hamlib-bauen.sh` builds a newer
-Hamlib into `/opt/hamlib`, next to the distribution's — only this profile uses
-it. The MK2's USB name and sound card still have to be added to detection when
+Hamlib into `/opt/hamlib`, next to the distribution's. If present, all profiles
+have used it since v0.180.0 (compared against 4.6.2 on an IC-7300: same values,
+tested while transmitting); without it the distribution's rigctld stays in use. The MK2's USB name and sound card still have to be added to detection when
 one is first plugged in.
 
 ### Every rule carries a number

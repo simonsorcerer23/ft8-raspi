@@ -3872,8 +3872,11 @@ class Orchestrator:
             getattr(self.config.operating, "rig_empfang_schuetzen", True)
         if self._last_empfang_alert != tuple(stoerer):
             self._last_empfang_alert = tuple(stoerer)
-            log.warning("Empfangs-Tamper: %s am Rig eingeschaltet (Betriebsart %s)",
-                        ", ".join(stoerer), rig_mode)
+            # Anzeigenamen statt Schluessel: "TUNER ... eingeschaltet" stand
+            # am 10.10. im Protokoll, als der Tuner AUS war.
+            log.warning("Empfangs-Tamper: am Rig abweichend: %s (Betriebsart %s)",
+                        ", ".join(_RIG_REGEL[s][1] for s in stoerer if s in _RIG_REGEL),
+                        rig_mode)
             asyncio.create_task(self._notify_empfang_tamper(stoerer, abgeschaltet=aus),
                                 name="empfang-tamper-push")
         if aus:
@@ -3936,7 +3939,9 @@ class Orchestrator:
             return
         self._vd_log[senden] = (float(vd), jetzt)
         id_a = getattr(rig, "id_a", None)
-        self._spawn(self._persist_versorgung(
+        # Nicht ueber _spawn: der meldet jedes regulaere Ende im Protokoll,
+        # und das waere hier eine Zeile je Messwert.
+        asyncio.create_task(self._persist_versorgung(
             senden, float(vd), float(id_a) if isinstance(id_a, (int, float)) else None),
             name="versorgung-log")
 

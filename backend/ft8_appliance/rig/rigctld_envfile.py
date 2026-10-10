@@ -20,14 +20,23 @@ RIGCTLD_SYSTEM = "/usr/bin/rigctld"
 RIGCTLD_NEU = "/opt/hamlib/bin/rigctld"
 
 
-def render_rigctld_envfile(rig: RigConfig) -> str:
-    """Return the env-file content (one ``KEY=VALUE`` per line)."""
+def render_rigctld_envfile(rig: RigConfig, *, neu_vorhanden: bool | None = None) -> str:
+    """Return the env-file content (one ``KEY=VALUE`` per line).
+
+    Liegt unter /opt/hamlib ein neueres hamlib, nehmen es ALLE Profile
+    (seit 2026-10-10): Am IC-7300 lieferten 4.6.2 und 4.7.2 dieselben
+    Abfragewerte, und 4.7.2 lief im Sendebetrieb. Zwei Versionen
+    nebeneinander hiesse zwei Verhaltensweisen. Fehlt es, bleibt es beim
+    rigctld der Distribution — ausser das Profil braucht das neue.
+    """
     # PTT ausserhalb von CAT: der Digirig schaltet PTT ueber RTS desselben
     # seriellen Ports. rigctld bekommt das als --ptt-type/--ptt-file; die
     # Unit setzt $RIG_PTT_ARGS ungequotet ein, damit es zwei Argumente werden.
     ptt = rig.effective_ptt_type
     ptt_args = "" if ptt == "cat" else f"--ptt-type={ptt.upper()} --ptt-file={rig.serial_device}"
-    rigctld = RIGCTLD_NEU if rig.profil.neues_hamlib else RIGCTLD_SYSTEM
+    if neu_vorhanden is None:
+        neu_vorhanden = Path(RIGCTLD_NEU).exists()
+    rigctld = RIGCTLD_NEU if (rig.profil.neues_hamlib or neu_vorhanden) else RIGCTLD_SYSTEM
     return (
         f"RIGCTLD={rigctld}\n"
         f"RIG_MODEL={rig.hamlib_id}\n"

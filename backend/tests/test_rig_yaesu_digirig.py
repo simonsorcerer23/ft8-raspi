@@ -160,16 +160,21 @@ def test_frontend_listen_kennen_jedes_backend_modell() -> None:
         assert keys >= set(RIG_MODELS), (f, set(RIG_MODELS) - keys)
 
 
-def test_mk2_bekommt_das_neue_rigctld_alle_anderen_das_der_distribution() -> None:
+def test_mk2_braucht_das_neue_rigctld_die_anderen_nehmen_es_wenn_es_da_ist() -> None:
     """Das IC-7300MK2 kennt hamlib erst ab 4.7.0 (Modell 3094, CI-V B6h);
-    Debian liefert 4.6.2. Nur dieses Profil nimmt /opt/hamlib."""
+    Debian liefert 4.6.2. Liegt /opt/hamlib vor, nehmen es alle Profile —
+    fehlt es, bleibt jedes andere Profil beim rigctld der Distribution."""
     from ft8_appliance.rig.rigctld_envfile import RIGCTLD_NEU, RIGCTLD_SYSTEM
-    mk2 = render_rigctld_envfile(RigConfig(model="ic7300mk2"))
-    assert f"RIGCTLD={RIGCTLD_NEU}\n" in mk2 and "RIG_MODEL=3094\n" in mk2
+    for da in (False, True):
+        mk2 = render_rigctld_envfile(RigConfig(model="ic7300mk2"), neu_vorhanden=da)
+        assert f"RIGCTLD={RIGCTLD_NEU}\n" in mk2 and "RIG_MODEL=3094\n" in mk2
     for modell in RIG_MODELS:
         if modell == "ic7300mk2":
             continue
-        assert f"RIGCTLD={RIGCTLD_SYSTEM}\n" in render_rigctld_envfile(RigConfig(model=modell)), modell
+        ohne = render_rigctld_envfile(RigConfig(model=modell), neu_vorhanden=False)
+        mit = render_rigctld_envfile(RigConfig(model=modell), neu_vorhanden=True)
+        assert f"RIGCTLD={RIGCTLD_SYSTEM}\n" in ohne, modell
+        assert f"RIGCTLD={RIGCTLD_NEU}\n" in mit, modell
 
 
 def test_unit_faellt_ohne_rigctld_zeile_auf_die_distribution_zurueck() -> None:

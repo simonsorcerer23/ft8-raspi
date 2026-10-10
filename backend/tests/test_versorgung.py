@@ -35,6 +35,7 @@ def _stub(vd, *, ptt=False, id_a=None, db=True, ptt_on_at=0.0):
 async def _lauf(o):
     Orchestrator._buche_versorgung(o)
     await asyncio.gather(*o.gestartet)
+    await asyncio.sleep(0)
 
 
 @pytest.mark.asyncio
