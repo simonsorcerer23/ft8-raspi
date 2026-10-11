@@ -1427,3 +1427,87 @@ def test_cq_tx_without_tick_falls_back_to_old_behavior(
     sm.on_slot_tick(good_hw)  # KEIN tick parameter
     assert [a for a in sm.drain_actions() if a.kind == "TX_MESSAGE"], \
         "ohne tick: Fallback-Verhalten = TX in jedem Slot"
+
+
+def _tx_nachrichten(sm: StateMachine) -> list[str]:
+    return [a.payload.get("message", "") for a in sm.drain_actions() if a.kind == "TX_MESSAGE"]
+
+
+def test_spaet_decodiertes_cq_verbraucht_keine_wiederholung(
+        sm: StateMachine, good_hw: HardwareState) -> None:
+    """11.10.2026: Findet erst die jt9-Stufe das wiederholte CQ des Partners
+    (5–11 s nach Slotbeginn), entfiel die sofort ausgeloeste Aussendung als zu
+    spaet — zaehlte aber als Wiederholung. Nach zwei solchen galt er als
+    'hoert uns nicht', obwohl wir ihn nur einmal gerufen hatten (20-mal in
+    3,5 Stunden). Jetzt wird vorgemerkt und an der naechsten Grenze gesendet."""
+    sm.qso_max_cq_resends = 1
+    sm.ctx.current_slot_parity = "even"            # sein CQ lag im geraden Slot
+    sm.on_decodes(good_hw, [])                     # regulaere Charge
+    sm.on_user_reply_to(good_hw, _decode("AN5CV", None, "CQ AN5CV IN80"))
+    assert len(_tx_nachrichten(sm)) == 1           # erster Anruf
+
+    # naechster Slot ist seiner (wir hoeren), danach unserer: die schnelle
+    # Stufe findet nichts von ihm ...
+    sm.ctx.current_slot_parity = "odd"
+    sm.on_decodes(good_hw, [])
+    sm.ctx.current_slot_parity = "even"
+    sm.on_decodes(good_hw, [])
+    assert _tx_nachrichten(sm) == []
+    # ... die spaete Stufe schon: er ruft weiter CQ
+    sm.ctx.spaete_charge = True
+    sm.on_decodes(good_hw, [_decode("AN5CV", None, "CQ AN5CV IN80")])
+    sm.ctx.spaete_charge = False
+    assert _tx_nachrichten(sm) == [], "mitten im Slot wird nicht gesendet"
+    assert sm.qso is not None and sm.qso.cq_resends == 0, "und nichts gezaehlt"
+    assert sm.qso.resend_vorgemerkt == "even"
+
+    # sein Slot: nichts tun (falsche Paritaet)
+    sm.ctx.current_slot_parity = "odd"
+    sm.on_decodes(good_hw, [])
+    assert _tx_nachrichten(sm) == []
+    # unser Slot: jetzt die vorgemerkte Wiederholung, puenktlich
+    sm.ctx.current_slot_parity = "even"
+    sm.on_decodes(good_hw, [])
+    gesendet = _tx_nachrichten(sm)
+    assert len(gesendet) == 1 and gesendet[0].startswith("AN5CV DK9XR")
+    assert sm.qso.cq_resends == 1 and sm.qso.resend_vorgemerkt is None
+
+    # Die spaete Charge DIESES Slots zeigt sein CQ von vor unserer
+    # Wiederholung — das ist kein neues Ueberhoeren.
+    sm.ctx.spaete_charge = True
+    sm.on_decodes(good_hw, [_decode("AN5CV", None, "CQ AN5CV IN80")])
+    sm.ctx.spaete_charge = False
+    assert sm.qso.resend_vorgemerkt is None and _tx_nachrichten(sm) == []
+
+
+def test_vorgemerkte_wiederholung_weicht_einer_antwort(good_hw: HardwareState) -> None:
+    """Antwortet er inzwischen uns oder einem anderen, gilt das — nicht die Vormerkung."""
+    for antwort, zustand in ((_decode("AN5CV", "DK9XR", "DK9XR AN5CV -12"), State.QSO_REPORT),
+                             (_decode("AN5CV", "W1AW", "W1AW AN5CV -05"), State.IDLE)):
+        sm = StateMachine(ctx=MachineContext(callsign="DK9XR", my_grid="JN58td"),
+                          limits=GuardLimits())
+        sm.ctx.current_slot_parity = "even"
+        sm.on_decodes(good_hw, [])
+        sm.on_user_reply_to(good_hw, _decode("AN5CV", None, "CQ AN5CV IN80"))
+        sm.drain_actions()
+        sm.on_decodes(good_hw, [])                 # ein Slot weiter
+        sm.ctx.spaete_charge = True
+        sm.on_decodes(good_hw, [_decode("AN5CV", None, "CQ AN5CV IN80")])
+        sm.ctx.spaete_charge = False
+        assert sm.qso is not None and sm.qso.resend_vorgemerkt == "even"
+        sm.on_decodes(good_hw, [antwort])
+        assert sm.state is zustand
+
+
+def test_ohne_paritaet_wird_die_vormerkung_beim_naechsten_durchgang_eingeloest(
+        sm: StateMachine, good_hw: HardwareState) -> None:
+    sm.on_decodes(good_hw, [])
+    sm.on_user_reply_to(good_hw, _decode("AN5CV", None, "CQ AN5CV IN80"))
+    sm.drain_actions()
+    sm.on_decodes(good_hw, [])
+    sm.ctx.spaete_charge = True
+    sm.on_decodes(good_hw, [_decode("AN5CV", None, "CQ AN5CV IN80")])
+    sm.ctx.spaete_charge = False
+    assert sm.qso is not None and sm.qso.resend_vorgemerkt == ""
+    sm.on_decodes(good_hw, [])
+    assert len(_tx_nachrichten(sm)) == 1

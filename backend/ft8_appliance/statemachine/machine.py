@@ -528,6 +528,8 @@ class StateMachine:
     last_decodes: list[DecodedMsg] = field(default_factory=list)
     # actions emitted but not yet consumed
     _pending: list[Action] = field(default_factory=list)
+    # Zaehlt die regulaeren Decode-Chargen (eine je Slot) — s. QsoContext.gesendet_bei_charge.
+    _chargen_regulaer: int = field(default=0, init=False)
     # Per-State-Slot-Budget bevor wir die Konversation aufgeben.
     # Class-Default 6 Slots (~90 s); Orchestrator überschreibt aus
     # config.operating.qso_max_stale_slots beim Boot + Hot-Reload.
@@ -819,6 +821,8 @@ class StateMachine:
     def on_decodes(self, hw: HardwareState, decodes: Iterable[DecodedMsg]) -> None:
         decodes = list(decodes)
         self.last_decodes = decodes
+        if not self.ctx.spaete_charge:
+            self._chargen_regulaer += 1
         if self.qso is not None and self._partner_adressiert_uns(decodes):
             self.qso.partner_hat_uns_gerufen = True
 
@@ -1052,11 +1056,32 @@ class StateMachine:
                     and d.call_to != self.ctx.tx_callsign
                     for d in decodes
                 )
+                charge = self._chargen_regulaer
+                vorgemerkt_faellig = (
+                    not self.ctx.spaete_charge
+                    and self.qso.resend_vorgemerkt is not None
+                    and self.qso.resend_vorgemerkt in ("", self.ctx.current_slot_parity or "")
+                )
                 if heard_them_with_other:
                     log.info("QSO_RESPOND: %s picked another caller — bailing",
                              their_call)
                     self._bail_qso_with_cooldown(their_call, "picked_another")
-                elif heard_them_cq_again:
+                elif heard_them_cq_again and self.ctx.spaete_charge:
+                    # Erst die spaete Stufe hat sein CQ gefunden: Eine
+                    # Aussendung jetzt begaenne mitten im Slot und entfiele
+                    # (orchestrator._record_tx_start_offset) — bis 2026-10-11
+                    # zaehlte sie trotzdem als Wiederholung, und nach zwei
+                    # solchen galt er als "hoert uns nicht", ohne dass wir ihn
+                    # ein zweites Mal gerufen hatten (20-mal in 3,5 Stunden).
+                    # Stattdessen vormerken und an der naechsten Grenze senden.
+                    if self.qso.gesendet_bei_charge != charge:
+                        self.qso.resend_vorgemerkt = self.ctx.current_slot_parity or ""
+                        self.qso.stale_slots = 0
+                        log.info("QSO_RESPOND: %s ruft weiter CQ (spaet decodiert) — "
+                                 "Wiederholung zur naechsten Slot-Grenze vorgemerkt",
+                                 their_call)
+                elif heard_them_cq_again or vorgemerkt_faellig:
+                    self.qso.resend_vorgemerkt = None
                     # Re-Send-Limit: wenn der Partner uns trotz N Antworten
                     # weiter ignoriert (sie hoeren uns nicht), aufhoeren
                     # und in den Cooldown. Sebastian sah 2026-05-22 wie
@@ -1900,6 +1925,7 @@ class StateMachine:
     def _emit_respond_with_grid(self) -> None:
         assert self.qso is not None
         msg = f"{self.qso.their_call} {self.ctx.tx_callsign} {self.ctx.my_grid[:4]}"
+        self.qso.gesendet_bei_charge = self._chargen_regulaer
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "respond_grid")))
 
     # FT8-Spec: SNR-Feld ist 7-bit signed, Bereich -50..+49 dB (siehe

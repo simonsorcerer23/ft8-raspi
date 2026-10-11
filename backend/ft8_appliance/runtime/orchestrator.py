@@ -5124,7 +5124,12 @@ class Orchestrator:
         # Welche Stufe die Decodes gefunden hat, protokolliert die Pipeline —
         # hier kommen Stufe 2 und jt9 durch dieselbe Tuer.
         log.debug("spaeter Pass eingespeist: %d Decodes fuer Slot %d", len(decodes), tick.index)
-        self.state_machine.on_decodes(self._hardware_state, decodes)
+        # Der State-Machine sagen, dass diese Charge zu spaet zum Senden kommt.
+        self.state_machine.ctx.spaete_charge = True
+        try:
+            self.state_machine.on_decodes(self._hardware_state, decodes)
+        finally:
+            self.state_machine.ctx.spaete_charge = False
         self._protokolliere_kandidaten(datetime.now(UTC))
         # on_decodes ersetzt last_decodes durch die Charge — fuer den
         # CQ-Frequenz-Picker soll der ganze Slot sichtbar bleiben.

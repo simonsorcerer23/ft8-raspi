@@ -112,6 +112,16 @@ class QsoContext:
     # Vielleicht haben wir gerade QRM auf der Freq bei IHM. Set wird
     # gesetzt sobald der Hop passiert; danach normaler Bail-Pfad.
     freq_hopped_once: bool = False
+    # 2026-10-11: Der Partner ruft weiter CQ, aber erst die jt9-Stufe hat es
+    # gefunden — fuenf bis elf Sekunden nach Slotbeginn, zu spaet zum Senden.
+    # Dann wird die Wiederholung vorgemerkt und an der naechsten passenden
+    # Slot-Grenze gesendet. Der Wert ist die Paritaet des Slots, in dem sein
+    # CQ lag ("even"/"odd"), oder "" wenn sie unbekannt ist.
+    resend_vorgemerkt: str | None = None
+    # Zaehlerstand der regulaeren Decode-Chargen bei unserer letzten
+    # Aussendung an ihn — ein spaet gefundenes CQ aus demselben Slot stammt
+    # von VOR dieser Aussendung und heisst nicht, dass er uns ueberhoert hat.
+    gesendet_bei_charge: int = -1
     # Analog zu cq_resends, aber fuer QSO_REPORT: Partner sendet uns
     # in einem Slot R-Report zurueck (er hat unsere R-Report nicht
     # gehoert) -> wir senden R-Report erneut, statt direkt in den
@@ -280,6 +290,9 @@ class MachineContext:
     # Rig-Bandpass gedaempft wuerde (Sebastian sah 2026-05-22 wie ein
     # Reply auf 262 Hz Audio den PI in einen PWR-Spike+Watchdog-Cut trieb).
     # None,None = aus.
+    # True, waehrend die spaete Decode-Charge (Stufe 2/jt9) verarbeitet wird:
+    # Was sie ausloest, kaeme zu spaet in den Slot (s. QsoContext.resend_vorgemerkt).
+    spaete_charge: bool = False
     hunt_audio_freq_min_hz: int | None = 400
     hunt_audio_freq_max_hz: int | None = 2600
     # CQ-TX-Slot-Parity: "even" oder "odd". None = altes Verhalten
