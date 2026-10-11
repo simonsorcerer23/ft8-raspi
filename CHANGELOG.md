@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.188.1 — 2026-10-11
+- feat: SWR-Protokoll bucht schon Aenderungen ab 0,05 — ohne Tuner misst die Reihe die Antenne
+
 ## v0.188.0 — 2026-10-11
 - feat: Soll des Antennentuners einstellbar (an/aus/egal), ohne Meldungen — auf der Station aus, damit der SWR-Schutz die Antenne selbst sieht
 
