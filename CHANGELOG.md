@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.187.1 — 2026-10-11
+- fix: bei ausgeschaltetem Rig schreibt die Station nicht mehr je Slot und je Minute ins Protokoll
+
 ## v0.187.0 — 2026-10-10
 - feat: eine ruhige Meldung, wenn das Rig vom USB verschwindet (mit Indizien: ausgeschaltet oder Stoerung), keine Wiederholung nach Neustarts, Meldung beim Wiedereinschalten; Verstell-Meldungen hoechstens alle zehn Minuten je Einstellung
 
