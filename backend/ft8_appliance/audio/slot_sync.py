@@ -24,6 +24,7 @@ gets the real :class:`SlotBuffer`.
 from __future__ import annotations
 
 import logging
+import time
 from collections import deque
 from dataclasses import dataclass
 
@@ -189,7 +190,17 @@ class SlotBuffer:
                 else target_samples
             )
             into_signal = out_samples < signal_samples
-            (log.warning if into_signal else log.debug)(
+            # Gar kein Ton im ganzen Slot heisst: keine Soundkarte, das Rig
+            # ist aus. Dann genuegt eine Zeile alle zehn Minuten — in der
+            # Nacht zum 11.10.2026 waren es 2553.
+            melden = log.warning if into_signal else log.debug
+            if out_samples == 0:
+                jetzt = time.monotonic()
+                if jetzt - getattr(self, "_leer_gemeldet_at", -1e9) < 600.0:
+                    melden = log.debug
+                else:
+                    self._leer_gemeldet_at = jetzt
+            melden(
                 "slot %s: short by %d samples (%.1f ms), zero-padded%s",
                 slot_start_posix,
                 missing,

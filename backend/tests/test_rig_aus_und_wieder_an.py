@@ -144,3 +144,15 @@ def test_waechter_meldet_wenn_rigctld_von_selbst_stirbt(tmp_path) -> None:
     geraet.write_text("")
     p = _waechter(tmp_path, geraet, "exit 3")
     assert p.wait(timeout=10) == 3        # systemd startet neu (Restart=always)
+
+
+def test_stille_slots_fuellen_das_protokoll_nicht(monkeypatch) -> None:
+    """Nacht zum 11.10.2026: 2553 Zeilen 'short by 180000 samples', eine je Slot."""
+    from ft8_appliance.audio import slot_sync
+    warnungen = []
+    monkeypatch.setattr(slot_sync.log, "warning", lambda *a, **k: warnungen.append(a))
+    puffer = slot_sync.SlotBuffer()
+    for i in range(20):
+        ergebnis = puffer.extract_slot(1_791_700_000.0 + 15 * i)
+        assert ergebnis.actual_samples == 0
+    assert len(warnungen) == 1

@@ -775,6 +775,7 @@ class Orchestrator:
     # Neustarts — sonst kaeme die Meldung nach jedem Update erneut), wann
     # zuletzt jemand am Geraet bedient hat, und wann welche Verstell-Meldung
     # zuletzt hinausging.
+    _lock_log_at: float = field(default=-1e9, init=False)
     _rig_weg_seit: float = field(default=0.0, init=False)
     _rig_bedient_at: float = field(default=0.0, init=False)
     _empfang_push_at: dict = field(default_factory=dict, init=False)
@@ -5690,7 +5691,12 @@ class Orchestrator:
                     self._lock_seit = None
                     continue
 
-                log.warning("Station seit %.0f min gesperrt: %s", dauer_min, grund)
+                # Rig aus: einmal je halbe Stunde reicht (Nacht zum 11.10.2026:
+                # 638 Zeilen, eine je Minute).
+                rig_aus = "rig_link_guard" in grund and self._rig_am_usb() is False
+                if not rig_aus or jetzt - self._lock_log_at >= 1800.0:
+                    self._lock_log_at = jetzt
+                    log.warning("Station seit %.0f min gesperrt: %s", dauer_min, grund)
                 await self._melde_haengende_sperre(dauer_min, grund, pendelt=False)
             except asyncio.CancelledError:
                 raise
