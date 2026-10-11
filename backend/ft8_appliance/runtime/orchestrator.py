@@ -786,6 +786,7 @@ class Orchestrator:
     # zuletzt hinausging.
     _lock_log_at: float = field(default=-1e9, init=False)
     _tx_aufgeschoben_nr: int = field(default=0, init=False)
+    _gestartet_mono: float = field(default_factory=time.monotonic, init=False)
     _rig_weg_seit: float = field(default=0.0, init=False)
     _rig_bedient_at: float = field(default=0.0, init=False)
     _empfang_push_at: dict = field(default_factory=dict, init=False)
@@ -8045,6 +8046,13 @@ class Orchestrator:
             # nie — bei totem rigctld kommt ein Objekt mit lauter None
             # zurueck. Ohne diese Pruefung waere so ein Leer-Snapshot ein
             # Lebenszeichen, und die Sperre feuerte nie.
+            if (self._last_rig.freq_hz is None and not self._rig_weg_seit
+                    and self._rig_weg_faellig()):
+                # Ohne Sendeversuch gibt es keine Sperre und damit bisher auch
+                # keine Meldung: Am 11.10.2026 wurde das Rig um 22:49 bei
+                # totem Band ausgeschaltet, und die Station sagte nichts.
+                self._rig_weg_seit = time.time()    # sofort, sonst meldet jeder Poll
+                self._spawn(self._melde_rig_weg(erkannt=True), name="rig-weg")
             if self._last_rig.freq_hz is not None:
                 self._last_rig_at = time.monotonic()
                 if self._rig_weg_seit:
@@ -11444,6 +11452,13 @@ class Orchestrator:
         except OSError:
             return None
 
+    def _rig_weg_faellig(self) -> bool:
+        """Seit ueber einer Minute kein Kontakt UND das Rig ist nicht am USB."""
+        if self._rig_am_usb() is not False:
+            return False
+        bezug = self._last_rig_at if self._last_rig_at is not None else self._gestartet_mono
+        return time.monotonic() - bezug > 60.0
+
     def _rig_weg_indizien(self) -> tuple[list[str], bool]:
         """Was beim Verschwinden des Rigs zu sehen war — und ob es verdaechtig ist.
 
@@ -11474,13 +11489,13 @@ class Orchestrator:
             gruende.append(_t("push.rig_weg_g_bedient"))
         return gruende, verdacht
 
-    async def _melde_rig_weg(self) -> None:
+    async def _melde_rig_weg(self, *, erkannt: bool = False) -> None:
         """EINE Meldung, wenn das Rig vom USB verschwindet — statt TX-Lock in
         hoechster Dringlichkeit bei jedem Neustart und stuendlich 'Sendesperre
         haengt'. Dringend nur, wenn es nicht nach Ausschalten aussieht."""
-        if self._rig_weg_seit:
+        if self._rig_weg_seit and not erkannt:
             return
-        self._rig_weg_seit = time.time()
+        self._rig_weg_seit = self._rig_weg_seit or time.time()
         self._maybe_persist_runtime_state(force=True)
         gruende, verdacht = self._rig_weg_indizien()
         log.warning("Rig vom USB verschwunden (%s): %s",

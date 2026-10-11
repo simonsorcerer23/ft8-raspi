@@ -21,6 +21,8 @@ def _stub(tmp_path, *, am_usb: bool, tx_gerade=False, vd=14.0, bedient=False, we
     geraet = tmp_path / "ttyUSB0"
     if am_usb:
         geraet.write_text("")
+    else:
+        geraet.unlink(missing_ok=True)
     jetzt = time.monotonic()
     ntfy = SimpleNamespace(enabled=True, notify=AsyncMock())
     o = SimpleNamespace(
@@ -34,7 +36,9 @@ def _stub(tmp_path, *, am_usb: bool, tx_gerade=False, vd=14.0, bedient=False, we
         _lock_push_at=0.0,
         _maybe_persist_runtime_state=lambda force=False: None,
     )
-    for name in ("_rig_am_usb", "_rig_weg_indizien", "_melde_rig_weg", "_melde_rig_da"):
+    o._gestartet_mono = jetzt - 300.0
+    for name in ("_rig_am_usb", "_rig_weg_indizien", "_melde_rig_weg", "_melde_rig_da",
+                 "_rig_weg_faellig"):
         setattr(o, name, getattr(Orchestrator, name).__get__(o))
     return o, ntfy
 
@@ -109,3 +113,19 @@ async def test_verstell_meldung_hoechstens_alle_zehn_minuten() -> None:
         await asyncio.sleep(0)
     assert o._notify_empfang_tamper.call_count == 1
     assert o._rig_bedient_at > 0
+
+
+def test_rig_aus_wird_auch_ohne_sendeversuch_bemerkt(tmp_path) -> None:
+    """11.10.2026, 22:49: Band tot, Station im Leerlauf, Rig wird ausgeschaltet.
+    Ohne Sendeversuch gab es keine Sperre — und deshalb gar keine Meldung."""
+    o, _ = _stub(tmp_path, am_usb=False)
+    assert o._rig_weg_faellig()                    # 65 s ohne Kontakt, nicht am USB
+    o._last_rig_at = time.monotonic() - 20.0
+    assert not o._rig_weg_faellig()                # kurzer Aussetzer
+    o, _ = _stub(tmp_path, am_usb=True)
+    assert not o._rig_weg_faellig()                # am USB, aber stumm: anderer Alarm
+    o, _ = _stub(tmp_path, am_usb=False)
+    o._last_rig_at = None                          # Dienststart ohne Rig
+    assert o._rig_weg_faellig()
+    o._gestartet_mono = time.monotonic() - 10.0
+    assert not o._rig_weg_faellig()
