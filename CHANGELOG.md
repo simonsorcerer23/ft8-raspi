@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.189.0 — 2026-10-11
+- fix: spaet decodiertes CQ des Partners verbraucht keine Wiederholung mehr — die Antwort wird vorgemerkt und an der naechsten passenden Slot-Grenze gesendet, statt mitten im Slot zu entfallen
+
 ## v0.188.1 — 2026-10-11
 - feat: SWR-Protokoll bucht schon Aenderungen ab 0,05 — ohne Tuner misst die Reihe die Antenne
 
