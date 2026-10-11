@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.190.1 — 2026-10-11
+- fix: ausgeschaltetes Rig wird auch ohne Sendeversuch bemerkt und einmal gemeldet
+
 ## v0.190.0 — 2026-10-11
 - fix: Antworten im laufenden QSO (Rapport, R-Rapport, RR73, 73), die zu spaet im Slot faellig werden, gehen zur naechsten eigenen Slot-Grenze hinaus statt zu entfallen
 
