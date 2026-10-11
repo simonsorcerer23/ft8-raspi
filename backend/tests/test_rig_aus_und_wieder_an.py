@@ -156,3 +156,11 @@ def test_stille_slots_fuellen_das_protokoll_nicht(monkeypatch) -> None:
         ergebnis = puffer.extract_slot(1_791_700_000.0 + 15 * i)
         assert ergebnis.actual_samples == 0
     assert len(warnungen) == 1
+
+
+def test_spaet_heisst_nach_der_uhr_nicht_nach_dem_weg() -> None:
+    """v0.189.0 hielt jede Charge der spaeten Tuer fuer zu spaet — auch
+    Stufe 2, die rund eine Sekunde nach Slotbeginn da ist."""
+    quelle = (WURZEL / "backend/ft8_appliance/runtime/orchestrator.py").read_text()
+    assert "self._slot_phase_s() > self.config.operating.tx_latency_max_s)" in quelle
+    assert "ctx.spaete_charge = True" not in quelle

@@ -1511,3 +1511,37 @@ def test_ohne_paritaet_wird_die_vormerkung_beim_naechsten_durchgang_eingeloest(
     assert sm.qso is not None and sm.qso.resend_vorgemerkt == ""
     sm.on_decodes(good_hw, [])
     assert len(_tx_nachrichten(sm)) == 1
+
+
+def test_ausgefallener_erster_anruf_wird_nachgeholt_ohne_zu_zaehlen(
+        sm: StateMachine, good_hw: HardwareState) -> None:
+    """11.10.2026: CQ oder RR73 beginnt an der Slot-Grenze, eine Sekunde
+    spaeter liefert der Decoder ein Ziel. Der Anruf wurde verworfen ('ein
+    Burst laeuft noch') und nie nachgeholt — der Partner bekam einen Anruf
+    weniger, als gezaehlt wurde."""
+    sm.qso_max_cq_resends = 1
+    sm.ctx.current_slot_parity = "even"
+    sm.on_decodes(good_hw, [])
+    sm.on_user_reply_to(good_hw, _decode("UD8S", None, "CQ UD8S LO71"))
+    assert len(_tx_nachrichten(sm)) == 1
+    sm.on_tx_ausgefallen("respond_grid")          # der Orchestrator hat ihn verworfen
+    assert sm.qso is not None and sm.qso.ruf_ausgefallen
+
+    sm.ctx.current_slot_parity = "odd"            # sein Slot: nichts
+    sm.on_decodes(good_hw, [])
+    assert _tx_nachrichten(sm) == []
+    sm.ctx.current_slot_parity = "even"           # unser Slot: nachholen
+    sm.on_decodes(good_hw, [_decode("UD8S", None, "CQ UD8S LO71")])
+    assert len(_tx_nachrichten(sm)) == 1
+    assert sm.qso.cq_resends == 0 and not sm.qso.ruf_ausgefallen
+
+    # ab jetzt zaehlt es normal
+    sm.ctx.current_slot_parity = "odd"
+    sm.on_decodes(good_hw, [])
+    sm.ctx.current_slot_parity = "even"
+    sm.on_decodes(good_hw, [_decode("UD8S", None, "CQ UD8S LO71")])
+    assert sm.qso.cq_resends == 1 and len(_tx_nachrichten(sm)) == 1
+
+    # andere Aussendungen (R-Report, RR73) loesen nichts aus
+    sm.on_tx_ausgefallen("r_report")
+    assert not sm.qso.ruf_ausgefallen

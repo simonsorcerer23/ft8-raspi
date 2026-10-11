@@ -122,6 +122,10 @@ class QsoContext:
     # Aussendung an ihn — ein spaet gefundenes CQ aus demselben Slot stammt
     # von VOR dieser Aussendung und heisst nicht, dass er uns ueberhoert hat.
     gesendet_bei_charge: int = -1
+    # Der erste Anruf ist nicht hinausgegangen, weil noch ein eigener Burst
+    # lief (CQ oder RR73 ab der Slot-Grenze, das Ziel kam eine Sekunde spaeter
+    # aus dem Decoder). Er wird nachgeholt, ohne als Wiederholung zu zaehlen.
+    ruf_ausgefallen: bool = False
     # Analog zu cq_resends, aber fuer QSO_REPORT: Partner sendet uns
     # in einem Slot R-Report zurueck (er hat unsere R-Report nicht
     # gehoert) -> wir senden R-Report erneut, statt direkt in den

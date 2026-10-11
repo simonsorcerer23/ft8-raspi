@@ -5124,8 +5124,13 @@ class Orchestrator:
         # Welche Stufe die Decodes gefunden hat, protokolliert die Pipeline —
         # hier kommen Stufe 2 und jt9 durch dieselbe Tuer.
         log.debug("spaeter Pass eingespeist: %d Decodes fuer Slot %d", len(decodes), tick.index)
-        # Der State-Machine sagen, dass diese Charge zu spaet zum Senden kommt.
-        self.state_machine.ctx.spaete_charge = True
+        # Der State-Machine sagen, ob diese Charge zu spaet zum Senden kommt.
+        # Nach der Uhr, nicht nach dem Weg: Stufe 2 laeuft durch dieselbe Tuer
+        # und ist rund eine Sekunde nach Slotbeginn da — puenktlich genug.
+        # v0.189.0 hielt sie pauschal fuer spaet und schob jede von ihr
+        # ausgeloeste Wiederholung um 30 s auf.
+        self.state_machine.ctx.spaete_charge = (
+            self._slot_phase_s() > self.config.operating.tx_latency_max_s)
         try:
             self.state_machine.on_decodes(self._hardware_state, decodes)
         finally:
@@ -9801,6 +9806,7 @@ class Orchestrator:
             # Synth bleibt, weil dort ein await dazwischenliegt.
             log.warning("TX %r verworfen: ein Burst laeuft noch — die "
                         "State-Machine sendet an der naechsten Grenze", text)
+            self.state_machine.on_tx_ausgefallen(payload.get("kind"))
             return
         if not self._record_tx_start_offset():
             return  # B4: manueller Burst mitten im Slot — entfaellt, s.u.
@@ -9855,6 +9861,7 @@ class Orchestrator:
 
         if self._tx_burst_active:
             log.warning("TX %r verworfen: ein Burst laeuft noch — die State-Machine sendet an der naechsten Grenze", text)
+            self.state_machine.on_tx_ausgefallen(payload.get("kind"))
             return
         loop = asyncio.get_running_loop()
         self._tx_burst_active = True

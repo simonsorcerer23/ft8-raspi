@@ -1080,6 +1080,15 @@ class StateMachine:
                         log.info("QSO_RESPOND: %s ruft weiter CQ (spaet decodiert) — "
                                  "Wiederholung zur naechsten Slot-Grenze vorgemerkt",
                                  their_call)
+                elif (heard_them_cq_again or vorgemerkt_faellig) and self.qso.ruf_ausgefallen:
+                    # Der erste Anruf steht noch aus — das ist keine Wiederholung.
+                    if not self._check_guards(hw):
+                        return
+                    self.qso.ruf_ausgefallen = False
+                    self.qso.resend_vorgemerkt = None
+                    self.qso.stale_slots = 0
+                    log.info("QSO_RESPOND: erster Anruf an %s wird nachgeholt", their_call)
+                    self._emit_respond_with_grid()
                 elif heard_them_cq_again or vorgemerkt_faellig:
                     self.qso.resend_vorgemerkt = None
                     # Re-Send-Limit: wenn der Partner uns trotz N Antworten
@@ -1921,6 +1930,23 @@ class StateMachine:
             msg = f"CQ {self.ctx.tx_callsign} {self.ctx.my_grid[:4]}"
         freq = self._next_cq_freq_hz()
         self._pending.append(Action("TX_MESSAGE", self._tx_payload(msg, "cq", freq_override_hz=freq)))
+
+    def on_tx_ausgefallen(self, kind: str | None) -> None:
+        """Der Orchestrator hat eine Aussendung verworfen, weil noch ein
+        eigener Burst lief.
+
+        Betrifft das den ersten Anruf an ein neues Ziel, wird er vorgemerkt
+        und an der naechsten passenden Slot-Grenze nachgeholt. Bis 2026-10-11
+        blieb er aus, und der Partner bekam einen Anruf weniger, als die
+        Zaehlung behauptete (19-mal in anderthalb Betriebstagen: CQ oder RR73
+        ab der Grenze, das Ziel eine Sekunde spaeter aus dem Decoder).
+        """
+        if kind != "respond_grid" or self.qso is None or self.state is not State.QSO_RESPOND:
+            return
+        if self.qso.cq_resends == 0 and not self.qso.freq_hopped_once:
+            self.qso.ruf_ausgefallen = True
+        self.qso.resend_vorgemerkt = self.ctx.current_slot_parity or ""
+        self.qso.gesendet_bei_charge = -1
 
     def _emit_respond_with_grid(self) -> None:
         assert self.qso is not None
