@@ -8622,7 +8622,10 @@ class Orchestrator:
             return
         jetzt = time.monotonic()
         vorher = self._swr_log_wert
-        merklich = vorher is None or abs(swr - vorher) >= 0.15
+        # 0,05 statt 0,15 (2026-10-11): Seit der Tuner aus ist, misst die
+        # Reihe die Antenne, und kleine Bewegungen sind das, worauf es ankommt.
+        # Das Messwerk loest rund 0,01 auf.
+        merklich = vorher is None or abs(swr - vorher) >= 0.05
         faellig = (jetzt - self._swr_log_at) >= 600.0
         if not (merklich or faellig):
             return
