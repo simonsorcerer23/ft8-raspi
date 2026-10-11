@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.189.1 — 2026-10-11
+- fix: verworfener erster Anruf wird an der naechsten Slot-Grenze nachgeholt statt auszufallen; 'spaet' richtet sich nach der Uhr — Stufe 2 loeste seit v0.189.0 jede Wiederholung 30 s zu spaet aus
+
 ## v0.189.0 — 2026-10-11
 - fix: spaet decodiertes CQ des Partners verbraucht keine Wiederholung mehr — die Antwort wird vorgemerkt und an der naechsten passenden Slot-Grenze gesendet, statt mitten im Slot zu entfallen
 
