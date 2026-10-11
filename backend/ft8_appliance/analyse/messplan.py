@@ -412,11 +412,17 @@ MESSPLAN: tuple[Messung, ...] = (
         # Die Brueckenmessung sitzt hinter der Endstufe; ein Tuner davor
         # meldet immer 1:1. Sebastian sieht beim naechsten Mal am Display
         # des Rigs nach, ob dort ein echter Wert steht.
-        lesen_ab=date(2026, 10, 5),
-        danach="Steht am Rig auch 1:1, versteckt der Tuner die Antenne — dann "
-               "Reihe einstellen, sie kann ihre Frage nicht beantworten. Zeigt "
-               "das Display einen echten Wert, liefert ihn nur der CAT-Weg "
-               "nicht; dann den Abruf reparieren.",
+        # 11.10.2026: Tuner per Fernsteuerung fuer zwei Aussendungen aus —
+        # 39 W und SWR 1,0 mit wie ohne; am 10.10. lief das Ersatzgeraet
+        # 2,4 h ohne Tuner, ebenfalls 1,0 (zwei kurze Ausschlaege 1,2/1,95).
+        # Seitdem bleibt der Tuner aus (rig_tuner_soll: aus), die Reihe
+        # misst also die Antenne. Offen: ob "exakt 1,0" stimmt oder der
+        # CAT-Weg zu grob ist — das zeigt nur das Display beim Senden.
+        lesen_ab=date(2026, 10, 25),
+        danach="Bewegt sich die Reihe ohne Tuner (Regen, Frost, Wind), misst sie "
+               "und bleibt als Fruehwarnung. Steht sie weiter auf exakt 1,00, "
+               "am Display nachsehen: echter Wert dort heisst CAT-Abruf reparieren, "
+               "auch dort 1:1 heisst die Antenne ist so gut — dann bleibt die Reihe.",
         seit=date(2026, 9, 12),
         quelle="Befund 21.09.: blinder Sensor, von der Bilanz als 'unauffaellig' gefuehrt",
     ),

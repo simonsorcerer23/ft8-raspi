@@ -399,10 +399,13 @@ class OperatingConfig(BaseModel):
     # zwischen schneller, langsamer und abgeschalteter AGC; gezaehlt werden
     # die Decodes je Block (analyse/agc_vergleich.py, Messplan "agc_vergleich").
     rig_agc_ab: bool = False
-    # Eingebauten Antennentuner wieder einschalten, wenn er am Rig aus ist
-    # (2026-10-10). Aus, wenn die Antenne ohne ihn betrieben werden soll
-    # (resonant oder externer Tuner) — dann bleibt es bei der Meldung.
-    rig_tuner_einschalten: bool = True
+    # Eingebauter Antennentuner (2026-10-11): "an" = einschalten, wenn er
+    # aus ist; "aus" = ausschalten, wenn er an ist; "egal" = nicht anfassen.
+    # "aus" ist richtig, wo die Antenne ohne ihn passt: Dann sieht der
+    # SWR-Schutz die Antenne selbst und nicht, was der Tuner daraus macht
+    # (am Dipol auf 20 m gemessen: 39 W und SWR 1,0 mit wie ohne Tuner).
+    # Gemeldet wird zum Tuner nichts — die Station stellt ihn still.
+    rig_tuner_soll: Literal["an", "aus", "egal"] = "an"
     # Versorgungsspannung am Rig (2026-10-06). Ausserhalb der Spanne geht eine
     # Meldung aufs Handy. Arbeitswerte um die ueblichen 13,8 V, KEINE
     # Herstellergrenze — die steht im Handbuch des Geraets. Abschalten kann

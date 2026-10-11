@@ -181,9 +181,9 @@ _RIG_REGELN: tuple = (
      ("pbt",)),
     ("ATT",   "Daempfungsglied (ATT)",
      lambda s: getattr(s, "att_db", None) is not None and s.att_db > 0,  ("level", "ATT", 0)),
-    # 2026-10-10: Tuner wird wieder eingeschaltet (rig_tuner_einschalten),
-    # VOX abgeschaltet. Beides wurde bis dahin nur gemeldet — am Ersatzgeraet
-    # stand der Tuner aus, und die Station sah zu.
+    # Tuner: Soll kommt aus operating.rig_tuner_soll (an/aus/egal), s.
+    # _rig_abweichungen und _empfang_aus; die Pruefung hier gilt fuer "an".
+    # VOX wird seit 2026-10-10 abgeschaltet statt nur gemeldet.
     ("TUNER", "Antennentuner aus",           lambda s: getattr(s, "tuner_on", None) is False,
      ("func_an", "TUNER")),
     ("COMP",  "Kompressor",                  lambda s: getattr(s, "comp_on", None) is True,
@@ -208,12 +208,21 @@ _RIG_REGELN: tuple = (
 _RIG_REGEL = {r[0]: r for r in _RIG_REGELN}
 
 
-def _rig_abweichungen(snap) -> list[str]:
-    """Schluessel aller Frontpanel-Einstellungen, die gerade vom FT8-Soll abweichen."""
+def _rig_abweichungen(snap, tuner_soll: str = "an") -> list[str]:
+    """Schluessel aller Frontpanel-Einstellungen, die gerade vom FT8-Soll abweichen.
+
+    Der Tuner hat kein festes Soll: *tuner_soll* ist "an", "aus" oder "egal"
+    (``operating.rig_tuner_soll``).
+    """
     aus = []
     for schluessel, _anzeige, pruef, _korrektur in _RIG_REGELN:
         try:
-            if pruef(snap):
+            if schluessel == "TUNER":
+                ist = getattr(snap, "tuner_on", None)
+                if ist is None or tuner_soll == "egal" or ist is (tuner_soll == "an"):
+                    continue
+                aus.append(schluessel)
+            elif pruef(snap):
                 aus.append(schluessel)
         except Exception:
             continue
@@ -3898,7 +3907,8 @@ class Orchestrator:
         """NR/NB/ANF/ATT am Rig: einmal melden je neuem Zustand, NR/NB/ANF im
         Datenbetrieb abschalten. In anderen Betriebsarten hoert vielleicht
         jemand mit — dann bleibt es bei der Meldung."""
-        stoerer = _rig_abweichungen(self._last_rig)
+        tuner_soll = getattr(self.config.operating, "rig_tuner_soll", "an")
+        stoerer = _rig_abweichungen(self._last_rig, tuner_soll)
         # Nach "Stop" gehoert das Rig dem, der davor sitzt: nichts melden,
         # nichts zurueckstellen. Den Merker loeschen, damit nach dem naechsten
         # Start eine noch bestehende Abweichung wieder gemeldet und korrigiert wird.
@@ -3908,11 +3918,15 @@ class Orchestrator:
         if not self._tamper_armed:
             return
         abschalten = [s for s in stoerer if _RIG_REGEL[s][3] is not None]
-        if not getattr(self.config.operating, "rig_tuner_einschalten", True):
-            abschalten = [s for s in abschalten if s != "TUNER"]
         aus = bool(abschalten) and rig_mode == expected_mode and \
             getattr(self.config.operating, "rig_empfang_schuetzen", True)
-        if self._last_empfang_alert != tuple(stoerer):
+        # Zum Tuner wird nichts gemeldet (Sebastian 2026-10-11) — er wird
+        # still auf sein Soll gestellt.
+        zurueck = abschalten
+        stoerer = [s for s in stoerer if s != "TUNER"]
+        if not stoerer:
+            self._last_empfang_alert = None
+        elif self._last_empfang_alert != tuple(stoerer):
             self._last_empfang_alert = tuple(stoerer)
             self._rig_bedient_at = time.monotonic()
             # Anzeigenamen statt Schluessel: "TUNER ... eingeschaltet" stand
@@ -3929,7 +3943,7 @@ class Orchestrator:
                 asyncio.create_task(self._notify_empfang_tamper(stoerer, abgeschaltet=aus),
                                     name="empfang-tamper-push")
         if aus:
-            self._schedule_empfang_restore(abschalten)
+            self._schedule_empfang_restore(zurueck)
 
     async def _notify_empfang_tamper(self, stoerer: list[str], *, abgeschaltet: bool) -> None:
         """Push: NR/NB/ANF/ATT am Rig eingeschaltet."""
@@ -4076,7 +4090,10 @@ class Orchestrator:
                 continue
             try:
                 art = korrektur[0]
-                if art == "func":
+                if n == "TUNER":
+                    soll = getattr(self.config.operating, "rig_tuner_soll", "an")
+                    await self.rig.set_func("TUNER", soll == "an")
+                elif art == "func":
                     await self.rig.set_func(korrektur[1], False)
                 elif art == "func_an":
                     await self.rig.set_func(korrektur[1], True)

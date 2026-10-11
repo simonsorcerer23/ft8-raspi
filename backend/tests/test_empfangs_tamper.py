@@ -206,22 +206,40 @@ def test_auch_die_alten_meldungen_schweigen_nach_stop() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ausgeschalteter_tuner_wird_wieder_eingeschaltet() -> None:
-    """Am 10.10.2026 stand am Ersatzgeraet der Tuner aus; die Station meldete
-    es nur. Jetzt schaltet sie ihn ein — ausser es ist abgewaehlt."""
-    o = _stub(_snap(tuner_on=False, vox_on=True))
-    o.config.operating.rig_tuner_einschalten = True
-    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
-    await asyncio.gather(*o.gestartet)
-    await asyncio.sleep(0)
-    assert {c.args for c in o.rig.set_func.await_args_list} == {("TUNER", True), ("VOX", False)}
+async def test_tuner_wird_still_auf_sein_soll_gestellt() -> None:
+    """10.10.2026: Tuner stand aus, die Station meldete nur -> 'an'.
+    11.10.2026: Am Dipol auf 20 m aendert er nichts (39 W, SWR 1,0 mit wie
+    ohne) und versteckt die Antenne vor dem SWR-Schutz -> 'aus', ohne Meldung."""
+    assert _rig_abweichungen(_snap(tuner_on=False), "an") == ["TUNER"]
+    assert _rig_abweichungen(_snap(tuner_on=True), "an") == []
+    assert _rig_abweichungen(_snap(tuner_on=True), "aus") == ["TUNER"]
+    assert _rig_abweichungen(_snap(tuner_on=False), "aus") == []
+    assert _rig_abweichungen(_snap(tuner_on=False), "egal") == []
+    assert _rig_abweichungen(_snap(tuner_on=None), "aus") == []
 
-    o = _stub(_snap(tuner_on=False))
-    o.config.operating.rig_tuner_einschalten = False
+    for soll, ist, erwartet in (("an", False, ("TUNER", True)), ("aus", True, ("TUNER", False))):
+        o = _stub(_snap(tuner_on=ist))
+        o.config.operating.rig_tuner_soll = soll
+        Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+        await asyncio.gather(*o.gestartet)
+        await asyncio.sleep(0)
+        assert [c.args for c in o.rig.set_func.await_args_list] == [erwartet]
+        o._notify_empfang_tamper.assert_not_called()      # keine Meldung zum Tuner
+
+    o = _stub(_snap(tuner_on=True))
+    o.config.operating.rig_tuner_soll = "egal"
     Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
-    await asyncio.gather(*o.gestartet)
     await asyncio.sleep(0)
     o.rig.set_func.assert_not_called()
+
+    # Tuner und VOX zugleich: VOX wird gemeldet, der Tuner nicht
+    o = _stub(_snap(tuner_on=True, vox_on=True))
+    o.config.operating.rig_tuner_soll = "aus"
+    Orchestrator._pruefe_empfang(o, "PKTUSB", "PKTUSB")
+    await asyncio.gather(*o.gestartet)
+    await asyncio.sleep(0)
+    assert {c.args for c in o.rig.set_func.await_args_list} == {("TUNER", False), ("VOX", False)}
+    assert o._notify_empfang_tamper.call_args.args[0] == ["VOX"]
 
 
 @pytest.mark.asyncio
