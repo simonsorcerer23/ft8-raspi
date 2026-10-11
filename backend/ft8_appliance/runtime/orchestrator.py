@@ -785,6 +785,7 @@ class Orchestrator:
     # zuletzt jemand am Geraet bedient hat, und wann welche Verstell-Meldung
     # zuletzt hinausging.
     _lock_log_at: float = field(default=-1e9, init=False)
+    _tx_aufgeschoben_nr: int = field(default=0, init=False)
     _rig_weg_seit: float = field(default=0.0, init=False)
     _rig_bedient_at: float = field(default=0.0, init=False)
     _empfang_push_at: dict = field(default_factory=dict, init=False)
@@ -2708,12 +2709,14 @@ class Orchestrator:
         self._persist_boot_mode_from_state()
 
     async def handle_stop(self) -> None:
+        self._tx_aufgeschoben_nr += 1      # Aufgeschobenes verfaellt
         self.state_machine.on_user_stop()
         await self._drain_actions()
         # Stop schaltet beide Schalter aus → ergibt "off"
         self._persist_boot_mode_from_state()
 
     async def handle_panic(self) -> None:
+        self._tx_aufgeschoben_nr += 1      # Aufgeschobenes verfaellt
         # Panic = same as stop + force PTT off + lock to prevent retries
         # v0.65.5: Mode-Watchdog kurz stummschalten. Panic lässt boot_mode auf
         # "hunt" (resume nach Restart), stoppt aber auto_answer → der Watchdog
@@ -9755,6 +9758,11 @@ class Orchestrator:
         we skip the audio + PTT sequence and just log.
         """
         text = payload.get("message", "")
+        # Jede neue Entscheidung der State-Machine ersetzt eine aufgeschobene
+        # Aussendung; nur die aufgeschobene selbst laesst sie stehen, bis sie
+        # wirklich hinausgeht oder erneut aufgeschoben wird.
+        if not payload.get("_aufgeschoben"):
+            self._tx_aufgeschoben_nr += 1
         audio_freq_hz = float(payload.get("freq_offset_hz", 1500))
         amplitude = 0.9 * max(0.0, min(1.0, self._audio_gain))
         payload["audio_gain"] = self._audio_gain
@@ -9807,9 +9815,13 @@ class Orchestrator:
             log.warning("TX %r verworfen: ein Burst laeuft noch — die "
                         "State-Machine sendet an der naechsten Grenze", text)
             self.state_machine.on_tx_ausgefallen(payload.get("kind"))
+            self._schiebe_tx_auf(payload)
             return
         if not self._record_tx_start_offset():
-            return  # B4: manueller Burst mitten im Slot — entfaellt, s.u.
+            # B4: Burst mitten im Slot entfaellt — eine Antwort im laufenden
+            # QSO wird aber zur naechsten eigenen Slot-Grenze nachgeholt.
+            self._schiebe_tx_auf(payload)
+            return
         # Erst hier steht fest, dass wirklich gesendet wird. Vorher gebucht
         # zaehlte jede verworfene Aussendung als Frequenz-Versuch (der Nenner
         # der Reputation war zu gross), und _last_tx_message_at markierte die
@@ -9862,6 +9874,7 @@ class Orchestrator:
         if self._tx_burst_active:
             log.warning("TX %r verworfen: ein Burst laeuft noch — die State-Machine sendet an der naechsten Grenze", text)
             self.state_machine.on_tx_ausgefallen(payload.get("kind"))
+            self._schiebe_tx_auf(payload)
             return
         loop = asyncio.get_running_loop()
         self._tx_burst_active = True
@@ -9895,6 +9908,56 @@ class Orchestrator:
             except Exception as exc:
                 log.error("set_ptt(False) post-TX failed: %s", exc)
             self._tx_burst_active = False
+
+    # Antworten im laufenden QSO, die nachgeholt werden, wenn sie zu spaet im
+    # Slot faellig wurden. Der erste Anruf (respond_grid) gehoert nicht dazu —
+    # den holt die State-Machine selbst nach (on_tx_ausgefallen), und ein CQ
+    # sendet sie ohnehin an jeder Grenze neu.
+    _AUFSCHIEBBAR = frozenset({"respond_report", "r_report", "rr73", "ack73"})
+
+    def _schiebe_tx_auf(self, payload: dict) -> None:
+        """Eine verworfene QSO-Antwort zur naechsten eigenen Slot-Grenze senden.
+
+        Findet erst die jt9-Stufe den Rapport oder R-Rapport des Partners
+        (5–11 s nach Slotbeginn), hat die State-Machine das QSO bereits
+        weitergeschaltet und unsere Antwort ausgeloest — die entfiel dann als
+        "mitten im Slot" und kam nie (28.09.–11.10.2026: 379 solche Verwuerfe,
+        knapp die Haelfte davon Rapporte und Abschluesse). Gesendet wird jetzt
+        zwei Slots spaeter puenktlich an der Grenze: dieser Slot ist unserer,
+        der naechste seiner.
+        """
+        if payload.get("kind") not in self._AUFSCHIEBBAR or payload.get("_aufgeschoben"):
+            return          # nur einmal aufschieben
+        from .slot_clock import FT4_SLOT_SECONDS, SLOT_SECONDS
+        slot_s = FT4_SLOT_SECONDS if self.config.operating.mode == "FT4" else SLOT_SECONDS
+        jetzt = time.time()
+        faellig = (jetzt - jetzt % slot_s) + 2 * slot_s
+        self._tx_aufgeschoben_nr += 1
+        nr = self._tx_aufgeschoben_nr
+        qso = self.state_machine.qso
+        partner = getattr(qso, "their_call", None)
+        log.info("TX %r aufgeschoben — geht zur naechsten eigenen Slot-Grenze hinaus",
+                 payload.get("message", ""))
+        self._spawn(self._sende_aufgeschoben(dict(payload), nr, faellig, partner),
+                    name="tx-aufgeschoben")
+
+    async def _sende_aufgeschoben(self, payload: dict, nr: int, faellig: float,
+                                  partner: str | None) -> None:
+        await asyncio.sleep(max(0.0, faellig - time.time() + 0.02))
+        if nr != self._tx_aufgeschoben_nr:
+            return          # inzwischen hat die State-Machine anders entschieden
+        if not self._station_aktiv():
+            return          # gestoppt
+        from ..statemachine.states import State
+        sm = self.state_machine
+        if sm.state is State.TX_LOCKED:
+            return
+        if payload.get("kind") in ("respond_report", "r_report"):
+            # Nur solange das QSO mit ihm noch laeuft.
+            if sm.qso is None or sm.qso.their_call != partner:
+                return
+        payload["_aufgeschoben"] = True
+        await self._do_tx_message(payload)
 
     def _slot_phase_s(self) -> float:
         """Sekunden seit der letzten Slot-Grenze (Wanduhr, nicht Tick)."""
