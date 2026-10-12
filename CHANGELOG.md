@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.191.0 — 2026-10-12
+- feat: Tuner-Vergleich (an/aus im 15-Minuten-Wechsel) mit Messplan-Eintrag und Bilanz-Abschnitt — werden wir mit Tuner besser gehoert?
+
 ## v0.190.1 — 2026-10-11
 - fix: ausgeschaltetes Rig wird auch ohne Sendeversuch bemerkt und einmal gemeldet
 
