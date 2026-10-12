@@ -256,6 +256,23 @@ MESSPLAN: tuple[Messung, ...] = (
         quelle="Gemessene Nicht-Effekte (z = −1,08 bei n = 58)",
     ),
     Messung(
+        "tuner_vergleich", "laufend",
+        "Werden wir mit eingebautem Tuner von mehr Stationen gehoert als ohne?",
+        ("psk_reporter_in", "config:rig_tuner_ab"),
+        "Tuner-Vergleich: werden wir mit Tuner besser gehoert?",
+        "Verschiedene Hoerer je 15-Minuten-Block, Bloecke als Einheit. 'an' gewinnt, "
+        "wenn es mit |z| >= 2 vor 'aus' liegt und jeder Arm mindestens 40 Bloecke "
+        "hat. Sonst bleibt der Tuner aus — dann sieht der SWR-Schutz die Antenne.",
+        lesen_ab=date(2026, 10, 14),
+        danach="rig_tuner_ab aus. Gewinnt 'an': rig_tuner_soll auf 'an' und den "
+               "SWR-Verlauf wieder als blind fuehren. Sonst rig_tuner_soll 'aus' "
+               "lassen; die niedrigeren Hoererzahlen liegen dann an der Leistung "
+               "(39 W statt rund 60 W) und am Funkwetter.",
+        seit=date(2026, 10, 12),
+        quelle="Sebastian 12.10.2026: 'liegt die niedrige Hoererzahl am ausgeschalteten Tuner?'",
+        schalter=("rig_tuner_ab",),
+    ),
+    Messung(
         "agc_vergleich", "laufend",
         "Hoert die Station mit langsamer oder abgeschalteter AGC mehr als mit schneller?",
         ("decode.call_from", "config:rig_agc_ab"),

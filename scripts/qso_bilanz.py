@@ -1548,6 +1548,47 @@ def main() -> int:
     print("    'zu wenige' oder 'keiner erkennbar', gehoert die Frage")
     print("    verworfen und die Aufzeichnung eingestellt.")
 
+    print("\n=== Tuner-Vergleich: werden wir mit Tuner besser gehoert? ===")
+    # Seit 2026-10-12. Arm aus dem Zeitstempel (analyse/tuner_vergleich.py).
+    # Gezaehlt werden die Empfangsberichte ueber uns je 15-Minuten-Block;
+    # ein Block zaehlt nur, wenn die Station in ihm empfangen hat (Rig an).
+    from ft8_appliance.analyse import agc_vergleich as _agc_stat
+    from ft8_appliance.analyse import tuner_vergleich as tuner
+    TUNER_START = "2026-10-12 08:45:00"
+    hoerer = {int(r[0]): (r[1], r[2], r[3]) for r in con.execute(
+        "select cast(strftime('%s', ts) as integer) / ?, count(*), count(distinct rx_call),"
+        " avg(snr_db) from psk_reporter_in where ts >= ? group by 1",
+        (tuner.BLOCK_S, TUNER_START))}
+    aktiv = {int(r[0]) for r in con.execute(
+        "select distinct cast(strftime('%s', ts) as integer) / ? from decode where ts >= ?",
+        (tuner.BLOCK_S, TUNER_START))}
+    if len(aktiv) < 3:
+        print("    noch zu wenige Bloecke seit Beginn des Vergleichs")
+    else:
+        # erster und laufender Block bleiben aussen vor (unvollstaendig)
+        je_arm: dict[str, list[tuple[int, int, float | None]]] = {a: [] for a in tuner.ARME}
+        for b in sorted(aktiv)[1:-1]:
+            je_arm[tuner.arm_von_block(b)].append(hoerer.get(b, (0, 0, None)))
+        zeilen = []
+        basis = [float(x[1]) for x in je_arm["aus"]]
+        for a in tuner.ARME:
+            werte = [float(x[1]) for x in je_arm[a]]
+            m, se = _agc_stat.mittel_und_fehler(werte)
+            berichte, _ = _agc_stat.mittel_und_fehler([float(x[0]) for x in je_arm[a]])
+            snrs = [x[2] for x in je_arm[a] if x[2] is not None]
+            z = None if a == "aus" else _agc_stat.z_wert(werte, basis)
+            zeilen.append((
+                f"Tuner {a}", len(werte), f"{m:.0f}",
+                f"± {se:.0f}" if se != float("inf") else "-", f"{berichte:.0f}",
+                f"{sum(snrs) / len(snrs):.1f} dB" if snrs else "-",
+                "Bezug" if a == "aus" else ("-" if z is None else f"z={z:+.2f}"),
+            ))
+        tabelle(zeilen, ("Arm", "Bloecke", "Hoerer/Block", "Fehler", "Berichte/Block",
+                         "SNR bei ihnen", "gegen aus"))
+        knapp = min(len(v) for v in je_arm.values())
+        if knapp < 40:
+            print(f"    Der kleinere Arm hat {knapp} Bloecke; das Urteil zaehlt ab 40.")
+
     print("\n=== AGC-Vergleich: schnell, langsam oder aus? ===")
     # Seit 2026-10-10. Der Arm jedes Decodes ergibt sich aus seinem
     # Zeitstempel (analyse/agc_vergleich.py). Einheit ist der 15-Minuten-

@@ -406,6 +406,11 @@ class OperatingConfig(BaseModel):
     # (am Dipol auf 20 m gemessen: 39 W und SWR 1,0 mit wie ohne Tuner).
     # Gemeldet wird zum Tuner nichts — die Station stellt ihn still.
     rig_tuner_soll: Literal["an", "aus", "egal"] = "an"
+    # Tuner-Vergleich (2026-10-12): alle 15 Minuten Tuner an/aus im Wechsel,
+    # gezaehlt werden die Empfangsberichte ueber uns je Block
+    # (analyse/tuner_vergleich.py, Messplan "tuner_vergleich"). Solange der
+    # Schalter an ist, gilt der Arm statt rig_tuner_soll.
+    rig_tuner_ab: bool = False
     # Versorgungsspannung am Rig (2026-10-06). Ausserhalb der Spanne geht eine
     # Meldung aufs Handy. Arbeitswerte um die ueblichen 13,8 V, KEINE
     # Herstellergrenze — die steht im Handbuch des Geraets. Abschalten kann

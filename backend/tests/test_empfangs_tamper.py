@@ -98,6 +98,7 @@ def _stub(snap, *, schuetzen=True, burst=False, aktiv=True):
     )
     o._spawn = lambda coro, name=None: o.gestartet.append(asyncio.ensure_future(coro))
     o._schedule_empfang_restore = lambda n: Orchestrator._schedule_empfang_restore(o, n)
+    o._tuner_soll = lambda: Orchestrator._tuner_soll(o)
     o._empfang_aus = lambda n: Orchestrator._empfang_aus(o, n)
     return o
 

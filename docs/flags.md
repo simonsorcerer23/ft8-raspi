@@ -209,6 +209,10 @@ AGC-Vergleich: Alle 15 Minuten wechselt die Station zwischen schneller (0,3 s), 
 
 **Filterbreite (seit 2026-10-10):** Icom-Profile verlangen 3600 Hz, den breitesten SSB-Filter; jeder schmalere wird zurueckgestellt (vorher erst unter 2000 Hz). Quelle: WSJT-X User Guide („widest available passband“).
 
+### `operating.rig_tuner_ab` (2026-10-12, Default `false`; auf der Station bis zur Entscheidung `true`)
+
+Tuner-Vergleich: Alle 15 Minuten wechselt die Station zwischen eingebautem Tuner an und aus; der Arm haengt allein an der Uhr (`analyse/tuner_vergleich.py`, eigenes Salz gegenueber dem AGC-Vergleich). Solange der Schalter an ist, gilt der Arm statt `rig_tuner_soll`. Gezaehlt werden die Empfangsberichte ueber uns je Block (Bilanz-Abschnitt „Tuner-Vergleich“), Regel und Lesetermin stehen im Messplan (`tuner_vergleich`). Anlass: Nach dem Abschalten des Tuners am 11.10. lagen die Hoererzahlen unter denen von vor dem Ausfall — bei zugleich niedrigerer Leistung und gestoertem Funkwetter.
+
 ### `operating.rig_tuner_soll` (2026-10-11, `an` | `aus` | `egal`, Default `an`)
 
 Soll des eingebauten Antennentuners im Datenbetrieb. `an`: Die Station schaltet ihn ein, wenn er aus ist (so seit 10.10.2026, als er am Ersatz-IC-7300 aus stand). `aus`: Sie schaltet ihn aus, wenn er an ist. `egal`: Sie fasst ihn nicht an. Gestellt wird nach derselben Regel wie NR/NB (nie waehrend einer Aussendung, hoechstens alle 15 s, nicht nach „Stop“), aber **ohne Meldung**. `aus` ist richtig, wo die Antenne ohne Tuner passt: Dann sieht der SWR-Schutz (`swr_warn`, `swr_max`) die Antenne selbst und nicht das, was der Tuner daraus macht — mit Tuner zeigte das Rig wochenlang exakt 1,00. Am Dipol auf 20 m am 11.10.2026 gemessen: 39 W und SWR 1,0 mit wie ohne Tuner. Ersetzt `rig_tuner_einschalten` vom Vortag.

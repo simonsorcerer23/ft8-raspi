@@ -3907,11 +3907,19 @@ class Orchestrator:
             tags=["warning"],
         )
 
+    def _tuner_soll(self) -> str:
+        """Soll des Tuners: der Arm des laufenden Vergleichs, sonst die Einstellung."""
+        op = self.config.operating
+        if getattr(op, "rig_tuner_ab", False):
+            from ..analyse import tuner_vergleich
+            return tuner_vergleich.arm_zu(time.time())
+        return getattr(op, "rig_tuner_soll", "an")
+
     def _pruefe_empfang(self, rig_mode: str | None, expected_mode: str) -> None:
         """NR/NB/ANF/ATT am Rig: einmal melden je neuem Zustand, NR/NB/ANF im
         Datenbetrieb abschalten. In anderen Betriebsarten hoert vielleicht
         jemand mit — dann bleibt es bei der Meldung."""
-        tuner_soll = getattr(self.config.operating, "rig_tuner_soll", "an")
+        tuner_soll = self._tuner_soll()
         stoerer = _rig_abweichungen(self._last_rig, tuner_soll)
         # Nach "Stop" gehoert das Rig dem, der davor sitzt: nichts melden,
         # nichts zurueckstellen. Den Merker loeschen, damit nach dem naechsten
@@ -4095,8 +4103,7 @@ class Orchestrator:
             try:
                 art = korrektur[0]
                 if n == "TUNER":
-                    soll = getattr(self.config.operating, "rig_tuner_soll", "an")
-                    await self.rig.set_func("TUNER", soll == "an")
+                    await self.rig.set_func("TUNER", self._tuner_soll() == "an")
                 elif art == "func":
                     await self.rig.set_func(korrektur[1], False)
                 elif art == "func_an":

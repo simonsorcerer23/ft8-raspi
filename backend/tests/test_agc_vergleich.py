@@ -102,3 +102,22 @@ def test_icom_profile_verlangen_den_breitesten_filter() -> None:
     for name, profil in _RIG_TABLE.items():
         if name.startswith("ic"):
             assert profil.mode_width_hz == 3600, name
+
+
+def test_tuner_vergleich_arme_und_soll() -> None:
+    """12.10.2026: Tuner an/aus im 15-Minuten-Wechsel, eigenes Salz."""
+    import time
+    from ft8_appliance.analyse import tuner_vergleich as tuner
+    zaehler = {a: 0 for a in tuner.ARME}
+    gleich = 0
+    for b in range(2_000_000, 2_002_000):
+        zaehler[tuner.arm_von_block(b)] += 1
+        gleich += (tuner.arm_von_block(b) == "an") == (agc.arm_von_block(b) == "FAST")
+    assert all(900 < n < 1100 for n in zaehler.values()), zaehler
+    assert 800 < gleich < 1300, "laeuft im Gleichschritt mit dem AGC-Vergleich"
+
+    o = SimpleNamespace(config=SimpleNamespace(operating=SimpleNamespace(
+        rig_tuner_ab=True, rig_tuner_soll="aus")))
+    assert Orchestrator._tuner_soll(o) == tuner.arm_zu(time.time())
+    o.config.operating.rig_tuner_ab = False
+    assert Orchestrator._tuner_soll(o) == "aus"
