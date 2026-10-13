@@ -46,10 +46,13 @@ def _stub(*, ap_aktiv: bool, upstream: list[bool]) -> SimpleNamespace:
         ap_fallback_is_active=ap_aktiv_f,
         _has_upstream_connection=upstream_f,
         set_ap_fallback=set_ap,
+        _WLAN_ANSTOSS_ABSTAND_S=Orchestrator._WLAN_ANSTOSS_ABSTAND_S,
+        _wlan_anstoss_at=0.0,
         config=SimpleNamespace(network=SimpleNamespace(fallback_delay_s=60)),
     )
     stub._geschaltet = geschaltet
     stub._pruefe_ap_rueckkehr = lambda now: Orchestrator._pruefe_ap_rueckkehr(stub, now)
+    stub._wlan_anstossen = lambda now: Orchestrator._wlan_anstossen(stub, now)
     stub._ap_fallback_tick = lambda: Orchestrator._ap_fallback_tick(stub)
     return stub
 
@@ -168,6 +171,9 @@ def _watchdog_stub(*, hatte_upstream: bool, delay: int = 60) -> SimpleNamespace:
         set_ap_fallback=set_ap,
     )
     stub._geschaltet = geschaltet
+    async def _kein_anstoss(now):
+        return None
+    stub._wlan_anstossen = _kein_anstoss
     stub._ap_fallback_tick = lambda: Orchestrator._ap_fallback_tick(stub)
     return stub
 
@@ -211,3 +217,47 @@ async def test_erstes_netz_schaltet_auf_die_lange_frist_um(kein_warten):
     stub._ap_hatte_upstream = False
     await stub._ap_fallback_tick()
     assert stub._ap_hatte_upstream is True
+
+
+@pytest.mark.asyncio
+async def test_aufgegebenes_wlan_wird_wieder_angestossen(monkeypatch):
+    """13.10.2026: ein abgewiesener Handshake, und NetworkManager versuchte
+    es nicht mehr. Der Watchdog muss das Profil selbst wieder hochziehen —
+    hoechstens einmal je Minute, und nur Profile mit Autoconnect."""
+    import time as _time
+
+    from ft8_appliance.util import network as net
+
+    versucht: list[str] = []
+
+    async def profile():
+        return [
+            net.WifiConnection(name="heim", ssid="heim", autoconnect=True,
+                               priority=100, active=False),
+            net.WifiConnection(name="hand", ssid="hand", autoconnect=False,
+                               priority=50, active=False),
+        ]
+
+    async def hoch(name):
+        versucht.append(name)
+        return False, "nicht in Reichweite"
+
+    monkeypatch.setattr(net, "list_connections", profile)
+    monkeypatch.setattr(net, "activate", hoch)
+    uhr = [1000.0]
+    monkeypatch.setattr(_time, "monotonic", lambda: uhr[0])
+
+    s = _stub(ap_aktiv=False, upstream=[False])
+    s._ap_hatte_upstream = False
+    s._AP_BETRIEB_FRIST_S = Orchestrator._AP_BETRIEB_FRIST_S
+    await s._ap_fallback_tick()          # merkt sich nur den Beginn
+    assert versucht == []
+    uhr[0] += 15
+    await s._ap_fallback_tick()
+    assert versucht == ["heim"]
+    uhr[0] += 15
+    await s._ap_fallback_tick()          # noch keine Minute um
+    assert versucht == ["heim"]
+    uhr[0] += 60
+    await s._ap_fallback_tick()          # 90 s > Frist 60 s: Hotspot
+    assert s._geschaltet == [True]

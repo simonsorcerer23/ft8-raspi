@@ -10654,6 +10654,29 @@ class Orchestrator:
     # ausgesetzt (2026-09-12), die kurze Frist ist also reine Vorsicht am
     # falschen Ende.
     _AP_BETRIEB_FRIST_S: typing.ClassVar[float] = 600.0
+    # NetworkManager gibt ein WLAN-Profil nach einem einzigen misslungenen
+    # Handshake auf ("no-secrets") und versucht es von selbst nicht wieder.
+    # Am 13.10.2026 startete der Router nach einem Stromausfall neu, wies
+    # die Station einmal ab — und sie blieb 26 Minuten ohne Netz, bis der
+    # Umweg ueber den Hotspot das Profil wieder freigab. Deshalb stoesst der
+    # Watchdog die gespeicherten Profile selbst an, solange kein Netz da ist.
+    _WLAN_ANSTOSS_ABSTAND_S: typing.ClassVar[float] = 60.0
+    _wlan_anstoss_at: float = field(default=0.0, init=False)
+
+    async def _wlan_anstossen(self, now: float) -> None:
+        if now - self._wlan_anstoss_at < self._WLAN_ANSTOSS_ABSTAND_S:
+            return
+        self._wlan_anstoss_at = now
+        from ..util import network as net
+        for profil in await net.list_connections():
+            if not profil.autoconnect:
+                continue
+            ok, fehler = await net.activate(profil.name)
+            if ok:
+                log.warning("WLAN %s von Hand wieder verbunden — "
+                            "NetworkManager hatte aufgegeben", profil.name)
+                return
+            log.info("WLAN %s nicht erreichbar: %s", profil.name, fehler)
 
     async def _ap_fallback_tick(self) -> None:
         now = time.monotonic()
@@ -10679,6 +10702,7 @@ class Orchestrator:
                      else "Start ohne Netz")
             return
         if now - self._ap_fallback_offline_since < delay:
+            await self._wlan_anstossen(now)
             return
         log.warning(
             "ap-fallback watchdog: seit %.0f s weder WLAN noch Kabel — starte AP-Fallback",

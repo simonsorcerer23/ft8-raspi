@@ -45,6 +45,9 @@ def _stub(*, upstream: bool, ap_active: bool = False, delay: int = 60) -> Simple
         _AP_RUECKKEHR_MAX_S=Orchestrator._AP_RUECKKEHR_MAX_S,
     )
     stub._pruefe_ap_rueckkehr = lambda now: Orchestrator._pruefe_ap_rueckkehr(stub, now)
+    async def _kein_anstoss(now):
+        return None
+    stub._wlan_anstossen = _kein_anstoss
     stub._ap_fallback_tick = lambda: Orchestrator._ap_fallback_tick(stub)
     return stub
 
