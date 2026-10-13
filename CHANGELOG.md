@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.191.1 — 2026-10-13
+- fix: Station stoesst ein von NetworkManager aufgegebenes WLAN selbst wieder an — nach einem abgewiesenen Handshake blieb sie 26 Minuten ohne Netz
+
 ## v0.191.0 — 2026-10-12
 - feat: Tuner-Vergleich (an/aus im 15-Minuten-Wechsel) mit Messplan-Eintrag und Bilanz-Abschnitt — werden wir mit Tuner besser gehoert?
 
