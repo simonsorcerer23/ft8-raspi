@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.192.0 — 2026-10-14
+- feat: AGC langsam als festes FT8-Soll — AGC- und Tuner-Vergleich entschieden (langsam 891 gegen 722 Decodes je Block, Tuner ohne Gewinn)
+
 ## v0.191.1 — 2026-10-13
 - fix: Station stoesst ein von NetworkManager aufgegebenes WLAN selbst wieder an — nach einem abgewiesenen Handshake blieb sie 26 Minuten ohne Netz
 
