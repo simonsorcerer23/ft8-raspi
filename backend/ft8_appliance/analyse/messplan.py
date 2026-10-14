@@ -256,7 +256,7 @@ MESSPLAN: tuple[Messung, ...] = (
         quelle="Gemessene Nicht-Effekte (z = −1,08 bei n = 58)",
     ),
     Messung(
-        "tuner_vergleich", "laufend",
+        "tuner_vergleich", "entschieden",
         "Werden wir mit eingebautem Tuner von mehr Stationen gehoert als ohne?",
         ("psk_reporter_in", "config:rig_tuner_ab"),
         "Tuner-Vergleich: werden wir mit Tuner besser gehoert?",
@@ -269,11 +269,14 @@ MESSPLAN: tuple[Messung, ...] = (
                "lassen; die niedrigeren Hoererzahlen liegen dann an der Leistung "
                "(39 W statt rund 60 W) und am Funkwetter.",
         seit=date(2026, 10, 12),
+        ergebnis="14.10.2026: Tuner bleibt aus. An 62 Hoerer je Block (77 Bloecke), "
+                 "aus 78 (75 Bloecke), z = -1,73; SNR bei den Hoerern gleich "
+                 "(-13,0 gegen -13,1 dB). SWR in beiden Armen durchweg 1,00.",
         quelle="Sebastian 12.10.2026: 'liegt die niedrige Hoererzahl am ausgeschalteten Tuner?'",
         schalter=("rig_tuner_ab",),
     ),
     Messung(
-        "agc_vergleich", "laufend",
+        "agc_vergleich", "entschieden",
         "Hoert die Station mit langsamer oder abgeschalteter AGC mehr als mit schneller?",
         ("decode.call_from", "config:rig_agc_ab"),
         "AGC-Vergleich: schnell, langsam oder aus?",
@@ -285,6 +288,10 @@ MESSPLAN: tuple[Messung, ...] = (
                "aufnehmen (AGC wird dann wie NR/NB zurueckgestellt). Gewinnt 'aus', "
                "vorher pruefen, ob die Regel 'HF-Verstaerkung voll' dazu passt.",
         seit=date(2026, 10, 10),
+        ergebnis="14.10.2026: AGC langsam ist festes Soll (Regel 'AGC' in "
+                 "_RIG_REGELN). Decodes je Block: langsam 891 (77 Bloecke), schnell "
+                 "722 (82), aus 471 (80); langsam z = +2,06, aus z = -4,48 gegen "
+                 "schnell. Ohne AGC bricht der Empfang ein.",
         quelle="WSJT-X User Guide, 'Transceiver Setup' (AGC aus oder HF-Verstaerkung "
                "zurueck); G. Hinson ZL2IFB, FT8 Operating Guide 10.15 (AGC langsam)",
         schalter=("rig_agc_ab",),

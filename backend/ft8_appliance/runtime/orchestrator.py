@@ -198,6 +198,14 @@ _RIG_REGELN: tuple = (
     # Decoder schwache Signale oder alles — wieder ohne dass ein Pegel anschlaegt.
     ("SQL",   "Rauschsperre (SQL)",
      lambda s: getattr(s, "sql", None) is not None and s.sql > 0.05, ("level", "SQL", 0.0)),
+    # AGC langsam (2026-10-14, Messplan "agc_vergleich"): 891 Decodes je
+    # Block gegen 722 bei schnell (z = +2,06) und 471 ohne AGC (z = -4,48).
+    # Zaehlt nur, wo das Rig seine AGC meldet; "aus" heisst am IC-7300
+    # Zeitkonstante 0 bei sonst beliebiger Stufe.
+    ("AGC",   "AGC nicht langsam",
+     lambda s: getattr(s, "agc_mode", None) is not None
+     and (s.agc_mode != "SLOW" or getattr(s, "agc_zeit_s", None) == 0),
+     ("agc",)),
 )
 # 2026-10-10 (Sebastian): Solange die Station laeuft, stellt sie ALLES in
 # dieser Tabelle auf das FT8-Soll zurueck — auch Daempfungsglied, Kompressor
@@ -208,14 +216,17 @@ _RIG_REGELN: tuple = (
 _RIG_REGEL = {r[0]: r for r in _RIG_REGELN}
 
 
-def _rig_abweichungen(snap, tuner_soll: str = "an") -> list[str]:
+def _rig_abweichungen(snap, tuner_soll: str = "an", *, agc_frei: bool = False) -> list[str]:
     """Schluessel aller Frontpanel-Einstellungen, die gerade vom FT8-Soll abweichen.
 
     Der Tuner hat kein festes Soll: *tuner_soll* ist "an", "aus" oder "egal"
-    (``operating.rig_tuner_soll``).
+    (``operating.rig_tuner_soll``). *agc_frei*: ein AGC-Vergleich laeuft,
+    die AGC wechselt dann absichtlich.
     """
     aus = []
     for schluessel, _anzeige, pruef, _korrektur in _RIG_REGELN:
+        if schluessel == "AGC" and agc_frei:
+            continue
         try:
             if schluessel == "TUNER":
                 ist = getattr(snap, "tuner_on", None)
@@ -3920,7 +3931,9 @@ class Orchestrator:
         Datenbetrieb abschalten. In anderen Betriebsarten hoert vielleicht
         jemand mit — dann bleibt es bei der Meldung."""
         tuner_soll = self._tuner_soll()
-        stoerer = _rig_abweichungen(self._last_rig, tuner_soll)
+        stoerer = _rig_abweichungen(
+            self._last_rig, tuner_soll,
+            agc_frei=bool(getattr(self.config.operating, "rig_agc_ab", False)))
         # Nach "Stop" gehoert das Rig dem, der davor sitzt: nichts melden,
         # nichts zurueckstellen. Den Merker loeschen, damit nach dem naechsten
         # Start eine noch bestehende Abweichung wieder gemeldet und korrigiert wird.
@@ -4115,6 +4128,9 @@ class Orchestrator:
                     await self.rig.set_level("PBT_OUT", _PBT_MITTE)
                 elif art == "split":
                     await self.rig.set_split_aus()
+                elif art == "agc":
+                    from ..analyse import agc_vergleich as agc
+                    await self._agc_setzen(*agc.EINSTELLUNG["SLOW"])
                 log.info("Rig-Einstellung zurueckgestellt: %s", n)
             except Exception as exc:   # Rig kennt die Funktion nicht o. ae.
                 log.info("Rig-Einstellung %s nicht zurueckstellbar: %s", n, exc)

@@ -253,3 +253,16 @@ async def test_rauschsperre_wird_geoeffnet() -> None:
     await asyncio.gather(*o.gestartet)
     await asyncio.sleep(0)
     assert {c.args for c in o.rig.set_level.await_args_list} == {("SQL", 0.0)}
+
+
+def test_agc_soll_ist_langsam() -> None:
+    """Messplan agc_vergleich, 14.10.2026: langsam gewinnt."""
+    assert _rig_abweichungen(_snap(agc_mode="SLOW", agc_zeit_s=6.0)) == []
+    assert _rig_abweichungen(_snap(agc_mode="FAST", agc_zeit_s=0.3)) == ["AGC"]
+    assert _rig_abweichungen(_snap(agc_mode="FAST", agc_zeit_s=0.0)) == ["AGC"]
+    assert _rig_abweichungen(_snap(agc_mode="SLOW", agc_zeit_s=0.0)) == ["AGC"]
+    assert _rig_abweichungen(_snap(agc_mode="MEDIUM", agc_zeit_s=2.0)) == ["AGC"]
+    # Rig ohne AGC-Abfrage: keine Regel
+    assert _rig_abweichungen(_snap()) == []
+    # Waehrend eines AGC-Vergleichs wechselt sie absichtlich
+    assert _rig_abweichungen(_snap(agc_mode="FAST", agc_zeit_s=0.3), agc_frei=True) == []
