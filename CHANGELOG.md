@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.192.1 — 2026-10-18
+- fix: eigene Aussendung wird nicht mehr als Decode gefuehrt und nicht an PSK Reporter gemeldet — siebenmal 'DK9XR hoert DK9XR' 2000 Hz versetzt
+
 ## v0.192.0 — 2026-10-14
 - feat: AGC langsam als festes FT8-Soll — AGC- und Tuner-Vergleich entschieden (langsam 891 gegen 722 Decodes je Block, Tuner ohne Gewinn)
 
