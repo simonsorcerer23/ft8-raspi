@@ -225,3 +225,20 @@ async def test_psk_upload_happens_once_per_decode() -> None:
     o._last_rig.freq_hz = 21_074_000
     await o._publish_decodes([_msg("CQ DL1AAA JN58", "DL1AAA", None, late=False)])
     assert o.integrations.psk_reporter.upload_decode.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_eigene_aussendung_geht_nicht_an_psk_reporter() -> None:
+    """12.-18.10.2026: siebenmal die eigene Aussendung decodiert (2000 Hz
+    versetzt) und als 'DK9XR hoert DK9XR' an PSK Reporter gemeldet."""
+    o = _orch()
+    o.integrations.psk_reporter = SimpleNamespace(upload_decode=AsyncMock())
+    o._last_rig.freq_hz = 21_074_000
+    q = o.subscribe_decodes()
+    await o._publish_decodes([
+        _msg("LZ2KSQ DK9XR JN58", "DK9XR", "LZ2KSQ", late=True),
+        _msg("CQ DL1AAA JN58", "DL1AAA", None, late=False),
+    ])
+    assert o.integrations.psk_reporter.upload_decode.await_count == 1
+    assert q.get_nowait().call_from == "DL1AAA"
+    assert q.empty()

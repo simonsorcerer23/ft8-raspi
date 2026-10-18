@@ -5048,7 +5048,21 @@ class Orchestrator:
         sich das. Vorher lief der PSK-Upload hier ZWEIMAL pro Decode
         (Block "Build H" und Block "3b", beide riefen upload_decode); der
         Client dedupliziert vor dem Flush, darum fiel es nie auf.
+
+        Die eigene Aussendung faellt hier heraus. Zwischen 12. und 18.10.2026
+        decodierte die Station siebenmal sich selbst — jedesmal genau 2000 Hz
+        ueber der eigenen Sendefrequenz, mit -19 bis -24 dB — und meldete
+        das an PSK Reporter: DK9XR hoert DK9XR auf einer falschen Frequenz.
         """
+        eigen = {c.upper() for c in (
+            self.config.operator.callsign,
+            getattr(self.state_machine.ctx, "tx_callsign", None),
+        ) if c}
+        selbst = [d for d in decodes if (d.call_from or "").upper() in eigen]
+        if selbst:
+            log.info("eigene Aussendung decodiert und verworfen: %s @ %s Hz",
+                     selbst[0].message, selbst[0].freq_offset_hz)
+            decodes = [d for d in decodes if d not in selbst]
         for d in decodes:
             self._push_decode(d)
         if not decodes:
