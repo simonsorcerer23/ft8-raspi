@@ -1700,6 +1700,44 @@ def main() -> int:
         print("    Die Anzeige des IC-7300 endet bei rund 16 V; ein Wert am")
         print("    Anschlag heisst 'mindestens', nicht 'genau'.")
 
+    print("\n=== Pi-Waerme: wann wird er heiss, und drosselt er? ===")
+    # Seit 2026-10-31, eine Zeile je Minute. Je Tag Hoechstwert mit Uhrzeit,
+    # Minuten mit aktiver Drosselung (Bits 1-3) und die erste Minute, in der
+    # die bis zum Neustart stehenden Fahnen 16-19 auftauchen.
+    try:
+        tage = con.execute(
+            "select date(ts, 'localtime'), max(temp_c), count(*),"
+            "  sum(case when (throttled & 14) != 0 then 1 else 0 end),"
+            "  max(luefter_upm), min(takt_mhz) from pi_waerme_log"
+            " group by 1 order by 1").fetchall()
+        zeilen = []
+        for tag, hoch, n, gedrosselt, upm, takt in tage[-14:]:
+            wann = con.execute(
+                "select time(ts, 'localtime'), last_1min from pi_waerme_log"
+                " where date(ts, 'localtime') = ? order by temp_c desc limit 1", (tag,)).fetchone()
+            zeilen.append((tag, n, f"{hoch:.1f} °C" if hoch is not None else "-",
+                           f"{wann[0][:5]} (Last {wann[1]:.1f})" if wann and wann[1] is not None else "-",
+                           gedrosselt or 0, upm if upm is not None else "-",
+                           f"{takt} MHz" if takt is not None else "-"))
+        fahne = con.execute(
+            "select datetime(ts, 'localtime'), temp_c, throttled from pi_waerme_log"
+            " where (throttled & 983040) != 0 order by ts limit 1").fetchone()
+    except sqlite3.OperationalError:
+        tage, fahne = [], None
+    if not tage:
+        print("    keine Messwerte (Tabelle leer)")
+    else:
+        tabelle(zeilen, ("Tag", "Minuten", "Hoechstwert", "um", "gedrosselt",
+                         "Luefter max", "Takt min"))
+        erste = con.execute("select datetime(min(ts), 'localtime') from pi_waerme_log").fetchone()[0]
+        if fahne and fahne[0] == erste:
+            print(f"    Die Fahnen 16-19 standen schon bei Beginn ({erste}, 0x{fahne[2]:x}); "
+                  "datierbar erst nach dem naechsten Neustart.")
+        elif fahne:
+            print(f"    Fahne seit dem Start zuerst gesehen: {fahne[0]} bei "
+                  f"{fahne[1]:.1f} °C (throttled=0x{fahne[2]:x}) — die Minute davor ist der Kandidat.")
+        print("    Takt min misst nur den Augenblick der Probe; im Leerlauf sind 1500 MHz normal.")
+
     print("\n=== Wunschliste: gesehen und versucht? ===")
     tabelle(con.execute(
         "select w.call, "

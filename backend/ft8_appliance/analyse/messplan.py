@@ -68,7 +68,7 @@ KERN_PICK_ATTEMPT = frozenset({
 TELEMETRIE_TABELLEN = frozenset({
     "pick_attempt", "pick_candidate", "state_time_daily", "filter_drop_daily",
     "band_noise", "solar_log", "swr_log", "path_prediction", "psk_reporter_in",
-    "versorgung_log",
+    "versorgung_log", "pi_waerme_log",
 })
 
 _GATE_STUFEN = "Jede Gate-Stufe einzeln"
@@ -310,6 +310,20 @@ MESSPLAN: tuple[Messung, ...] = (
         seit=date(2026, 10, 6),
         quelle="Ausfall des IC-7300 am 02.10.2026 am Ende einer Aussendung; "
                "die Spannung stand nirgends, das Netzteil liess sich nicht belegen.",
+    ),
+    Messung(
+        "pi_waerme", "dauerhaft",
+        "Wann und wobei erreicht der Pi seine Temperaturgrenze, und drosselt er dabei den Takt?",
+        ("pi_waerme_log",),
+        "Pi-Waerme: wann wird er heiss, und drosselt er?",
+        "Eine Minute mit Throttle-Bit 1-3 (jetzt gedrosselt) oder ueber 75 °C: "
+        "Uhrzeit, Last und Luefter ansehen und Ursache suchen (Raum, Luefter, "
+        "Lastspitze). Steigt der Tageshoechstwert ueber Wochen bei gleicher Last, "
+        "Luefter und Kuehlkoerper reinigen. Bleibt alles unter 70 °C und Bit 1-3 "
+        "nie gesetzt, reicht die Kuehlung.",
+        seit=date(2026, 10, 31),
+        quelle="pi-check 31.10.2026: get_throttled 0xe0000 nach 18 Tagen Laufzeit, "
+               "Zeitpunkt nicht feststellbar.",
     ),
     Messung(
         "zeit_je_zustand", "dauerhaft",

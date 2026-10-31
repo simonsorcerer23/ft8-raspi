@@ -334,6 +334,21 @@ class VersorgungLog(Base):
 
 
 # ---------------------------------------------------------------------------
+class PiWaermeLog(Base):
+    """Temperatur, Luefter, Takt und Throttle-Fahnen des Pi, einmal je Minute."""
+    __tablename__ = "pi_waerme_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    luefter_upm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    takt_mhz: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Rohwert von vcgencmd get_throttled; Bits 0-3 jetzt, 16-19 seit dem Start
+    throttled: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_1min: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 class Blacklist(Base):
     __tablename__ = "blacklist"
 

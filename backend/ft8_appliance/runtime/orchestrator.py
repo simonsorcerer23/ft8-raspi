@@ -1243,6 +1243,8 @@ class Orchestrator:
             self._spawn(self._upload_stau_waechter_loop(), name="upload-stau-waechter")
         self._spawn(self._daily_summary_loop(), name="daily-summary")
         self._spawn(self._monats_pruefung_loop(), name="monats-pruefung")
+        if self.db_enabled and Path("/sys/class/thermal/thermal_zone0/temp").exists():
+            self._spawn(self._pi_waerme_loop(), name="pi-waerme")
         self._spawn(self._continent_prior_loop(), name="continent-prior")
         self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
         if (
@@ -1333,6 +1335,33 @@ class Orchestrator:
             # notify-unit wartet darauf bevor "active" gemeldet wird.
             self._sd.notify("READY=1")
             log.info("sd_notify: READY=1 (systemd liveness aktiv, WATCHDOG alle 10s)")
+
+    _PI_WAERME_TAKT_S: typing.ClassVar[int] = 60
+
+    async def _pi_waerme_loop(self) -> None:
+        """Schreibt einmal je Minute Temperatur, Luefter, Takt und Throttle-Fahnen.
+
+        Seit 31.10.2026: get_throttled zeigte 0xe0000 (Temperaturgrenze seit
+        dem Start erreicht), aber wann und wobei, hielt nichts fest. Die
+        Fahnen 16-19 bleiben bis zum Neustart stehen; die erste Zeile, in der
+        sie auftauchen, datiert das Ereignis auf die Minute. Fail-soft.
+        """
+        from ..db.models import PiWaermeLog
+        from ..util.system_health import (
+            _read_cpu_temp, _read_throttled, read_arm_mhz, read_fan_rpm,
+        )
+        while True:
+            try:
+                hex_str, _ = await _read_throttled()
+                async with session_scope() as s:
+                    s.add(PiWaermeLog(
+                        ts=datetime.now(UTC), temp_c=_read_cpu_temp(),
+                        luefter_upm=read_fan_rpm(), takt_mhz=read_arm_mhz(),
+                        throttled=int(hex_str, 16) if hex_str else None,
+                        last_1min=os.getloadavg()[0]))
+            except Exception as exc:
+                log.debug("Pi-Waerme nicht gespeichert: %s", exc)
+            await asyncio.sleep(self._PI_WAERME_TAKT_S)
 
     async def _sd_heartbeat_loop(self) -> None:
         """Pingt systemd alle 10 s damit WatchdogSec=30 nicht greift.

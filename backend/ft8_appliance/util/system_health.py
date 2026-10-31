@@ -155,6 +155,27 @@ async def _read_throttled() -> tuple[str | None, bool]:
     return hex_str, int(hex_str, 16) != 0
 
 
+def _read_int(muster: str) -> int | None:
+    """Erste lesbare Ganzzahl aus einer sysfs-Datei (Glob, weil hwmonN wechselt)."""
+    for p in sorted(Path("/").glob(muster.lstrip("/"))):
+        try:
+            return int(p.read_text().strip())
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def read_fan_rpm() -> int | None:
+    """Drehzahl des Pi-5-Luefters (pwm-fan), None ohne Luefter."""
+    return _read_int("/sys/devices/platform/cooling_fan/hwmon/hwmon*/fan1_input")
+
+
+def read_arm_mhz() -> int | None:
+    """Aktueller Takt von CPU 0 in MHz."""
+    khz = _read_int("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
+    return khz // 1000 if khz is not None else None
+
+
 def _read_meminfo() -> tuple[int | None, int | None]:
     p = Path("/proc/meminfo")
     if not p.exists():
