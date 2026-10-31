@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.193.0 — 2026-10-31
+- feat: Pi-Waerme je Minute (Temperatur, Luefter, Takt, Throttle-Fahnen) — get_throttled zeigte 0xe0000, Zeitpunkt war nicht feststellbar; Messplan pi_waerme, Bilanzabschnitt
+
 ## v0.192.1 — 2026-10-18
 - fix: eigene Aussendung wird nicht mehr als Decode gefuehrt und nicht an PSK Reporter gemeldet — siebenmal 'DK9XR hoert DK9XR' 2000 Hz versetzt
 
