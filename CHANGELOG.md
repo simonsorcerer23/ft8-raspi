@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.193.4 — 2026-11-12
+- fix: Bandwechsel stellt den Filter aus dem Rig-Profil ein (Icom 3600 Hz) statt fest 2700 — galt als eigener Befehl, die Filterpruefung stellte nie zurueck
+
 ## v0.193.3 — 2026-11-12
 - fix: Controller stoppt vor rigctld und nimmt die PTT noch zurueck — systemd stoppte beide zugleich, am MK2-Pi lief set_ptt(False) mitten im Senden ins Leere
 
