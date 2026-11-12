@@ -674,6 +674,9 @@ class Orchestrator:
     _autopilot_last_eval_at: float = field(default=0.0, init=False)
     _autopilot_last_switch_at: float = field(default=0.0, init=False)
     _autopilot_last_reason: str | None = field(default=None, init=False)
+    # PSK-Reporter-Meldungen je Band im eigenen Feld (letzte 5 min) und wann geholt
+    _psk_bandaktivitaet: dict[str, int] = field(default_factory=dict, init=False)
+    _psk_bandaktivitaet_at: float = field(default=0.0, init=False)
     _autopilot_ft4_null_probe_counts: dict[str, int] = field(
         default_factory=dict, init=False
     )
@@ -1245,6 +1248,7 @@ class Orchestrator:
         self._spawn(self._monats_pruefung_loop(), name="monats-pruefung")
         if self.db_enabled and Path("/sys/class/thermal/thermal_zone0/temp").exists():
             self._spawn(self._pi_waerme_loop(), name="pi-waerme")
+        self._spawn(self._psk_bandaktivitaet_loop(), name="psk-bandaktivitaet")
         self._spawn(self._continent_prior_loop(), name="continent-prior")
         self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
         if (
@@ -5258,6 +5262,104 @@ class Orchestrator:
                 bands.append(name)
         return bands
 
+    _PSK_AKTIVITAET_TAKT_S: typing.ClassVar[float] = 300.0
+    # Aelter als drei Abrufe: lieber gar nicht schaetzen als mit altem Stand
+    _PSK_AKTIVITAET_MAX_ALTER_S: typing.ClassVar[float] = 900.0
+    # Unter so vielen Meldungen auf dem eigenen Band ist das Verhaeltnis Zufall
+    _PSK_AKTIVITAET_MIN_SPOTS: typing.ClassVar[int] = 5
+
+    async def _psk_bandaktivitaet_loop(self) -> None:
+        """Holt alle 5 Minuten die PSK-Aktivitaet je Band im eigenen Feld.
+
+        Nur mit Autopilot und ``autopilot_psk_aktivitaet``; sonst wartet die
+        Schleife. Fail-soft: Ohne Antwort bleibt der alte Stand, und der
+        veraltet nach ``_PSK_AKTIVITAET_MAX_ALTER_S`` von selbst.
+        """
+        from ..integrations.psk_bandaktivitaet import PskBandaktivitaet
+
+        client = PskBandaktivitaet()
+        await asyncio.sleep(20)  # Boot-grace
+        while True:
+            try:
+                op = self.config.operating
+                loc = self.config.operator.default_locator or ""
+                if op.autopilot_enabled and op.autopilot_psk_aktivitaet and loc:
+                    spots = await client.spots_je_band(loc)
+                    if spots:
+                        self._psk_bandaktivitaet = spots
+                        self._psk_bandaktivitaet_at = time.monotonic()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.debug("psk-bandaktivitaet: %s", exc)
+            await asyncio.sleep(self._PSK_AKTIVITAET_TAKT_S)
+
+    def _autopilot_psk_schaetzung(
+        self,
+        stats: dict[tuple[str, str], AutopilotStats],
+        active_band: str | None,
+    ) -> tuple[dict[tuple[str, str], AutopilotStats], bool]:
+        """Decodes fuer die Baender schaetzen, auf denen das Rig nicht steht.
+
+        Die eigenen Decodes zaehlen nur auf dem aktiven Band. Fuer die anderen
+        rechnet die PSK-Aktivitaet im eigenen Feld sie hoch: eigene Decodes
+        mal (Meldungen dort / Meldungen hier). Anrufversuche und Vollendungen
+        bleiben, was sie sind — die gibt es nur fuer das aktive Band, und
+        damit behaelt ein Band, auf dem es laeuft, seinen Vorsprung.
+
+        Liefert unveraendert zurueck, wenn der Schalter aus ist, die Daten zu
+        alt sind oder auf dem aktiven Band zu wenig gemeldet wurde.
+        """
+        op = self.config.operating
+        psk = self._psk_bandaktivitaet
+        if (
+            not op.autopilot_psk_aktivitaet
+            or active_band is None
+            or not psk
+            or time.monotonic() - self._psk_bandaktivitaet_at > self._PSK_AKTIVITAET_MAX_ALTER_S
+        ):
+            return stats, False
+        hier = psk.get(active_band, 0)
+        if hier < self._PSK_AKTIVITAET_MIN_SPOTS:
+            return stats, False
+        neu = dict(stats)
+        for (band, mode), st in stats.items():
+            if band == active_band:
+                continue
+            eigene = stats.get((active_band, mode))
+            if eigene is None:
+                continue
+            geschaetzt = round(eigene.decodes * psk.get(band, 0) / hier)
+            neu[(band, mode)] = AutopilotStats(
+                band=band, mode=mode, decodes=max(st.decodes, geschaetzt),
+                attempts=st.attempts, completed=st.completed,
+            )
+        return neu, True
+
+    async def _autopilot_bandwechsel_merken(
+        self, von_band: str | None, decision: AutopilotDecision,
+        psk_genutzt: bool, grund: str,
+    ) -> None:
+        """Schreibt den Wechsel nach bandwechsel_log (Messplan autopilot_psk)."""
+        if not self.db_enabled or decision.band == von_band:
+            return
+        from ..db.models import BandwechselLog
+
+        psk = self._psk_bandaktivitaet if (
+            time.monotonic() - self._psk_bandaktivitaet_at <= self._PSK_AKTIVITAET_MAX_ALTER_S
+        ) else {}
+        try:
+            async with session_scope() as s:
+                s.add(BandwechselLog(
+                    ts=datetime.now(UTC), von_band=von_band, nach_band=decision.band,
+                    nach_modus=decision.mode,
+                    psk_von=psk.get(von_band) if (psk and von_band) else None,
+                    psk_nach=psk.get(decision.band) if psk else None,
+                    psk_genutzt=psk_genutzt, grund=grund[:400],
+                ))
+        except Exception as exc:
+            log.debug("Bandwechsel nicht gespeichert: %s", exc)
+
     async def _autopilot_collect_stats(
         self, bands: list[str], modes: list[str]
     ) -> dict[tuple[str, str], AutopilotStats]:
@@ -5682,6 +5784,7 @@ class Orchestrator:
             self._autopilot_last_switch_at > 0
             and now - self._autopilot_last_switch_at < op.autopilot_cooldown_min * 60
         )
+        psk_genutzt = False
         if in_cooldown:
             if not self._autopilot_ft4_probe_due(active_band, current_mode, modes, now):
                 return
@@ -5689,6 +5792,7 @@ class Orchestrator:
             decision = self._autopilot_ft4_probe_escape(active_band, modes, stats)
         else:
             stats = await self._autopilot_collect_stats(bands, modes)
+            stats, psk_genutzt = self._autopilot_psk_schaetzung(stats, active_band)
             decision = self._autopilot_decision(active_band, current_mode, stats)
         if decision is None:
             return
@@ -5707,7 +5811,11 @@ class Orchestrator:
             decision,
             stats,
         )
+        if psk_genutzt and self._psk_bandaktivitaet:
+            reason += "; psk " + ", ".join(
+                f"{b}={self._psk_bandaktivitaet.get(b, 0)}" for b in bands)
         await self._apply_autopilot_target(decision.band, decision.mode, reason)
+        await self._autopilot_bandwechsel_merken(active_band, decision, psk_genutzt, reason)
         self._autopilot_last_switch_at = now
         self._autopilot_last_reason = reason
         self._push_status()

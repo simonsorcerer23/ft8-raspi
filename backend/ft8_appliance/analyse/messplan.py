@@ -68,7 +68,7 @@ KERN_PICK_ATTEMPT = frozenset({
 TELEMETRIE_TABELLEN = frozenset({
     "pick_attempt", "pick_candidate", "state_time_daily", "filter_drop_daily",
     "band_noise", "solar_log", "swr_log", "path_prediction", "psk_reporter_in",
-    "versorgung_log", "pi_waerme_log",
+    "versorgung_log", "pi_waerme_log", "bandwechsel_log",
 })
 
 _GATE_STUFEN = "Jede Gate-Stufe einzeln"
@@ -324,6 +324,26 @@ MESSPLAN: tuple[Messung, ...] = (
         seit=date(2026, 10, 31),
         quelle="pi-check 31.10.2026: get_throttled 0xe0000 nach 18 Tagen Laufzeit, "
                "Zeitpunkt nicht feststellbar.",
+    ),
+    Messung(
+        "autopilot_psk", "laufend",
+        "Waehlt der Autopilot mit der PSK-Aktivitaet im eigenen Feld ein Band, auf dem "
+        "danach mehr QSOs gelingen als davor?",
+        ("bandwechsel_log", "config:autopilot_psk_aktivitaet"),
+        "Autopilot: Bandwechsel und QSOs davor/danach",
+        "Ab 10 Wechseln mit psk_genutzt: QSOs in der Stunde nach dem Wechsel gegen die "
+        "Stunde davor. Liegt danach im Mittel nicht darunter, bleibt der Schalter an. "
+        "Liegt es bei mindestens zwei Dritteln der Wechsel darunter, Schalter aus. "
+        "Weniger als 10 Wechsel bis zum Lesetermin: weiterlaufen lassen, 14 Tage spaeter "
+        "erneut lesen.",
+        lesen_ab=date(2026, 11, 26),
+        danach="Sebastian entscheidet ueber den Schalter. Bleibt er an, ist er auch "
+               "der Kandidat fuer die Station, sobald dort eine Mehrbandantenne ohne "
+               "Abstimmung haengt. bandwechsel_log ist klein und laeuft weiter.",
+        seit=date(2026, 11, 12),
+        quelle="MK2 an Raymonds Antenne (15/10 m fuer DO3XR), 12.11.2026: Der Autopilot "
+               "zaehlte nur das aktive Band; psk-freq.pl zeigte 15 m mit 106 Meldungen "
+               "gegen 10 m mit 8 im Feld JN58.",
     ),
     Messung(
         "zeit_je_zustand", "dauerhaft",

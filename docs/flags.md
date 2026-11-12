@@ -239,6 +239,8 @@ Der Hunt-Autopilot (`autopilot_enabled`, `autopilot_allowed_bands`, Fenster `aut
 
 Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne setzen, `autopilot_allowed_bands` prüfen, `autopilot_enabled: true`.
 
+Seit 2026-11-12: `autopilot_psk_aktivitaet` (ab Werk aus). Der Autopilot zählt Decodes nur auf dem Band, auf dem das Rig steht; für die anderen erlaubten Bänder hatte er nur die Tageszeit-Prior und wechselte deshalb erst, wenn das eigene Band einschlief. Mit dem Schalter holt er alle 5 Minuten bei PSK Reporter (`psk-freq.pl?grid=<Feld>`), wie viel im eigenen 4-stelligen Feld je Band gemeldet wurde, und rechnet die eigenen Decodes damit auf die anderen Bänder hoch. Anrufversuche und Vollendungen bleiben echte Zahlen des aktiven Bands, ein Band, auf dem es läuft, behält also seinen Vorsprung. Ohne frische Daten (älter als 15 min) oder mit weniger als 5 Meldungen auf dem eigenen Band entscheidet er wie vorher. Jeder Wechsel landet in `bandwechsel_log`; Auswertung in `scripts/qso_bilanz.py` („Autopilot: Bandwechsel und QSOs davor/danach“), Messplan `autopilot_psk`.
+
 
 ### Nachtrag 2026-09-08: adaptiver Fallback, Wiederholungen, Kontinent-Gate
 

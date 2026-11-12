@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import (BandNoise, Decode, Heard, PathPrediction, PickAttempt,
+from .models import (BandNoise, BandwechselLog, Decode, Heard, PathPrediction, PickAttempt,
                      PiWaermeLog, PskReporterIn, Qso, SolarLog, SwrLog,
                      VersorgungLog)
 
@@ -28,6 +28,7 @@ _TELEMETRY_TABLES = (
     (SwrLog, SwrLog.ts),
     (VersorgungLog, VersorgungLog.ts),
     (PiWaermeLog, PiWaermeLog.ts),
+    (BandwechselLog, BandwechselLog.ts),
     (PskReporterIn, PskReporterIn.ts),
     (SolarLog, SolarLog.ts),
     (BandNoise, BandNoise.ts),

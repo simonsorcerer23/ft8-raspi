@@ -349,6 +349,27 @@ class PiWaermeLog(Base):
 
 
 # ---------------------------------------------------------------------------
+class BandwechselLog(Base):
+    """Jeder Bandwechsel des Autopiloten, mit der PSK-Aktivitaet beider Baender.
+
+    Seit 2026-11-12 (Messplan "autopilot_psk"): Ob ein Wechsel etwas brachte,
+    zeigen die QSOs davor und danach; dafuer muss der Zeitpunkt feststehen.
+    """
+    __tablename__ = "bandwechsel_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    von_band: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    nach_band: Mapped[str] = mapped_column(String(8))
+    nach_modus: Mapped[str] = mapped_column(String(4))
+    # Meldungen im eigenen Feld (letzte 5 min); None ohne PSK-Daten
+    psk_von: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    psk_nach: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # True, wenn die PSK-Schaetzung in die Entscheidung einging
+    psk_genutzt: Mapped[bool] = mapped_column(Boolean, default=False)
+    grund: Mapped[str] = mapped_column(String(400))
+
+# ---------------------------------------------------------------------------
 class Blacklist(Base):
     __tablename__ = "blacklist"
 

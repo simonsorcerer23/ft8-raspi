@@ -1738,6 +1738,38 @@ def main() -> int:
                   f"{fahne[1]:.1f} °C (throttled=0x{fahne[2]:x}) — die Minute davor ist der Kandidat.")
         print("    Takt min misst nur den Augenblick der Probe; im Leerlauf sind 1500 MHz normal.")
 
+    print("\n=== Autopilot: Bandwechsel und QSOs davor/danach ===")
+    # Seit 2026-11-12 (Messplan autopilot_psk). Je Wechsel die QSOs in der
+    # Stunde davor und danach; getrennt danach, ob die PSK-Schaetzung einging.
+    try:
+        wechsel = con.execute(
+            "select w.ts, w.von_band, w.nach_band, w.psk_von, w.psk_nach, w.psk_genutzt,"
+            "  (select count(*) from qso q where q.qso_end >= datetime(w.ts, '-60 minutes')"
+            "     and q.qso_end < w.ts),"
+            "  (select count(*) from qso q where q.qso_end >= w.ts"
+            "     and q.qso_end < datetime(w.ts, '+60 minutes'))"
+            " from bandwechsel_log w order by w.ts").fetchall()
+    except sqlite3.OperationalError:
+        wechsel = []
+    if not wechsel:
+        print("    keine Wechsel (Tabelle leer)")
+    else:
+        tabelle([(str(ts)[:16], f"{v or '?'} -> {n}", pv if pv is not None else "-",
+                  pn if pn is not None else "-", "ja" if g else "nein", vor, nach)
+                 for ts, v, n, pv, pn, g, vor, nach in wechsel[-20:]],
+                ("Zeit (UTC)", "Wechsel", "PSK von", "PSK nach", "PSK genutzt",
+                 "QSOs 1 h davor", "1 h danach"))
+        for genutzt in (1, 0):
+            teil = [(vor, nach) for *_, g, vor, nach in wechsel if bool(g) == bool(genutzt)]
+            if teil:
+                schlechter = sum(1 for vor, nach in teil if nach < vor)
+                print(f"    PSK {'genutzt' if genutzt else 'nicht genutzt'}: {len(teil)} Wechsel, "
+                      f"davor {sum(v for v, _ in teil) / len(teil):.1f}, danach "
+                      f"{sum(n for _, n in teil) / len(teil):.1f} QSOs je Stunde, "
+                      f"{schlechter} davon schlechter")
+        print("    Die Stunde danach enthaelt auch Tageszeit und Ausbreitung; erst"
+              " viele Wechsel trennen das vom Bandwechsel.")
+
     print("\n=== Wunschliste: gesehen und versucht? ===")
     tabelle(con.execute(
         "select w.call, "

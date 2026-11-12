@@ -434,6 +434,9 @@ class OperatingConfig(BaseModel):
     autopilot_ft4_null_probe_threshold: int = Field(default=2, ge=1, le=20)
     autopilot_ft4_null_cooldown_min: int = Field(default=120, ge=5, le=1440)
     autopilot_ft4_null_cooldown_max_min: int = Field(default=360, ge=5, le=1440)
+    # 2026-11-12: PSK-Reporter-Aktivitaet im eigenen Feld als Schaetzwert fuer
+    # die Baender, auf denen das Rig gerade nicht steht. Messplan "autopilot_psk".
+    autopilot_psk_aktivitaet: bool = False
     # Directed CQ (Sebastian Audit F7, v0.3.4): wenn gesetzt, sendet der
     # CQ-Loop "CQ <target> <call> <grid>" statt nur "CQ <call> <grid>".
     # Standard-Targets: DX (nur DX-Stationen), EU/NA/SA/AS/AF/OC (Kontinent),
