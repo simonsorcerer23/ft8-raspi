@@ -26,6 +26,9 @@ _PATTERNS: list[tuple[re.Pattern[str], str, str, str]] = [
     (re.compile(r"usb-Icom_Inc\._IC-705-"),  "ic705",  "high", "Icom IC-705"),
     (re.compile(r"usb-Icom_Inc\._IC-9700-"), "ic9700", "high", "Icom IC-9700"),
     (re.compile(r"usb-Icom_Inc\._IC-7610-"), "ic7610", "high", "Icom IC-7610"),
+    # IC-7300MK2 (2026-11-12 am Geraet gesehen): native USB statt CP2102,
+    # zwei CDC-Ports. if00 ist CI-V, if02 der zweite Port — nur if00 nehmen.
+    (re.compile(r"usb-Icom_Inc\._IC-7300MK2_.*-if00$"), "ic7300mk2", "high", "Icom IC-7300MK2"),
     # QRP Labs QMX/QMX+: native USB-CDC vom STM32 onboard, eindeutig
     # erkennbar an "QRP_Labs" im Hersteller-String. Wir mappen
     # generisch auf qmx_plus, da QMX und QMX+ aus Software-Sicht

@@ -155,12 +155,31 @@ apt-get install -y --no-install-recommends \
 
 # ----------------------------------------------------------------------------
 section "2/8  Directories"
-install -d -o "${APP_USER}" -g "${APP_GROUP}" "${ETC_DIR}" "${LOG_DIR}" "${LIB_DIR}" "${TILES_DIR}"
+# Hat dienstbenutzer-einrichten.sh schon umgestellt, steht der Dienstbenutzer
+# in install.env. Bis 2026-11-12 vergass ein zweiter Lauf ihn: Units, Daten
+# und /etc/ft8-appliance gehoerten danach wieder dem APP_USER (mit sudo).
+SERVICE_USER=""
+SERVICE_GROUP=""
+if [ -r "${INSTALL_ENV}" ]; then
+    SERVICE_USER="$(. "${INSTALL_ENV}"; echo "${SERVICE_USER:-}")"
+    SERVICE_GROUP="$(. "${INSTALL_ENV}"; echo "${SERVICE_GROUP:-}")"
+fi
+if [ -n "${SERVICE_USER}" ]; then
+    SERVICE_GROUP="${SERVICE_GROUP:-${SERVICE_USER}}"
+    install -d -o "${SERVICE_USER}" -g "${SERVICE_GROUP}" "${LOG_DIR}" "${LIB_DIR}" "${TILES_DIR}"
+    [ -d "${ETC_DIR}" ] || install -d -m 1775 -o root -g "${SERVICE_GROUP}" "${ETC_DIR}"
+else
+    install -d -o "${APP_USER}" -g "${APP_GROUP}" "${ETC_DIR}" "${LOG_DIR}" "${LIB_DIR}" "${TILES_DIR}"
+fi
 {
     printf 'APP_USER=%q\n' "${APP_USER}"
     printf 'APP_GROUP=%q\n' "${APP_GROUP}"
     printf 'APP_HOME=%q\n' "${APP_HOME}"
     printf 'APP_DIR=%q\n' "${APP_DIR}"
+    if [ -n "${SERVICE_USER}" ]; then
+        printf 'SERVICE_USER=%q\n' "${SERVICE_USER}"
+        printf 'SERVICE_GROUP=%q\n' "${SERVICE_GROUP}"
+    fi
 } > "${INSTALL_ENV}"
 chown root:root "${INSTALL_ENV}"
 chmod 644 "${INSTALL_ENV}"
@@ -225,8 +244,13 @@ network:
 ui:
   language: de
 YAML
-    chown "${APP_USER}:${APP_GROUP}" "${ETC_DIR}/config.yaml"
-    chmod 640 "${ETC_DIR}/config.yaml"
+    if [ -n "${SERVICE_USER}" ]; then
+        chown "${SERVICE_USER}:${SERVICE_GROUP}" "${ETC_DIR}/config.yaml"
+        chmod 600 "${ETC_DIR}/config.yaml"
+    else
+        chown "${APP_USER}:${APP_GROUP}" "${ETC_DIR}/config.yaml"
+        chmod 640 "${ETC_DIR}/config.yaml"
+    fi
     echo "wrote default ${ETC_DIR}/config.yaml — EDIT IT before enabling services"
     echo "generated AP fallback PSK: ${AP_PSK}"
 fi
@@ -269,12 +293,15 @@ visudo -c -f /etc/sudoers.d/ft8-self-update >/dev/null
 # Only rendered when the configured serial device actually exists. Writing an
 # envfile for a rig that is not plugged in produces a config that looks
 # verified but points at nothing.
-RIG_DEV="$(sudo -u "${APP_USER}" "${APP_DIR}/backend/.venv/bin/python" -c "
+#
+# Als root: config.yaml gehoert mit Dienstbenutzer nur diesem (600), und nach
+# /etc/default darf nur root schreiben. Unter APP_USER scheiterte beides.
+RIG_DEV="$("${APP_DIR}/backend/.venv/bin/python" -c "
 from ft8_appliance.config import load_config
 print(load_config('${ETC_DIR}/config.yaml').rig.serial_device)
 ")"
 if [ -e "${RIG_DEV}" ]; then
-    sudo -u "${APP_USER}" "${APP_DIR}/backend/.venv/bin/python" -c "
+    "${APP_DIR}/backend/.venv/bin/python" -c "
 from ft8_appliance.config import load_config
 from ft8_appliance.rig import write_rigctld_envfile
 cfg = load_config('${ETC_DIR}/config.yaml')

@@ -65,8 +65,21 @@ units_neu() {
     systemctl daemon-reload
 }
 
+# Nur wieder starten, was vorher lief: Auf einem frisch eingerichteten Pi
+# ohne Rig sind beide Dienste aus, und ein Start von rigctld scheitert dort
+# (keine /etc/default/ft8-rigctld). Bis 2026-11-12 brach das Skript daran ab.
+CONTROLLER_LIEF=0
+merke_lauf() {
+    systemctl is-active --quiet ft8-controller && CONTROLLER_LIEF=1 || true
+}
+wieder_starten() {
+    systemctl try-restart ft8-rigctld
+    [ "${CONTROLLER_LIEF}" = 1 ] && systemctl start ft8-controller || true
+}
+
 if [ "${1:-}" = "--zurueck" ]; then
     echo "== Zurueck auf ${APP_USER}"
+    merke_lauf
     systemctl stop ft8-controller
     setze_env SERVICE_USER ""
     setze_env SERVICE_GROUP ""
@@ -76,8 +89,7 @@ if [ "${1:-}" = "--zurueck" ]; then
     find "${ETC}" -maxdepth 1 -name 'config.yaml*' -user "${DIENST}" -exec chown "${APP_USER}:${APP_USER}" {} +
     rm -rf /dev/shm/ft8-jt9
     units_neu
-    systemctl restart ft8-rigctld
-    systemctl start ft8-controller
+    wieder_starten
     echo "== fertig — Controller und rigctld laufen wieder als ${APP_USER}"
     exit 0
 fi
@@ -122,6 +134,7 @@ for f in "${ETC}/config.yaml" "${ETC}/config.yaml.bak"; do
 done
 
 echo "== Units und sudoers"
+merke_lauf
 systemctl stop ft8-controller
 setze_env SERVICE_USER "${DIENST}"
 setze_env SERVICE_GROUP "${DIENST}"
@@ -129,6 +142,5 @@ setze_env SERVICE_GROUP "${DIENST}"
 # APP_USER. tmpfs, wird neu angelegt.
 rm -rf /dev/shm/ft8-jt9
 units_neu
-systemctl restart ft8-rigctld
-systemctl start ft8-controller
+wieder_starten
 echo "== fertig — Controller und rigctld laufen als ${DIENST}"

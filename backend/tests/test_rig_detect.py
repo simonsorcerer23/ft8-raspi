@@ -87,3 +87,15 @@ def test_as_dict_shape(tmp_path: Path) -> None:
     d = detect_rigs(by_id_dir=root)[0].as_dict()
     assert set(d.keys()) == {"model", "confidence", "serial_device", "description"}
     assert d["description"].startswith("Icom IC-705")
+
+
+def test_detect_ic7300mk2_native(tmp_path: Path) -> None:
+    """Das MK2 meldet sich nativ mit zwei CDC-Ports (2026-11-12 am Geraet);
+    nur if00 ist CI-V. Bis dahin wurde es gar nicht erkannt."""
+    root = _seed(tmp_path, [
+        "usb-Icom_Inc._IC-7300MK2_IC-7300MK2_13005079-if00",
+        "usb-Icom_Inc._IC-7300MK2_IC-7300MK2_13005079-if02",
+    ])
+    d = detect_rigs(by_id_dir=root)
+    assert [(x.model, x.confidence) for x in d] == [("ic7300mk2", "high")]
+    assert d[0].serial_device.endswith("-if00")

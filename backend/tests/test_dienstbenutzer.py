@@ -107,3 +107,38 @@ def test_sudoers_ist_gueltig(tmp_path: Path) -> None:
     r = subprocess.run(["visudo", "-c", "-f", str(aus / "sudoers.d" / "ft8-self-update")],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ------------------------------------------------------------------ zweiter install.sh-Lauf
+
+INSTALL = WURZEL / "deploy" / "install.sh"
+EINRICHTEN = WURZEL / "deploy" / "dienstbenutzer-einrichten.sh"
+
+
+def test_install_behaelt_den_dienstbenutzer() -> None:
+    """Am 2026-11-12 am MK2-Pi: Der zweite install.sh-Lauf (nach dem Anstecken
+    des Rigs, so steht es im Runbook) schrieb install.env ohne SERVICE_USER
+    neu und gab Daten und /etc/ft8-appliance dem APP_USER zurueck."""
+    s = INSTALL.read_text()
+    assert "printf 'SERVICE_USER=%q\\n'" in s
+    assert 'SERVICE_USER="$(. "${INSTALL_ENV}"; echo "${SERVICE_USER:-}")"' in s
+    # Das pauschale install -d -o APP_USER gilt nur ohne Dienstbenutzer.
+    zeile = 'install -d -o "${APP_USER}" -g "${APP_GROUP}" "${ETC_DIR}"'
+    vorher = s[: s.index(zeile)]
+    assert vorher.rstrip().endswith("else")
+
+
+def test_install_liest_config_als_root() -> None:
+    """config.yaml ist mit Dienstbenutzer 600; nach /etc/default darf nur root."""
+    s = INSTALL.read_text()
+    block = s[s.index("RIG_DEV="): s.index("SKIP /etc/default/ft8-rigctld")]
+    assert 'sudo -u "${APP_USER}"' not in block
+
+
+def test_einrichten_startet_nur_was_lief() -> None:
+    """Ohne Rig ist rigctld aus und laesst sich nicht starten; das Skript brach
+    daran ab (2026-11-12)."""
+    s = EINRICHTEN.read_text()
+    assert "systemctl restart ft8-rigctld" not in s
+    assert "systemctl try-restart ft8-rigctld" in s
+    assert s.count("merke_lauf\n") >= 2 and s.count("wieder_starten\n") >= 2
