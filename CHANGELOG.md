@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.194.0 — 2026-11-12
+- feat: Autopilot schaetzt die anderen Baender aus der PSK-Reporter-Aktivitaet im eigenen Feld — zaehlte nur das aktive Band und wechselte erst, wenn es einschlief; Schalter autopilot_psk_aktivitaet, bandwechsel_log, Messplan autopilot_psk
+
 ## v0.193.4 — 2026-11-12
 - fix: Bandwechsel stellt den Filter aus dem Rig-Profil ein (Icom 3600 Hz) statt fest 2700 — galt als eigener Befehl, die Filterpruefung stellte nie zurueck
 
