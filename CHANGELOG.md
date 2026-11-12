@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.193.1 — 2026-11-12
+- fix: zweiter install.sh-Lauf nimmt den Dienstbenutzer nicht mehr zurueck, IC-7300MK2 wird erkannt — am MK2-Pi liefen Units und Daten danach wieder als Anmeldebenutzer mit sudo
+
 ## v0.193.0 — 2026-10-31
 - feat: Pi-Waerme je Minute (Temperatur, Luefter, Takt, Throttle-Fahnen) — get_throttled zeigte 0xe0000, Zeitpunkt war nicht feststellbar; Messplan pi_waerme, Bilanzabschnitt
 
