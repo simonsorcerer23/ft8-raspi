@@ -340,14 +340,14 @@ else
 fi
 
 section "7/8  gpsd configuration"
-# Point gpsd at the u-blox VK-162. Prefer the /dev/serial/by-id/ symlink over
-# the bare /dev/ttyACM0: the kernel name shifts as soon as a second ACM device
-# (some rigs enumerate as one) is plugged in, and gpsd would then talk to the
-# rig instead of the GPS.
+# Point gpsd at the u-blox VK-162, nur ueber seinen /dev/serial/by-id/-Namen.
+# Bis 2026-11-12 galt /dev/ttyACM0 als Rueckfall: Das IC-7300MK2 meldet sich
+# selbst als ttyACM0 (CI-V), und gpsd lief am MK2-Pi auf dem CAT-Port des
+# Funkgeraets. Ein GPS ohne u-blox-Namen muss man von Hand eintragen.
 # Without a GPS attached, gpsd is left alone and chrony falls back to network
 # NTP. Pinning DEVICES to a non-existent node just makes gpsd fail on boot.
 GPS_DEV=""
-for cand in /dev/serial/by-id/*u-blox* /dev/ttyACM0; do
+for cand in /dev/serial/by-id/*u-blox*; do
     if [ -e "${cand}" ]; then
         GPS_DEV="${cand}"
         break

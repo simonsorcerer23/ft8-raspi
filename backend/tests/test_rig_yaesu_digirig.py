@@ -183,3 +183,11 @@ def test_waechter_faellt_ohne_rigctld_zeile_auf_die_distribution_zurueck() -> No
     """Eine Env-Datei von vor dem 08.10.2026 hat keine RIGCTLD-Zeile."""
     w = (WURZEL / "deploy/scripts/rigctld-waechter.sh").read_text()
     assert 'BIN="${RIGCTLD:-/usr/bin/rigctld}"' in w
+
+
+def test_installer_nimmt_kein_nacktes_ttyacm_fuer_gpsd() -> None:
+    """Am MK2-Pi (2026-11-12) war ttyACM0 der CI-V-Port des Funkgeraets, und
+    gpsd lief darauf. GPS nur ueber seinen by-id-Namen."""
+    s = (WURZEL / "deploy" / "install.sh").read_text()
+    schleife = re.search(r"for cand in ([^;]*); do", s[s.index("gpsd configuration"):]).group(1)
+    assert "ttyACM" not in schleife and "u-blox" in schleife
