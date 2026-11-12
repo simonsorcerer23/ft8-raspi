@@ -1,7 +1,12 @@
 [Unit]
 Description=FT8 Raspi Appliance Controller
 Documentation=file://@APP_DIR@/architecture.md
-After=network-online.target gpsd.service chrony.service
+# ft8-rigctld nur als Reihenfolge, nicht in Wants: Beim Stoppen (auch
+# Herunterfahren) geht so erst der Controller und nimmt die PTT zurueck,
+# solange rigctld noch antwortet. Ohne das stoppte systemd beide zugleich;
+# am MK2-Pi (2026-11-12) war rigctld mitten im Senden 1 ms frueher weg und
+# set_ptt(False) lief ins Leere.
+After=network-online.target gpsd.service chrony.service ft8-rigctld.service
 Wants=network-online.target gpsd.service chrony.service
 StartLimitIntervalSec=120
 StartLimitBurst=5

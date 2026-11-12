@@ -142,3 +142,15 @@ def test_einrichten_startet_nur_was_lief() -> None:
     assert "systemctl restart ft8-rigctld" not in s
     assert "systemctl try-restart ft8-rigctld" in s
     assert s.count("merke_lauf\n") >= 2 and s.count("wieder_starten\n") >= 2
+
+
+def test_controller_stoppt_vor_rigctld(tmp_path: Path) -> None:
+    """systemd stoppt in umgekehrter After=-Reihenfolge. Ohne die Kante
+    gingen beide zugleich, und die PTT liess sich nicht mehr zuruecknehmen
+    (MK2-Pi, 2026-11-12)."""
+    aus = _render(tmp_path, SERVICE_USER="ft8", SERVICE_GROUP="ft8")
+    unit = (aus / "systemd" / "ft8-controller.service").read_text()
+    after = [z for z in unit.splitlines() if z.startswith("After=")]
+    assert after and "ft8-rigctld.service" in after[0].split()
+    wants = " ".join(z for z in unit.splitlines() if z.startswith(("Wants=", "Requires=", "BindsTo=")))
+    assert "ft8-rigctld" not in wants
