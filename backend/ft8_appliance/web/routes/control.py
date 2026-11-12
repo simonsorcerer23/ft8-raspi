@@ -453,7 +453,12 @@ async def switch_band(
         # Sebastian 2026-05-24: ueber handle_set_mode statt direkt auf
         # rig.set_mode, damit die Echo-Registrierung den Tamper-Detector
         # nicht versehentlich triggert.
-        await orch.handle_set_mode("PKTUSB", 2700)
+        # 2026-11-12: Betriebsart und Filterbreite aus dem Rig-Profil wie beim
+        # Restore. Fest "2700" stellte die Icoms aufs schmalere Filter, und weil
+        # es als eigener Befehl galt, stellte die Filterpruefung nie zurueck.
+        from ...runtime.orchestrator import _rig_profil_von
+        _pf = _rig_profil_von(orch.config)
+        await orch.handle_set_mode(_pf.digital_mode, _pf.mode_width_hz)
         # Auto-switch antenna if active one doesn't cover the new band
         ant = next(
             (a for a in orch.config.antennas if req.band in a.bands),

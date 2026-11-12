@@ -72,3 +72,18 @@ def test_route_exists() -> None:
     with TestClient(create_app()) as c:
         r = c.post("/api/control/restore-rig")
         assert r.status_code in (200, 401, 403, 503)  # 503: Orchestrator im Test-App nicht gestartet
+
+
+@pytest.mark.asyncio
+async def test_bandwechsel_nimmt_filter_aus_dem_profil() -> None:
+    """Bis 2026-11-12 setzte /control/band fest PKTUSB 2700. Das galt als
+    eigener Befehl, also stellte die Filterpruefung nie auf 3600 zurueck
+    (MK2 nach dem Wechsel auf 15 m)."""
+    from ft8_appliance.web.routes.control import BandSwitchRequest, switch_band
+
+    o = _orch()
+    o.handle_set_freq = AsyncMock()
+    o.status = lambda: SimpleNamespace(state="IDLE")
+    r = await switch_band(BandSwitchRequest(band="20m"), o)
+    assert r.ok is True
+    o.rig.set_mode.assert_awaited_with("PKTUSB", 3600)

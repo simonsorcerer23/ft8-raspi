@@ -3878,8 +3878,8 @@ class Orchestrator:
         await self._ensure_dial_matches_mode(f"restore:{reason}")
         self._last_mode_alert = None
         self._last_bandwidth_alert_hz = None
-        log.info("Rig-Restore (%s): PKTUSB, 2700 Hz, Dial", reason)
-        return {"ok": True, "detail": "PKTUSB 2700 Hz"}
+        log.info("Rig-Restore (%s): %s, %d Hz, Dial", reason, _pf.digital_mode, _pf.mode_width_hz)
+        return {"ok": True, "detail": f"{_pf.digital_mode} {_pf.mode_width_hz} Hz"}
 
     def _schedule_rig_restore(self, reason: str) -> None:
         """Auto-Restore aus der Tamper-Erkennung, hoechstens alle 15 s."""
