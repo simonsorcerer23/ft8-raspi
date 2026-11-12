@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.193.3 — 2026-11-12
+- fix: Controller stoppt vor rigctld und nimmt die PTT noch zurueck — systemd stoppte beide zugleich, am MK2-Pi lief set_ptt(False) mitten im Senden ins Leere
+
 ## v0.193.2 — 2026-11-12
 - fix: gpsd nimmt nicht mehr /dev/ttyACM0 als Rueckfall — am MK2-Pi war das der CI-V-Port des Funkgeraets
 
