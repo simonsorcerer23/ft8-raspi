@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.193.2 — 2026-11-12
+- fix: gpsd nimmt nicht mehr /dev/ttyACM0 als Rueckfall — am MK2-Pi war das der CI-V-Port des Funkgeraets
+
 ## v0.193.1 — 2026-11-12
 - fix: zweiter install.sh-Lauf nimmt den Dienstbenutzer nicht mehr zurueck, IC-7300MK2 wird erkannt — am MK2-Pi liefen Units und Daten danach wieder als Anmeldebenutzer mit sudo
 
