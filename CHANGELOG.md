@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.194.1 — 2026-11-13
+- fix: TX-zu-spaet-Meldung nennt den echten Zaehler, die Zeit auf 0,01 s und was der Decoder tat — stand '1.5 s, Limit 1.5 s, 0x in Folge, auf standard zurueckgeschaltet', obwohl nur die Zweiteilung zurueckkam
+- docs: NVMe-Haenger am MK2-Pi — APST aus, Kernelmeldungen auf die SD-Karte
+
 ## v0.194.0 — 2026-11-12
 - feat: Autopilot schaetzt die anderen Baender aus der PSK-Reporter-Aktivitaet im eigenen Feld — zaehlte nur das aktive Band und wechselte erst, wenn es einschlief; Schalter autopilot_psk_aktivitaet, bandwechsel_log, Messplan autopilot_psk
 
