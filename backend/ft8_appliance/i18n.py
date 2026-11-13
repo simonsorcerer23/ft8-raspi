@@ -145,10 +145,14 @@ _DE: dict[str, str] = {
     ),
     "push.decoder_late_title": "🐢 FT8 Pi: Decoder-Last hoch",
     "push.tx_late_msg": (
-        "TX startet {latency} s nach der Slot-Grenze (Limit {max} s, {count}x in "
-        "Folge) — Partner-Decoder suchen nur ±2,5 s. Decoder auf 'standard' "
-        "zurueckgeschaltet."
+        "TX startete {latency} s nach der Slot-Grenze, {count}x in Folge über "
+        "dem Limit von {max} s — Partner-Decoder suchen nur ±2,5 s. {action}"
     ),
+    "push.tx_late_action_two_stage": (
+        "Decoder '{mode}' läuft jetzt zweistufig: Stufe 1 = standard, '{mode}' in Stufe 2."
+    ),
+    "push.tx_late_action_standard": "Decoder von '{mode}' auf 'standard' zurückgeschaltet.",
+    "push.tx_late_action_none": "Decoder läuft schon auf '{mode}', nichts umzuschalten.",
     "push.tx_late_title": "🐢 FT8 Pi: TX startet zu spaet",
     "push.freq_tamper_msg": (
         "Rig ist auf {mhz} MHz ({delta} Hz von {band}/{khz} kHz). Wer hat gedreht?"
@@ -394,10 +398,14 @@ _EN: dict[str, str] = {
     ),
     "push.decoder_late_title": "🐢 FT8 Pi: decoder load high",
     "push.tx_late_msg": (
-        "TX starts {latency} s after the slot boundary (limit {max} s, {count}x in "
-        "a row) — partner decoders only search ±2.5 s. Decoder switched back to "
-        "'standard'."
+        "TX started {latency} s after the slot boundary, {count}x in a row over "
+        "the {max} s limit — partner decoders only search ±2.5 s. {action}"
     ),
+    "push.tx_late_action_two_stage": (
+        "Decoder '{mode}' now runs in two stages: stage 1 = standard, '{mode}' in stage 2."
+    ),
+    "push.tx_late_action_standard": "Decoder switched from '{mode}' back to 'standard'.",
+    "push.tx_late_action_none": "Decoder already runs '{mode}', nothing to switch.",
     "push.tx_late_title": "🐢 FT8 Pi: TX starting late",
     "push.freq_tamper_msg": (
         "Rig is on {mhz} MHz ({delta} Hz off {band}/{khz} kHz). Who turned the dial?"

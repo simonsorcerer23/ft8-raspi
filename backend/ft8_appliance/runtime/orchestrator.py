@@ -10203,7 +10203,11 @@ class Orchestrator:
         )
         if self._consecutive_late_tx < 3:
             return True
+        # Fuer die Meldung festhalten, bevor ein Zweig den Zaehler nullt
+        # (bis 2026-11-13 stand dort "0x in Folge").
+        late_count = self._consecutive_late_tx
         mode = getattr(self.decode_source, "decoder_mode", "standard")
+        aktion = "push.tx_late_action_none"
         if mode in ("deep", "multi", "extreme") and not getattr(self.decode_source, "two_stage", True):
             # 2026-09-09 Multicore: Laeuft der volle Modus in Stufe 1
             # (decoder_late_pass: false) und macht den Sendestart zu spaet,
@@ -10219,6 +10223,7 @@ class Orchestrator:
             except Exception:
                 pass
             self._consecutive_late_tx = 0
+            aktion = "push.tx_late_action_two_stage"
         elif mode in ("deep", "multi", "extreme"):
             log.warning("decoder auto-fallback (TX zu spaet): %s -> standard", mode)
             # decode_source ist typisiert als Callable; die echte Pipeline
@@ -10229,6 +10234,7 @@ class Orchestrator:
                 setattr(self.decode_source, "_consecutive_late_slots", 0)
             except Exception:
                 pass
+            aktion = "push.tx_late_action_standard"
         now = time.monotonic()
         if now - self._last_tx_late_alert_at > 3600:
             self._last_tx_late_alert_at = now
@@ -10236,9 +10242,10 @@ class Orchestrator:
             if ntfy and ntfy.enabled:
                 try:
                     asyncio.create_task(ntfy.notify(
-                        _t("push.tx_late_msg", latency=f"{phase:.1f}",
+                        _t("push.tx_late_msg", latency=f"{phase:.2f}",
                            max=f"{op.tx_latency_max_s:.1f}",
-                           count=self._consecutive_late_tx),
+                           count=late_count,
+                           action=_t(aktion, mode=mode)),
                         title=_t("push.tx_late_title"),
                         priority="default",
                         tags=["warning"],

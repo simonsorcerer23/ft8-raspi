@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -279,3 +280,48 @@ async def test_rig_change_uses_the_new_rigs_stored_gain_when_present(tmp_path) -
     orch._audio_gain = 0.6
     await orch.on_config_changed(_cfg("ic705"))
     assert orch._audio_gain == pytest.approx(0.18)
+
+
+# ================================================================== Meldungstext
+
+
+async def _drei_spaete(orch: Orchestrator, mode: str, *, two_stage: bool) -> str:
+    """Drei spaete TX; gibt den ntfy-Text der Verspaetungsmeldung zurueck."""
+    gesendet: list[str] = []
+
+    async def notify(msg, **_kw):
+        gesendet.append(msg)
+
+    orch.integrations = SimpleNamespace(ntfy=SimpleNamespace(enabled=True, notify=notify))
+    orch._last_tx_late_alert_at = -1e9  # Stundensperre aus
+    orch.decode_source = SimpleNamespace(decoder_mode=mode, two_stage=two_stage,
+                                         _consecutive_late_slots=0)
+    for _ in range(3):
+        await _tx(orch, 1.53, in_slot=True)
+    await asyncio.sleep(0)
+    assert len(gesendet) == 1
+    return gesendet[0]
+
+
+@pytest.mark.asyncio
+async def test_meldung_nennt_zaehler_genaue_zeit_und_was_geschah(monkeypatch) -> None:
+    """Live 12.11.2026 am MK2: "TX startet 1.5 s ... (Limit 1.5 s, 0x in Folge)
+    ... Decoder auf 'standard' zurueckgeschaltet" — der Zaehler war schon
+    genullt, 1,53 s wurde zu 1.5 gerundet, und zurueckgeschaltet wurde nur
+    die Zweiteilung."""
+    from ft8_appliance import i18n
+    monkeypatch.setattr(i18n, "default_lang", lambda: "de")
+    text = await _drei_spaete(_orch(_cfg(tx_latency_max_s=1.5)), "extreme", two_stage=False)
+    assert "1.53 s" in text
+    assert "3x in Folge" in text
+    assert "zweistufig" in text and "zurückgeschaltet" not in text
+
+
+@pytest.mark.asyncio
+async def test_meldung_bei_rueckstufung_und_ohne_rueckstufung(monkeypatch) -> None:
+    from ft8_appliance import i18n
+    monkeypatch.setattr(i18n, "default_lang", lambda: "de")
+    text = await _drei_spaete(_orch(_cfg(tx_latency_max_s=1.5)), "extreme", two_stage=True)
+    assert "von 'extreme' auf 'standard' zurückgeschaltet" in text
+    text = await _drei_spaete(_orch(_cfg(tx_latency_max_s=1.5)), "standard", two_stage=True)
+    assert "schon auf 'standard'" in text
