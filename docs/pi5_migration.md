@@ -239,6 +239,19 @@ Seit 13.11. auf dem MK2-Pi:
   `/mnt/sdkarte/var/log/ft8-mk2/kernel.log`. Nach dem nächsten Hänger dort
   nach `nvme`, `timeout` und `blocked for more than` suchen.
 
+**Zweiter Hänger 13.11. 09:47:46, wieder beim Senden (FT4-CQ, 50 W), APST
+war schon aus.** Die SD-Mitschrift zeigt: `nvme nvme0: controller is down;
+will reset: CSTS=0xffffffff, PCI_STATUS=0xffff`, danach `Unable to change
+power state from D3cold to D0` und `Disabling device after reset failure`.
+Die NVMe war vom PCIe-Bus verschwunden; SMART danach ohne Fehler, ohne
+Eintrag im Fehlerprotokoll. Seitdem zusätzlich `pcie_aspm=off
+pcie_port_pm=off` (Vorschlag des Kernels) und die **NVMe-Wache**
+(`/usr/local/sbin/nvme-wache`, `nvme-wache.service`): Sie liest die
+Kernelmeldungen und startet den Pi per SysRq neu, sobald die NVMe weg ist
+(nicht in den ersten 10 Minuten nach dem Start, gegen Neustartschleifen).
+Nach dem Ereignis nutzt sie nur Bash-Bordmittel, weil sich von der Platte
+nichts mehr starten lässt.
+
 Hängt er trotz APST aus wieder beim Senden, ist Einstreuung wahrscheinlicher:
 Ferritkerne an USB- und Stromkabel, Pi weiter weg vom Rig, oder die SD-Karte
 als Bootmedium.
