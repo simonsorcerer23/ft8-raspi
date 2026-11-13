@@ -217,3 +217,28 @@ danach um 40 Tage vor, und dabei ging die Zuordnung der alten Einträge
 verloren. Kein Kernel-Panic, kein OOM, kein Dateisystemfehler auffindbar;
 die SSD ist intakt (`integrity_check ok`). Ein harter Strom- oder
 Spannungseinbruch passt zum Bild, beweisen lässt er sich nicht.
+
+## NVMe-Hänger am MK2-Pi (12.11.2026, Ursache offen)
+
+Der zweite Pi 5 (`ft8-mk2`, NVMe SK hynix HFS001TEJ9X162N) blieb am 12.11.
+um 18:20 stehen, eine Sekunde nach dem Start einer Aussendung (RR73, 50 W).
+Journal und Datenbank auf der NVMe enden dort, der Kernel lebte weiter
+(Ping die ganze Nacht), SSH brach beim Schlüsseltausch ab, Port 8000 war zu:
+Der systemd-Watchdog (30 s) beendete den Controller, und ohne Platte ließ
+er sich nicht neu starten. Temperatur 46–47 °C, `get_throttled` 0x0.
+In Frage kommen der NVMe-Stromsparmodus (APST) und HF-Einstreuung beim
+Senden; die Kernelmeldungen dazu gingen mit dem Neustart verloren.
+
+Seit 13.11. auf dem MK2-Pi:
+
+- APST aus: `nvme_core.default_ps_max_latency_us=0` in
+  `/boot/firmware/cmdline.txt` (Sicherung `cmdline.txt.vor-apst-2026-11-13`),
+  im laufenden Betrieb per `echo 0 > /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us`.
+- Kernelmeldungen gehen zeilenweise auf die SD-Karte (SDIO, nicht PCIe):
+  `mnt-sdkarte.mount` + `kernel-log-sd.service`, Datei
+  `/mnt/sdkarte/var/log/ft8-mk2/kernel.log`. Nach dem nächsten Hänger dort
+  nach `nvme`, `timeout` und `blocked for more than` suchen.
+
+Hängt er trotz APST aus wieder beim Senden, ist Einstreuung wahrscheinlicher:
+Ferritkerne an USB- und Stromkabel, Pi weiter weg vom Rig, oder die SD-Karte
+als Bootmedium.
