@@ -297,3 +297,87 @@ def test_kaputte_qrz_historie_haelt_den_start_nicht_auf(tmp_path) -> None:
     o._qrz_historie_pfad().write_text("{kein json")
     o._qrz_historie_laden()
     assert o._worked_calls == set()
+
+
+# ---------------------------------------------------------------------------
+# rigctld-Client: Fehlerantwort ist nicht "aus", abgerissene Verbindung nicht "gesetzt"
+
+def _client_mit_antworten(antworten: list[bytes]):
+    from ft8_appliance.rig.rigctld_client import RigctldClient
+
+    class _Leser:
+        async def readline(self):
+            return antworten.pop(0) if antworten else b""
+
+    class _Schreiber:
+        def write(self, _b): ...
+        async def drain(self): ...
+        def is_closing(self): return False
+        def close(self): ...
+        async def wait_closed(self): ...
+
+    c = RigctldClient()
+    c._reader, c._writer = _Leser(), _Schreiber()
+    return c
+
+
+async def test_fehlerantwort_auf_ptt_abfrage_ist_nicht_ptt_aus() -> None:
+    """ "RPRT -11" las der Client als False, und der PTT-Stuck-Waechter stellte seinen Timer zurueck."""
+    c = _client_mit_antworten([b"RPRT -11\n", b"1\n", b"0\n"])
+    with pytest.raises(RuntimeError):
+        await c.get_ptt()
+    assert await c.get_ptt() is True
+    assert await c.get_func("TUNER") is False
+
+
+async def test_abgerissene_verbindung_gilt_nicht_als_gesetzt() -> None:
+    """Eine leere Antwort (rigctld weg) werteten die Setter als Erfolg."""
+    c = _client_mit_antworten([])
+    with pytest.raises(ConnectionError):
+        await c.set_func("NR", False)
+    assert c._writer is None                    # Socket verworfen, der naechste Befehl verbindet neu
+
+
+async def test_vorverstaerker_und_abschwaecher_kommen_als_level() -> None:
+    """Am IC-7300MK2 nachgesehen: "l PREAMP" liefert 1, "u PREAMP" liefert RPRT -1."""
+    from ft8_appliance.rig.rigctld_client import RigctldClient
+
+    c = RigctldClient()
+    gefragt: list[str] = []
+
+    async def _send(line: str) -> str:
+        gefragt.append(line)
+        return {"l PREAMP": "1", "l ATT": "0"}.get(line, "RPRT -1")
+    c._send = _send
+    snap = await c.snapshot()
+    assert snap.preamp_on is True and snap.att_on is False
+    assert "u PREAMP" not in gefragt and "u ATT" not in gefragt
+
+
+# ---------------------------------------------------------------------------
+# Betriebsskripte
+
+import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+WURZEL = Path(__file__).resolve().parents[2]
+
+
+def test_feste_unit_dateien_entsprechen_den_vorlagen(tmp_path) -> None:
+    """Neben jeder Vorlage (*.in) liegt eine fest ausgeschriebene Fassung fuer
+    Installationen ohne install.env; das Self-Update nimmt sie im Rueckfall. Am
+    14.11.2026 waren alle fuenf veraltet, der Controller-Unit fehlten Benutzer,
+    Reihenfolge und Zeitabgleich."""
+    env = tmp_path / "env"
+    env.write_text("APP_USER=sebastian\nAPP_GROUP=sebastian\nAPP_HOME=/home/sebastian\n"
+                   "APP_DIR=/home/sebastian/ft8-appliance\nSERVICE_USER=sebastian\n"
+                   "SERVICE_GROUP=sebastian\n")
+    aus = tmp_path / "aus"
+    subprocess.run([str(WURZEL / "deploy" / "render-install-files.sh"), str(aus), str(env)],
+                   check=True)
+    for name in ("ft8-controller.service", "ft8-rigctld.service", "ft8-ap-fallback.service",
+                 "ft8-self-update.service", "ft8-self-update.timer"):
+        assert (aus / "systemd" / name).read_text() == \
+            (WURZEL / "deploy" / "systemd" / name).read_text(), name
+    assert (aus / "sudoers.d" / "ft8-self-update").read_text() == \
+        (WURZEL / "deploy" / "sudoers.d" / "ft8-self-update").read_text()

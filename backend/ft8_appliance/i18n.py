@@ -228,6 +228,12 @@ _DE: dict[str, str] = {
         "QSO bleibt lokal im Log + ADIF — bei Bedarf manuell hochladen."
     ),
     "push.upload_giveup_title": "⚠️ Upload aufgegeben",
+    "push.upload_konto_title": "⚠️ {service} lehnt die Zugangsdaten ab",
+    "push.upload_konto_msg": (
+        "{service} nimmt die Zugangsdaten von {konto} nicht an. Die offenen QSOs "
+        "bleiben liegen, nichts ist verloren. Zugangsdaten in der "
+        "Operator-Verwaltung pruefen; naechster Versuch in {hours} h."
+    ),
     "push.upload_stau_title": "⚠️ Uploads bleiben liegen",
     "push.upload_stau_msg": (
         "{n} QSO(s) sind seit ueber {stunden} Stunden nicht bei {service} "
@@ -481,6 +487,12 @@ _EN: dict[str, str] = {
         "QSO stays local in the log + ADIF — upload manually if needed."
     ),
     "push.upload_giveup_title": "⚠️ Upload given up",
+    "push.upload_konto_title": "⚠️ {service} rejects the credentials",
+    "push.upload_konto_msg": (
+        "{service} does not accept the credentials of {konto}. Open QSOs stay "
+        "queued, nothing is lost. Check the credentials in operator admin; "
+        "next attempt in {hours} h."
+    ),
     "push.upload_stau_title": "⚠️ Uploads are piling up",
     "push.upload_stau_msg": (
         "{n} QSO(s) have not reached {service} for over {stunden} hours, "

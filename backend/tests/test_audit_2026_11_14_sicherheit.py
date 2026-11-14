@@ -382,3 +382,91 @@ async def test_nach_eigenem_frequenzbefehl_gilt_der_befohlene_wert():
     assert o._dial_on_configured_freq() is True
     o._dial_set_at -= 10.0                          # spaeter zaehlt wieder das Rig
     assert o._dial_on_configured_freq() is False
+
+
+# ---------------------------------------------------------------------------
+# Slot-Paritaet: Vorab-Durchgang und FT4
+
+class _VorabQuelle:
+    def __init__(self):
+        self.regulaer: list[list[DecodedMsg]] = []
+        self.vorab: list[DecodedMsg] = []
+
+    async def __call__(self, tick):
+        return self.regulaer.pop(0) if self.regulaer else []
+
+    async def vorab_decode(self, tick):
+        return list(self.vorab)
+
+
+async def test_vorab_durchgang_wirft_gelernte_rufer_nicht_mehr_weg(monkeypatch):
+    """Der Vorab-Durchgang rechnete mit der Paritaet des vorigen Slots und verwarf
+    jeden Rufer mit gelernter Paritaet als "sendet, wenn wir senden"."""
+    q = _VorabQuelle()
+    o = _orch(_cfg(decoder_pre_decode=True), q)
+    jetzt = time.time()
+    grenze = jetzt - (jetzt % 15.0) + 15.0
+    cq = lambda: [_d("EA1ABC", None, "CQ EA1ABC IN73", grid="IN73")]   # noqa: E731
+    q.regulaer = [cq(), [], cq(), [], cq(), []]
+    for i, versatz in enumerate((90, 75, 60, 45, 30, 15)):
+        await o.process_slot(_tick(i, grenze - versatz))
+    assert o._op_slot_parity.get("EA1ABC") in ("even", "odd")
+    sm = o.state_machine
+    sm.ctx.auto_answer = True
+    q.vorab = cq()
+    n = {"i": 0}
+    echt = asyncio.sleep
+
+    async def _schlaf(_s):
+        n["i"] += 1
+        if n["i"] > 1:
+            raise asyncio.CancelledError
+        await echt(0)
+    monkeypatch.setattr(orch_mod.asyncio, "sleep", _schlaf)
+    with pytest.raises(asyncio.CancelledError):
+        await o._vorab_decode_loop()
+    assert o._vorab_stats.get("laeufe") == 1
+    assert not sm.filter_drops.get("slot_paritaet")
+    assert sm.state is State.QSO_RESPOND
+
+
+async def test_moduswechsel_leert_die_gelernten_paritaeten():
+    """Gerade und ungerade heissen in 7,5-s-Slots etwas anderes als in 15-s-Slots."""
+    o = _orch(_cfg_15m(), freq_hz=21_074_000)
+    o._op_slot_parity["EA1ABC"] = "even"
+    o._op_slot_parity_votes["EA1ABC"] = {"even": 3, "odd": 0}
+    await o._sync_digital_mode_runtime("FT8", "FT4", "probe")
+    assert o._op_slot_parity == {} and o._op_slot_parity_votes == {}
+
+
+# ---------------------------------------------------------------------------
+# Frequenzwechsel wartet das Ende der eigenen Aussendung ab
+
+async def test_frequenzwechsel_wartet_auf_das_ende_des_bursts(monkeypatch):
+    o = _orch(_cfg(bands=("20m", "15m")))
+    o._tx_burst_active = True
+    gewartet = []
+    echt = asyncio.sleep
+
+    async def _schlaf(s):
+        gewartet.append(s)
+        if len(gewartet) == 3:
+            o._tx_burst_active = False          # der Burst ist zu Ende
+        await echt(0)
+    monkeypatch.setattr(orch_mod.asyncio, "sleep", _schlaf)
+    await o.handle_set_freq(21_074_000)
+    assert len(gewartet) == 3
+    o.rig.set_freq.assert_awaited_once_with(21_074_000)
+
+
+async def test_frequenzwechsel_wird_abgelehnt_wenn_der_burst_nicht_endet(monkeypatch):
+    o = _orch(_cfg(bands=("20m", "15m")))
+    o._tx_burst_active = True
+    echt = asyncio.sleep
+
+    async def _schlaf(s):
+        await echt(0)
+    monkeypatch.setattr(orch_mod.asyncio, "sleep", _schlaf)
+    with pytest.raises(RuntimeError):
+        await o.handle_set_freq(21_074_000)
+    o.rig.set_freq.assert_not_awaited()

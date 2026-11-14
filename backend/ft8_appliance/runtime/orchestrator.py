@@ -811,6 +811,8 @@ class Orchestrator:
     # zuletzt hinausging.
     _lock_log_at: float = field(default=-1e9, init=False)
     _tx_aufgeschoben_nr: int = field(default=0, init=False)
+    # "Dienst|Konto" -> bis wann der Upload dafuer ruht (Zugangsdaten abgelehnt)
+    _konto_pause_bis: dict[str, float] = field(default_factory=dict, init=False)
     # Zaehlt Stop und Panic. Eine Aussendung, die schon aus der Warteschlange
     # geholt ist und nur noch auf die Slot-Grenze wartet, vergleicht ihn
     # danach: Bis 2026-11-14 ging sie auch nach Stop noch hinaus.
@@ -3332,6 +3334,7 @@ class Orchestrator:
         """
         fenster = timedelta(hours=2)
         grenze = datetime.now(UTC) - fenster
+        modus = self._valid_digital_mode(self.config.operating.mode)
         stimmen: dict[str, dict[str, int]] = {}
         try:
             async with session_scope() as s:
@@ -3346,7 +3349,15 @@ class Orchestrator:
                         break          # nach ts absteigend sortiert
                     if call == (self.config.operator.callsign or "").upper():
                         continue
-                    paritaet = "even" if round(ts.timestamp() / 15.0) % 2 == 0 else "odd"
+                    # Slotlaenge der Betriebsart des Decodes, und nur Decodes
+                    # der laufenden Betriebsart: Bis 2026-11-14 stand hier
+                    # fest 15 s. Nach einem Neustart im FT4-Betrieb bekamen
+                    # alle Stationen der ungeraden 7,5-s-Slots "even".
+                    d_modus = self._valid_digital_mode(getattr(d, "mode", None) or "FT8")
+                    if d_modus != modus:
+                        continue
+                    slot_s = 7.5 if d_modus == "FT4" else 15.0
+                    paritaet = "even" if round(ts.timestamp() / slot_s) % 2 == 0 else "odd"
                     eintrag = stimmen.setdefault(call, {"even": 0, "odd": 0})
                     eintrag[paritaet] += 1
         except Exception as exc:
@@ -3770,6 +3781,11 @@ class Orchestrator:
             self.slot_clock.set_slot_seconds(target_slot)
 
         if changed:
+            # Gerade und ungerade heissen in 7,5-s-Slots etwas anderes als
+            # in 15-s-Slots. Bis 2026-11-14 blieben die gelernten Paritaeten
+            # ueber den Wechsel stehen.
+            self._op_slot_parity.clear()
+            self._op_slot_parity_votes.clear()
             log.info(
                 "FT8/FT4 mode switch %s -> %s (%s): decoder + slot clock "
                 "live-retuned to %.1fs slots.",
@@ -3893,6 +3909,16 @@ class Orchestrator:
 
     async def handle_set_freq(self, hz: int) -> None:
         """Wrap rig.set_freq + Echo-Registration fuer Tamper-Detection."""
+        # Nicht mitten in der eigenen Aussendung: Der Rest des Bursts ginge
+        # auf der neuen Frequenz hinaus, an Lizenz- und Antennen-Guard
+        # vorbei, die nur vor dem Tasten urteilen. Ein Burst dauert
+        # hoechstens 12,6 s; so lange wird gewartet.
+        for _ in range(150):
+            if not self._tx_burst_active:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError("Frequenzwechsel abgelehnt: eigene Aussendung laeuft noch")
         await self.rig.set_freq(hz)
         self._register_app_command("freq_hz", int(hz))
         # Den Schnappschuss gleich mitziehen. Am 2026-11-14 stellte die Box
@@ -4836,6 +4862,13 @@ class Orchestrator:
                     self._setze_schwach_arm()
                     self._setze_kontroll_arm()
                     self._setze_ew_arm()
+                    # Die Paritaet des Slots, um dessen Decodes es geht. Bis
+                    # 2026-11-14 setzte sie nur der regulaere Durchgang: Der
+                    # Vorab-Durchgang rechnete mit der des vorigen Slots,
+                    # und der Filter slot_paritaet warf genau die Rufer weg,
+                    # die uns hoeren koennen. Die A/B-Messung vom 11./12.09.
+                    # ("1,06 statt 1,28 Kandidaten") lief mit diesem Fehler.
+                    self.state_machine.ctx.current_slot_parity = self._compute_slot_parity(tick)
                     self.state_machine.ctx.vorab_decode_aktiv = True
                     try:
                         self.state_machine.on_decodes(self._hardware_state, decodes)
@@ -7586,6 +7619,8 @@ class Orchestrator:
                         # Key kein Upload-Versuch (bleibt pending; Pre-Flight
                         # warnt) statt ihn falsch ins Heimat-Logbuch zu kippen.
                         owner = self._operator_for_qso(qso)
+                        if owner is not None and self._konto_ruht("QRZ", owner.callsign):
+                            continue
                         if owner is None:
                             # Audit K4: kein Profil zu diesem user_callsign
                             # (geloescht oder leer). Liegen lassen statt
@@ -7626,6 +7661,9 @@ class Orchestrator:
                                 log.info("QRZ: %s liegt dort bereits — erledigt",
                                          qso.call)
                                 qso.qrz_uploaded = True
+                            elif self._upload_reject_ist_konto(str(exc)):
+                                qso.qrz_upload_attempts -= 1      # kein Versuch
+                                self._melde_konto_fehler("QRZ", owner.callsign, str(exc))
                             elif self._upload_reject_is_hard(str(exc)):
                                 log.warning("QRZ hard-reject %s (%s) — won't retry",
                                             qso.call, exc)
@@ -8120,6 +8158,8 @@ class Orchestrator:
             for on_air, anzahl in sorted(ohne_log.items()):
                 self._melde_ohne_einrichtung("ClubLog", my_call, on_air, anzahl)
             for log_call, eligible in sorted(nach_log.items()):
+                if self._konto_ruht("ClubLog", my_call):
+                    break
                 await self._clublog_lade_log(
                     eligible, email, app_pw, api_key, my_call, log_call,
                     bulk_threshold, now,
@@ -8166,6 +8206,10 @@ class Orchestrator:
                         nachfahren, email, app_pw, api_key, my_call, now,
                         zaehle_versuch=False, log_call=log_call,
                     )
+                elif self._upload_reject_ist_konto(str(exc)):
+                    for qso in eligible:
+                        qso.clublog_upload_attempts -= 1          # kein Versuch
+                    self._melde_konto_fehler("ClubLog", my_call, str(exc))
                 elif self._upload_reject_is_hard(str(exc)):
                     log.warning("ClubLog bulk hard-reject (%s) — alle %d won't-retry",
                                 exc, len(eligible))
@@ -8241,6 +8285,11 @@ class Orchestrator:
                     log.info("ClubLog: %s liegt dort bereits — erledigt",
                              qso.call)
                     qso.clublog_uploaded = True
+                elif self._upload_reject_ist_konto(str(exc)):
+                    if zaehle_versuch:
+                        qso.clublog_upload_attempts -= 1          # kein Versuch
+                    self._melde_konto_fehler("ClubLog", my_call, str(exc))
+                    return
                 elif self._upload_reject_is_hard(str(exc)):
                     log.warning("ClubLog hard-reject %s (%s) — won't retry",
                                 qso.call, exc)
@@ -8590,6 +8639,16 @@ class Orchestrator:
                                 name="power-tamper-push",
                             )
                     self._tx_power_w = rig_watts
+                    # Am Geraet ueber das Erlaubte gedreht: zurueckstellen.
+                    # Bis 2026-11-14 uebernahm die Station den Wert einfach
+                    # (etwa 50 W auf 60 m, wo 15 W gelten); die Meldung dazu
+                    # gab es nur fuer Geraete ohne setzbare Leistung.
+                    legal = self._legal_max_power_w()
+                    if not is_echo and rig_watts > legal:
+                        log.warning("TX-Power am Geraet auf %dW gestellt, erlaubt sind "
+                                    "%dW — stelle zurueck", rig_watts, legal)
+                        asyncio.create_task(self.handle_tx_power(legal),
+                                            name="power-zurueck-auf-limit")
                     # WICHTIG: hier NICHT operator.default_power_w mit
                     # ueberschreiben — das ist der persistente "max
                     # erlaubt"-Cap der Operator-Preference, nicht der
@@ -10834,11 +10893,23 @@ class Orchestrator:
         "dupe", "duplicate", "already logged", "already uploaded",
         "already in the log",
     )
+    # Harte Ablehnung = an DIESEM QSO ist etwas falsch; ein zweiter Versuch
+    # bringt nichts.
     _HARD_REJECT_MARKERS: typing.ClassVar[tuple[str, ...]] = (
-        "401", "403", "authentication",
-        "bad password", "invalid adif", "invalid api", "invalid key",
-        "not authorized", "invalid call", "invalid date",
+        "invalid adif", "invalid call", "invalid date",
     )
+    # Konto-Fehler = am QSO ist nichts falsch, die Zugangsdaten stimmen
+    # nicht. Bis 2026-11-14 standen diese Marker oben mit drin: Ein erneuerter
+    # Schluessel, der nur in einer der beiden config.yaml nachgezogen war,
+    # liess die andere Station alle offenen QSOs als hochgeladen verbuchen,
+    # mit einer Warnzeile und ohne Push. Jetzt bleibt alles offen, es gibt
+    # eine Meldung, und das Konto ruht sechs Stunden (Club Log sperrt nach
+    # wiederholten Fehlanmeldungen die Adresse).
+    _KONTO_MARKERS: typing.ClassVar[tuple[str, ...]] = (
+        "401", "403", "authentication", "bad password", "invalid api",
+        "invalid key", "not authorized", "forbidden",
+    )
+    _KONTO_PAUSE_S: typing.ClassVar[float] = 6 * 3600.0
     _TRANSIENT_MARKERS: typing.ClassVar[tuple[str, ...]] = (
         "rate", "limit", "busy", "try again", "temporar", "timeout",
         "timed out", "502", "503", "504", "unavailable", "overload",
@@ -10855,6 +10926,34 @@ class Orchestrator:
         if any(t in m for t in cls._TRANSIENT_MARKERS):
             return False
         return any(d in m for d in cls._DUPE_MARKERS)
+
+    @classmethod
+    def _upload_reject_ist_konto(cls, msg: str) -> bool:
+        """True, wenn der Dienst die Zugangsdaten ablehnt (nicht das QSO)."""
+        m = (msg or "").lower()
+        if any(t in m for t in cls._TRANSIENT_MARKERS):
+            return False
+        return any(k in m for k in cls._KONTO_MARKERS)
+
+    def _konto_ruht(self, dienst: str, konto: str) -> bool:
+        return time.time() < self._konto_pause_bis.get(f"{dienst}|{konto}", 0.0)
+
+    def _melde_konto_fehler(self, dienst: str, konto: str, text: str) -> None:
+        """Zugangsdaten abgelehnt: nichts verbuchen, einmal melden, Konto ruhen lassen."""
+        self._konto_pause_bis[f"{dienst}|{konto}"] = time.time() + self._KONTO_PAUSE_S
+        log.error("%s lehnt die Zugangsdaten von %s ab (%s) — nichts verbucht, "
+                  "naechster Versuch in %.0f h", dienst, konto, text[:160],
+                  self._KONTO_PAUSE_S / 3600)
+        if self.integrations.ntfy and self.integrations.ntfy.enabled:
+            try:
+                asyncio.create_task(self.integrations.ntfy.notify(
+                    _t("push.upload_konto_msg", service=dienst, konto=konto,
+                       hours=int(self._KONTO_PAUSE_S // 3600)),
+                    title=_t("push.upload_konto_title", service=dienst),
+                    priority="default", tags=["warning"],
+                ))
+            except Exception:
+                pass
 
     @classmethod
     def _upload_reject_is_hard(cls, msg: str) -> bool:

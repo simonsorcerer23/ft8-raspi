@@ -45,9 +45,11 @@ def _orch(monkeypatch, decodes):
 
     class _Cfg:
         operator = _Op()
+        operating = type("B", (), {"mode": "FT8"})()
 
     class _O:
         config = _Cfg()
+        _valid_digital_mode = staticmethod(lambda m: "FT4" if m == "FT4" else "FT8")
         _op_slot_parity: dict = {}
         _op_slot_parity_votes: dict = {}
         _restore_slot_parity = orch_mod.Orchestrator._restore_slot_parity
@@ -179,7 +181,7 @@ def test_wiederherstellung_rechnet_wie_das_live_lernen():
 
     # 2. Beide Formeln liefern fuer denselben Zeitpunkt dasselbe Urteil.
     quelle = inspect.getsource(orch_mod.Orchestrator._restore_slot_parity)
-    assert 'round(ts.timestamp() / 15.0) % 2 == 0' in quelle
+    assert 'round(ts.timestamp() / slot_s) % 2 == 0' in quelle
 
     o = object.__new__(orch_mod.Orchestrator)
     for posix in (1757577600.0, 1757577615.0, 1757577630.0, 1757577645.0):
@@ -190,3 +192,22 @@ def test_wiederherstellung_rechnet_wie_das_live_lernen():
             "even" if round(ts.timestamp() / 15.0) % 2 == 0 else "odd"
         )
         assert live == wiederhergestellt, f"Parität weicht ab bei {posix}"
+
+
+@pytest.mark.asyncio
+async def test_ft4_decodes_werden_mit_7_5_s_slots_gerechnet(monkeypatch) -> None:
+    """Audit 14.11.2026: Fest 15 s gab allen Stationen der ungeraden FT4-Slots "even"."""
+    @dataclass
+    class _D4:
+        call_from: str
+        ts: datetime
+        mode: str = "FT4"
+
+    basis = datetime.now(UTC).timestamp() - 300
+    basis -= basis % 15.0
+    ungerade = [_D4("EA1ABC", datetime.fromtimestamp(basis + k * 7.5, tz=UTC)) for k in (1, 3, 5, 7)]
+    ft8 = [_Decode("DL1ABC", _slot_zeit("even")) for _ in range(4)]     # andere Betriebsart
+    o = _orch(monkeypatch, sorted(ungerade + ft8, key=lambda d: d.ts, reverse=True))
+    o.config.operating.mode = "FT4"
+    await o._restore_slot_parity()
+    assert o._op_slot_parity == {"EA1ABC": "odd"}

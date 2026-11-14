@@ -74,9 +74,12 @@ def _stub(operators: list, active: int = 0) -> SimpleNamespace:
         ),
         _UPLOAD_MAX_ATTEMPTS=Orchestrator._UPLOAD_MAX_ATTEMPTS,
         _upload_reject_is_hard=Orchestrator._upload_reject_is_hard,
+        _upload_reject_ist_konto=Orchestrator._upload_reject_ist_konto,
         _upload_reject_ist_dupe=Orchestrator._upload_reject_ist_dupe,
         _BULK_DUPE_NACHFAHREN_MAX=Orchestrator._BULK_DUPE_NACHFAHREN_MAX,
         _alert_upload_giveup=lambda *a, **kw: None,
+        _konto_ruht=lambda *a, **kw: False,
+        _melde_konto_fehler=lambda *a, **kw: None,
         _operator_for_qso=lambda qso: next(
             (o for o in operators if o.callsign == qso.user_callsign), operators[0]
         ),
