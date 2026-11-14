@@ -317,3 +317,16 @@ def test_f10_keine_feste_filterbreite_im_text() -> None:
         for key in ("control.restore_rig", "cfg.rig_auto_restore"):
             zeile = next(z for z in txt.splitlines() if f"'{key}'" in z)
             assert "2700" not in zeile, zeile
+
+
+# --- F11: DXpedition-Zeiten in UTC eingeben ---------------------------------
+
+def test_f11_dxpedition_eingabe_wird_als_utc_gedeutet() -> None:
+    """datetime-local liefert eine Zeit ohne Zone; new Date() las sie als
+    Ortszeit, die Tabelle zeigte danach UTC — um 1 bis 2 Stunden verschoben."""
+    txt = (KOMPONENTEN / "DxpeditionPanel.svelte").read_text(encoding="utf-8")
+    assert "new Date(newStart)" not in txt and "new Date(newEnd)" not in txt
+    assert "parseUtc(newStart)" in txt and "parseUtc(newEnd)" in txt
+    assert "t('dxp.start_utc')" in txt and "t('dxp.end_utc')" in txt
+    for roh in ("'vorbei'", "'QRV jetzt'", "'👀 ja'"):
+        assert roh not in txt, f"{roh} steht hart im Quelltext"

@@ -170,8 +170,6 @@ export const de = {
   // DxpeditionPanel
   'dxp.title': '📡 DXpedition-Schedule',
   'dxp.call_ph': 'Call (z.B. ZL9HR)',
-  'dxp.start_ph': 'Start',
-  'dxp.end_ph': 'Ende',
   'dxp.note_ph': 'Notiz (z.B. Bouvet)',
   'dxp.source': 'Quelle',
   'dxp.start': 'Start',
@@ -639,4 +637,13 @@ export const de = {
   'log.marine_title': 'nur Marinefunker-Mitglieder',
   'log.reset_filters': '↺ Zurücksetzen',
   'chart.now': 'jetzt',
+
+  // DXpedition: Eingabe in UTC, Statustexte (Audit 14.11.2026, F11)
+  'dxp.start_utc': 'Start (UTC)',
+  'dxp.end_utc': 'Ende (UTC)',
+  'dxp.st_past': 'vorbei',
+  'dxp.st_in_h': 'in {n} h',
+  'dxp.st_in_d': 'in {n} d',
+  'dxp.st_active': 'QRV jetzt',
+  'dxp.watch_yes': '👀 ja',
 };

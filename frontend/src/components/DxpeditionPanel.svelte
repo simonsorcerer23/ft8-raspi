@@ -22,8 +22,13 @@
   async function add() {
     if (!newCall.trim() || !newStart || !newEnd) return;
     try {
-      const start = new Date(newStart).toISOString();
-      const end = new Date(newEnd).toISOString();
+      // Die Eingabe ist UTC, wie die Anzeige in der Tabelle darunter.
+      // datetime-local liefert "YYYY-MM-DDTHH:MM" ohne Zone; new Date() las
+      // das als Ortszeit, die Tabelle zeigte dann eine um 1–2 h verschobene
+      // UTC-Zeit (Audit 14.11.2026, F11). parseUtc haengt das Z an.
+      const start = parseUtc(newStart)?.toISOString();
+      const end = parseUtc(newEnd)?.toISOString();
+      if (!start || !end) return;
       await api.dxpeditionAdd(
         newCall.trim().toUpperCase(),
         start, end, newNote.trim() || null,
@@ -49,14 +54,14 @@
     const now = new Date();
     const start = parseUtc(e.start_date);
     const end = parseUtc(e.end_date);
-    if (now > end) return { label: 'vorbei', cls: 'past' };
+    if (now > end) return { label: t('dxp.st_past'), cls: 'past' };
     if (now < start) {
       const dh = (start - now) / 3600000;
-      if (dh < 24) return { label: `in ${Math.round(dh)} h`, cls: 'soon' };
+      if (dh < 24) return { label: t('dxp.st_in_h', { n: Math.round(dh) }), cls: 'soon' };
       const dd = dh / 24;
-      return { label: `in ${Math.round(dd)} d`, cls: 'future' };
+      return { label: t('dxp.st_in_d', { n: Math.round(dd) }), cls: 'future' };
     }
-    return { label: 'QRV jetzt', cls: 'active' };
+    return { label: t('dxp.st_active'), cls: 'active' };
   }
 </script>
 
@@ -68,8 +73,14 @@
   <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
     <input type="text" placeholder={t('dxp.call_ph')}
            bind:value={newCall} required style="text-transform: uppercase"/>
-    <input type="datetime-local" placeholder={t('dxp.start_ph')} bind:value={newStart} required/>
-    <input type="datetime-local" placeholder={t('dxp.end_ph')} bind:value={newEnd} required/>
+    <label class="when">
+      <span>{t('dxp.start_utc')}</span>
+      <input type="datetime-local" bind:value={newStart} required/>
+    </label>
+    <label class="when">
+      <span>{t('dxp.end_utc')}</span>
+      <input type="datetime-local" bind:value={newEnd} required/>
+    </label>
     <input type="text" placeholder={t('dxp.note_ph')} bind:value={newNote}/>
     <button class="add-btn" type="submit">{t('common.add')}</button>
   </form>
@@ -106,7 +117,7 @@
             <td class="ts">{fmtDate(e.start_date)}</td>
             <td class="ts">{fmtDate(e.end_date)}</td>
             <td><span class="pill {st.cls}">{st.label}</span></td>
-            <td>{e.auto_added_to_watchlist ? '👀 ja' : '—'}</td>
+            <td>{e.auto_added_to_watchlist ? t('dxp.watch_yes') : '—'}</td>
             <td><button class="rm" onclick={() => remove(e.call)}>{t('common.remove')}</button></td>
           </tr>
         {/each}
@@ -120,7 +131,8 @@
   header { margin-bottom: 0.7rem; }
   h2 { margin: 0; color: var(--accent); font-size: 1rem; }
   header small { color: #94a3b8; font-size: 0.8rem; }
-  .add { display: flex; gap: 0.4rem; margin-bottom: 0.7rem; flex-wrap: wrap; }
+  .add { display: flex; gap: 0.4rem; margin-bottom: 0.7rem; flex-wrap: wrap; align-items: flex-end; }
+  .when { display: flex; flex-direction: column; gap: 0.1rem; color: #94a3b8; font-size: 0.7rem; }
   .add input {
     background: #0b1220; color: var(--fg); border: 1px solid #334155;
     border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.9rem;
