@@ -1,0 +1,23 @@
+#!/bin/bash
+# NVMe-Wache (seit 2026-11-13): Faellt die NVMe vom PCIe-Bus (12.11. 18:20,
+# 13.11. 09:47, beide Male beim Senden), lebt der Kernel weiter, aber
+# nichts auf der Platte laeuft mehr — der Pi steht, bis jemand den Strom
+# zieht. Diese Wache liest die Kernelmeldungen und startet den Pi dann neu.
+# Nach dem Ereignis nur noch Bash-Bordmittel: Programme von der Platte
+# lassen sich nicht mehr starten.
+LOG=/mnt/sdkarte/var/log/ft8-mk2/kernel.log
+FIFO=/run/nvme-wache.fifo
+[ -p $FIFO ] || mkfifo $FIFO
+exec 3<>$FIFO
+grep -q -m1 -E "nvme nvme0: (controller is down|Disabling device after reset failure)" < <(dmesg -W)
+read -r up _ < /proc/uptime
+up=${up%%.*}
+if [ "$up" -lt 600 ]; then
+    echo "nvme-wache: NVMe weg nach ${up} s Laufzeit - kein Neustart (Schleifenschutz)" >> $LOG
+    exit 1
+fi
+echo "nvme-wache: NVMe weg nach ${up} s Laufzeit - Neustart in 20 s" >> $LOG
+read -r -t 20 -u 3 _ || true
+echo s > /proc/sysrq-trigger
+read -r -t 5 -u 3 _ || true
+echo b > /proc/sysrq-trigger

@@ -1,0 +1,9 @@
+# Startet den Pi neu, wenn die NVMe vom PCIe-Bus faellt (seit 2026-11-13).
+[Unit]
+Description=NVMe-Wache: Neustart bei verlorener NVMe
+RequiresMountsFor=/mnt/sdkarte
+[Service]
+ExecStart=/usr/local/sbin/nvme-wache
+Restart=no
+[Install]
+WantedBy=multi-user.target

@@ -358,7 +358,7 @@ Vollständige Spezifikation: [architecture.md](./architecture.md)
 ```
 backend/         Python 3.12 + FastAPI-Controller, ft8_lib über cffi
 frontend/        Svelte 5 + Vite Single-Page-App (mobile-first)
-vendor/ft8_lib/  Kārlis Gobas FT8/FT4-Codec (Git-Submodul, MIT)
+vendor/ft8_lib/  Kārlis Gobas FT8/FT4-Codec (im Repo, mit eigenen Änderungen, MIT)
 deploy/          systemd-Units, NetworkManager, hostapd, chrony, install.sh
 data/            cty.dat (Offline-DXCC), Kartenkacheln, Marinefunker, dxcc_rarity
 docs/            Audits, Decoder-Entwicklung, Flag-Begründungen, Betrieb
@@ -380,7 +380,6 @@ Mess- und Wartungswerkzeuge, die man kennen sollte:
 ## Schnellstart — Workstation, kein Pi nötig
 
 ```bash
-git submodule update --init --recursive
 cd vendor/ft8_lib && make && cd ../..
 
 cd backend

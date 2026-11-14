@@ -1187,8 +1187,9 @@ _RIG_TABLE: dict[str, RigProfil] = {
     # IC-7300MK2 (2026-10-08): eigenes hamlib-Modell 3094 erst ab hamlib
     # 4.7.0 (riglist.h: RIG_MAKE_MODEL(RIG_ICOM, 94), Status Beta), CI-V-
     # Adresse ab Werk B6h statt 94h. Debian liefert 4.6.2 — daher
-    # neues_hamlib. Am Geraet noch NICHT erprobt: USB-Name und Name der
-    # Soundkarte sind erst bekannt, wenn eines angesteckt ist.
+    # neues_hamlib. Seit 2026-11-12 am Geraet im Betrieb (ft8-mk2, hamlib
+    # 4.7.2): Die USB-Schnittstelle heisst "…IC-7300MK2_<Seriennr>-if00"
+    # (if02 ist der zweite CDC-Port), die Soundkarte "USB Audio Device".
     "ic7300mk2": RigProfil(3094, 100, "Icom IC-7300MK2", neues_hamlib=True, mode_width_hz=3600),
     "ic9700":   RigProfil(3081, 100, "Icom IC-9700", mode_width_hz=3600),
     "ic7610":   RigProfil(3079, 100, "Icom IC-7610", mode_width_hz=3600),

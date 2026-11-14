@@ -14,7 +14,8 @@ Eine Abfrage je 5 Minuten; dichter wird das Fenster auf der Gegenseite nicht.
 Seit 2026-11-14 zusaetzlich je Betriebsart: Die Zeilen sind auf 10 kHz
 gerundete Sendefrequenzen. FT8 auf 21.074 MHz (Audio 0,2-3 kHz) faellt damit
 in 21070000 und 21080000, FT4 auf 21.140 MHz in 21140000. Wo sich beide
-dieselbe Zeile teilen (20 m, 17 m, 12 m, 80 m), ist keine Trennung moeglich.
+dieselbe Zeile teilen, ist keine Trennung moeglich: Mit den Standard-Dials
+geht sie nur auf 40 m, 15 m und 10 m.
 Dafuer wird das Grossfeld (zwei Zeichen) abgefragt: Im Kleinfeld hoert oft
 niemand FT4 mit, und null Meldungen hiessen dann nichts.
 """

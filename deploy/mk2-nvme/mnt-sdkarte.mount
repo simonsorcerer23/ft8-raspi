@@ -1,0 +1,13 @@
+# SD-Karte als Ablage fuer Kernelmeldungen (seit 2026-11-13).
+# Am 12.11. um 18:20 blieb die NVMe stehen: Journal und Datenbank auf ihr
+# bekamen nichts mehr, die Kernelmeldungen dazu waren nach dem Neustart weg.
+# Die SD-Karte haengt am SDIO-Bus, nicht an PCIe, und schreibt weiter.
+[Unit]
+Description=SD-Karte fuer Kernelmeldungen
+[Mount]
+What=/dev/disk/by-partuuid/95b91586-02
+Where=/mnt/sdkarte
+Type=ext4
+Options=noatime,nofail
+[Install]
+WantedBy=multi-user.target

@@ -9953,11 +9953,11 @@ class Orchestrator:
         # gesetzt — siehe _refresh_worked_sets. Hier nicht jeden Slot
         # neu laden (statische Daten).
 
-        # chrony reports an Offset only when it has reached at least one
-        # upstream peer (stratum < 16). We accept any stratum-tracked
-        # chrony as "synced" — the time_guard's offset check is the real
-        # gate. None means chronyc tracking didn't return data at all,
-        # which we treat as not-synced.
+        # Synchron heisst: chronyd hat eine Quelle (Stratum 1 bis 15, Leap
+        # nicht "Not synchronised"), s. ChronyStatus.synchronisiert. Ohne
+        # Quelle meldet chronyc Stratum 0 und Abweichung 0,000 s; das galt
+        # hier bis 2026-11-14 als synchron. None = chronyc hat gar nicht
+        # geantwortet, ebenfalls nicht synchron.
         chrony_synced = self._chrony is not None and self._chrony.synchronisiert
 
         self._hardware_state = HardwareState(

@@ -1,0 +1,14 @@
+# Schreibt jede neue Kernelmeldung zeilenweise auf die SD-Karte, damit ein
+# NVMe-Haenger (nvme timeout, hung task) auch nach dem Neustart lesbar ist.
+[Unit]
+Description=Kernelmeldungen auf die SD-Karte
+RequiresMountsFor=/mnt/sdkarte
+After=chrony.service
+[Service]
+ExecStartPre=-/usr/bin/chronyc waitsync 60 0.5
+ExecStartPre=/bin/sh -c "mkdir -p /mnt/sdkarte/var/log/ft8-mk2 && echo \"=== Boot $(cat /proc/sys/kernel/random/boot_id) $(date -Is)\" >> /mnt/sdkarte/var/log/ft8-mk2/kernel.log"
+ExecStart=/bin/sh -c "exec /usr/bin/stdbuf -oL /usr/bin/dmesg -W --time-format iso >> /mnt/sdkarte/var/log/ft8-mk2/kernel.log"
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
