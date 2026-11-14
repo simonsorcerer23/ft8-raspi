@@ -287,6 +287,7 @@ Otherwise, after one slot, on to CQ_CALLING (auto_cq=True) or IDLE.
 - ALC: level in the green zone
 - SWR: < configured threshold (default 2.0)
 - Battery: IC-705 voltage above `operating.battery_min_v` — off by default (0), to be set after a live reading; the old fixed 12 V never matched the 7.4 V pack
+- Mode guard (since v0.196.0): the rig is in the data mode of its profile (PKTUSB on Icom) and split is off. Otherwise nothing is transmitted; since v0.198.0 the station sets both back itself while it is operating and nobody is keying the rig, and lifts the lock afterwards.
 - Band lockout: the active antenna covers the band
 - IARU band-plan lockout per region: *planned, not wired* — `util/bandplan.is_in_ft8_segment()` exists but has no caller; the dial guard above covers the off-band case via the configured dials
 

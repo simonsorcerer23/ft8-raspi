@@ -274,6 +274,7 @@ nach 1 Slot weiter zu CQ_CALLING (auto_cq=True) oder IDLE.
 - Akku: IC-705-Spannung über `operating.battery_min_v` — Default aus (0), erst nach Live-Messung setzen; die alte feste 12-V-Schwelle passte nie zum 7,4-V-Akku
 - Rig-Link-Guard: das Rig hat in den letzten 60 s einen brauchbaren Snapshot geliefert
 - Dial-Guard: das Rig steht ±500 Hz (`operating.dial_tolerance_hz`) am konfigurierten Dial der eingestellten Betriebsart (gegen Off-Band-TX nach manuellem VFO-Dreh). Seit v0.195.1 genügt der FT8-Dial nicht mehr, solange FT4 eingestellt ist, und umgekehrt; fünf Sekunden nach einem eigenen Frequenzbefehl gilt der befohlene Wert, nicht der letzte Poll
+- Betriebsart-Guard (seit v0.196.0): das Rig steht im Datenbetrieb des Rig-Profils (bei Icom PKTUSB) und Split ist aus. Sonst wird nicht gesendet; seit v0.198.0 stellt die Station beides selbst zurück, solange sie Betrieb fährt und niemand am Gerät sendet, und hebt die Sperre danach auf.
 - Band-Lockout: aktive Antenne deckt das Band ab
 - IARU-Bandplan-Lockout pro Region: *geplant, nicht verdrahtet* — `util/bandplan.is_in_ft8_segment()` existiert ohne Aufrufer; den Off-Band-Fall deckt der Dial-Guard über die konfigurierten Dials
 

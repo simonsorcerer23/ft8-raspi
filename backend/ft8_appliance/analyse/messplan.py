@@ -540,17 +540,26 @@ MESSPLAN: tuple[Messung, ...] = (
         schalter=("hunt_zellen_prior_ab",),
     ),
     Messung(
-        "vorab_decode", "entschieden",
+        "vorab_decode", "laufend",
         "Bringt ein Decode vor der Slotgrenze puenktlichere und damit erfolgreichere Antworten?",
         ("pick_attempt.pre_decode", "config:decoder_pre_decode_ab"),
         "Vorab-Decode: was der fruehere Durchgang bringt (A/B)",
-        "",
-        danach="Abgeschaltet. Die Spalte pre_decode kann weg, tx_offset_s bleibt "
-               "(Sendeversatz).",
-        seit=date(2026, 9, 11),
-        ergebnis="12.09.: Versatz 0,05 statt 0,995 s, aber kein Erfolgsgewinn — "
-                 "Puenktlichkeit ist in diesem Bereich keine wirksame Groesse; der "
-                 "fruehe Durchgang kostet Auswahl.",
+        "Ab 1000 Anrufen je Arm (nur Zeilen seit dem 14.11.2026): Abschlussquote "
+        "des Vorab-Arms gegen den regulaeren, urteil(). 'echt' besser: Vorab bleibt "
+        "an, A/B aus. 'echt' schlechter, oder 'Rauschen' bei 2000 Anrufen je Arm: "
+        "Vorab aus, A/B aus. Dazwischen weiterlaufen lassen und 14 Tage spaeter "
+        "erneut lesen.",
+        lesen_ab=date(2026, 11, 28),
+        danach="Sebastian entscheidet. Bleibt Vorab aus, kann die Spalte pre_decode "
+               "weg; tx_offset_s bleibt (Sendeversatz).",
+        seit=date(2026, 11, 14),
+        quelle="Zweiter Anlauf (Sebastian, 14.11.2026). Der erste (11./12.09.) endete "
+               "mit 'Versatz 0,05 statt 0,995 s, aber kein Erfolgsgewinn; der fruehe "
+               "Durchgang kostet Auswahl' und galt als entschieden. Das Audit vom "
+               "14.11. fand den Grund fuer die fehlende Auswahl: Der Vorab-Durchgang "
+               "rechnete mit der Slot-Paritaet des vorigen Slots und verwarf jeden "
+               "Rufer mit gelernter Paritaet (behoben in v0.196.0). Die alte Messung "
+               "hat also den Fehler gemessen, nicht den Vorab-Decode. Laeuft am MK2.",
         schalter=("decoder_pre_decode_ab",),
     ),
     Messung(

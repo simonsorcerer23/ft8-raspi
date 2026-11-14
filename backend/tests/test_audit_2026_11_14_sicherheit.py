@@ -601,3 +601,56 @@ def test_das_73_kommt_hoechstens_dreimal():
         sm.on_decodes(HardwareState(), [_d("W1AW", "DK9XR", "DK9XR W1AW RRR")])
         gesendet += len([a for a in sm.drain_actions() if a.kind == "TX_MESSAGE"])
     assert gesendet == StateMachine.RR73_NACHKLANG_MAX
+
+
+# ---------------------------------------------------------------------------
+# Falsche Betriebsart: die Station stellt selbst zurueck und sendet bis dahin nicht
+
+async def test_station_stellt_die_betriebsart_selbst_zurueck_und_hebt_die_sperre_auf():
+    """Sebastian, 14.11.2026: "sie soll auf den passenden Modus stellen und bis dahin
+    nicht senden"."""
+    async def src(tick):
+        return [_d("EA1ABC", None, "CQ EA1ABC IN73", grid="IN73")]
+
+    o = _orch(_cfg(), src)
+    sm = o.state_machine
+    sm.ctx.auto_answer = True
+    o._last_rig = RigSnapshot(freq_hz=14_074_000, mode="USB", split_on=True)
+    await o.process_slot(_tick(0, 1_700_000_000.0))
+    assert sm.state is State.TX_LOCKED                       # bis dahin nicht senden
+    assert not any(a.kind == "TX_MESSAGE" for a in o._action_log)
+
+    await o._betriebsart_richten("probe")
+    o.rig.set_mode.assert_awaited_once_with("PKTUSB", 3600)
+    o.rig.set_split_aus.assert_awaited_once()
+    assert o._last_rig.mode == "PKTUSB" and o._last_rig.split_on is False
+    assert sm.state is State.IDLE and sm.ctx.auto_answer     # Sperre weg, Betrieb geht weiter
+    await o.process_slot(_tick(1, 1_700_000_015.0))
+    assert any(a.kind == "TX_MESSAGE" for a in o._action_log)
+
+
+async def test_betriebsart_bleibt_wie_sie_ist_solange_jemand_am_geraet_sendet_oder_stop_gilt():
+    o = _orch(_cfg())
+    o._last_rig = RigSnapshot(freq_hz=14_074_000, mode="USB", ptt=True)
+    await o._betriebsart_richten("probe")                    # jemand spricht gerade
+    o.rig.set_mode.assert_not_awaited()
+
+    gestartet = []
+    o._spawn = lambda coro, name=None: (gestartet.append(name), coro.close())
+    o._last_rig = RigSnapshot(freq_hz=14_074_000, mode="USB", ptt=False)
+    o._betriebsart_richten_falls_noetig("probe")             # nach Stop: Rig gehoert dem Bediener
+    assert gestartet == []
+    o.state_machine.ctx.auto_answer = True
+    o._betriebsart_richten_falls_noetig("probe")
+    o._betriebsart_richten_falls_noetig("probe")             # gedrosselt
+    assert gestartet == ["betriebsart-richten"]
+
+
+async def test_andere_sperren_hebt_das_richten_nicht_auf():
+    o = _orch(_cfg())
+    sm = o.state_machine
+    sm.state = State.TX_LOCKED
+    sm.ctx.last_lock_code = "guard.swr"
+    o._last_rig = RigSnapshot(freq_hz=14_074_000, mode="USB")
+    await o._betriebsart_richten("probe")
+    assert sm.state is State.TX_LOCKED

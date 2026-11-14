@@ -624,6 +624,7 @@ class Orchestrator:
     # Push feuern — der Set selbst rast oft als false-positive ein
     # weil rig-poll die Aenderung sieht bevor das echo registered ist.
     _dial_set_at: float = field(default=0.0, init=False)
+    _betriebsart_gerichtet_at: float = field(default=0.0, init=False)
     # Wann der laufende Rig-Schnappschuss begonnen hat (monotonic)
     _snapshot_begonnen_at: float = field(default=0.0, init=False)
     # Die zuletzt selbst gesetzte Frequenz. Der Rig-Poll laeuft ihr bis zu
@@ -1274,8 +1275,7 @@ class Orchestrator:
             setattr(self.decode_source, "jt9_ap_flags", int(getattr(self.config.operating, "decoder_jt9_ap_flags", 1)))
         self._spawn(self.gps.run_forever(), name="gpsd")
         self._spawn(self._slot_loop(), name="slot-loop")
-        if getattr(self.config.operating, "decoder_pre_decode", False):
-            self._spawn(self._vorab_decode_loop(), name="vorab-decode")
+        self._starte_vorab_decode_falls_noetig()
         self._spawn(self._rig_poll_loop(), name="rig-poll")
         if self.config.operating.mode_watchdog_min > 0:
             self._spawn(self._mode_watchdog_loop(), name="mode-watchdog")
@@ -4033,6 +4033,68 @@ class Orchestrator:
         log.info("Rig-Restore (%s): %s, %d Hz, Dial", reason, _pf.digital_mode, _pf.mode_width_hz)
         return {"ok": True, "detail": f"{_pf.digital_mode} {_pf.mode_width_hz} Hz"}
 
+    async def _betriebsart_richten(self, anlass: str) -> None:
+        """Das Rig zurueck in den Datenbetrieb stellen und Split abschalten.
+
+        Sebastian, 14.11.2026: "sie soll auf den passenden Modus stellen und
+        bis dahin nicht senden". Das Nicht-Senden besorgt der mode_guard;
+        hier wird gestellt, und eine Sperre, die nur deswegen bestand, wird
+        danach aufgehoben. Anders als ``rig_auto_restore`` fasst das weder
+        Filter noch Dial an und gilt ohne Schalter, aber nur, solange die
+        Station Betrieb faehrt: Nach "Stop" gehoert das Rig dem, der davor
+        sitzt. Waehrend jemand am Geraet sendet (PTT an, kein eigener Burst)
+        passiert nichts.
+        """
+        from ..statemachine.states import State
+
+        rig = self._last_rig
+        if self._tx_burst_active or rig is None or rig.ptt:
+            return
+        pf = _rig_profil_von(self.config)
+        try:
+            if rig.split_on:
+                await self.rig.set_split_aus()
+                rig.split_on = False
+                log.info("Rig stand auf Split (%s) — abgeschaltet", anlass)
+            if rig.mode is not None and rig.mode != pf.digital_mode:
+                vorher = rig.mode
+                await self.handle_set_mode(pf.digital_mode, pf.mode_width_hz)
+                log.info("Rig stand auf %s (%s) — zurueck auf %s gestellt",
+                         vorher, anlass, pf.digital_mode)
+        except Exception as exc:
+            log.warning("Betriebsart nicht zurueckstellbar (%s): %s", anlass, exc)
+            return
+        sm = self.state_machine
+        if sm.state is State.TX_LOCKED and sm.ctx.last_lock_code in ("guard.mode", "guard.split"):
+            log.info("Sperre wegen Betriebsart aufgehoben, das Rig steht wieder richtig")
+            sm.on_user_reset_lock()
+            self._push_status()
+
+    def _betriebsart_richten_falls_noetig(self, anlass: str) -> None:
+        """Vom Rig-Poll: hoechstens alle 5 s, nur im Betrieb."""
+        rig = self._last_rig
+        if rig is None or not self._station_aktiv():
+            return
+        soll = _rig_profil_von(self.config).digital_mode
+        falsch = (rig.mode is not None and rig.mode != soll) or rig.split_on is True
+        if not falsch or time.monotonic() - self._betriebsart_gerichtet_at < 5.0:
+            return
+        self._betriebsart_gerichtet_at = time.monotonic()
+        self._spawn(self._betriebsart_richten(anlass), name="betriebsart-richten")
+
+    def _starte_vorab_decode_falls_noetig(self) -> None:
+        """Die Vorab-Schleife starten, wenn der Schalter an ist und sie nicht laeuft.
+
+        Bis 2026-11-14 geschah das nur in start(): Wer ``decoder_pre_decode``
+        ueber die Konfiguration einschaltete, bekam ihn erst nach dem
+        naechsten Neustart.
+        """
+        if not getattr(self.config.operating, "decoder_pre_decode", False):
+            return
+        if any(t.get_name() == "vorab-decode" and not t.done() for t in self._bg_tasks):
+            return
+        self._spawn(self._vorab_decode_loop(), name="vorab-decode")
+
     def _schedule_rig_restore(self, reason: str) -> None:
         """Auto-Restore aus der Tamper-Erkennung, hoechstens alle 15 s."""
         if not getattr(self.config.operating, "rig_auto_restore", False):
@@ -4662,6 +4724,7 @@ class Orchestrator:
             setattr(self.decode_source, "jt9_ft4", bool(getattr(new_cfg.operating, "decoder_jt9_ft4", True)))
             setattr(self.decode_source, "jt9_ap", bool(getattr(new_cfg.operating, "decoder_jt9_ap", True)))
             setattr(self.decode_source, "jt9_ap_flags", int(getattr(new_cfg.operating, "decoder_jt9_ap_flags", 1)))
+        self._starte_vorab_decode_falls_noetig()
         # v0.7.0 Build 3: auto_notch_enabled live-toggle
         new_notch_enabled = getattr(new_cfg.operating, "auto_notch_enabled", True)
         has_notch_now = getattr(self.decode_source, "notch_detector", None) is not None
@@ -8721,7 +8784,8 @@ class Orchestrator:
             # vom Rig nicht zum Modulator geroutet. Catcht z.B. den
             # band-switch-Bug-Symptom retroaktiv.
             rig_mode = self._last_rig.mode
-            expected_mode = "PKTUSB"  # FT8 = data mode
+            expected_mode = _rig_profil_von(self.config).digital_mode
+            self._betriebsart_richten_falls_noetig("rig-poll")
             if rig_mode is not None:
                 if rig_mode != expected_mode:
                     if not self._is_app_echo("mode", rig_mode) and self._tamper_armed \

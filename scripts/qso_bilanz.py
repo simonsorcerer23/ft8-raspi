@@ -961,6 +961,20 @@ def main() -> int:
         print("    langsamer als der regulaere.")
         print("    Der fruehere Durchgang sieht rund 8 % weniger Decodes; die")
         print("    Spalte Kandidaten zeigt, was ihn das an Auswahl kostet.")
+        # Zweiter Anlauf (Messplan vorab_decode): nur Zeilen seit dem 14.11.2026.
+        # Die aelteren entstanden mit dem Paritaetsfehler im Vorab-Durchgang.
+        neu = {int(g): (int(n), int(k or 0)) for g, n, k in con.execute(
+            "select pre_decode, count(*), sum(outcome='completed') from pick_attempt "
+            f"where pre_decode is not null and ts >= '2026-11-14' and {_nur_anrufe(con)} "
+            "group by 1").fetchall()}
+        if 0 in neu and 1 in neu:
+            (n_reg, k_reg), (n_vor, k_vor) = neu[0], neu[1]
+            print(f"    Seit 14.11.2026 (ohne den Paritaetsfehler): vorab {k_vor} von {n_vor}, "
+                  f"regulaer {k_reg} von {n_reg} — {urteil(k_vor, n_vor, k_reg, n_reg)}")
+            if min(n_reg, n_vor) < 1000:
+                print("    Unter 1000 Anrufen je Arm — noch nicht entscheiden.")
+        else:
+            print("    Seit 14.11.2026 noch keine Anrufe in beiden Armen.")
     else:
         print("    (keine Daten — decoder_pre_decode ist aus)")
 
