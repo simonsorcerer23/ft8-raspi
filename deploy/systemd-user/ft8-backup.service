@@ -9,8 +9,9 @@ OnFailure=ft8-backup-fehler.service
 
 [Service]
 Type=oneshot
-# Pfad anpassen, falls das Repo woanders liegt.
-ExecStart=%h/Dokumente/GitHub/ft8-raspi/scripts/backup-appliance.sh
+# Pfad anpassen, falls das Repo woanders liegt. Sichert alle Stationen
+# (Vorgabe ft8-pi5 und ft8-mk2; andere ueber FT8_BACKUP_HOSTS).
+ExecStart=%h/Dokumente/GitHub/ft8-raspi/scripts/backup-alle-stationen.sh
 # 75 = Station nicht erreichbar, der letzte Stand ist aber noch frisch
 # (Frist im Skript, Vorgabe 48 h). Der Pi darf auch mal aus sein; erst
 # wenn die Sicherung dadurch veraltet, endet das Skript mit 1.

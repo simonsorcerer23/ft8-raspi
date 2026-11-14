@@ -14,6 +14,7 @@ from sqlalchemy import delete, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (BandNoise, BandwechselLog, Decode, Heard, PathPrediction, PickAttempt,
+                     PickCandidate,
                      PiWaermeLog, PskReporterIn, Qso, SolarLog, SwrLog,
                      VersorgungLog)
 
@@ -24,6 +25,9 @@ from .models import (BandNoise, BandwechselLog, Decode, Heard, PathPrediction, P
 _TELEMETRY_TABLES = (
     (Decode, Decode.ts),
     (PickAttempt, PickAttempt.ts),
+    # Gehoert zu pick_attempt und fehlte hier bis 2026-11-14: Die Kandidaten
+    # blieben liegen, waehrend ihre Anrufversuche nach 90 Tagen verschwanden.
+    (PickCandidate, PickCandidate.slot_ts),
     (Heard, Heard.last_seen),
     (SwrLog, SwrLog.ts),
     (VersorgungLog, VersorgungLog.ts),

@@ -31,7 +31,17 @@ set -euo pipefail
 # Aufruf ohne Argument lief dort still ins Timeout. Der laufende Pi
 # heisst im Tailnet "ft8-pi5" (2026-09-12).
 HOST="${1:-ft8-pi5}"
-DEST_BASE="${2:-$HOME/.config/codex/secrets/ft8-backup}"
+# Je Station ein eigenes Ziel. Bis 2026-11-14 gab es nur eines: Ein Lauf fuer
+# die zweite Station (ft8-mk2, seit 12.11.) waere im selben Ordner gelandet,
+# die Rotation haette die Staende beider Stationen gegeneinander verdraengt
+# und der QSL-Spiegel beide Bestaende vermischt. Die erste Station behaelt
+# ihren bisherigen Ordner.
+if [ "$HOST" = "ft8-pi5" ]; then
+    VORGABE_ZIEL="$HOME/.config/codex/secrets/ft8-backup"
+else
+    VORGABE_ZIEL="$HOME/.config/codex/secrets/ft8-backup-${HOST}"
+fi
+DEST_BASE="${2:-$VORGABE_ZIEL}"
 STAMP="$(date +%Y-%m-%d_%H%M)"
 DEST="${DEST_BASE}/${STAMP}"
 
@@ -47,6 +57,12 @@ PATHS=(
     /etc/chrony/chrony.conf
     /etc/default/gpsd
     /boot/firmware/config.txt
+    /boot/firmware/cmdline.txt              # Kernelparameter (MK2-Pi: NVMe-Stromsparen aus)
+    # Handinstallationen am MK2-Pi (docs/pi5_migration.md, NVMe-Haenger):
+    /usr/local/sbin/nvme-wache
+    /etc/systemd/system/nvme-wache.service
+    /etc/systemd/system/kernel-log-sd.service
+    /etc/systemd/system/mnt-sdkarte.mount
 )
 
 # Zusaetzlich: <APP_DIR>/data/cty.dat — die DXCC-Laenderdatenbank. Sie ist per
@@ -121,8 +137,15 @@ mkdir -p "$DEST"
 trap '[ -s "${DEST}/ft8-backup.tgz" ] || rm -rf "$DEST"' EXIT
 echo "== Backup von ${HOST} nach ${DEST}"
 
+# Von den taeglichen DB-Kopien unter backups/ nur die juengste mitnehmen.
+# Bis 2026-11-14 lag die Datenbank achtfach im Archiv (laufende Datei plus
+# sieben Kopien): 544 MB je Tag statt weniger MB, lokal 7 GB. Die juengste
+# Kopie bleibt drin, weil sie per VACUUM INTO entstand und in sich stimmig
+# ist; die laufende Datei liest tar, waehrend sie geschrieben wird.
+# umask 077: Das Archiv traegt alle Zugangsdaten und lag sonst waehrend der
+# Uebertragung fuer jeden Benutzer lesbar unter /tmp.
 ssh -o ConnectTimeout=20 "sebastian@${HOST}" \
-    ". /etc/ft8-appliance/install.env 2>/dev/null; sudo tar czf /tmp/ft8-backup.tgz --ignore-failed-read --exclude=/var/lib/ft8-appliance/qsl ${PATHS[*]} \"\${APP_DIR}/data/cty.dat\" 2>/dev/null; sudo chown \$(id -un) /tmp/ft8-backup.tgz"
+    ". /etc/ft8-appliance/install.env 2>/dev/null; umask 077; ALT=\$(sudo sh -c 'ls -t /var/lib/ft8-appliance/backups/qso-2*.sqlite 2>/dev/null' | tail -n +2 | sed 's|^|--exclude=|'); sudo tar czf /tmp/ft8-backup.tgz --ignore-failed-read --exclude=/var/lib/ft8-appliance/qsl \$ALT ${PATHS[*]} \"\${APP_DIR}/data/cty.dat\" 2>/dev/null; sudo chown \$(id -un) /tmp/ft8-backup.tgz; sudo chmod 600 /tmp/ft8-backup.tgz"
 scp -q "sebastian@${HOST}:/tmp/ft8-backup.tgz" "${DEST}/"
 ssh "sebastian@${HOST}" 'rm -f /tmp/ft8-backup.tgz'
 chmod 600 "${DEST}/ft8-backup.tgz"
@@ -201,11 +224,19 @@ echo "== $(du -h "${DEST}/ft8-backup.tgz" | cut -f1) in ${DEST}/ft8-backup.tgz"
 if command -v rsync >/dev/null 2>&1; then
     mkdir -p "$SPIEGEL"
     echo "== Spiegele QSL-Karten"
-    rsync -a --info=stats2 "sebastian@${HOST}:/var/lib/ft8-appliance/qsl/" "${SPIEGEL}/" \
-        | grep -E "Number of .*files transferred|Total transferred" || true
+    # Den Exitcode von rsync auswerten, nicht den von grep: Bis 2026-11-14
+    # verschluckte "| grep ... || true" jeden Uebertragungsfehler, und die
+    # Zeile darunter meldete "ok" aus dem Altbestand.
+    RSYNC_AUS="$(rsync -a --info=stats2 "sebastian@${HOST}:/var/lib/ft8-appliance/qsl/" "${SPIEGEL}/" 2>&1)" \
+        || { echo "!! rsync der QSL-Karten fehlgeschlagen:"; echo "$RSYNC_AUS" | tail -3; FAIL=1; }
+    grep -E "Number of .*files transferred|Total transferred" <<<"$RSYNC_AUS" || true
     ANZ="$(find "$SPIEGEL" -type f -name '*.jpg' | wc -l)"
     echo "   ok   ${ANZ} Karten im Spiegel ($(du -sh "$SPIEGEL" | cut -f1))"
-    [ "$ANZ" -gt 0 ] || { echo "!! Spiegel leer"; FAIL=1; }
+    # Leer ist nur ein Fehler, wenn die Station Karten hat. Eine Station,
+    # deren Operator kein eQSL-Konto abholt, hat keine.
+    if [ "$ANZ" -eq 0 ] && ssh "sebastian@${HOST}" 'ls /var/lib/ft8-appliance/qsl/* >/dev/null 2>&1'; then
+        echo "!! Spiegel leer, obwohl die Station Karten hat"; FAIL=1
+    fi
 else
     echo "   WARNUNG rsync fehlt — QSL-Bilder NICHT gesichert"
     FAIL=1

@@ -30,9 +30,20 @@ holt sie niemand automatisch nach.
 ```
 
 Vorgabe ist die Station `ft8-pi5` und ein Ziel außerhalb des Repos.
+
+**Zwei Stationen (seit 2026-11-14):** Jede Station hat ihr eigenes Ziel,
+`~/.config/codex/secrets/ft8-backup` für `ft8-pi5` und
+`~/.config/codex/secrets/ft8-backup-<host>` für jede weitere. Rotation und
+QSL-Spiegel laufen damit je Station getrennt. Der tägliche Timer ruft
+`scripts/backup-alle-stationen.sh` auf; das Skript sichert `ft8-pi5` und
+`ft8-mk2` nacheinander (andere über `FT8_BACKUP_HOSTS`) und endet mit dem
+schlechtesten Ergebnis. Bis dahin sicherte der Timer nur `ft8-pi5`.
+
 Das Skript arbeitet zweigeteilt:
 
-* **Archiv** (`<Ziel>/<Zeitstempel>/ft8-backup.tgz`, rund 120 MB): alles außer
+* **Archiv** (`<Ziel>/<Zeitstempel>/ft8-backup.tgz`; an der Station rund 150 MB,
+  am MK2-Pi 11 MB; von den täglichen Datenbankkopien unter `backups/` kommt
+  nur die jüngste mit): alles außer
   den Bildern, täglich neu. Nach dem Packen wird geprüft, ob die vier
   wichtigen Dateien enthalten und ob `qso.sqlite` heil ist (`integrity_check`)
   — eine Sicherung fällt sonst erst an dem Tag auf, an dem man sie braucht.
