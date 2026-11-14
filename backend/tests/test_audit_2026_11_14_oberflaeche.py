@@ -330,3 +330,51 @@ def test_f11_dxpedition_eingabe_wird_als_utc_gedeutet() -> None:
     assert "t('dxp.start_utc')" in txt and "t('dxp.end_utc')" in txt
     for roh in ("'vorbei'", "'QRV jetzt'", "'👀 ja'"):
         assert roh not in txt, f"{roh} steht hart im Quelltext"
+
+
+# --- F12: Karte raeumt ihre Timer ab und escaped Fremdtext ------------------
+
+def _karte() -> str:
+    return (KOMPONENTEN / "Map.svelte").read_text(encoding="utf-8")
+
+
+def test_f12_jeder_timer_der_karte_wird_geloescht() -> None:
+    """setInterval(renderTerminator) lief nach dem Verlassen des Tabs weiter."""
+    txt = _karte()
+    assert not re.search(r"^\s*setInterval\(", txt, re.M), "Timer ohne Handle"
+    namen = re.findall(r"const (\w+) = setInterval\(", txt)
+    assert len(namen) >= 2
+    for name in namen:
+        assert f"clearInterval({name})" in txt, f"{name} wird nie geloescht"
+
+
+def test_f12_fremdtext_in_popups_ist_escaped() -> None:
+    """Rufzeichen, Decode-Texte und DX-Cluster-Felder gehen nur durch esc()
+    in bindPopup/bindTooltip — Leaflet setzt den Inhalt als HTML."""
+    txt = _karte()
+    code = "\n".join(z for z in txt.splitlines() if not z.lstrip().startswith("//"))
+    roh = re.findall(r"(?<!esc\()\$\{(?:sp|m|d|loc|b)\.[a-z_]+(?: \?\? '[^']*')?\}", code)
+    # Erlaubt: Zahlen, die vor dem Einsetzen formatiert werden (toFixed).
+    assert roh == [], f"ungefilterter Fremdtext im Popup: {roh}"
+    for feld in ("sp.comment", "sp.country", "sp.spotter", "sp.spotted", "d.message", "m.call"):
+        assert f"esc({feld}" in code, feld
+
+
+def test_f12_esc_macht_html_unschaedlich() -> None:
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node nicht installiert")
+    skript = (
+        "import { esc } from './html.js';"
+        "console.log(esc('<img src=x onerror=alert(1)> & \"q\" \\'s\\''));"
+        "console.log('[' + esc(null) + '|' + esc(undefined) + '|' + esc(0) + ']');"
+    )
+    aus = subprocess.run(
+        [node, "--input-type=module", "-e", skript],
+        cwd=FRONTEND / "lib", capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    assert aus[0] == "&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; &#39;s&#39;"
+    assert aus[1] == "[||0]"

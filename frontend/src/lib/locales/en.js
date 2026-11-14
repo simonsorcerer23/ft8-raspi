@@ -646,4 +646,13 @@ export const en = {
   'dxp.st_in_d': 'in {n} d',
   'dxp.st_active': 'QRV now',
   'dxp.watch_yes': '👀 yes',
+
+  // Karten-Popups (Audit 14.11.2026, F12)
+  'map.popup_you': 'You',
+  'map.popup_best_snr': 'Best SNR',
+  'map.popup_count': 'Heard: {n}×',
+  'map.popup_last_worked': 'Last worked',
+  'map.popup_last_seen': 'Last heard',
+  'map.popup_oploc': '📍 Operating location',
+  'map.cov_tip': '{az}° · {km} km · {n} reports · {h} h old',
 };
