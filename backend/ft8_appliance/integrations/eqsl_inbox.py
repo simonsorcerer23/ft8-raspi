@@ -59,9 +59,11 @@ _ERFOLG = "your adif log file has been built"
 class EqslInboxError(RuntimeError):
     """Abruf gescheitert. ``hart`` = erneuter Versuch ist sinnlos."""
 
-    def __init__(self, text: str, *, hart: bool = False) -> None:
+    def __init__(self, text: str, *, hart: bool = False, netz: bool = False) -> None:
         super().__init__(text)
         self.hart = hart
+        # eQSL wurde gar nicht erreicht. Sagt nichts ueber die Karte.
+        self.netz = netz
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,7 +163,7 @@ async def hole_inbox(
             datei.raise_for_status()
             return lies_adif(datei.text)
     except httpx.HTTPError as exc:
-        raise EqslInboxError(f"Netzfehler: {redact_secrets(str(exc))}") from exc
+        raise EqslInboxError(f"Netzfehler: {redact_secrets(str(exc))}", netz=True) from exc
 
 
 # Nicht jeder Fehler lohnt einen zweiten Versuch. Diese hier sind
@@ -218,4 +220,4 @@ async def hole_karte(
                 raise EqslInboxError(f"unerwarteter Typ {typ}", hart=True)
             return bild.content, typ
     except httpx.HTTPError as exc:
-        raise EqslInboxError(f"Netzfehler: {redact_secrets(str(exc))}") from exc
+        raise EqslInboxError(f"Netzfehler: {redact_secrets(str(exc))}", netz=True) from exc

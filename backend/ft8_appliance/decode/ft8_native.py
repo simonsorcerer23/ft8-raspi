@@ -91,7 +91,24 @@ def decode_payload(payload: bytes) -> str:
 SAMPLE_RATE_HZ = 12_000
 SLOT_SECONDS = 15
 SAMPLES_PER_SLOT = SAMPLE_RATE_HZ * SLOT_SECONDS  # 180 000
-MAX_DECODES_PER_SLOT = 50
+# Wie viele Decodes ein Aufruf hoechstens zurueckgibt. Bis 2026-11-14 waren es
+# 50, und der Decoder brach darueber wortlos ab: Die Kandidaten laufen nach
+# Score, es fehlten also die schwaechsten, und nur die spaete jt9-Stufe
+# brachte sie noch (die aber keine Anrufziele liefert). Mit 60 Signalen im
+# Slot kamen genau 50 zurueck. Die Dublettentabelle im C-Shim fasst 200.
+MAX_DECODES_PER_SLOT = 150
+# Wie oft die Obergrenze erreicht wurde. Steht sie nie, ist 150 genug.
+deckel_treffer = 0
+
+
+def _deckel_pruefen(n: int) -> None:
+    global deckel_treffer
+    if n >= MAX_DECODES_PER_SLOT:
+        deckel_treffer += 1
+        import logging
+        logging.getLogger(__name__).warning(
+            "Decoder: Obergrenze von %d Decodes je Slot erreicht (zum %d. Mal) — "
+            "schwaechere Signale fehlen", MAX_DECODES_PER_SLOT, deckel_treffer)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +143,7 @@ def decode_slot(pcm_s16le: bytes) -> list[ShimDecode]:
     n = lib.ft8_shim_decode_slot(pcm_buf, SAMPLES_PER_SLOT, out_buf, MAX_DECODES_PER_SLOT)
     if n < 0:
         raise RuntimeError("ft8_shim_decode_slot failed")
+    _deckel_pruefen(n)
 
     results: list[ShimDecode] = []
     for i in range(n):
@@ -207,6 +225,7 @@ def decode_slot_v2(pcm_s16le: bytes, mode: str = "standard") -> list[ShimDecode]
     )
     if n < 0:
         raise RuntimeError("ft8_shim_decode_slot_v2 failed")
+    _deckel_pruefen(n)
     results: list[ShimDecode] = []
     for i in range(n):
         r = out_buf[i]
@@ -260,6 +279,7 @@ def decode_slot_ap(
     )
     if n < 0:
         raise RuntimeError("ft8_shim_decode_slot_ap failed")
+    _deckel_pruefen(n)
 
     return _shim_results_to_list(out_buf, n)
 
@@ -292,6 +312,7 @@ def decode_slot_multipass(
     )
     if n < 0:
         raise RuntimeError("ft8_shim_decode_slot_multipass failed")
+    _deckel_pruefen(n)
 
     return _shim_results_to_list(out_buf, n)
 
@@ -336,6 +357,7 @@ def decode_slot_ft4(pcm_s16le: bytes) -> list[ShimDecode]:
     n = lib.ft4_shim_decode_slot(pcm_buf, SAMPLES_PER_SLOT_FT4, out_buf, MAX_DECODES_PER_SLOT)
     if n < 0:
         raise RuntimeError("ft4_shim_decode_slot failed")
+    _deckel_pruefen(n)
 
     results: list[ShimDecode] = []
     for i in range(n):
@@ -372,6 +394,7 @@ def decode_slot_ft4_v2(pcm_s16le: bytes, mode: str = "standard") -> list[ShimDec
     )
     if n < 0:
         raise RuntimeError("ft4_shim_decode_slot_v2 failed")
+    _deckel_pruefen(n)
     results: list[ShimDecode] = []
     for i in range(n):
         r = out_buf[i]

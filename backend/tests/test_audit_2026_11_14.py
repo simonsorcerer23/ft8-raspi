@@ -381,3 +381,83 @@ def test_feste_unit_dateien_entsprechen_den_vorlagen(tmp_path) -> None:
             (WURZEL / "deploy" / "systemd" / name).read_text(), name
     assert (aus / "sudoers.d" / "ft8-self-update").read_text() == \
         (WURZEL / "deploy" / "sudoers.d" / "ft8-self-update").read_text()
+
+
+# ---------------------------------------------------------------------------
+# eQSL-Posteingang: dieselbe Karte fuer beide Operatoren, Netzfehler beim Bild
+
+async def test_gleiche_karte_fuer_beide_operatoren_kippt_den_abgleich_nicht(tmp_path, monkeypatch):
+    """Der Schluessel kennt den Operator nicht: Der zweite Abgleich warf einen
+    IntegrityError, und die ganze Charge fiel zurueck, alle 30 Minuten wieder."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+
+    from ft8_appliance.db import models as m
+    from ft8_appliance.db.session import init_engine, session_scope
+    from ft8_appliance.integrations.eqsl_inbox import Karteneintrag
+    from ft8_appliance.runtime.orchestrator import Orchestrator
+
+    eng = init_engine(tmp_path / "q.sqlite")
+    async with eng.begin() as c:
+        await c.run_sync(m.Base.metadata.create_all)
+    gleich = Karteneintrag("3D2XX", "20261113", "1200", "15M", "FT4", "20261113", None, None)
+    eigen = Karteneintrag("EA1ABC", "20261113", "1300", "15M", "FT8", "20261113", None, None)
+
+    async def fake_inbox(user, pw, *, seit=None, qth_nickname=None, timeout=0):
+        return [gleich] if user == "dk" else [eigen, gleich]
+    monkeypatch.setattr(eqsl_inbox, "hole_inbox", fake_inbox)
+    stub = SimpleNamespace(_alert_qsl_neu=lambda c, n: None)
+    dk = SimpleNamespace(callsign="DK9XR", eqsl_user="dk", eqsl_password="x", eqsl_qth_nickname=None)
+    do = SimpleNamespace(callsign="DO3XR", eqsl_user="do", eqsl_password="x", eqsl_qth_nickname=None)
+    await Orchestrator._qsl_liste_abgleichen(stub, dk)
+    await Orchestrator._qsl_liste_abgleichen(stub, do)
+    await Orchestrator._qsl_liste_abgleichen(stub, do)          # zweiter Lauf: nichts doppelt
+    async with session_scope() as s:
+        rows = sorted((k.user_callsign, k.call) for k in (await s.execute(select(m.QslKarte))).scalars())
+    assert rows == [("DK9XR", "3D2XX"), ("DO3XR", "3D2XX"), ("DO3XR", "EA1ABC")]
+
+
+def test_netzfehler_beim_posteingang_ist_als_solcher_markiert() -> None:
+    assert eqsl_inbox.EqslInboxError("Netzfehler: weg", netz=True).netz is True
+    assert eqsl_inbox.EqslInboxError("kein Bild", hart=True).netz is False
+
+
+# ---------------------------------------------------------------------------
+# Decoder-Deckel und Audiopuffer
+
+def test_decoder_gibt_mehr_als_50_decodes_je_slot_zurueck() -> None:
+    """Bei 60 Signalen kamen genau 50 zurueck, die schwaechsten fehlten wortlos."""
+    from ft8_appliance.decode import ft8_native
+
+    assert ft8_native.MAX_DECODES_PER_SLOT >= 150
+    vorher = ft8_native.deckel_treffer
+    ft8_native._deckel_pruefen(ft8_native.MAX_DECODES_PER_SLOT - 1)
+    assert ft8_native.deckel_treffer == vorher
+    ft8_native._deckel_pruefen(ft8_native.MAX_DECODES_PER_SLOT)
+    assert ft8_native.deckel_treffer == vorher + 1
+
+
+def test_audiopuffer_haelt_gleichzeitiges_schreiben_und_lesen_aus() -> None:
+    """Aufnahme-Thread und Ereignisschleife teilten sich eine deque ohne Sperre."""
+    import threading
+
+    from ft8_appliance.audio.slot_sync import SAMPLE_RATE_HZ, SlotBuffer
+
+    puffer = SlotBuffer(max_age_s=2.0)
+    stopp = threading.Event()
+    chunk = b"\x00\x00" * 1024
+
+    def _schreiben() -> None:
+        t = 1_800_000_000.0
+        while not stopp.is_set():
+            puffer.feed(chunk, t)
+            t += 1024 / SAMPLE_RATE_HZ
+    faden = threading.Thread(target=_schreiben)
+    faden.start()
+    try:
+        for i in range(3000):
+            puffer.extract_slot(1_800_000_000.0 + i * 0.01, slot_seconds=1.0)
+    finally:
+        stopp.set()
+        faden.join()

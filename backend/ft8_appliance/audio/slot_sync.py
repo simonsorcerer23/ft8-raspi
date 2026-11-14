@@ -24,6 +24,7 @@ gets the real :class:`SlotBuffer`.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -83,6 +84,15 @@ class SlotBuffer:
     def __init__(self, max_age_s: float = 35.0) -> None:
         self._chunks: deque[_Chunk] = deque()
         self.max_age_s = max_age_s
+        # Der Aufnahme-Thread haengt an und kuerzt, die Ereignisschleife
+        # liest. Ohne Sperre warf die Iteration bis 2026-11-14 gelegentlich
+        # "deque mutated during iteration", und der Slot lieferte keine
+        # Decodes (im Stresstest 13 von 116 886 Auszuegen).
+        self._lock = threading.Lock()
+
+    def _schnappschuss(self) -> list[_Chunk]:
+        with self._lock:
+            return list(self._chunks)
 
     # ------------------------------------------------------------------ ingest
     def feed(self, chunk_pcm: bytes, posix_start: float) -> None:
@@ -90,8 +100,9 @@ class SlotBuffer:
             raise ValueError("chunk size must be a multiple of 2 (S16LE)")
         if not chunk_pcm:
             return
-        self._chunks.append(_Chunk(posix_start=posix_start, pcm=chunk_pcm))
-        self._prune(posix_start)
+        with self._lock:
+            self._chunks.append(_Chunk(posix_start=posix_start, pcm=chunk_pcm))
+            self._prune(posix_start)
 
     def _prune(self, now_posix: float) -> None:
         cutoff = now_posix - self.max_age_s
@@ -137,7 +148,7 @@ class SlotBuffer:
         anchor_posix = slot_start_posix
         anchor_found = False
 
-        for chunk in self._chunks:
+        for chunk in self._schnappschuss():
             chunk_samples = len(chunk.pcm) // BYTES_PER_SAMPLE
             chunk_end = chunk.posix_start + chunk_samples / SAMPLE_RATE_HZ
 
@@ -219,7 +230,7 @@ class SlotBuffer:
 
     # ------------------------------------------------------------------ introspection
     def __len__(self) -> int:
-        return sum(len(c.pcm) // BYTES_PER_SAMPLE for c in self._chunks)
+        return sum(len(c.pcm) // BYTES_PER_SAMPLE for c in self._schnappschuss())
 
     def samples_buffered(self) -> int:
         return len(self)
@@ -246,7 +257,7 @@ class SlotBuffer:
         # Sammle die letzten *samples* aus dem Chunk-Deque (rückwärts).
         needed = samples
         parts: list[bytes] = []
-        for chunk in reversed(self._chunks):
+        for chunk in reversed(self._schnappschuss()):
             if needed <= 0:
                 break
             chunk_samples = len(chunk.pcm) // BYTES_PER_SAMPLE

@@ -228,6 +228,11 @@ _DE: dict[str, str] = {
         "QSO bleibt lokal im Log + ADIF — bei Bedarf manuell hochladen."
     ),
     "push.upload_giveup_title": "⚠️ Upload aufgegeben",
+    "push.config_persist_title": "⚠️ Konfiguration nicht gespeichert",
+    "push.config_persist_msg": (
+        "Die Konfiguration liess sich nicht auf die Platte schreiben ({grund}). "
+        "Die letzte Aenderung gilt nur bis zum naechsten Neustart."
+    ),
     "push.upload_konto_title": "⚠️ {service} lehnt die Zugangsdaten ab",
     "push.upload_konto_msg": (
         "{service} nimmt die Zugangsdaten von {konto} nicht an. Die offenen QSOs "
@@ -487,6 +492,11 @@ _EN: dict[str, str] = {
         "QSO stays local in the log + ADIF — upload manually if needed."
     ),
     "push.upload_giveup_title": "⚠️ Upload given up",
+    "push.config_persist_title": "⚠️ Configuration not saved",
+    "push.config_persist_msg": (
+        "The configuration could not be written to disk ({grund}). "
+        "The last change only holds until the next restart."
+    ),
     "push.upload_konto_title": "⚠️ {service} rejects the credentials",
     "push.upload_konto_msg": (
         "{service} does not accept the credentials of {konto}. Open QSOs stay "

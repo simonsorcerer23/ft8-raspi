@@ -811,6 +811,9 @@ class Orchestrator:
     # zuletzt hinausging.
     _lock_log_at: float = field(default=-1e9, init=False)
     _tx_aufgeschoben_nr: int = field(default=0, init=False)
+    # Letzter Fehler beim Schreiben der config.yaml (None = zuletzt gelungen)
+    _config_persist_fehler: str | None = field(default=None, init=False)
+    _config_persist_gemeldet_at: float = field(default=0.0, init=False)
     # "Dienst|Konto" -> bis wann der Upload dafuer ruht (Zugangsdaten abgelehnt)
     _konto_pause_bis: dict[str, float] = field(default_factory=dict, init=False)
     # Zaehlt Stop und Panic. Eine Aussendung, die schon aus der Warteschlange
@@ -1700,16 +1703,30 @@ class Orchestrator:
                 select(QslKarte.schluessel)
                 .where(QslKarte.user_callsign == op.callsign)
             )).all()}
+            # Der Schluessel (Call, Tag, Minute, Band, Modus) ist in der
+            # Tabelle eindeutig, kennt aber den Operator nicht. Bestaetigt
+            # eine Gegenstation beide Operatoren in derselben Minute, warf
+            # der zweite Abgleich bis 2026-11-14 einen IntegrityError; die
+            # ganze Charge fiel zurueck, und weil der Stand nie vorrueckte,
+            # wiederholte sich das alle 30 Minuten. Der zweite Eintrag
+            # bekommt jetzt den Operator angehaengt.
+            fremd = {r[0] for r in (await s.execute(
+                select(QslKarte.schluessel)
+                .where(QslKarte.user_callsign != op.callsign)
+            )).all()}
             for e in eintraege:
-                if e.schluessel in vorhanden:
+                schluessel = e.schluessel
+                if schluessel in fremd:
+                    schluessel = f"{schluessel}|{op.callsign}"
+                if schluessel in vorhanden:
                     continue
                 s.add(QslKarte(
-                    schluessel=e.schluessel, call=e.call, qso_date=e.qso_date,
+                    schluessel=schluessel, call=e.call, qso_date=e.qso_date,
                     time_on=e.time_on, band=e.band, mode=e.mode,
                     user_callsign=op.callsign, empfangen_am=e.empfangen_am,
                     gridsquare=e.gridsquare, nachricht=e.nachricht,
                 ))
-                vorhanden.add(e.schluessel)
+                vorhanden.add(schluessel)
                 neu += 1
         log.info("eQSL-Posteingang %s: %d Eintraege geprueft, %d neu (bekannt: %d)",
                  op.callsign, len(eintraege), neu, bekannt)
@@ -1852,6 +1869,14 @@ class Orchestrator:
                     harter_fehler = str(exc)[:200]
                 elif "drosselt" in str(exc):
                     log.info("eQSL drosselt, Kartenabruf pausiert")
+                    break
+                elif getattr(exc, "netz", False):
+                    # eQSL nicht erreicht: Die Runde endet, die Karte bekommt
+                    # keinen Versuch angerechnet. Bis 2026-11-14 zaehlte jeder
+                    # Netzfehler mit; nach drei Runden ohne Verbindung wurden
+                    # die 25 frischesten Karten nie wieder angefragt, ohne
+                    # Fehlertext und ohne Zeile im Log.
+                    log.warning("eQSL nicht erreichbar, Kartenabruf pausiert: %s", exc)
                     break
 
             # Erst die Datei, dann der Eintrag — in dieser Reihenfolge gibt
@@ -2947,8 +2972,25 @@ class Orchestrator:
                 yaml.safe_dump(d, default_flow_style=False, sort_keys=False),
             )
             await self._merke_config_stand(d)
+            self._config_persist_fehler = None
         except Exception as exc:
-            log.warning("persist_config failed: %s", exc)
+            # Laut statt leise: Bis 2026-11-14 stand hier eine Warnzeile, und
+            # die API meldete Erfolg. Die Aenderung (Operator angelegt, Token
+            # gesetzt, Standort gewechselt) lebte dann nur im Arbeitsspeicher
+            # und war nach dem naechsten Neustart weg.
+            log.error("persist_config failed: %s", exc)
+            self._config_persist_fehler = str(exc)[:200]
+            if time.time() - self._config_persist_gemeldet_at >= 3600.0:
+                self._config_persist_gemeldet_at = time.time()
+                if self.integrations.ntfy and self.integrations.ntfy.enabled:
+                    try:
+                        asyncio.create_task(self.integrations.ntfy.notify(
+                            _t("push.config_persist_msg", grund=str(exc)[:160]),
+                            title=_t("push.config_persist_title"),
+                            priority="high", tags=["warning"],
+                        ))
+                    except Exception:
+                        pass
 
     async def merke_config_stand(self) -> None:
         """Den laufenden Stand in die Aenderungshistorie schreiben (PUT /api/config)."""
@@ -6854,42 +6896,8 @@ class Orchestrator:
             if psk_client is None:
                 log.info("psk-reciprocity: client not configured, exiting refresh loop")
                 return
-            # Operator-Calls die wir abfragen — Multi-Op-Setup berücksichtigen.
-            # Hinweis v0.10.4: AppConfig hat operators auf TOP-Level, nicht
-            # unter config.operator. Vorheriger Pfad self.config.operator.
-            # operators → AttributeError → silent task death (keine logs).
-            operator_calls: list[str] = []
-            if self.config.operator.callsign:
-                operator_calls.append(self.config.operator.callsign)
-            for op in (self.config.operators or []):
-                if op.callsign and op.callsign not in operator_calls:
-                    operator_calls.append(op.callsign)
-            # v0.23.0 — QRV-Filter: nur Calls abfragen die tatsaechlich
-            # schon mal gesendet haben (QSOs in der DB). Sebastian
-            # 2026-05-29: die /AM-Profile (DK9XR/AM, DO3XR/AM) waren nie
-            # QRV, aber wir haben pskreporter.info trotzdem fuer sie
-            # abgefragt → 2x so viele Requests → 503-Rate-Limit. Der
-            # aktive Operator bleibt IMMER drin (auch ohne QSOs, damit
-            # ein frisch angelegter Op vom ersten QSO an getrackt wird).
-            if self.db_enabled:
-                try:
-                    from sqlalchemy import select as _sel, distinct as _distinct
-                    from ..db.models import Qso as _Qso
-                    active = self.config.operator.callsign
-                    async with session_scope() as _s:
-                        qrv_rows = (await _s.execute(
-                            _sel(_distinct(_Qso.user_callsign))
-                        )).scalars().all()
-                    qrv = {c for c in qrv_rows if c}
-                    operator_calls = [
-                        c for c in operator_calls
-                        if c == active or c in qrv
-                    ]
-                except Exception as exc:
-                    log.warning("psk-reciprocity: QRV-Filter fehlgeschlagen (%s) "
-                                "— frage alle Calls ab", exc)
-            log.info("psk-reciprocity: monitoring %d QRV operator-call(s): %s",
-                     len(operator_calls), operator_calls)
+            log.info("psk-reciprocity: abgefragt wird das Rufzeichen, unter dem "
+                     "diese Station sendet (derzeit %s)", self.effective_tx_call())
         except Exception as exc:
             log.error("psk-reciprocity: setup failed, refresh-loop dead: %s",
                       exc, exc_info=True)
@@ -6904,7 +6912,6 @@ class Orchestrator:
         #     nicht stur weiter drauf.
         per_call_heard: dict[tuple[str, str], set[str]] = {}
         per_call_snr: dict[tuple[str, str], dict[str, int]] = {}  # v0.64.0 telemetry
-        rotate_idx = 0
         consecutive_fail = 0
         paused_reason: str | None = None
         configured_interval = float(self.config.operating.psk_reciprocity_refresh_s)
@@ -6939,9 +6946,15 @@ class Orchestrator:
                 if paused_reason is not None:
                     log.info("psk-reciprocity: resumed")
                     paused_reason = None
-                if operator_calls:
-                    call = operator_calls[rotate_idx % len(operator_calls)]
-                    rotate_idx += 1
+                # Nur das Rufzeichen, unter dem DIESE Station gerade sendet.
+                # Bis 2026-11-14 wurde reihum jeder Operator abgefragt, der
+                # QSOs in der lokalen Datenbank hat, und alle Hoerer wurden
+                # vereinigt. Seit es zwei Stationen gibt, mischte das die
+                # Hoerer der anderen Station (andere Antenne, anderer Ort) in
+                # den PSK-Beleg, ins Hoerprofil und in die Messreihen, und das
+                # eigene Rufzeichen kam nur noch halb so oft an die Reihe.
+                call = self.effective_tx_call()
+                if call:
                     mode = str(self.config.operating.mode or "FT8").upper()
                     cache_key = (call, mode)
                     try:
@@ -6970,7 +6983,7 @@ class Orchestrator:
                     # Merge aller pro-Call gecachten Sets → Picker liest atomar
                     merged: set[str] = set()
                     for (_call, cached_mode), s in per_call_heard.items():
-                        if cached_mode == mode:
+                        if cached_mode == mode and _call == call:
                             merged |= s
                     self._psk_heard_us_cache = merged
                     self._persist_psk_cache(merged, mode)
@@ -6988,7 +7001,7 @@ class Orchestrator:
                     # v0.64.0 — SNR-Merge (bester Wert ueber alle Op-Calls).
                     merged_snr: dict[str, int] = {}
                     for (_call, cached_mode), sm in per_call_snr.items():
-                        if cached_mode != mode:
+                        if cached_mode != mode or _call != call:
                             continue
                         for k, v in sm.items():
                             if k not in merged_snr or v > merged_snr[k]:

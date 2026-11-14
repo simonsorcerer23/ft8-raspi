@@ -147,3 +147,26 @@ async def test_die_uebrigen_karten_kommen_in_spaeteren_runden(
     await Orchestrator._qsl_bilder_nachholen(o)   # Runde 1
     await Orchestrator._qsl_bilder_nachholen(o)   # Runde 2
     assert o.reihenfolge == ["EA4CPM", "EA4CPM"], o.reihenfolge
+
+
+@pytest.mark.asyncio
+async def test_netzfehler_beendet_die_runde_ohne_versuch(tmp_path, monkeypatch) -> None:
+    """Audit 14.11.2026: Nach drei Runden ohne Verbindung zu eQSL wurden die
+    frischesten Karten nie wieder angefragt, ohne Fehlertext und ohne Logzeile."""
+    from sqlalchemy import select
+
+    import ft8_appliance.integrations.eqsl_inbox as mod
+
+    await _db([_karte("EC3A", _tag(0)), _karte("UA9SY", _tag(1))])
+    o = _orch(tmp_path, monkeypatch, je_runde=2)
+    gefragt: list[str] = []
+
+    async def _weg(user, pw, eintrag, **kw):
+        gefragt.append(eintrag.call)
+        raise mod.EqslInboxError("Netzfehler: weg", netz=True)
+    monkeypatch.setattr(mod, "hole_karte", _weg)
+    for _ in range(4):
+        await Orchestrator._qsl_bilder_nachholen(o)
+    assert len(gefragt) == 4                       # je Runde ein Versuch, dann Schluss
+    async with session_scope() as s:
+        assert {k.versuche for k in (await s.execute(select(m.QslKarte))).scalars()} == {0}
