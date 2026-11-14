@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.197.1 — 2026-11-14
+- fix: wiederholt der Partner nach dem Abschluss sein RR73, kommt ein 73 hinterher; eigener Leistungsbefehl waehrend des Rig-Schnappschusses loest keinen Alarm 'extern verstellt' mehr aus — QSO_GRACE dauerte null Slots und konnte das 73 nie senden
+
 ## v0.197.0 — 2026-11-14
 - docs: Audit-Stand nach v0.197.0 — 70 von 79 Befunden behoben
 - fix: Autopilot bewertet ein anderes Band auf der FT8-Zeile statt auf der leeren FT4-Zeile, Pile-Up-Erkennung zaehlt die Anrufer im Slot davor — je belebter das andere Band war, desto sicherer blieb der Autopilot stehen; die Pile-Up-Zaehlung suchte Anrufer im selben Slot wie das CQ, wo sie nie senden
