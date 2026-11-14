@@ -37,6 +37,7 @@ from __future__ import annotations
 import logging
 import re
 import secrets
+from urllib.parse import urlsplit
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -92,11 +93,39 @@ def _is_localhost(request: Request) -> bool:
     return bool(client and client.host in _LOCALHOSTS)
 
 
+def _fremde_herkunft(request: Request) -> bool:
+    """Kommt die Anfrage von einer anderen Webseite?
+
+    Localhost braucht keinen Token. Ueber einen SSH-Tunnel (der dokumentierte
+    Weg, die Oberflaeche zu testen) kommt aber auch der Browser als 127.0.0.1
+    am Pi an, und mit ihm jede Seite, die in diesem Browser gerade offen ist:
+    Ein bodyloser POST von dort an /api/control/cq oder /api/system/reboot
+    ging bis 2026-11-14 ohne Token durch. Der Browser nennt die Herkunft
+    selbst (Origin, Sec-Fetch-Site); curl und das Self-Update senden keines
+    von beiden und bleiben unberuehrt.
+    """
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        return True
+    origin = request.headers.get("origin")
+    if not origin:
+        return False
+    if origin == "null":
+        return True
+    return urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower()
+
+
 def _eq(a: str | None, b: str | None) -> bool:
-    """Constant-time compare, tolerant of None."""
+    """Constant-time compare, tolerant of None.
+
+    Nicht-ASCII im Token: compare_digest wirft dafuer einen TypeError, und
+    die Anfrage endete bis 2026-11-14 mit 500 statt 401.
+    """
     if not a or not b:
         return False
-    return secrets.compare_digest(a, b)
+    try:
+        return secrets.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+    except (UnicodeError, AttributeError):
+        return False
 
 
 async def auth_middleware(request: Request, call_next):
@@ -113,7 +142,7 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     # Localhost is trusted (on-Pi == full access; self-update lives here).
-    if _is_localhost(request):
+    if _is_localhost(request) and not _fremde_herkunft(request):
         return await call_next(request)
 
     from ..config import get_config

@@ -147,10 +147,16 @@ async def pick_attempts(
     Confound). Speist sich aus der pick_attempt-Tabelle (ab v0.30.0)."""
     async with session_scope() as s:
         rows = list((await s.execute(select(PickAttempt))).scalars().all())
-    with_psk = [r for r in rows if r.psk_heard_us]
-    without_psk = [r for r in rows if not r.psk_heard_us]
+    # Fuer die Frage "hilft der PSK-Beleg" zaehlen nur eigene Anrufe. Bis
+    # 2026-11-14 lagen die eingehenden Anrufe mit im Topf: Sie schliessen viel
+    # oefter ab und sind ueberwiegend nah, laut und auf der PSK-Liste, der
+    # Vergleich bevorzugte "mit PSK" also von vornherein. Aeltere Zeilen ohne
+    # pick_kind gelten als Anruf.
+    anrufe = [r for r in rows if (r.pick_kind or "cq") == "cq"]
+    with_psk = [r for r in anrufe if r.psk_heard_us]
+    without_psk = [r for r in anrufe if not r.psk_heard_us]
     buckets: dict[str, dict[str, list[PickAttempt]]] = {}
-    for r in rows:
+    for r in anrufe:
         b = _snr_bucket(r.snr_db)
         cell = buckets.setdefault(b, {"with": [], "without": []})
         cell["with" if r.psk_heard_us else "without"].append(r)
@@ -166,9 +172,9 @@ async def pick_attempts(
     # v0.31.0 — Dupe vs neuer Call (beantwortet die skip_worked-Frage:
     # bringen Anrufe auf schon gearbeitete Calls ueberhaupt Completions?).
     # None (alte v0.30-Zeilen) wird aus dem Split ausgeschlossen.
-    dupe = [r for r in rows if r.was_worked is True]
-    new_call = [r for r in rows if r.was_worked is False]
-    new_dxcc = [r for r in rows if r.was_new_dxcc is True]
+    dupe = [r for r in anrufe if r.was_worked is True]
+    new_call = [r for r in anrufe if r.was_worked is False]
+    new_dxcc = [r for r in anrufe if r.was_new_dxcc is True]
 
     occ: dict[str, list[PickAttempt]] = {}
     for r in rows:

@@ -544,3 +544,60 @@ def test_psk_reporter_upload_traegt_die_betriebsart_unter_der_richtigen_nummer()
     assert empfaenger[0x8002] == "DO3XR" and empfaenger[0x8004] == "JN58CH"
     assert empfaenger[0x8008] == "ft8-appliance 0.196.0"
     assert empfaenger[0x8009] == ""               # keine erfundene Antennenangabe mehr
+
+
+# ---------------------------------------------------------------------------
+# Localhost ohne Token, aber nicht fuer fremde Webseiten
+
+def _client_localhost(token: str = "master-token-xyz") -> TestClient:
+    set_config_for_tests(AppConfig.model_validate({
+        "operators": [{"callsign": "DK9XR", "license_class": "A"}],
+        "active_callsign": "DK9XR", "api_token": token,
+    }))
+    app = create_app()
+    app.state.orchestrator = FakeOrchestrator()
+    return TestClient(app, client=("127.0.0.1", 50000), base_url="http://localhost:18000")
+
+
+def test_localhost_ohne_token_nur_ohne_fremde_herkunft() -> None:
+    """Bei offenem SSH-Tunnel konnte jede Webseite im selben Browser schalten."""
+    c = _client_localhost()
+    assert c.get("/api/status").status_code == 200                       # curl, Self-Update
+    assert c.get("/api/status", headers={"Origin": "http://localhost:18000"}).status_code == 200
+    fremd = {"Origin": "https://fremde-seite.example"}
+    assert c.post("/api/control/stop", headers=fremd).status_code == 401
+    assert c.post("/api/control/stop", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 401
+    assert c.get("/api/status", headers={"Origin": "null"}).status_code == 401
+    mit_token = {**fremd, "Authorization": "Bearer master-token-xyz"}
+    assert c.get("/api/status", headers=mit_token).status_code == 200
+
+
+def test_token_mit_umlaut_gibt_401_statt_500() -> None:
+    set_config_for_tests(AppConfig.model_validate({
+        "operators": [{"callsign": "DK9XR", "license_class": "A"}],
+        "active_callsign": "DK9XR", "api_token": "master-token-xyz",
+    }))
+    app = create_app()
+    app.state.orchestrator = FakeOrchestrator()
+    c = TestClient(app)
+    assert c.get("/api/status?token=gr%C3%BC%C3%9Fe").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# SWR je QSO: Mittel aus den Bursts, nicht der Empfangswert
+
+def test_swr_je_qso_ist_das_mittel_der_bursts(tmp_path) -> None:
+    """Geloggt wird im Empfang, dort liest das Rig 1,00: 2764 von 2918 QSOs trugen genau das."""
+    import time as _time
+
+    o = _orch_mit_pfad(tmp_path)
+    o.db_enabled = False
+    assert o._swr_mittel_der_bursts() is None        # kein Burst, kein erfundener Wert
+    o._tx_burst_active = True
+    for w in (1.4, 1.6, 1.5):
+        o._buche_swr(w)
+    o._tx_burst_active = False
+    o._buche_swr(1.0)                                 # Empfang: zaehlt nicht
+    assert o._swr_mittel_der_bursts() == 1.5
+    o._swr_burst_proben[:] = [(_time.monotonic() - 600, 3.0)]   # ein altes QSO
+    assert o._swr_mittel_der_bursts() is None

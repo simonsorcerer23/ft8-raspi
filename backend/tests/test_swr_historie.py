@@ -33,6 +33,7 @@ def _o(*, burst=True, letzter=None, letzte_zeit=0.0):
         _tx_burst_active = burst
         db_enabled = True
         _swr_log_wert = letzter
+        _swr_burst_proben: list = []
         _swr_log_at = letzte_zeit
         _last_rig = _Rig()
         state_machine = type("S", (), {"ctx": type("C", (), {"band": "20m"})()})()

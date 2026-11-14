@@ -25,6 +25,7 @@ def _stub(*, partner="OZ1A", zustand=State.QSO_REPORT, aktiv=True):
             qso=SimpleNamespace(their_call=partner) if partner else None,
             _check_guards=lambda hw: True),
         _refresh_hw_for_control=AsyncMock(), _hardware_state=None,
+        _late_ingest_grenze=None,
         _tx_aufgeschoben_nr=0, _AUFSCHIEBBAR=Orchestrator._AUFSCHIEBBAR,
         _station_aktiv=lambda: aktiv, _do_tx_message=AsyncMock(), gestartet=[],
     )

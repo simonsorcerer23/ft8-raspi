@@ -24,6 +24,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import random
@@ -941,6 +942,9 @@ class Orchestrator:
     # einen laufenden Burst hineinsenden (live 17:35: "Device or resource
     # busy", danach PTT aus — mitten im Burst an OD5ZZ).
     _in_late_ingest: bool = field(default=False, init=False)
+    # Slot-Grenze, an der die gerade eingespeiste spaete Charge haette
+    # beantwortet werden muessen (Beginn UNSERES Sendeslots). None ausserhalb.
+    _late_ingest_grenze: float | None = field(default=None, init=False)
     _tx_burst_active: bool = field(default=False, init=False)
     _rig_restore_last_at: float = field(default=0.0, init=False)
     _consecutive_late_tx: int = field(default=0, init=False)
@@ -1023,6 +1027,8 @@ class Orchestrator:
     # Flag verhindert Push-Spam wenn der gleiche TX-Burst mehrfach
     # gepollt wird vor PTT auf False geht.
     _swr_runaway_active: bool = field(default=False, init=False)
+    # (Zeit, SWR) aus den eigenen Bursts, fuer den Mittelwert je QSO
+    _swr_burst_proben: list[tuple[float, float]] = field(default_factory=list, init=False)
     # Die Sperre stammt von einer SWR-Notabschaltung im Burst. Im Empfang
     # liest das Rig wieder 1,0; ohne dieses Merkmal hielt der Sperr-Waechter
     # die Lage fuer geheilt und gab nach zehn Minuten wieder frei, bis zu
@@ -5392,10 +5398,12 @@ class Orchestrator:
         # CQ-Frequenz-Picker soll der ganze Slot sichtbar bleiben.
         self.state_machine.last_decodes = list(self._last_decodes)
         self._in_late_ingest = True
+        self._late_ingest_grenze = tick.posix
         try:
             await self._drain_actions()
         finally:
             self._in_late_ingest = False
+            self._late_ingest_grenze = None
         self._push_status()
 
     def _autopilot_allowed_modes(self) -> list[str]:
@@ -9159,6 +9167,18 @@ class Orchestrator:
             (jetzt - self._swr_fehlt_seit) / 60.0,
         )
 
+    def _swr_mittel_der_bursts(self, fenster_s: float = 180.0) -> float | None:
+        """Mittel der Stehwellenwerte aus den eigenen Bursts der letzten Minuten.
+
+        ``qso.swr_avg`` trug bis 2026-11-14 den Momentanwert beim Loggen, und
+        geloggt wird im Empfang: 2764 von 2918 QSOs standen mit exakt 1,00 im
+        Log, das Trend-Diagramm zeigte eine Linie. None, wenn in den Bursts
+        dieses QSOs kein Wert gelesen wurde.
+        """
+        ab = time.monotonic() - fenster_s
+        werte = [w for t, w in self._swr_burst_proben if t >= ab]
+        return round(sum(werte) / len(werte), 2) if werte else None
+
     def _buche_swr(self, swr: float) -> None:
         """Den Stehwellenwert in die Historie schreiben.
 
@@ -9178,9 +9198,13 @@ class Orchestrator:
         laeuft jede Sekunde — ungefiltert waeren das Zehntausende Zeilen
         am Tag fuer eine Groesse, die sich kaum bewegt.
         """
-        if not self._tx_burst_active or not self.db_enabled:
+        if not self._tx_burst_active:
             return
         jetzt = time.monotonic()
+        self._swr_burst_proben.append((jetzt, swr))
+        del self._swr_burst_proben[:-600]
+        if not self.db_enabled:
+            return
         vorher = self._swr_log_wert
         # 0,05 statt 0,15 (2026-10-11): Seit der Tuner aus ist, misst die
         # Reihe die Antenne, und kleine Bewegungen sind das, worauf es ankommt.
@@ -10384,6 +10408,17 @@ class Orchestrator:
         lead = float(getattr(
             self.config.operating, "decoder_pre_decode_lead_s", 1.3) or 0.0)
         max_warten = max(2.5, lead + 1.0)
+        if self._in_late_ingest and 0.0 < rest_bis_grenze <= max_warten:
+            # Die Charge gehoert zum Slot DAVOR; wir stehen am Ende unseres
+            # eigenen Sendeslots. Die naechste Grenze ist der Beginn SEINES
+            # Slots: Bis 2026-11-14 wartete die Antwort sie ab und ging dann
+            # zeitgleich mit dem Partner hinaus. Sie wird jetzt auf den
+            # naechsten eigenen Slot gelegt.
+            log.info("TX %r kommt zu spaet fuer diesen Slot und wuerde in den "
+                     "des Partners fallen — aufgeschoben", text)
+            self.state_machine.on_tx_ausgefallen(payload.get("kind"))
+            self._schiebe_tx_auf(payload)
+            return
         if 0.0 < rest_bis_grenze <= max_warten:
             # Ein kleiner Puffer ueber die Grenze hinaus: _slot_phase_s()
             # rechnet time.time() % slot_s, und wer exakt auf der Grenze
@@ -10523,7 +10558,15 @@ class Orchestrator:
         from .slot_clock import FT4_SLOT_SECONDS, SLOT_SECONDS
         slot_s = FT4_SLOT_SECONDS if self.config.operating.mode == "FT4" else SLOT_SECONDS
         jetzt = time.time()
-        faellig = (jetzt - jetzt % slot_s) + 2 * slot_s
+        grenze = self._late_ingest_grenze
+        if grenze is not None and jetzt >= grenze:
+            # Spaete Charge: Unsere Slots beginnen an ihrer Grenze und danach
+            # alle zwei Slots. Der naechste, der noch nicht begonnen hat. Bis
+            # 2026-11-14 wurde von der Ankunftszeit aus gezaehlt; kam die
+            # Charge erst nach der naechsten Grenze, traf "+2 Slots" seinen.
+            faellig = grenze + 2 * slot_s * max(1, math.ceil((jetzt - grenze) / (2 * slot_s)))
+        else:
+            faellig = (jetzt - jetzt % slot_s) + 2 * slot_s
         self._tx_aufgeschoben_nr += 1
         nr = self._tx_aufgeschoben_nr
         qso = self.state_machine.qso
@@ -10568,6 +10611,10 @@ class Orchestrator:
         self._tx_sent_offsets_s.append(round(phase, 3))
         del self._tx_sent_offsets_s[:-10]
 
+    # Spaeter als so viele Sekunden nach der Slot-Grenze beginnt keine
+    # Aussendung mehr (FT8-Burst 12,64 s im 15-s-Slot, FT4 5,04 s in 7,5 s).
+    _TX_HARTE_VERSPAETUNG_S: typing.ClassVar[float] = 2.4
+
     def _record_tx_start_offset(self) -> bool:
         """TX-Start-Versatz messen; bei slot-getriebenem TX den Decoder
         zurueckschalten, wenn er den Sendestart zu spaet macht.
@@ -10609,17 +10656,25 @@ class Orchestrator:
             # Verspaetung wuerde die Decoder-Rueckstufung ausloesen.
             self._consecutive_late_tx = 0
             return True
-        self._note_tx_sent_offset(phase)
+        if phase <= self._TX_HARTE_VERSPAETUNG_S:
+            self._note_tx_sent_offset(phase)
         if phase <= op.tx_latency_max_s:
             self._consecutive_late_tx = 0
             return True
         self._consecutive_late_tx += 1
+        # Ab hier ragt der Burst in den Folgeslot: Er liefe in den
+        # Sendeslot des Partners hinein und laege ausserhalb jedes
+        # Decoder-Fensters (±2,5 s). Bis 2026-11-14 ging er trotzdem
+        # hinaus, auch 6 oder 11 s nach der Grenze. Gezaehlt wird er
+        # weiter, damit ein ueberlasteter Decoder zurueckgestuft wird.
+        senden = phase <= self._TX_HARTE_VERSPAETUNG_S
         log.warning(
-            "TX-Start %.2f s nach der Slot-Grenze (Limit %.1f s, %d× in Folge)",
+            "TX-Start %.2f s nach der Slot-Grenze (Limit %.1f s, %d× in Folge)%s",
             phase, op.tx_latency_max_s, self._consecutive_late_tx,
+            "" if senden else " — Burst entfaellt, er ragte in den Folgeslot",
         )
         if self._consecutive_late_tx < 3:
-            return True
+            return senden
         # Fuer die Meldung festhalten, bevor ein Zweig den Zaehler nullt
         # (bis 2026-11-13 stand dort "0x in Folge").
         late_count = self._consecutive_late_tx
@@ -10670,7 +10725,7 @@ class Orchestrator:
                 except Exception:
                     pass
         self._consecutive_late_tx = 0
-        return True
+        return senden
 
     async def _do_stop_tx(self, _: dict) -> None:
         try:
@@ -10864,7 +10919,7 @@ class Orchestrator:
             qso_end=payload["qso_end"],
             my_grid=my_grid,
             my_power_w=self._tx_power_w,
-            swr_avg=self._last_rig.swr,
+            swr_avg=self._swr_mittel_der_bursts(),
             my_lat=gps.lat,
             my_lon=gps.lon,
             # Multi-Operator-Tracking: welcher Operator hat diesen QSO?

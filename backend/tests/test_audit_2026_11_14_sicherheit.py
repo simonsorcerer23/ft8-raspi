@@ -512,3 +512,50 @@ async def test_station_sendet_nicht_wenn_das_rig_auf_usb_steht():
     assert o.state_machine.state is State.TX_LOCKED
     assert "USB" in (o.state_machine.ctx.last_lock_reason or "")
     assert not any(a.kind == "TX_MESSAGE" for a in o._action_log)
+
+
+# ---------------------------------------------------------------------------
+# Spaete Decoder-Chargen senden nicht in den Slot des Partners
+
+async def test_spaete_charge_am_slotende_wird_auf_den_naechsten_eigenen_slot_gelegt(monkeypatch):
+    """Der Rapport aus Slot S kam bei Sekunde 13,2 von S+1 aus der spaeten Stufe. Die
+    Antwort wartete die Grenze ab und ging in S+2 hinaus, zeitgleich mit dem Partner."""
+    o = _orch(_cfg())
+    sm = o.state_machine
+    sm.state = State.QSO_REPORT
+    sm.qso = QsoContext(their_call="W1AW", band="20m", their_snr=-10,
+                        our_snr_received=-12, partner_hat_uns_gerufen=True)
+    grenze = 1_700_000_010.0                       # Beginn unseres Slots S+1
+    monkeypatch.setattr(orch_mod.time, "time", lambda: grenze + 13.2)
+    monkeypatch.setattr(o, "_slot_phase_s", lambda: 13.2)
+    geplant = []
+    monkeypatch.setattr(o, "_spawn", lambda coro, name=None: (geplant.append(coro), coro.close()))
+    aufgeschoben = []
+    monkeypatch.setattr(o, "_sende_aufgeschoben",
+                        lambda payload, nr, faellig, partner: aufgeschoben.append(faellig) or _nichts())
+    o._in_late_ingest = True
+    o._late_ingest_grenze = grenze
+    await o._do_tx_message({"message": "W1AW DK9XR R-10", "kind": "r_report",
+                            "state": "QSO_REPORT", "freq_offset_hz": 1500})
+    assert not [c for c in o.rig.set_ptt.await_args_list if c.args == (True,)]
+    assert aufgeschoben == [grenze + 30.0]         # S+3, nicht S+2
+
+
+async def _nichts():
+    return None
+
+
+def test_aufschub_zaehlt_von_der_grenze_der_charge_nicht_von_der_ankunft(monkeypatch):
+    """Kam die Charge erst nach der naechsten Grenze, traf "+2 Slots" den Slot des Partners."""
+    o = _orch(_cfg())
+    o.state_machine.qso = QsoContext(their_call="W1AW", band="20m")
+    grenze = 1_700_000_010.0
+    faellig = []
+    monkeypatch.setattr(o, "_spawn", lambda coro, name=None: coro.close())
+    monkeypatch.setattr(o, "_sende_aufgeschoben",
+                        lambda payload, nr, f, partner: faellig.append(f) or _nichts())
+    o._late_ingest_grenze = grenze
+    for versatz, erwartet in ((2.0, 30.0), (14.0, 30.0), (17.0, 30.0), (31.0, 60.0)):
+        monkeypatch.setattr(orch_mod.time, "time", lambda v=versatz: grenze + v)
+        o._schiebe_tx_auf({"message": "W1AW DK9XR R-10", "kind": "r_report"})
+        assert faellig[-1] == grenze + erwartet, versatz

@@ -227,9 +227,24 @@ def spaete_decodes_abschnitt(con, seit: str) -> None:
     print("    journalctl -u ft8-controller | grep -c 'Burst entfaellt\\|verworfen: ein Burst'")
 
 
+def _nur_anrufe(con) -> str:
+    """SQL-Bedingung: nur eigene Anrufe, keine eingehenden.
+
+    Bis 2026-11-14 standen in den Vergleichen unten beide im selben Topf.
+    Eingehende Anrufe (pick_kind inbound_*) schliessen viel oefter ab und sind
+    ueberwiegend nah, laut und bekannt: Verglichen wurden dann Mischungen statt
+    Bedingungen, derselbe Fehler wie bei der "Abendschwaeche". Aeltere Zeilen
+    ohne pick_kind gelten als Anruf.
+    """
+    if not hat_spalte(con, "pick_attempt", "pick_kind"):
+        return "1=1"
+    return "(pick_kind = 'cq' or pick_kind is null)"
+
+
 def _quote_gruppen(con, seit: str, ausdruck: str, *, wo: str = "1=1",
                    sortierung: str = "1") -> list[tuple]:
     """(Gruppe, Versuche, fertig, Quote) fuer einen beliebigen Gruppenausdruck."""
+    wo = f"({wo}) and {_nur_anrufe(con)}"
     return con.execute(
         f"select {ausdruck}, count(*), sum(outcome='completed'), "
         "  round(100.0*sum(outcome='completed')/count(*),1)||' %' "
@@ -240,6 +255,7 @@ def _quote_gruppen(con, seit: str, ausdruck: str, *, wo: str = "1=1",
 
 def _zwei_gruppen_urteil(con, seit: str, spalte: str, *, wo: str = "1=1") -> str:
     """urteil() fuer eine Ja/Nein-Spalte: Gruppe 1 gegen Gruppe 0."""
+    wo = f"({wo}) and {_nur_anrufe(con)}"
     je = {int(g): (n, k) for g, n, k in con.execute(
         f"select {spalte}, count(*), sum(outcome='completed') from pick_attempt "
         f"where {spalte} is not null and {wo} and ts > datetime('now',?) group by 1",
@@ -251,6 +267,7 @@ def _zwei_gruppen_urteil(con, seit: str, spalte: str, *, wo: str = "1=1") -> str
 
 def _spearman_gegen_abschluss(con, seit: str, spalte: str, *, wo: str = "1=1") -> str:
     """Rangkorrelation einer Messgroesse mit dem Abschluss, mit Urteil."""
+    wo = f"({wo}) and {_nur_anrufe(con)}"
     paare = con.execute(
         f"select {spalte}, case when outcome='completed' then 1 else 0 end "
         f"from pick_attempt where {spalte} is not null and {wo} "
@@ -1212,7 +1229,12 @@ def main() -> int:
             + ("when ew_arm then 'ARM_EW' " if ew_da else "")
             + "else 'ARM_REGEL' end, "
             "sum(outcome = 'completed'), count(*) from pick_attempt "
-            "where ts > datetime('now', ?) and kontroll_arm is not null group by 1", (seit,),
+            # Dasselbe Fenster wie die Stunden darueber: ganze Tage. Bis
+            # 2026-11-14 zaehlten die Stunden ab Mitternacht des ersten Tages,
+            # die QSOs ab genau N mal 24 h; abends standen bis zu 23 Stunden
+            # ohne ihre QSOs im Nenner.
+            "where date(ts) >= date('now', ?) and kontroll_arm is not null group by 1",
+            (f"-{args.tage} day",),
         ).fetchall()}
         anrufe = {k: v[1] for k, v in qsos.items()}
         erfolge = {k: v[0] for k, v in qsos.items()}

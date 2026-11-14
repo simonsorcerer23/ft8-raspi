@@ -325,3 +325,15 @@ async def test_meldung_bei_rueckstufung_und_ohne_rueckstufung(monkeypatch) -> No
     assert "von 'extreme' auf 'standard' zurückgeschaltet" in text
     text = await _drei_spaete(_orch(_cfg(tx_latency_max_s=1.5)), "standard", two_stage=True)
     assert "schon auf 'standard'" in text
+
+
+def test_slot_getriebener_burst_entfaellt_wenn_er_in_den_folgeslot_ragte() -> None:
+    """Audit 14.11.2026: Bei 6 oder 11 s Phase ging der 12,6-s-Burst trotzdem hinaus,
+    mitten in den Sendeslot des Partners. Gezaehlt wird er weiter, damit ein
+    ueberlasteter Decoder zurueckgestuft wird."""
+    for phase, erwartet in ((2.0, True), (2.4, True), (2.6, False), (6.0, False), (11.0, False)):
+        orch = _orch()
+        orch._slot_phase_s = lambda p=phase: p  # type: ignore[method-assign]
+        orch._in_slot_tick = True
+        assert orch._record_tx_start_offset() is erwartet, phase
+        assert orch._consecutive_late_tx == 1
