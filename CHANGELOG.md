@@ -3,6 +3,17 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.195.0 — 2026-11-14
+- docs: Audit der ganzen Box vom 14.11. — 78 Befunde, 30 behoben, neun Fragen an den Betreiber
+- fix: Decoder schreibt keine Debug-Zeilen mehr ins Journal, Controller wartet beim Start auf den Zeitabgleich — neun von zehn Journalzeilen waren 'N_FFT = …' (5400 je Stunde), und Telemetrie der ersten Sekunden trug die Uhr vom letzten Herunterfahren
+- fix: naechtliche Sicherung holt beide Stationen, jede in ihr eigenes Ziel — der MK2-Pi war nirgends gesichert, und die Datenbank lag achtfach im Archiv (544 MB je Tag); pick_candidate wird mit aufgeraeumt
+- fix: Self-Update prueft den Tag-Namen im signierten Objekt und loest den Wartemodus wieder — ein altes signiertes Tag liess sich unter neuem Namen unterschieben, und nach einem gescheiterten Checkout rief die Station niemanden mehr an
+- fix: eQSL und LoTW geben QSOs bei Netzausfall nicht mehr auf, eQSL-Posteingang nur noch fuer den aktiven Operator — nach 13,5 h ohne Internet standen QSOs als hochgeladen im Log, und der MK2-Pi lud Raymonds 7857 Karten ein zweites Mal; haengendes tqsl wird beendet
+- fix: Speichern der Konfigseite setzt nichts mehr zurueck, was das Formular nicht kennt, und liefert keine Zugangsdaten mehr zurueck — 72 von 124 Betriebseinstellungen fielen auf Werkswert; API ohne geladenen Token ist zu statt offen; eQSL-Passwort und QRZ-Logbuch-Schluessel standen in Journal und Aenderungshistorie; Anmeldung haengt bei falschem Passwort nicht mehr
+- fix: Sendepfad nach Audit — Zeit-Guard hielt chrony ohne Quelle fuer synchron, SWR-Notabschaltung hob sich nach 10 min selbst auf, erster Burst nach Bandwechsel und Operatorwechsel liefen mit alter Leistung, nach Stop wurde noch gesendet, ALC-Sperre liess sich nicht quittieren
+- feat: Autopilot versucht FT4 nur, wenn im Grossfeld FT4 gemeldet wird, und schreibt jeden Versuch mit der PSK-Lage mit — bisher loeste allein die FT8-Dichte den Wechsel aus, am 14.11. gingen drei von sieben Versuchen ohne QSO zurueck; ft4_probe_log, Messplan ft4_probe_psk
+- docs: zweiter NVMe-Haenger am MK2-Pi — PCIe-Stromsparen aus, NVMe-Wache startet neu
+
 ## v0.194.1 — 2026-11-13
 - fix: TX-zu-spaet-Meldung nennt den echten Zaehler, die Zeit auf 0,01 s und was der Decoder tat — stand '1.5 s, Limit 1.5 s, 0x in Folge, auf standard zurueckgeschaltet', obwohl nur die Zweiteilung zurueckkam
 - docs: NVMe-Haenger am MK2-Pi — APST aus, Kernelmeldungen auf die SD-Karte
