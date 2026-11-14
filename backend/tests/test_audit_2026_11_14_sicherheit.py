@@ -559,3 +559,45 @@ def test_aufschub_zaehlt_von_der_grenze_der_charge_nicht_von_der_ankunft(monkeyp
         monkeypatch.setattr(orch_mod.time, "time", lambda v=versatz: grenze + v)
         o._schiebe_tx_auf({"message": "W1AW DK9XR R-10", "kind": "r_report"})
         assert faellig[-1] == grenze + erwartet, versatz
+
+
+# ---------------------------------------------------------------------------
+# Partner wiederholt sein RR73 nach dem Abschluss
+
+def _geloggt_mit(partner_schluss: str) -> StateMachine:
+    """Ein QSO, das mit dem RR73 des Partners endet und geloggt ist."""
+    sm = StateMachine(ctx=MachineContext(callsign="DK9XR", my_grid="JN58", auto_answer=True))
+    sm.state = State.QSO_REPORT
+    sm.qso = QsoContext(their_call="W1AW", band="20m", their_snr=-10,
+                        our_snr_received=-12, partner_hat_uns_gerufen=True)
+    sm.on_decodes(HardwareState(), [_d("W1AW", "DK9XR", f"DK9XR W1AW {partner_schluss}")])
+    sm.drain_actions()
+    sm.on_slot_tick(HardwareState(), _tick(0, 1_700_000_000.0))
+    sm.drain_actions()
+    assert sm.qso is None
+    return sm
+
+
+def test_wiederholtes_rr73_bekommt_ein_73():
+    """QSO_GRACE sollte das abdecken, dauert im echten Ablauf aber null Slots:
+    Wer RRR oder RR73 wiederholte, bekam nie ein 73."""
+    sm = _geloggt_mit("RR73")
+    assert sm.state is not State.QSO_GRACE            # der Nachlauf ist schon vorbei
+    sm.on_decodes(HardwareState(), [_d("W1AW", "DK9XR", "DK9XR W1AW RR73")])
+    tx = [a.payload["message"] for a in sm.drain_actions() if a.kind == "TX_MESSAGE"]
+    assert tx == ["W1AW DK9XR 73"]
+
+
+def test_ein_blosses_73_loest_nichts_aus():
+    sm = _geloggt_mit("RR73")
+    sm.on_decodes(HardwareState(), [_d("W1AW", "DK9XR", "DK9XR W1AW 73")])
+    assert not [a for a in sm.drain_actions() if a.kind == "TX_MESSAGE"]
+
+
+def test_das_73_kommt_hoechstens_dreimal():
+    sm = _geloggt_mit("RRR")
+    gesendet = 0
+    for _ in range(6):
+        sm.on_decodes(HardwareState(), [_d("W1AW", "DK9XR", "DK9XR W1AW RRR")])
+        gesendet += len([a for a in sm.drain_actions() if a.kind == "TX_MESSAGE"])
+    assert gesendet == StateMachine.RR73_NACHKLANG_MAX

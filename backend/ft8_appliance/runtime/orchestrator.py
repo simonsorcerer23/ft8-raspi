@@ -624,6 +624,8 @@ class Orchestrator:
     # Push feuern — der Set selbst rast oft als false-positive ein
     # weil rig-poll die Aenderung sieht bevor das echo registered ist.
     _dial_set_at: float = field(default=0.0, init=False)
+    # Wann der laufende Rig-Schnappschuss begonnen hat (monotonic)
+    _snapshot_begonnen_at: float = field(default=0.0, init=False)
     # Die zuletzt selbst gesetzte Frequenz. Der Rig-Poll laeuft ihr bis zu
     # ein paar Sekunden hinterher; wer in dieser Zeit entscheidet, muss mit
     # diesem Wert rechnen, nicht mit dem alten Schnappschuss.
@@ -3782,6 +3784,12 @@ class Orchestrator:
         oder durch andere Software) zu unterscheiden. Sebastian 2026-05-24.
         """
         self._recent_app_commands[key] = (value, time.monotonic())
+
+    def _befehl_nach_snapshot(self, key: str) -> bool:
+        """Kam unser letzter Befehl zu *key* erst, nachdem der laufende
+        Schnappschuss begonnen hatte? Dann kann dessen Wert noch der alte sein."""
+        entry = self._recent_app_commands.get(key)
+        return entry is not None and entry[1] >= self._snapshot_begonnen_at
 
     def _is_app_echo(self, key: str, rig_value, tolerance: float = 0) -> bool:
         """True wenn der jetzt vom Rig gemeldete Wert unserem letzten
@@ -8581,6 +8589,7 @@ class Orchestrator:
         max_ptt_s = float(self.config.operating.max_ptt_s)
         while True:
             try:
+                self._snapshot_begonnen_at = time.monotonic()
                 self._last_rig = await self.rig.snapshot()
             except Exception as exc:
                 _log_loop_exc("rig snapshot", exc)
@@ -8651,6 +8660,15 @@ class Orchestrator:
                             self._notify_power_over_cap(rig_watts, legal),
                             name="power-cap-push",
                         )
+                elif self._befehl_nach_snapshot("rfpower_norm"):
+                    # Ein Schnappschuss besteht aus rund 35 Einzelabfragen,
+                    # die Leistung ist eine der ersten. Kam unser eigener
+                    # Leistungsbefehl danach, vergleicht dieser Durchgang den
+                    # alten Wert mit dem neuen Soll: Bis 2026-11-14 gab das
+                    # die Meldung "extern verstellt", und der interne Wert
+                    # sprang fuer einen Poll zurueck. Der naechste
+                    # Schnappschuss ist massgeblich.
+                    pass
                 elif abs(rig_watts - self._tx_power_w) >= max(1, max_w // 20):
                     # Echo-Check: war das unser eigener set_rfpower-Befehl
                     # aus den letzten paar Sekunden, oder hat jemand am

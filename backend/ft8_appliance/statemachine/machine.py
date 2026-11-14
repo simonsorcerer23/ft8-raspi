@@ -2049,15 +2049,30 @@ class StateMachine:
                 continue
             if gesendet >= self.RR73_NACHKLANG_MAX:
                 continue
-            if _find_r_report_from_them(decodes, eintrag, self.ctx.tx_callsign) is None:
+            r_report = _find_r_report_from_them(decodes, eintrag, self.ctx.tx_callsign) is not None
+            # Wiederholt er stattdessen sein RR73 oder RRR, hat er unser 73
+            # nicht gesehen. Dafuer war QSO_GRACE gedacht, das im echten
+            # Ablauf aber null Slots dauert (gesetzt und im selben Tick
+            # beendet, Audit 14.11.2026). Ein 73 von hier aus kostet keine
+            # Wartezeit nach jedem QSO und haengt nicht am Zustand.
+            # Solange QSO_GRACE doch einmal steht (Aufrufer ohne Tick
+            # dazwischen), antwortet der Zweig dort und raeumt den Zustand ab.
+            schluss = (not r_report) and self.state is not State.QSO_GRACE and _find_closing(
+                decodes, eintrag, self.ctx.tx_callsign, nur_rr73=True)
+            if not (r_report or schluss):
                 continue
             if not self._check_guards(hw):
                 return False
-            log.info("%s wiederholt seinen Report nach dem Abschluss — RR73 noch "
-                     "einmal (%d/%d)", eintrag, gesendet + 1, self.RR73_NACHKLANG_MAX)
-            msg = f"{eintrag} {self.ctx.tx_callsign} RR73"
+            if r_report:
+                log.info("%s wiederholt seinen Report nach dem Abschluss — RR73 noch "
+                         "einmal (%d/%d)", eintrag, gesendet + 1, self.RR73_NACHKLANG_MAX)
+                msg, art = f"{eintrag} {self.ctx.tx_callsign} RR73", "rr73"
+            else:
+                log.info("%s wiederholt sein RR73 nach dem Abschluss — 73 hinterher "
+                         "(%d/%d)", eintrag, gesendet + 1, self.RR73_NACHKLANG_MAX)
+                msg, art = f"{eintrag} {self.ctx.tx_callsign} 73", "ack73"
             self._pending.append(
-                Action("TX_MESSAGE", self._tx_payload(msg, "rr73", freq_hz))
+                Action("TX_MESSAGE", self._tx_payload(msg, art, freq_hz))
             )
             self.ctx.recent_logged[eintrag] = (ablauf, freq_hz, gesendet + 1)
             return True
@@ -3358,10 +3373,14 @@ def _find_r_report_from_them(
 
 
 def _find_closing(
-    decodes: Iterable[DecodedMsg], their_call: str, my_call: str
+    decodes: Iterable[DecodedMsg], their_call: str, my_call: str,
+    *, nur_rr73: bool = False,
 ) -> bool:
     """Decode like ``DK9XR W1AW RR73`` / ``RRR`` / ``73``.
     Hashed-Call-tolerant seit v0.3.4 (siehe _find_report_from_them).
+
+    ``nur_rr73``: ein blosses 73 zaehlt nicht. Wer 73 sendet, ist fertig;
+    wer RR73 oder RRR wiederholt, wartet noch auf unseres.
     """
     for d in decodes:
         to_ok = _hashed_match(d.call_to, my_call)
@@ -3371,6 +3390,6 @@ def _find_closing(
         if d.call_to == "<...>" and d.call_from == "<...>":
             continue
         tail = d.message.split()[-1].upper()
-        if tail in {"RR73", "RRR", "73"}:
+        if tail in ({"RR73", "RRR"} if nur_rr73 else {"RR73", "RRR", "73"}):
             return True
     return False

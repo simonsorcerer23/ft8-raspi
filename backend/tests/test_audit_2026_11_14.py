@@ -601,3 +601,20 @@ def test_swr_je_qso_ist_das_mittel_der_bursts(tmp_path) -> None:
     assert o._swr_mittel_der_bursts() == 1.5
     o._swr_burst_proben[:] = [(_time.monotonic() - 600, 3.0)]   # ein altes QSO
     assert o._swr_mittel_der_bursts() is None
+
+
+# ---------------------------------------------------------------------------
+# Eigener Leistungsbefehl waehrend des Schnappschusses ist kein Fremdeingriff
+
+def test_befehl_nach_beginn_des_schnappschusses_wird_erkannt(tmp_path) -> None:
+    """Der Poll verglich den alten Rig-Wert mit dem neuen Soll und meldete
+    "Leistung extern verstellt", obwohl der Befehl von der Station selbst kam."""
+    import time as _time
+
+    o = _orch_mit_pfad(tmp_path)
+    o._snapshot_begonnen_at = _time.monotonic()
+    assert o._befehl_nach_snapshot("rfpower_norm") is False       # nie ein Befehl
+    o._register_app_command("rfpower_norm", 0.5)                  # mitten im Schnappschuss
+    assert o._befehl_nach_snapshot("rfpower_norm") is True
+    o._snapshot_begonnen_at = _time.monotonic() + 0.001           # der naechste Schnappschuss
+    assert o._befehl_nach_snapshot("rfpower_norm") is False
