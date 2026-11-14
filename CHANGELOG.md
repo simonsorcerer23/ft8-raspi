@@ -3,6 +3,29 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.196.0 — 2026-11-14
+- docs: Audit-Stand nach v0.196.0 — 61 von 79 Befunden behoben
+- fix: Station sperrt, wenn das Rig nicht im Datenbetrieb steht oder Split an ist — bisher kam nur eine Meldung, und bei USB statt USB-D wurde ein leerer Traeger oder das Mikrofon getastet (mode_guard)
+- fix: Karte loescht beim Verlassen beide Timer und escaped jeden Fremdtext in Popups und Tooltips, die Popup-Beschriftungen laufen ueber t() — der Terminator-Timer lief nach jedem Besuch des Karten-Tabs weiter, und Kommentar und Land aus dem DX-Cluster gingen roh ins Popup-HTML (Audit F12, Texte aus F10)
+- fix: DXpedition-Zeiten werden als UTC eingegeben und so beschriftet, die Statustexte laufen ueber t() — die Eingabe wurde als Ortszeit gedeutet, die Tabelle darunter zeigte UTC, also 1 bis 2 Stunden daneben (Audit F11, Texte aus F10)
+- fix: NR-Lampe folgt dem Schalter nr_on, ANF und Tuner werden angezeigt; Texte in Rig-Panel, Decode-Liste, Live-Konversation, Log und SWR-Chart laufen ueber t(), Rig-Zuruecksetzen nennt keine feste Filterbreite mehr — die Lampe hing an der NR-Staerke, die Texte liefen am i18n-Gate vorbei und nannten 2700 Hz, wo die Icom-Profile 3600 Hz einstellen (Audit F6, F10)
+- fix: /api/operators liefert den eQSL-QTH-Nickname mit, das Formular zeigt ihn und ein geleertes Feld loescht ihn — das Feld fehlte in der Antwort, das Formular startete immer leer und leer galt als unveraendert (Audit F9)
+- fix: QSL-Bild verwirft sein Motiv, sobald die Karte wechselt, und eine verspaetete Antwort fuer die vorige Karte — in der Grossansicht blieb beim Blaettern mit den Pfeiltasten das alte Bild unter den neuen Daten stehen (Audit F8)
+- fix: Bricht die Verbindung zur Station ab, steht oben rot „keine Verbindung seit …“ mit dem Fehler des Abrufs, und ein Klick auf ein Badge klappt Grund und Werte auf — vorher blieb die Oberflaeche mit alten Werten still stehen und der Badge-Klick schrieb nur in die Browser-Konsole (Audit F5)
+- fix: QSO-Ton kommt, wenn der QSO-Zaehler des aktiven Operators waechst, Meldungen ueber t() und in UTC, QSO_GRACE hat einen Namen in Statusleiste und Banner — der Ton hing an QSO_REPORT/QSO_LOG → IDLE, kam also nie beim geloggten QSO (das laeuft ueber QSO_GRACE), dafuer bei Timeout und Skip (Audit F4)
+- fix: Heute-Kacheln zaehlen nur QSOs des aktiven Operators, der ADIF-Export im Funk-Tab filtert auf ihn und der Dateiname kommt vom Server — vorher mischten Kacheln und Export DK9XR und DO3XR, die Datei hiess fest dk9xr_ft8.adif (Audit F7)
+- fix: Konfigseite, Wizard, Rig- und Bedienpanel lesen eine gemeinsame Rig-Tabelle (lib/rigs.js) mit FT-817/818 — die Konfigseite kannte beide Modelle nicht, der Zugriff auf die Werksleistung warf und die Seite blieb leer (Audit F3)
+- fix: Decoder gibt bis zu 150 statt 50 Decodes je Slot zurueck und zaehlt, wenn die Grenze erreicht wird — bei 60 Signalen fehlten die zehn schwaechsten wortlos; Audiopuffer gegen gleichzeitiges Lesen und Schreiben gesperrt
+- docs: NVMe-Wache und Kernel-Mitschrift des MK2-Pi liegen jetzt unter deploy/mk2-nvme, install.sh-Hinweis und Kommentare an den Stand vom 14.11. angepasst — vendor/ft8_lib ist kein Submodul, FT4-Trennung per PSK geht nur auf 40/15/10 m
+- fix: Vorab-Durchgang rechnet mit der Paritaet des richtigen Slots, FT4-Paritaeten ueberleben den Neustart richtig herum, Frequenzwechsel wartet das Ende der eigenen Aussendung ab, am Geraet ueber das Erlaubte gedrehte Leistung wird zurueckgestellt, Anmeldefehler bei QRZ und Club Log verbuchen nichts mehr als hochgeladen
+- fix: Betriebsskripte — Self-Update meldet einen dauerhaften Abruffehler und startet rigctld nicht mehr mitten im CQ neu, Restore verlangt den Zielhost und ueberschreibt kein Logbuch ohne --ueberschreiben, ein zweiter install.sh-Lauf nimmt den Autostart nicht mehr weg; die fest ausgeschriebenen Units entsprechen wieder den Vorlagen
+- fix: rigctld-Client liest eine Fehlerantwort nicht mehr als 'aus' und eine abgerissene Verbindung nicht mehr als 'gesetzt' — der PTT-Stuck-Waechter stellte bei 'RPRT -11' seinen Timer zurueck; Vorverstaerker und Abschwaecher kommen als Level statt als Funktion (am MK2 nachgesehen)
+- docs: README — IC-7300MK2 im Betrieb, Bring-up mit --enable-services, --release-key und Dienstbenutzer, widerlegte Regeln als widerlegt, Panic sperrt nicht, 1818 Tests
+- docs: architecture — Lese-Token statt ntfy_action_token, API ohne Token zu, Panic sperrt nicht, Zeit- und Dial-Guard, 22 Stufen, Abschnitt Autopilot mit seinen Grenzen
+- docs: Betriebsdoku an den Code angeglichen — Sendeleistung nach Neustart und Bandwechsel, 22 Picker-Stufen, Self-Update mit Wartemodus und Tag-Namen, zwei Stationen, NVMe-Wache als Handinstallation
+- fix: QRZ-Historie der gearbeiteten Stationen ueberlebt den Neustart — nach jedem Self-Update fehlte bis zu 24 h alles ausserhalb der eigenen Datenbank (1614 statt 7349 Rufzeichen), laengst Gearbeitete galten als neu
+- feat: Spiegel schreibt auto_cq, auto_answer und die Betriebsart unter station, Locator ueber FT8_SPIEGEL_GRID — fuer das Stationsboard und einen zweiten Spiegel des MK2-Pi
+
 ## v0.195.1 — 2026-11-14
 - fix: Autopilot setzt beim Moduswechsel immer den Dial, und der Dial-Guard verlangt den Dial der eingestellten Betriebsart — nach dem Neustart auf v0.195.0 rief der MK2 zwei Minuten lang FT4-CQ auf 21,074 MHz, weil ein veralteter Frequenzwert den FT4-Dial vortaeuschte
 
