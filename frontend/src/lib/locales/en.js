@@ -595,4 +595,11 @@ export const en = {
   // ADIF-Export je Operator (Audit 14.11.2026, F7)
   'log.adif_export': '⬇ ADIF export ({who})',
   'log.adif_all': 'all',
+
+  // QSO-Ton am Zaehler, Zustand QSO_GRACE (Audit 14.11.2026, F4)
+  'sound.qso_title': 'QSO logged',
+  'sound.qso_body': '{time} UTC · {total} QSOs in the log',
+  'sound.tx_locked_title': 'TX locked',
+  'statusbar.state.QSO_GRACE': 'closing',
+  'stateind.QSO_GRACE': 'closing…',
 };

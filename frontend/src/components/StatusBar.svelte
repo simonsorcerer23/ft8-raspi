@@ -39,7 +39,7 @@
   : '#94a3b8'
   );
   const _STATES = ['IDLE', 'CQ_CALLING', 'QSO_RESPOND', 'QSO_REPORT',
-                   'QSO_LOG', 'TX_LOCKED', 'UNKNOWN'];
+                   'QSO_LOG', 'QSO_GRACE', 'TX_LOCKED', 'UNKNOWN'];
   const stateLabel = $derived(
     _STATES.includes(state) ? t(`statusbar.state.${state}`) : state
   );

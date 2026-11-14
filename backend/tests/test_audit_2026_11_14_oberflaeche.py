@@ -52,6 +52,35 @@ def test_f3_keine_komponente_fuehrt_eine_eigene_rig_tabelle() -> None:
     assert not eigene, f"eigene Rig-Tabelle statt lib/rigs.js: {eigene}"
 
 
+# --- F4: QSO-Ton am Zaehler, QSO_GRACE in der Anzeige -----------------------
+
+def test_f4_qso_ton_haengt_am_zaehler_nicht_an_der_zustandsfolge() -> None:
+    """Ein geloggtes QSO laeuft ueber QSO_GRACE; "QSO_REPORT → IDLE" ist der
+    Abbruch. Der Ton darf deshalb an keiner Zustandsfolge haengen."""
+    txt = (FRONTEND / "lib" / "sound.svelte.js").read_text(encoding="utf-8")
+    code = "\n".join(z for z in txt.splitlines() if not z.lstrip().startswith("//"))
+    assert "'QSO_REPORT'" not in code and "'QSO_LOG'" not in code
+    assert "qso_total" in code
+    assert "toLocaleTimeString" not in code, "Zeiten im Funkbetrieb sind UTC"
+    assert not re.search(r"notify\(\s*'", code), "Meldungstext nicht ueber t()"
+
+
+def test_f4_jeder_zustand_hat_einen_namen_in_der_anzeige() -> None:
+    """QSO_GRACE erschien roh in der Statusleiste."""
+    from ft8_appliance.statemachine.states import State
+
+    de = (FRONTEND / "lib" / "locales" / "de.js").read_text(encoding="utf-8")
+    en = (FRONTEND / "lib" / "locales" / "en.js").read_text(encoding="utf-8")
+    leiste = (KOMPONENTEN / "StatusBar.svelte").read_text(encoding="utf-8")
+    banner = (KOMPONENTEN / "StateIndicator.svelte").read_text(encoding="utf-8")
+    for state in State:
+        assert f"'{state.name}'" in leiste, f"StatusBar kennt {state.name} nicht"
+        assert f"t('stateind.{state.name}')" in banner, f"StateIndicator kennt {state.name} nicht"
+        for katalog in (de, en):
+            assert f"'statusbar.state.{state.name}'" in katalog
+            assert f"'stateind.{state.name}'" in katalog
+
+
 # --- F7: Statistik und ADIF-Export je Operator ------------------------------
 
 @pytest.fixture
