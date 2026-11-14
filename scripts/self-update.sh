@@ -46,6 +46,30 @@ HEALTH_RETRY_DELAY_S=4
 log() { printf '[self-update] %s\n' "$*"; }
 die() { log "FATAL: $*"; ntfy "🔴" "Self-Update FATAL: $*" || true; exit 1; }
 
+# Wartemodus ("update-hold") wieder loesen, wenn das Update doch nicht kommt.
+#
+# Bis 2026-11-14 nahm ihn niemand zurueck: Scheiterte nach dem Ankuendigen
+# der Checkout oder der Build (am 06.09. und 08.09. passiert), blieb die
+# Station im Wartemodus stehen und rief niemanden mehr an, gemeldet wurde
+# nur "checkout failed". Ein Neustart des Controllers loest den Wartemodus
+# von selbst, deshalb nur ohne Neustart.
+HOLD_GESETZT=0
+CONTROLLER_NEU_GESTARTET=0
+hold_setzen() {
+    curl -fsS -m 5 -X POST -H 'content-type: application/json' -d '{"enabled": true}' \
+        "${API_BASE}/control/update-hold" >/dev/null 2>&1 || true
+    HOLD_GESETZT=1
+}
+hold_loesen() {
+    if [ "${HOLD_GESETZT}" = "1" ] && [ "${CONTROLLER_NEU_GESTARTET}" = "0" ]; then
+        if curl -fsS -m 5 -X POST -H 'content-type: application/json' -d '{"enabled": false}' \
+                "${API_BASE}/control/update-hold" >/dev/null 2>&1; then
+            log "Wartemodus zurueckgenommen (kein Neustart erfolgt)"
+        fi
+    fi
+}
+trap hold_loesen EXIT
+
 # Best-effort panic call BEFORE systemctl restart.
 #
 # Hintergrund (2026-05-24, ft8 PTT-Cascade): self-update.sh hatte das
@@ -223,6 +247,14 @@ if [ -s "${ALLOWED_SIGNERS}" ]; then
             verify-tag "${LATEST_TAG}" >/dev/null 2>&1; then
         die "Tag ${LATEST_TAG} ist nicht mit einem zugelassenen Schluessel signiert — kein Update, Pi bleibt auf ${CURRENT_DESC}"
     fi
+    # verify-tag prueft das Tag-Objekt, nicht den Namen, unter dem es im Repo
+    # haengt. Wer pushen kann, haengte sonst das signierte Objekt eines alten
+    # Releases unter einen neuen Namen (refs/tags/v9.9.9): Die Station nahm
+    # die alte Version als neueste und kein echtes Release mehr an.
+    NAME_IM_OBJEKT="$(git cat-file tag "${LATEST_TAG}" 2>/dev/null | sed -n '1,/^$/s/^tag //p' | head -1)"
+    if [ "${NAME_IM_OBJEKT}" != "${LATEST_TAG}" ]; then
+        die "Tag ${LATEST_TAG} traegt im signierten Objekt den Namen '${NAME_IM_OBJEKT}' — kein Update, Pi bleibt auf ${CURRENT_DESC}"
+    fi
     log "Signatur von ${LATEST_TAG} geprueft"
 else
     log "  ⚠ keine ${ALLOWED_SIGNERS} — Tag ${LATEST_TAG} wird OHNE Signaturpruefung uebernommen"
@@ -264,8 +296,7 @@ else
     # sobald kein Burst mehr laeuft.
     if [ "${STATE}" != "IDLE" ] && [ "${STATE}" != "TX_LOCKED" ]; then
         log "state=${STATE} — kuendige Update an (Drain), warte auf das Ende des laufenden QSO"
-        curl -fsS -m 5 -X POST -H 'content-type: application/json' -d '{"enabled": true}' \
-            "${API_BASE}/control/update-hold" >/dev/null 2>&1 || true
+        hold_setzen
         SAFE="false"
         for _i in $(seq 1 48); do
             sleep 5
@@ -285,6 +316,13 @@ else
             done
         fi
     fi
+fi
+
+# Auch aus dem Leerlauf heraus ankuendigen: Checkout, pip und der Bau des
+# Decoders dauern ein bis zwei Minuten, und ein QSO, das in dieser Zeit
+# beginnt, wuerde der Neustart mittendrin abschneiden.
+if [ "${HOLD_GESETZT}" = "0" ]; then
+    hold_setzen
 fi
 
 # -----------------------------------------------------------------------------
@@ -443,6 +481,7 @@ install_and_restart() {
         log "systemctl restart fehlgeschlagen — sudoers-snippet fehlt?"
         return 1
     fi
+    CONTROLLER_NEU_GESTARTET=1
     return 0
 }
 
