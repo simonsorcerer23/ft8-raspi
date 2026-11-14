@@ -13,15 +13,21 @@ function makeStatusStore() {
     rig: { freq_hz: null, mode: null, ptt: null, swr: null },
     gps: { mode: 0, lat: null, lon: null, sats_seen: 0, sats_used: 0 },
   });
+  // lastFetch: Zeitpunkt des letzten ERFOLGREICHEN Abrufs (0 = noch keiner).
+  // firstAttempt: Zeitpunkt des ersten Versuchs — Bezugspunkt fuer die
+  // Verbindungsanzeige, solange noch nie eine Antwort kam.
   let lastFetch = $state(0);
+  let firstAttempt = $state(0);
   let error = $state(null);
 
   async function refresh() {
+    if (!firstAttempt) firstAttempt = Date.now();
     try { value = await api.status(); lastFetch = Date.now(); error = null; }
     catch (e) { error = e.message; }
   }
   return { get value() { return value; }, get error(){ return error; },
-           get lastFetch(){ return lastFetch; }, refresh };
+           get lastFetch(){ return lastFetch; },
+           get firstAttempt(){ return firstAttempt; }, refresh };
 }
 
 // --------------------------------------------------------------- Healthcheck

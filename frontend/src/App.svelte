@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import StateIndicator from './components/StateIndicator.svelte';
   import StatusBadges   from './components/StatusBadges.svelte';
+  import ConnectionBanner from './components/ConnectionBanner.svelte';
   import ControlPanel   from './components/ControlPanel.svelte';
   import DecodeList     from './components/DecodeList.svelte';
   import Map            from './components/Map.svelte';
@@ -159,9 +160,6 @@
     }
   }
 
-  function handleBadgeDetail(key, section) {
-    console.log('badge detail', key, section);
-  }
 </script>
 
 {#if !authed}
@@ -204,8 +202,9 @@
 {:else}
 
 <main>
+  <ConnectionBanner />
   <StatusBar />
-  <StatusBadges onDetail={handleBadgeDetail} />
+  <StatusBadges />
 
   {#if tab === 'main'}
     <RigPanel />

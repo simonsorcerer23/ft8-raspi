@@ -81,6 +81,25 @@ def test_f4_jeder_zustand_hat_einen_namen_in_der_anzeige() -> None:
             assert f"'stateind.{state.name}'" in katalog
 
 
+# --- F5: Verbindungsverlust und Badge-Grund sichtbar ------------------------
+
+def test_f5_verbindungsverlust_wird_angezeigt() -> None:
+    """statusStore.error und lastFetch las keine einzige Komponente."""
+    banner = (KOMPONENTEN / "ConnectionBanner.svelte").read_text(encoding="utf-8")
+    assert "statusStore.lastFetch" in banner and "statusStore.error" in banner
+    assert "t('conn.lost_since'" in banner
+    app = (FRONTEND / "App.svelte").read_text(encoding="utf-8")
+    assert "<ConnectionBanner />" in app
+
+
+def test_f5_badge_klick_zeigt_den_grund_statt_console_log() -> None:
+    app = (FRONTEND / "App.svelte").read_text(encoding="utf-8")
+    assert "console.log('badge detail'" not in app
+    badges = (KOMPONENTEN / "StatusBadges.svelte").read_text(encoding="utf-8")
+    assert "console.log" not in badges
+    assert "reason(open, openSection)" in badges
+
+
 # --- F7: Statistik und ADIF-Export je Operator ------------------------------
 
 @pytest.fixture
