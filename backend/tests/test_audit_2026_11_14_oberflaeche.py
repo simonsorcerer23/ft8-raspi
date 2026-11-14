@@ -212,3 +212,54 @@ def test_f8_qsl_bild_verwirft_das_bild_beim_wechsel_der_karte() -> None:
     assert re.search(r"\$effect\(\(\) => \{\s*id;\s*untrack\(\(\) => \{ freigeben\(\);", txt)
     # ... und eine verspaetete Antwort fuer die vorige Karte wird verworfen.
     assert "fuer !== id" in txt
+
+
+# --- F9: eQSL-QTH-Nickname sehen und leeren ---------------------------------
+
+def _operator_client():
+    from fastapi.testclient import TestClient
+
+    from ft8_appliance.config import AppConfig
+    from ft8_appliance.web import create_app
+
+    class _Orch:
+        def __init__(self) -> None:
+            self.config = AppConfig.model_validate({
+                "operators": [{
+                    "callsign": "DK9XR", "license_class": "A",
+                    "eqsl_user": "DK9XR", "eqsl_password": "geheim",
+                    "eqsl_qth_nickname": "Heimat",
+                }],
+                "active_callsign": "DK9XR",
+                "antennas": [{"name": "dipol", "bands": ["15m"]}],
+            })
+
+        async def persist_config(self) -> None:
+            pass
+
+        def reload_active_operator_integrations(self) -> None:
+            pass
+
+    orch = _Orch()
+    app = create_app()
+    app.state.orchestrator = orch
+    return TestClient(app, client=("127.0.0.1", 50000)), orch
+
+
+def test_f9_eqsl_qth_nickname_wird_ausgeliefert_und_laesst_sich_leeren() -> None:
+    client, orch = _operator_client()
+
+    op = client.get("/api/operators").json()["operators"][0]
+    assert op["eqsl_qth_nickname"] == "Heimat"
+    assert "eqsl_password" not in op, "das Passwort bleibt geheim"
+
+    r = client.patch("/api/operators/DK9XR", json={"eqsl_qth_nickname": ""})
+    assert r.status_code == 200, r.text
+    assert r.json()["eqsl_qth_nickname"] is None
+    assert orch.config.operators[0].eqsl_qth_nickname is None
+    assert orch.config.operators[0].eqsl_password == "geheim"
+
+
+def test_f9_formular_startet_mit_dem_gespeicherten_nickname() -> None:
+    txt = (KOMPONENTEN / "OperatorAdminPanel.svelte").read_text(encoding="utf-8")
+    assert "eqsl_qth_nickname: op.eqsl_qth_nickname ?? ''" in txt

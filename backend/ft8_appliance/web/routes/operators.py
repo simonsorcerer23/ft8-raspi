@@ -50,6 +50,12 @@ class OperatorOut(BaseModel):
     # 2026-09-14 — eQSL.cc. Wie oben: Benutzername ja, Passwort nie.
     eqsl_user: str | None = None
     has_eqsl_credentials: bool = False
+    # Der bei eQSL vergebene Name eines von mehreren Konten desselben
+    # Rufzeichens — eine Bezeichnung, kein Geheimnis. Ohne das Feld startete
+    # das Formular immer leer, und "leer" galt als "unveraendert": ein einmal
+    # gesetzter Nickname war weder zu sehen noch zu loeschen (Audit
+    # 14.11.2026, F9).
+    eqsl_qth_nickname: str | None = None
     # 2026-09-14 — LoTW: nur der Name der Station Location, das
     # Zertifikat liegt ohnehin bei TQSL und nie hier.
     lotw_station_location: str | None = None
@@ -98,6 +104,7 @@ def _to_out(op: OperatorConfig, active: str) -> OperatorOut:
         ),
         eqsl_user=op.eqsl_user,
         has_eqsl_credentials=bool(op.eqsl_user and op.eqsl_password),
+        eqsl_qth_nickname=op.eqsl_qth_nickname,
         lotw_station_location=op.lotw_station_location,
         has_lotw_setup=bool(op.lotw_station_location),
         is_active=(op.callsign == active),
