@@ -588,4 +588,7 @@ export const de = {
   'wifi.open': 'offen',
   'wifi.add_btn': '＋ hinzufügen',
   'wifi.already_saved': 'bereits gespeichert',
+
+  // Wizard: Leistungsfeld (Audit 14.11.2026, F3)
+  'wiz.default_power': 'Standard-Sendeleistung (max {max} W)',
 };

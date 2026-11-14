@@ -3,6 +3,7 @@
   import { api } from '../lib/api.js';
   import { statusStore } from '../lib/stores.svelte.js';
   import { t } from '../lib/i18n.svelte.js';
+  import { rigMaxPowerW } from '../lib/rigs.js';
 
   let busy = $state(false);
   let lastError = $state(null);
@@ -11,7 +12,6 @@
   // = 100 W, IC-7610 = 100 W. Default 10 W hält die Anzeige bei einem
   // unkonfigurierten Pi/dev-Workstation sinnvoll.
   let rigMaxW = $state(10);
-  const RIG_MAX_W = { ic705: 10, ic7300: 100, ic7300mk2: 100, ic9700: 100, ic7610: 100, qmx_plus: 5, ft817: 5, ft818: 5 };
   // Hunting-Filter — live aus dem Funk-Dashboard schaltbar damit Dad
   // nicht ins Config-Menü muss um "nur DXCC-Relevante" zu togglen.
   let huntSkipWorked = $state(false);
@@ -112,7 +112,7 @@
       // Wenn der Operator explizit ein max_power_w gesetzt hat
       // (Pflicht-Begrenzung unter dem Rig-Stock), gewinnt das. Sonst
       // die stock-Leistung des erkannten Modells.
-      rigMaxW = c.rig?.max_power_w ?? RIG_MAX_W[c.rig?.model ?? 'ic705'];
+      rigMaxW = c.rig?.max_power_w ?? rigMaxPowerW(c.rig?.model ?? 'ic705');
       huntSkipWorked = c.operating?.hunt_skip_worked ?? false;
       huntDxccOnly   = c.operating?.hunt_dxcc_only ?? false;
     } catch {}

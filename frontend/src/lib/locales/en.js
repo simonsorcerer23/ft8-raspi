@@ -588,4 +588,7 @@ export const en = {
   'wifi.open': 'open',
   'wifi.add_btn': '＋ add',
   'wifi.already_saved': 'already saved',
+
+  // Wizard: Leistungsfeld (Audit 14.11.2026, F3)
+  'wiz.default_power': 'Default TX power (max {max} W)',
 };

@@ -12,6 +12,7 @@
   import { statusStore } from '../lib/stores.svelte.js';
   import { t } from '../lib/i18n.svelte.js';
   import { api } from '../lib/api.js';
+  import { rigKnown, rigMaxPowerW, rigShortName } from '../lib/rigs.js';
   import { onMount } from 'svelte';
 
   const rig = $derived(statusStore.value.rig ?? {});
@@ -26,25 +27,12 @@
   // against the rig's max). Default 10 W matches IC-705 so the dev
   // workstation with the mock rig keeps showing sane numbers.
   let rigMaxW = $state(10);
-  const MODEL_LABELS = {
-    ic705:  'IC-705',
-    ic7300: 'IC-7300',
-    ic7300mk2: 'IC-7300MK2',
-    ic9700: 'IC-9700',
-    ic7610: 'IC-7610',
-    qmx_plus: 'QMX/QMX+',
-    ft817: 'FT-817 (Digirig)',
-    ft818: 'FT-818 (Digirig)',
-  };
-  const MODEL_MAX_W = {
-    ic705: 10, ic7300: 100, ic7300mk2: 100, ic9700: 100, ic7610: 100, qmx_plus: 5, ft817: 5, ft818: 5,
-  };
   onMount(async () => {
     try {
       const c = await api.config();
       const m = c?.rig?.model;
-      modelLabel = MODEL_LABELS[m] ?? 'Rig';
-      rigMaxW = MODEL_MAX_W[m] ?? 10;
+      modelLabel = rigShortName(m) ?? 'Rig';
+      rigMaxW = rigKnown(m) ? rigMaxPowerW(m) : 10;
     } catch { /* keep generic defaults */ }
   });
   // ALC closed-loop telemetry — orchestrator-level state, not the rig's
