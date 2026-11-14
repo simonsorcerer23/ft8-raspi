@@ -286,3 +286,14 @@ def test_frontend_sendet_leere_passwoerter_nicht() -> None:
               / "OperatorAdminPanel.svelte").read_text()
     m2 = re.search(r"for \(const k of \[([^\]]+)\]\) \{\s*\n\s*if \(f\[k\]\.trim\(\)\)", quelle)
     assert m2 and "eqsl_password" in m2.group(1)
+
+
+@pytest.mark.asyncio
+async def test_netzausfall_zaehlt_nicht_als_versuch(monkeypatch) -> None:
+    """Audit 14.11.2026: Nach 15 Durchgaengen ohne Internet (13,5 h) standen
+    die QSOs als hochgeladen im Log, ohne je uebertragen zu sein."""
+    await _db([_qso(1, eqsl_upload_attempts=Orchestrator._UPLOAD_MAX_ATTEMPTS - 1)])
+    o = _orch(fehler=EqslError("Netzfehler: weg", netz=True), monkeypatch=monkeypatch)
+    for _ in range(3):
+        await Orchestrator._eqsl_sweep_fuer_operator(o, o.op)
+    assert [(h, v) for _, h, v in await _stand()] == [(False, Orchestrator._UPLOAD_MAX_ATTEMPTS - 1)]

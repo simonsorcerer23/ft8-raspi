@@ -62,6 +62,7 @@ def _orch(tmp_path, monkeypatch, je_runde: int):
         _QSL_JE_RUNDE=je_runde,
         qsl_verzeichnis=lambda: tmp_path,
     )
+    o._qsl_operatoren = lambda: list(o.config.operators)
     o.reihenfolge = reihenfolge
     return o
 

@@ -59,9 +59,11 @@ _HART = ("no match on eqsl_user", "bad callsign", "not a valid")
 class EqslError(RuntimeError):
     """eQSL hat den Upload abgelehnt."""
 
-    def __init__(self, text: str, *, hart: bool = False) -> None:
+    def __init__(self, text: str, *, hart: bool = False, netz: bool = False) -> None:
         super().__init__(text)
         self.hart = hart
+        # eQSL wurde gar nicht erreicht. Zaehlt nicht als Versuch.
+        self.netz = netz
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +181,7 @@ async def upload(
         async with httpx.AsyncClient(timeout=timeout) as client:
             antwort = await client.post(EQSL_URL, data=daten, files=dateien)
     except httpx.HTTPError as exc:
-        raise EqslError(f"Netzfehler: {exc}") from exc
+        raise EqslError(f"Netzfehler: {exc}", netz=True) from exc
     if antwort.status_code >= 400:
         raise EqslError(f"HTTP {antwort.status_code}")
     return lies_antwort(antwort.text)

@@ -43,14 +43,19 @@ ERFOLG = frozenset({0, 8, 9})
 # Endgueltig: von LoTW zurueckgewiesen, TQSL-Fehler, Bibliotheksfehler,
 # Syntaxfehler, Eingabedatei unlesbar. Erneut zu versuchen bringt nichts.
 HART = frozenset({2, 4, 5, 6, 7, 10})
+NICHT_ERREICHBAR = 11
 _STATUS = re.compile(r"Final Status:\s*(.+?)\s*\((\d+)\)", re.I)
 
 
 class LotwError(RuntimeError):
-    def __init__(self, text: str, *, hart: bool = False, code: int | None = None) -> None:
+    def __init__(self, text: str, *, hart: bool = False, code: int | None = None,
+                 netz: bool = False) -> None:
         super().__init__(text)
         self.hart = hart
         self.code = code
+        # LoTW wurde gar nicht erreicht (Code 11) oder tqsl blieb stehen.
+        # Zaehlt nicht als Versuch.
+        self.netz = netz
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +120,24 @@ def lies_status(stderr: str, code: int) -> tuple[str, int]:
     return (stderr.strip().splitlines() or ["ohne Meldung"])[-1][:200], code
 
 
+async def _beende_gruppe(proc) -> None:
+    """tqsl samt xvfb-run und Xvfb beenden und auf das Ende warten."""
+    if proc is None or proc.returncode is not None:
+        return
+    import os
+    import signal
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            return
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+            return
+        except TimeoutError:
+            continue
+
+
 async def upload(
     qsos: list[Qso], *, station_location: str, cert_password: str | None = None,
     timeout: float = 300.0,
@@ -137,18 +160,24 @@ async def upload(
             befehl += ["-p", cert_password]
         if shutil.which("xvfb-run"):
             befehl = ["xvfb-run", "-a", *befehl]
+        proc = None
         try:
+            # Eigene Prozessgruppe: xvfb-run startet Xvfb und tqsl als Kinder.
             proc = await asyncio.create_subprocess_exec(
                 *befehl, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE, start_new_session=True,
             )
             _, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except TimeoutError:
-            raise LotwError(f"tqsl antwortete {timeout:.0f}s nicht") from None
+            # Bis 2026-11-14 liefen xvfb-run, Xvfb und tqsl nach dem Timeout
+            # weiter, und der naechste Durchgang startete ein zweites tqsl
+            # auf demselben ~/.tqsl.
+            await _beende_gruppe(proc)
+            raise LotwError(f"tqsl antwortete {timeout:.0f}s nicht", netz=True) from None
         except OSError as exc:
             raise LotwError(f"tqsl liess sich nicht starten: {exc}", hart=True) from exc
 
     meldung, code = lies_status(err.decode("utf-8", "replace"), proc.returncode or 0)
     if code in ERFOLG:
         return LotwErgebnis(code, meldung, len(qsos))
-    raise LotwError(meldung, hart=code in HART, code=code)
+    raise LotwError(meldung, hart=code in HART, code=code, netz=code == NICHT_ERREICHBAR)

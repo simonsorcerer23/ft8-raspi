@@ -415,3 +415,43 @@ def test_startfunktion_prueft_einrichtung_und_doppelstart() -> None:
     o.db_enabled = False
     o._bg_tasks.clear()
     assert Orchestrator.starte_lotw_loop_falls_noetig(o, "test") is False
+
+
+@pytest.mark.asyncio
+async def test_lotw_nicht_erreichbar_zaehlt_nicht_als_versuch(monkeypatch) -> None:
+    """Audit 14.11.2026: wie bei eQSL gaben 15 Durchgaenge ohne Netz die QSOs auf."""
+    await _db([_qso(1, lotw_upload_attempts=Orchestrator._UPLOAD_MAX_ATTEMPTS - 1)])
+    o = _orch(fehler=LotwError("LoTW nicht erreichbar", code=11, netz=True),
+              monkeypatch=monkeypatch)
+    await Orchestrator._lotw_sweep_fuer_operator(o, o.op)
+    assert [(h, v) for _, h, v in await _stand()] == [(False, Orchestrator._UPLOAD_MAX_ATTEMPTS - 1)]
+
+
+@pytest.mark.asyncio
+async def test_haengendes_tqsl_wird_beendet(monkeypatch, tmp_path) -> None:
+    """Nach dem Timeout liefen xvfb-run, Xvfb und tqsl weiter."""
+    import asyncio
+    import os
+    import shutil as _shutil
+
+    from ft8_appliance.integrations import lotw
+
+    falsch = tmp_path / "tqsl"
+    falsch.write_text("#!/bin/sh\nsleep 60\n")
+    falsch.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+    echt_which = _shutil.which
+    monkeypatch.setattr(lotw.shutil, "which",
+                        lambda n: None if n == "xvfb-run" else echt_which(n))
+    gestartet = []
+    echt = asyncio.create_subprocess_exec
+
+    async def _start(*a, **k):
+        p = await echt(*a, **k)
+        gestartet.append(p)
+        return p
+    monkeypatch.setattr(lotw.asyncio, "create_subprocess_exec", _start)
+    with pytest.raises(LotwError) as e:
+        await lotw.upload([_qso(1)], station_location="X", timeout=0.3)
+    assert e.value.netz is True and e.value.hart is False
+    assert gestartet and gestartet[0].returncode is not None

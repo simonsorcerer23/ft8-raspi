@@ -386,6 +386,7 @@ async def test_liste_wird_etwa_stuendlich_abgeglichen(monkeypatch) -> None:
         _qsl_liste_abgleichen=abgleichen, _qsl_bilder_nachholen=bilder,
         _qsl_waisen_einsammeln=nichts,
     )
+    o._qsl_operatoren = lambda: list(o.config.operators)
     with pytest.raises(asyncio.CancelledError):
         await Orchestrator._qsl_inbox_loop(o)
     abstaende = [b - a for a, b in zip(abgleiche, abgleiche[1:])]
