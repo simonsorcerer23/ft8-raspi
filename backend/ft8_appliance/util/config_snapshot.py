@@ -51,7 +51,14 @@ def _zu_maskieren(name: str, wert: Any) -> bool:
     return isinstance(wert, str) and wert != "" and ist_geheim(name)
 
 
-def maskiere(wert: Any) -> Any:
+_GEHEIME_ABBILDUNGEN = frozenset({"qrz_logbooks"})
+"""Abbildungen, deren *Werte* Geheimnisse sind und deren Schluessel keine
+Feldnamen. ``qrz_logbooks`` bildet Rufzeichen auf API-Schluessel ab; das
+Namensmuster sah nur "DK9XR/AM" und liess den Schluessel durch. Bis
+2026-11-14 standen diese Schluessel im Klartext in config_history."""
+
+
+def maskiere(wert: Any, _alles: bool = False) -> Any:
     """Tiefe Kopie mit maskierten Geheimnissen.
 
     Listen und verschachtelte Abbildungen werden mitgenommen — die
@@ -59,10 +66,14 @@ def maskiere(wert: Any) -> Any:
     genau dort liegen die Zugangsdaten.
     """
     if isinstance(wert, dict):
+        if _alles:
+            return {k: (MASKE if isinstance(v, str) and v else maskiere(v, True))
+                    for k, v in wert.items()}
         return {
-            k: (MASKE if _zu_maskieren(str(k), v) else maskiere(v))
+            k: (MASKE if _zu_maskieren(str(k), v)
+                else maskiere(v, str(k) in _GEHEIME_ABBILDUNGEN))
             for k, v in wert.items()
         }
     if isinstance(wert, (list, tuple)):
-        return [maskiere(v) for v in wert]
+        return [maskiere(v, _alles) for v in wert]
     return wert

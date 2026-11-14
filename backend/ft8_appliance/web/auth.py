@@ -26,9 +26,10 @@ an ASGI middleware:
     (``api_read_token``) fuer den Spiegel auf dk9xr.de. Er oeffnet nur die
     GET-Abrufe in ``LESE_PFADE`` — keine Konfiguration, keine Zugangsdaten,
     keine Steuerung. Vorher lag auf dem Webserver der Master-Token.
-  * If no ``api_token`` is configured at all, auth fails OPEN (the appliance
-    stays reachable) — startup always generates one, so this is only a
-    brief first-boot / misconfig safety valve, logged loudly.
+  * Ist kein ``api_token`` geladen, bleibt die API fuer alle ausser
+    localhost zu (503). Bis 2026-11-14 ging dann jede Anfrage durch; der
+    Start erzeugt zwar immer einen Token, aber nur, wenn die Konfiguration
+    ueberhaupt geladen werden kann.
 """
 
 from __future__ import annotations
@@ -123,11 +124,18 @@ async def auth_middleware(request: Request, call_next):
 
     master = getattr(cfg, "api_token", None) if cfg else None
 
-    # Fail-open if unconfigured (startup always sets one — brief safety valve).
+    # Ohne Token bleibt die API zu. Bis 2026-11-14 ging hier jede Anfrage
+    # durch ("kurzes Sicherheitsventil"): War config.yaml nicht lesbar oder
+    # ungueltig, standen WLAN-Profile, Self-Update und Token-Vergabe jedem
+    # im Netz offen, und systemd startete den Dienst in diesem Zustand
+    # endlos neu. Vom Pi selbst (localhost, oben schon durchgelassen)
+    # bleibt alles erreichbar.
     if not master:
-        log.warning("auth: kein api_token gesetzt — Request OHNE Schutz "
-                    "durchgelassen (%s)", path)
-        return await call_next(request)
+        log.warning("auth: kein api_token geladen, %s abgewiesen", path)
+        return JSONResponse(
+            {"detail": "API-Token nicht geladen (Konfiguration pruefen)"},
+            status_code=503,
+        )
 
     presented = _presented_token(request)
     if _eq(presented, master):

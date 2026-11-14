@@ -61,7 +61,7 @@ def orch() -> _FakeOrch:
 def client(orch: _FakeOrch) -> TestClient:
     app = create_app()
     app.state.orchestrator = orch
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 # ------------------------------------------------------- PATCH /operators

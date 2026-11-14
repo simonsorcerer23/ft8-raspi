@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ...config.models import RIG_COMPUTED_FIELDS
 from ...config import AppConfig, get_config
@@ -197,6 +197,42 @@ def preserve_secrets(raw: dict, current: AppConfig) -> dict:
 preserve_operators = preserve_secrets
 
 
+def _roh(wert):
+    """Modellwert als das, was ``model_validate`` wieder annimmt (ohne computed fields)."""
+    if isinstance(wert, BaseModel):
+        return {n: _roh(getattr(wert, n)) for n in type(wert).model_fields}
+    if isinstance(wert, dict):
+        return {k: _roh(v) for k, v in wert.items()}
+    if isinstance(wert, (list, tuple, set, frozenset)):
+        return [_roh(v) for v in wert]
+    return wert
+
+
+def auf_laufende_legen(raw: dict, laufend: BaseModel) -> dict:
+    """Was das gepostete YAML nicht nennt, behaelt seinen laufenden Wert.
+
+    Die Konfigseite schreibt eine von Hand gepflegte Feldliste. Fehlte ein
+    Feld darin, fuellte pydantic es bis 2026-11-14 mit dem Werkswert: Ein
+    beliebiges "Speichern" setzte 72 von 124 Betriebseinstellungen zurueck,
+    dazu ``demo_mode`` und ``rig.ptt_type``. Am MK2 haette das die
+    zweistufige Dekodierung, den PSK-Schalter des Autopiloten und die
+    Tuner-Vorgabe gekippt.
+
+    Gemischt wird nur entlang der Modellstruktur. Listen und freie
+    Abbildungen gelten als Ganzes: Wer eine Bandliste schickt, meint genau
+    diese. Ein ausdruecklich geschicktes ``null`` bleibt ``null`` — so
+    laesst sich ein Wert weiterhin leeren.
+    """
+    aus = dict(raw)
+    for name in type(laufend).model_fields:
+        wert = getattr(laufend, name)
+        if name not in raw:
+            aus[name] = _roh(wert)
+        elif isinstance(wert, BaseModel) and isinstance(raw[name], dict):
+            aus[name] = auf_laufende_legen(raw[name], wert)
+    return aus
+
+
 @router.put("/config", response_model=AppConfig)
 async def save_config(
     req: SaveConfigRequest,
@@ -234,9 +270,18 @@ async def _save_config_locked(req, orch, yaml, set_config_for_tests, get_current
         # tions-Secrets NIE aus dem geposteten YAML verlieren — sie kommen
         # autoritativ aus der laufenden Config (Incident 2026-05-30).
         raw = preserve_secrets(raw, orch.config)
+        raw = auf_laufende_legen(raw, orch.config)
         cfg = AppConfig.model_validate(raw)
+    except ValidationError as exc:
+        # Ohne die Eingabewerte: pydantic haengt sonst den beanstandeten
+        # Wert an, und das war hier auch schon das Ende eines Tokens.
+        fehler = "; ".join(
+            f"{'.'.join(str(t) for t in e['loc'])}: {e['msg']}"
+            for e in exc.errors(include_input=False, include_url=False)
+        )
+        raise HTTPException(status_code=400, detail=f"invalid config: {fehler}")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"invalid config: {exc}")
+        raise HTTPException(status_code=400, detail=f"invalid config: {type(exc).__name__}")
 
     # Persist before we swap the in-memory cache: if the disk write
     # fails we want to abort cleanly rather than leave the running
@@ -281,4 +326,10 @@ async def _save_config_locked(req, orch, yaml, set_config_for_tests, get_current
 
     set_config_for_tests(cfg)
     await orch.on_config_changed(cfg)
-    return cfg
+    # Auch dieser Weg gehoert in die Aenderungshistorie: Bis 2026-11-14
+    # schrieb sie nur persist_config, die Konfigseite also nie. Die Schalter
+    # des AGC- und des Tuner-Vergleichs im Oktober stehen deshalb nicht drin.
+    await orch.merke_config_stand()
+    # Geschwaerzt wie GET: Die Antwort trug bis 2026-11-14 alle Zugangsdaten
+    # beider Operatoren, die WLAN-Schluessel und die Tokens in den Browser.
+    return _redact_secrets(cfg)

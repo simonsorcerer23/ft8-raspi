@@ -158,7 +158,7 @@ def fake_orch() -> FakeOrchestrator:
 def client(fake_orch: FakeOrchestrator) -> TestClient:
     app = create_app()
     app.state.orchestrator = fake_orch
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 # ------------------------------------------------------------------ basics
@@ -191,7 +191,7 @@ def test_status_endpoint_shape(client: TestClient) -> None:
 def test_status_503_without_orchestrator() -> None:
     """If no orchestrator is attached, /api/status should return 503."""
     app = create_app()  # no state.orchestrator set
-    client = TestClient(app)
+    client = TestClient(app, client=("127.0.0.1", 50000))
     assert client.get("/api/status").status_code == 503
 
 

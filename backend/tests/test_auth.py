@@ -79,7 +79,8 @@ def test_static_spa_is_public(client_authed: TestClient) -> None:
     assert client_authed.get("/").status_code != 401
 
 
-def test_fail_open_without_token() -> None:
+def test_ohne_token_nicht_mehr_offen() -> None:
+    """Bis 2026-11-14 ging ohne geladenen Token jede Anfrage durch (Audit A1)."""
     set_config_for_tests(AppConfig.model_validate({
         "operators": [{"callsign": "DK9XR", "license_class": "A"}],
         "active_callsign": "DK9XR",
@@ -87,7 +88,7 @@ def test_fail_open_without_token() -> None:
     app = create_app()
     app.state.orchestrator = FakeOrchestrator()
     c = TestClient(app)
-    assert c.get("/api/status").status_code != 401
+    assert c.get("/api/status").status_code == 503
 
 
 def test_set_password_rejects_short(client_authed: TestClient) -> None:

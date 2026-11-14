@@ -41,6 +41,8 @@ from datetime import UTC, datetime
 
 import httpx
 
+from ..util.redact import redact_secrets
+
 log = logging.getLogger(__name__)
 
 INBOX_URL = "https://www.eQSL.cc/qslcard/DownloadInBox.cfm"
@@ -159,7 +161,7 @@ async def hole_inbox(
             datei.raise_for_status()
             return lies_adif(datei.text)
     except httpx.HTTPError as exc:
-        raise EqslInboxError(f"Netzfehler: {exc}") from exc
+        raise EqslInboxError(f"Netzfehler: {redact_secrets(str(exc))}") from exc
 
 
 # Nicht jeder Fehler lohnt einen zweiten Versuch. Diese hier sind
@@ -216,4 +218,4 @@ async def hole_karte(
                 raise EqslInboxError(f"unerwarteter Typ {typ}", hart=True)
             return bild.content, typ
     except httpx.HTTPError as exc:
-        raise EqslInboxError(f"Netzfehler: {exc}") from exc
+        raise EqslInboxError(f"Netzfehler: {redact_secrets(str(exc))}") from exc

@@ -13,10 +13,13 @@
 
   async function submit(e) {
     e?.preventDefault();
-    const t = value.trim();
-    if (!t || busy) return;
+    // Nicht "t" nennen: Das verdeckte die Uebersetzungsfunktion, und der
+    // Fehlerzweig unten warf beim falschen Passwort einen TypeError. Der
+    // Knopf blieb dann fuer immer auf "…" stehen.
+    const eingabe = value.trim();
+    if (!eingabe || busy) return;
     busy = true; error = null;
-    setToken(t);
+    setToken(eingabe);
     try {
       // Validieren: ein geschuetzter Endpoint muss jetzt durchgehen.
       await api.status();

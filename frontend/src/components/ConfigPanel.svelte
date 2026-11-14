@@ -141,10 +141,11 @@
       s += `${ind(2)}model: ${c.rig.model}\n`;
       s += `${ind(2)}serial_device: "${c.rig.serial_device}"\n`;
       s += `${ind(2)}cat_baud: ${c.rig.cat_baud}\n`;
-      if (c.rig.max_power_w != null)
-        s += `${ind(2)}max_power_w: ${c.rig.max_power_w}\n`;
-      if (c.rig.audio_card_hint)
-        s += `${ind(2)}audio_card_hint: "${c.rig.audio_card_hint}"\n`;
+      // Ausdrueckliches null statt Weglassen: Das Backend behaelt seit
+      // 2026-11-14 jeden nicht genannten Wert, ein geleertes Feld muss
+      // also als leer ankommen.
+      s += `${ind(2)}max_power_w: ${c.rig.max_power_w != null && c.rig.max_power_w !== '' ? c.rig.max_power_w : 'null'}\n`;
+      s += `${ind(2)}audio_card_hint: "${c.rig.audio_card_hint ?? ''}"\n`;
     }
     if (c.bands?.length) {
       s += `\nbands:\n`;
