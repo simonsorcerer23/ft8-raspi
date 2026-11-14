@@ -33,6 +33,7 @@ import typing
 
 import sdnotify
 import time
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -5961,6 +5962,15 @@ class Orchestrator:
         candidates: list[AutopilotDecision] = []
         for band in bands:
             mode, reason = self._autopilot_mode_for_band(band, modes, stats_map)
+            if band != active_band and "FT8" in modes and mode != "FT8":
+                # Ein Band, auf dem das Rig nicht steht, wird auf der
+                # FT8-Zeile bewertet und in FT8 angefahren. Nur dort steht die
+                # PSK-Schaetzung; die FT4-Zeile ist fuer ein fremdes Band
+                # leer. Bis 2026-11-14 waehlte die Modusregel bei hoher
+                # Schaetzung "FT4", bewertet wurde dann die leere Zeile: Je
+                # belebter das andere Band, desto sicherer blieb der
+                # Autopilot, wo er war. Ob FT4 lohnt, klaert er dort.
+                mode, reason = "FT8", "other band: start in FT8"
             stats = stats_map.get((band, mode), AutopilotStats(band=band, mode=mode))
             score = self._autopilot_combo_score(stats)
             band_stats = self._autopilot_band_stats_label(band, modes, stats_map)
@@ -9565,9 +9575,8 @@ class Orchestrator:
            als Pile-Up-Verdacht markiert. Sebastian-Setup (Klasse E,
            50 W, fixed Antenne) hat bei Top-rare-DX <5% Erfolgsrate.
 
-        2. **Decode-Density**: 4+ unique call_from auf ±50 Hz Audio-Freq
-           des Decoded-CQ-Calls → klassisches Pile-Up-Muster mit vielen
-           Callern auf der DX-Frequenz.
+        2. **Anrufer im Slot davor**: vier oder mehr Stationen haben den
+           CQ-Rufer im vorigen Slot adressiert.
 
         Output: set normalisierter Calls die "in Pile-Up" sind.
         """
@@ -9581,32 +9590,27 @@ class Orchestrator:
             norm = d.call_from.upper()
             if rarity_scores.get(norm, 0) >= 70:
                 pile_ups.add(norm)
-        # Pass 2: Density-Detection auf der DX-Audio-Freq
-        # Build freq → set(call_from) map
-        from collections import defaultdict
-        freq_callers: dict[int, set[str]] = defaultdict(set)
-        for d in decodes:
-            if not d.call_from or d.freq_offset_hz is None:
-                continue
-            bin_hz = int(d.freq_offset_hz // 50) * 50  # 50Hz Bin
-            freq_callers[bin_hz].add(d.call_from.upper())
-        # Fuer jeden CQ-Decode: schau ob auf seiner Freq ±50Hz viele
-        # andere Calls aktiv sind.
+        # Pass 2: Wie viele haben ihn im Slot davor angerufen?
+        # FT8-Stationen senden abwechselnd: Wer auf ein CQ antwortet, sendet
+        # im Gegenslot. Bis 2026-11-14 wurden Rufzeichen in ±50 Hz um das CQ
+        # im SELBEN Slot gezaehlt; dort senden die Anrufer nie, gemessen
+        # wurde also nur Gedraenge unter gleichzeitig Sendenden. Jetzt zaehlt,
+        # wer ihn im vorigen Slot adressiert hat, auf welcher Frequenz auch
+        # immer.
+        davor = self._slot_history[-1] if self._slot_history else []
+        anrufer: dict[str, set[str]] = defaultdict(set)
+        for d in davor:
+            if d.call_from and d.call_to:
+                anrufer[d.call_to.upper()].add(d.call_from.upper())
+        eigener = (self.config.operator.callsign or "").upper()
         for d in decodes:
             if not d.call_from or d.call_to is not None:
                 continue
             if not (d.message or "").startswith("CQ"):
                 continue
-            if d.freq_offset_hz is None:
-                continue
-            target_bin = int(d.freq_offset_hz // 50) * 50
-            unique_callers: set[str] = set()
-            for nb in (target_bin - 50, target_bin, target_bin + 50):
-                unique_callers.update(freq_callers.get(nb, set()))
-            # Subtrahiere den DX selbst — wir wollen ANDERE Caller zaehlen
-            unique_callers.discard(d.call_from.upper())
-            if len(unique_callers) >= 4:
-                pile_ups.add(d.call_from.upper())
+            norm = d.call_from.upper()
+            if len(anrufer.get(norm, set()) - {eigener}) >= 4:
+                pile_ups.add(norm)
         return pile_ups
 
     def _compute_slot_parity(self, tick) -> str:

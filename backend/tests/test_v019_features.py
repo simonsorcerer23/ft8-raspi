@@ -75,58 +75,55 @@ def test_pileup_tier_in_registry():
 # ---------------------------------------------------------------------------
 
 
+def _selbst(davor=None):
+    """Was _detect_pile_ups vom Orchestrator braucht: den vorigen Slot und das eigene Rufzeichen."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        _slot_history=[davor] if davor is not None else [],
+        config=SimpleNamespace(operator=SimpleNamespace(callsign="DK9XR")),
+    )
+
+
+def _cq(call: str) -> DecodedMsg:
+    return DecodedMsg(ts=datetime.now(UTC), call_from=call, call_to=None, grid=None,
+                      message=f"CQ {call}", snr_db=-5, dt_s=0.1, freq_offset_hz=1500, band="15m")
+
+
+def _anruf(von: str, an: str, hz: int) -> DecodedMsg:
+    return DecodedMsg(ts=datetime.now(UTC), call_from=von, call_to=an, grid=None,
+                      message=f"{an} {von} -10", snr_db=-12, dt_s=0.1,
+                      freq_offset_hz=hz, band="15m")
+
+
 def test_pileup_detection_rare_dx_auto_flagged():
     """rarity_score >= 70 → automatisch Pile-Up-Verdacht."""
-    # Wir testen _detect_pile_ups als statische Methode mit Mock-Self.
     from ft8_appliance.runtime.orchestrator import Orchestrator
-    # Synthetischen Decode: ZL9HR mit rarity 95
-    decodes = [DecodedMsg(
-        ts=datetime.now(UTC), call_from="ZL9HR", call_to=None, grid=None,
-        message="CQ ZL9HR", snr_db=-5, dt_s=0.1,
-        freq_offset_hz=1500, band="15m",
-    )]
-    # _detect_pile_ups ist instance-method, aber benutzt kein self.
-    # Brauchen instance — bauen die nicht, sondern testen die Logik
-    # direkt mit nem dummy.
-    result = Orchestrator._detect_pile_ups(
-        None, decodes, {"ZL9HR": 95},
-    )
+    result = Orchestrator._detect_pile_ups(_selbst(), [_cq("ZL9HR")], {"ZL9HR": 95})
     assert "ZL9HR" in result
 
 
-def test_pileup_detection_density():
-    """Wenn 4+ unique callers auf ±50 Hz der DX-Freq → Pile-Up."""
+def test_pileup_detection_zaehlt_die_anrufer_im_slot_davor():
+    """Vier oder mehr Stationen haben ihn im vorigen Slot angerufen → Pile-Up.
+
+    Audit 14.11.2026: Gezaehlt wurde bis dahin im selben Slot wie das CQ, in
+    ±50 Hz um seine Frequenz. Dort senden die Anrufer nie (Gegenparitaet), und
+    sie rufen auf beliebigen Frequenzen."""
     from ft8_appliance.runtime.orchestrator import Orchestrator
-    decodes = [
-        # DX-CQ auf 1500 Hz
-        DecodedMsg(
-            ts=datetime.now(UTC), call_from="VK0XX", call_to=None, grid=None,
-            message="CQ VK0XX", snr_db=-3, dt_s=0.1,
-            freq_offset_hz=1500, band="15m",
-        ),
-    ]
-    # 4 andere Stationen senden auf ±50 Hz (Pile-Up-Caller)
-    for i, c in enumerate(["DL1AB", "F5XYZ", "OK1AB", "EA2QQ"]):
-        decodes.append(DecodedMsg(
-            ts=datetime.now(UTC), call_from=c, call_to="VK0XX", grid=None,
-            message=f"VK0XX {c} -10", snr_db=-12, dt_s=0.1,
-            freq_offset_hz=1500 + (i - 2) * 25, band="15m",
-        ))
-    result = Orchestrator._detect_pile_ups(
-        None, decodes, {"VK0XX": 50},  # rarity unter 70 → braucht density
-    )
+    davor = [_anruf(c, "VK0XX", 400 + 500 * i)
+             for i, c in enumerate(["DL1AB", "F5XYZ", "OK1AB", "EA2QQ"])]
+    result = Orchestrator._detect_pile_ups(_selbst(davor), [_cq("VK0XX")], {"VK0XX": 50})
     assert "VK0XX" in result
+    # Derselbe Slot zaehlt nicht mehr, und der eigene Anruf auch nicht.
+    selber_slot = [_cq("VK0XX")] + davor
+    assert "VK0XX" not in Orchestrator._detect_pile_ups(_selbst([]), selber_slot, {"VK0XX": 50})
+    mit_uns = davor[:3] + [_anruf("DK9XR", "VK0XX", 1200)]
+    assert "VK0XX" not in Orchestrator._detect_pile_ups(_selbst(mit_uns), [_cq("VK0XX")], {})
 
 
 def test_pileup_detection_normal_cq_not_flagged():
     """Normaler CQ ohne Pile-Up + rarity 0 → kein Flag."""
     from ft8_appliance.runtime.orchestrator import Orchestrator
-    decodes = [DecodedMsg(
-        ts=datetime.now(UTC), call_from="DL5ABC", call_to=None, grid=None,
-        message="CQ DL5ABC", snr_db=-10, dt_s=0.1,
-        freq_offset_hz=1500, band="15m",
-    )]
-    result = Orchestrator._detect_pile_ups(None, decodes, {})
+    result = Orchestrator._detect_pile_ups(_selbst([]), [_cq("DL5ABC")], {})
     assert "DL5ABC" not in result
 
 

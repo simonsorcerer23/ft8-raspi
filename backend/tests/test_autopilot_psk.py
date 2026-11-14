@@ -246,3 +246,22 @@ async def test_keine_sperrmeldung_wenn_ohnehin_kein_versuch_anstand() -> None:
     await o._autopilot_ft4_sperre_melden("15m", "FT8", _stats_modi(100), 1000.0)  # zu duenn
     await o._autopilot_ft4_sperre_melden("15m", "FT4", _stats_modi(800), 1000.0)  # schon FT4
     o._autopilot_ft4_versuch_merken.assert_not_awaited()
+
+
+def test_wechselt_auch_mit_ft4_erlaubt_wenn_das_andere_band_klar_mehr_los_hat() -> None:
+    """Audit 14.11.2026: Mit FT8 und FT4 erlaubt bewertete der Autopilot das andere
+    Band auf der FT4-Zeile, sobald dort viel los war. Die ist fuer ein fremdes Band
+    leer: Je belebter es war, desto sicherer blieb er."""
+    o = _orch_ft4()
+    _psk(o, {"15m": 20, "10m": 200})
+    stats = {
+        ("15m", "FT8"): AutopilotStats("15m", "FT8", decodes=40),
+        ("15m", "FT4"): AutopilotStats("15m", "FT4"),
+        ("10m", "FT8"): AutopilotStats("10m", "FT8"),
+        ("10m", "FT4"): AutopilotStats("10m", "FT4"),
+    }
+    stats, genutzt = o._autopilot_psk_schaetzung(stats, "15m")
+    assert genutzt and stats[("10m", "FT8")].decodes == 400
+    entscheidung = o._autopilot_decision("15m", "FT8", stats)
+    assert entscheidung is not None
+    assert (entscheidung.band, entscheidung.mode) == ("10m", "FT8")

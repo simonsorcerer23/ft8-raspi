@@ -68,6 +68,7 @@ def _orch(monkeypatch):
         _worked_dxccs: set = set()
         _last_decodes: list = []
         _slot_history: list = []
+        config = type("C", (), {"operator": type("Op", (), {"callsign": "DK9XR"})()})()
         _active_continent_hours: set = set()
         _band_conditions_day: dict = {}
         _band_conditions_night: dict = {}
