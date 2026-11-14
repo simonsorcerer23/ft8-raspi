@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.199.0 — 2026-11-14
+- fix: Autopilot-Messung bekommt eine Vergleichsgruppe, Kontrollarm protokolliert auch die Einzelkandidaten-Gates, Versorgungsspannung kommt ueber VD_METER, FT-817/818 nimmt Leistung und SWR nur waehrend der eigenen Aussendung — die Messregel konnte nicht scheitern, der Akku-Guard nie ausloesen, und am FT-817 haette der SWR-Guard vor der ersten Aussendung gesperrt
+
 ## v0.198.0 — 2026-11-14
 - feat: Station stellt eine falsche Betriebsart und Split selbst zurueck und sendet bis dahin nicht; Vorab-Decode wird neu gemessen (Messplan vorab_decode, Lesetermin 28.11.) — die Messung vom September lief mit dem Paritaetsfehler und galt zu Unrecht als entschieden
 
