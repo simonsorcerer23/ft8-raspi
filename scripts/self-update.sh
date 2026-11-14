@@ -131,12 +131,31 @@ fi
 # -----------------------------------------------------------------------------
 # Tags holen
 log "git fetch --tags"
-if ! git fetch --tags --prune --quiet 2>&1 | tee -a /tmp/ft8-self-update.fetch.log; then
-    # Network/SSH-Fehler ist normaler Failure-Modus (Pi hat kein Netz
-    # gerade etc.) — kein ntfy-Alarm dafür.
-    log "git fetch failed, skip this round"
+# Fehlversuche in Folge zaehlen. Ein einzelner ist normal (Pi gerade ohne
+# Netz) und bleibt still. Bis 2026-11-14 blieb aber auch ein dauerhafter
+# Fehler still: ein auf GitHub neu gesetzter Tag ("would clobber existing
+# tag") oder ein abgelaufener Schluessel legten das Self-Update fuer immer
+# lahm, mit Exit 0 und ohne Meldung.
+FETCH_ZAEHLER="${HOME}/.cache/ft8-self-update-fetch-fehler"
+FETCH_AUS="$(git fetch --tags --prune --quiet 2>&1)" && FETCH_RC=0 || FETCH_RC=$?
+[ -n "${FETCH_AUS}" ] && printf '%s\n' "${FETCH_AUS}" | tee -a /tmp/ft8-self-update.fetch.log
+if [ "${FETCH_RC}" -ne 0 ]; then
+    mkdir -p "$(dirname "${FETCH_ZAEHLER}")" 2>/dev/null || true
+    N="$(( $(cat "${FETCH_ZAEHLER}" 2>/dev/null || echo 0) + 1 ))"
+    echo "${N}" > "${FETCH_ZAEHLER}" 2>/dev/null || true
+    log "git fetch failed (${N}x in Folge), skip this round"
+    if printf '%s' "${FETCH_AUS}" | grep -q "would clobber existing tag"; then
+        # Hilft nur ein Eingriff: der lokale Tag muss weg. Einmal am Tag melden.
+        if [ "$(( (N - 1) % 144 ))" -eq 0 ]; then
+            ntfy "🔴" "Self-Update steht: ein Tag wurde auf GitHub neu gesetzt (would clobber existing tag). Auf $(hostname): im Repo 'git fetch --tags --force' als Anmeldebenutzer." || true
+        fi
+    elif [ "${N}" -eq 18 ] || { [ "${N}" -gt 18 ] && [ "$(( N % 144 ))" -eq 0 ]; }; then
+        # 18 Laeufe = drei Stunden ohne einen einzigen erfolgreichen Abruf.
+        ntfy "🟡" "Self-Update holt seit ${N} Laeufen nichts von GitHub: $(printf '%s' "${FETCH_AUS}" | tail -1 | cut -c1-160)" || true
+    fi
     exit 0
 fi
+rm -f "${FETCH_ZAEHLER}" 2>/dev/null || true
 
 CURRENT_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || echo '')"
 # rigctld-Envfile aus config.yaml rendern und bei Aenderung installieren +
@@ -181,10 +200,18 @@ PY
     # Update-Pfad ist die Station bereits gedrained; im Timer-Pfad ("already
     # on latest") nur neu starten, wenn sie gerade nichts sendet — sonst
     # beim naechsten Lauf in zehn Minuten.
+    # "Nichts sendet" heisst: update_safe (kein QSO, kein Burst) und PTT aus.
+    # Bis 2026-11-14 galt jeder Zustand CQ_CALLING als ruhig; die Station
+    # ruft dann aber gerade CQ, und ein rigctld-Neustart mitten in der
+    # Aussendung laesst bei CAT-PTT die PTT stehen (24.05. und 12.11.).
+    # Antwortet der Controller nicht, sendet auch niemand.
     local state
     state="$(curl -s -m 3 http://127.0.0.1:8000/api/status 2>/dev/null \
-        | "${APP_DIR}/backend/.venv/bin/python" -c 'import sys,json; print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
-    if [ -n "${state}" ] && [ "${state}" != "IDLE" ] && [ "${state}" != "CQ_CALLING" ]; then
+        | "${APP_DIR}/backend/.venv/bin/python" -c 'import sys,json
+d=json.load(sys.stdin)
+ruhig = d.get("update_safe") is True and not (d.get("rig") or {}).get("ptt")
+print("" if ruhig else (d.get("state") or "?"))' 2>/dev/null || true)"
+    if [ -n "${state}" ]; then
         log "  rigctld-envfile: Aenderung liegt bereit, Station ist ${state} — Neustart beim naechsten Lauf"
         return 0
     fi

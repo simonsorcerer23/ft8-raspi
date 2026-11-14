@@ -1,24 +1,8 @@
-# /etc/sudoers.d/ft8-self-update — installed by deploy/install.sh
+# /etc/sudoers.d/ft8-self-update — rendered by deploy/install.sh
 #
-# Erlaubt User `sebastian` einen sehr begrenzten Satz root-Operationen
-# ohne Passwort. Scope: nur was Self-Update + Backend-Trigger + System-
-# File-Sync (unit-files / sudoers) brauchen.
-#
-# WARUM:
-#  * self-update.sh muss nach erfolgreichem `git checkout` einen
-#    `systemctl restart ft8-controller` triggern.
-#  * Backend-Route `/api/system/self-update` (Button auf der Konfig-
-#    Seite) triggert `systemctl start ft8-self-update.service`.
-#  * Self-Update synchronisiert auch die systemd-unit-files und das
-#    sudoers-Snippet wenn sie sich im Repo geändert haben (sonst
-#    bleibt /etc/systemd/system/ permanent hinter dem git-Workdir
-#    zurück und Bugfixes an unit-files greifen nie).
-#
-# Diese Datei hat Mode 0440 (per `visudo -c` validiert in install.sh
-# UND von self-update.sh vor jedem Re-Install validiert — broken
-# sudoers würde sonst zum permanenten Lockout).
+# Allows the appliance user a very small set of root operations for
+# self-update, controller restart and system-file sync.
 
-# --- systemctl: nur die Services die wir wirklich anfassen ---
 sebastian ALL=(root) NOPASSWD: \
     /bin/systemctl restart ft8-controller, \
     /bin/systemctl restart ft8-controller.service, \
@@ -35,28 +19,45 @@ sebastian ALL=(root) NOPASSWD: \
     /bin/systemctl stop ft8-ap-fallback, \
     /bin/systemctl stop ft8-ap-fallback.service, \
     /bin/systemctl restart ft8-ap-fallback, \
-    /bin/systemctl restart ft8-ap-fallback.service
+    /bin/systemctl restart ft8-ap-fallback.service, \
+    /bin/systemctl restart ft8-rigctld, \
+    /bin/systemctl restart ft8-rigctld.service
 
-# --- Power: shutdown + reboot via UI-Buttons (Sebastian 2026-05-26 v0.8.2) ---
-# handle_shutdown ruft `sudo /sbin/shutdown -h +0 ...`
-# handle_reboot  ruft `sudo /sbin/shutdown -r +0 ...`
-# `*` am Ende ist sudoers-Wildcard fuer die freie Reason-Message.
 sebastian ALL=(root) NOPASSWD: \
     /sbin/shutdown -h +0 *, \
     /sbin/shutdown -r +0 *
 
-# --- install: nur exakte src→dst-Pärchen aus dem git-Workdir ---
-# Wildcards in sudoers sind tricky, deshalb listen wir jedes File
-# einzeln. Wenn ein neues unit-file dazukommt, MUSS dieser Block
-# erweitert werden (sonst greift sudo nicht).
 sebastian ALL=(root) NOPASSWD: \
-    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-controller.service /etc/systemd/system/ft8-controller.service, \
-    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-self-update.service /etc/systemd/system/ft8-self-update.service, \
-    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-self-update.timer /etc/systemd/system/ft8-self-update.timer, \
-    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-ap-fallback.service /etc/systemd/system/ft8-ap-fallback.service, \
-    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-rigctld.service /etc/systemd/system/ft8-rigctld.service, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/.deploy-rendered/systemd/ft8-controller.service /etc/systemd/system/ft8-controller.service, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/.deploy-rendered/systemd/ft8-self-update.service /etc/systemd/system/ft8-self-update.service, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/.deploy-rendered/systemd/ft8-self-update.timer /etc/systemd/system/ft8-self-update.timer, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/.deploy-rendered/systemd/ft8-ap-fallback.service /etc/systemd/system/ft8-ap-fallback.service, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/.deploy-rendered/systemd/ft8-rigctld.service /etc/systemd/system/ft8-rigctld.service, \
     /usr/bin/install -m 644 /home/sebastian/ft8-appliance/deploy/systemd/ft8-hostapd.service /etc/systemd/system/ft8-hostapd.service, \
-    /usr/bin/install -m 440 /home/sebastian/ft8-appliance/deploy/sudoers.d/ft8-self-update /etc/sudoers.d/ft8-self-update
+    /usr/bin/install -m 440 /home/sebastian/ft8-appliance/.deploy-rendered/sudoers.d/ft8-self-update /etc/sudoers.d/ft8-self-update, \
+    /usr/bin/install -m 644 /home/sebastian/ft8-appliance/.deploy-rendered/ft8-rigctld.env /etc/default/ft8-rigctld
 
-# --- visudo: pre-install-Validierung des neuen sudoers-Files ---
-sebastian ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f /home/sebastian/ft8-appliance/deploy/sudoers.d/ft8-self-update, /usr/sbin/visudo -c -f /etc/sudoers.d/ft8-self-update
+sebastian ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f /home/sebastian/ft8-appliance/.deploy-rendered/sudoers.d/ft8-self-update, /usr/sbin/visudo -c -f /etc/sudoers.d/ft8-self-update
+
+# ---------------------------------------------------------------------------
+# Dienstbenutzer des Controllers (SERVICE_USER, seit 2026-09-28). Unter ihm
+# laeuft die Weboberflaeche. Er bekommt genau die Befehle, die die Oberflaeche
+# ausloest — und KEINE install-/visudo-Regeln: System-Dateien schreibt nur
+# der Self-Update-Lauf unter APP_USER. Ist SERVICE_USER gleich APP_USER,
+# doppeln sich die Regeln nur.
+sebastian ALL=(root) NOPASSWD: \
+    /bin/systemctl restart --no-block ft8-controller.service, \
+    /bin/systemctl start --no-block ft8-self-update.service, \
+    /bin/systemctl start ft8-ap-fallback.service, \
+    /bin/systemctl stop ft8-ap-fallback.service, \
+    /sbin/shutdown -h +0 *, \
+    /sbin/shutdown -r +0 *
+
+# WLAN-Profile aus der Oberflaeche (web/routes/network.py). Nur nmcli und nur
+# dessen Verbindungsverwaltung; NetworkManager fuehrt dabei keine Befehle aus.
+sebastian ALL=(root) NOPASSWD: \
+    /usr/bin/nmcli device wifi rescan, \
+    /usr/bin/nmcli connection add *, \
+    /usr/bin/nmcli connection modify *, \
+    /usr/bin/nmcli connection delete *, \
+    /usr/bin/nmcli connection up *

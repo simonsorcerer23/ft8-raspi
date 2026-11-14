@@ -99,8 +99,14 @@ Auf einer **frisch installierten** Appliance (`deploy/install.sh` ist dort
 gelaufen):
 
 ```bash
-./scripts/restore-appliance.sh <Ziel>/<Zeitstempel>/ft8-backup.tgz [HOST]
+./scripts/restore-appliance.sh <Ziel>/<Zeitstempel>/ft8-backup.tgz <HOST> [--ueberschreiben]
 ```
+
+Der Zielhost ist Pflicht (seit 2026-11-14; vorher war `ft8-pi5` die
+Vorgabe, und ein vergessener Host traf die Produktivstation). Hat das Ziel
+schon QSOs im Logbuch, bricht das Skript ab. Mit `--ueberschreiben` legt es
+vorher eine Kopie von Datenbank und Konfiguration daneben
+(`qso-vor-restore-<Zeit>.sqlite`, `config.yaml.vor-restore-<Zeit>`).
 
 Das Skript stoppt den Controller, spielt Konfiguration, Logbuch und
 WLAN-Profile ein, holt die QSL-Karten aus dem Spiegel daneben

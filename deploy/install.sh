@@ -420,8 +420,14 @@ if [ "${ENABLE_SERVICES}" -eq 1 ]; then
     systemctl enable --now ft8-controller
     systemctl enable --now ft8-self-update.timer
     STATE="ENABLED — the appliance can key the rig"
+elif systemctl is-enabled --quiet ft8-controller 2>/dev/null; then
+    # Ein zweiter Lauf auf einer laufenden Station (etwa nur fuer
+    # --release-key, wie der Hinweis unten selbst empfiehlt) nahm bis
+    # 2026-11-14 den Autostart weg: Die Dienste liefen weiter, nach dem
+    # naechsten Neustart blieb die Station aus und aktualisierte sich nicht
+    # mehr. Was schon aktiviert ist, bleibt es.
+    STATE="UNCHANGED — services were already enabled and stay enabled"
 else
-    systemctl disable ft8-rigctld ft8-controller ft8-self-update.timer >/dev/null 2>&1 || true
     STATE="INSTALLED BUT DISABLED — nothing can key the rig"
 fi
 

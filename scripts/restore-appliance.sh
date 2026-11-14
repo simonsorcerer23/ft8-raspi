@@ -2,7 +2,13 @@
 # Spielt ein Backup von backup-appliance.sh auf eine FRISCH installierte
 # Appliance ein (deploy/install.sh muss dort schon gelaufen sein).
 #
-#   ./scripts/restore-appliance.sh <backup.tgz> [HOST]
+#   ./scripts/restore-appliance.sh <backup.tgz> <HOST> [--ueberschreiben]
+#
+# Der Zielhost ist Pflicht. Bis 2026-11-14 war ft8-pi5 die Vorgabe: Wer bei
+# einer Probe auf einem zweiten Geraet den Host vergass, ueberschrieb ohne
+# Rueckfrage Logbuch und Konfiguration der Produktivstation. Hat das Ziel
+# schon QSOs im Logbuch, bricht das Skript ab; mit --ueberschreiben legt es
+# vorher eine Kopie von Datenbank und Konfiguration daneben.
 #
 # Was NICHT eingespielt wird und warum:
 #   install.env  - gehoert zur neuen Installation (Pfade/User koennen abweichen)
@@ -10,10 +16,26 @@
 #   tailscale    - Neuanmeldung ist einfacher und sauberer als State-Kopie
 set -euo pipefail
 
-TGZ="${1:?Backup-Archiv angeben: ./scripts/restore-appliance.sh <backup.tgz> [host]}"
+TGZ="${1:?Backup-Archiv angeben: ./scripts/restore-appliance.sh <backup.tgz> <host> [--ueberschreiben]}"
 # s. backup-appliance.sh: "ft8" ist der alte, tote Knoten.
-HOST="${2:-ft8-pi5}"
+HOST="${2:?Zielhost angeben (z. B. ft8-pi5 oder ft8-mk2) — es gibt keine Vorgabe mehr}"
+UEBERSCHREIBEN=0
+[ "${3:-}" = "--ueberschreiben" ] && UEBERSCHREIBEN=1
 [ -f "$TGZ" ] || { echo "Archiv nicht gefunden: $TGZ"; exit 1; }
+
+# Was liegt auf dem Ziel? Eine frische Installation hat kein Logbuch.
+VORHANDEN="$(ssh -o ConnectTimeout=20 "sebastian@${HOST}" \
+    "sudo python3 -c 'import sqlite3; print(sqlite3.connect(\"file:/var/lib/ft8-appliance/qso.sqlite?mode=ro\", uri=True).execute(\"select count(*) from qso\").fetchone()[0])' 2>/dev/null || echo 0")"
+if [ "${VORHANDEN:-0}" -gt 0 ]; then
+    if [ "$UEBERSCHREIBEN" -ne 1 ]; then
+        echo "!! ${HOST} hat ${VORHANDEN} QSOs im Logbuch. Ein Restore ueberschreibt sie."
+        echo "   Wenn das gewollt ist: denselben Aufruf mit --ueberschreiben wiederholen."
+        exit 1
+    fi
+    STEMPEL="$(date +%Y%m%d-%H%M%S)"
+    echo "== ${HOST} hat ${VORHANDEN} QSOs — lege den Zielstand als *-vor-restore-${STEMPEL} daneben"
+    ssh "sebastian@${HOST}" "sudo cp -a /var/lib/ft8-appliance/qso.sqlite /var/lib/ft8-appliance/qso-vor-restore-${STEMPEL}.sqlite && sudo cp -a /etc/ft8-appliance/config.yaml /etc/ft8-appliance/config.yaml.vor-restore-${STEMPEL}"
+fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

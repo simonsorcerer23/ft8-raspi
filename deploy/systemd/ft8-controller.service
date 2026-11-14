@@ -1,18 +1,21 @@
 [Unit]
 Description=FT8 Raspi Appliance Controller
 Documentation=file:///home/sebastian/ft8-appliance/architecture.md
-After=network-online.target gpsd.service chrony.service
+# ft8-rigctld nur als Reihenfolge, nicht in Wants: Beim Stoppen (auch
+# Herunterfahren) geht so erst der Controller und nimmt die PTT zurueck,
+# solange rigctld noch antwortet. Ohne das stoppte systemd beide zugleich;
+# am MK2-Pi (2026-11-12) war rigctld mitten im Senden 1 ms frueher weg und
+# set_ptt(False) lief ins Leere.
+After=network-online.target gpsd.service chrony.service ft8-rigctld.service
 Wants=network-online.target gpsd.service chrony.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
 
 [Service]
-# Type=notify: systemd wartet auf sd_notify("READY=1") vom orchestrator
-# bevor er "active" meldet. Wird im orchestrator.start() ganz am Ende
-# geschickt, nachdem alle bg-tasks scheduled sind (Slot-Loop, GPS,
-# Rig-Poll, Heartbeat). Wenn READY=1 nicht binnen TimeoutStartSec
-# kommt, gilt der Start als failed.
 Type=notify
+# Dienstbenutzer (SERVICE_USER in install.env, Vorgabe APP_USER). Auf der
+# Station seit 2026-09-28 ein eigener Benutzer ohne sudo: Die Weboberflaeche
+# laeuft hier, und wer sie uebernimmt, soll nicht root sein.
 User=sebastian
 Group=sebastian
 WorkingDirectory=/home/sebastian/ft8-appliance/backend
@@ -20,6 +23,15 @@ WorkingDirectory=/home/sebastian/ft8-appliance/backend
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=FT8_CONFIG=/etc/ft8-appliance/config.yaml
+
+# Erst die Uhr, dann der Controller: Der Pi hat keine gepufferte Uhr und
+# startet mit der Zeit vom letzten Herunterfahren. Am MK2-Pi (2026-11-13)
+# lief der Controller zwei Sekunden vor dem Zeitabgleich an und schrieb
+# Protokoll und Telemetrie mit einer 22 Stunden alten Uhrzeit. Gesendet
+# wurde nicht, das sperrt der Zeit-Guard. Hoechstens 12 Versuche im
+# 5-Sekunden-Takt; ohne Netz und ohne GPS startet er danach trotzdem.
+ExecStartPre=-/usr/bin/chronyc waitsync 12 0.5 0 5
+TimeoutStartSec=180
 
 ExecStart=/home/sebastian/ft8-appliance/backend/.venv/bin/uvicorn \
     ft8_appliance.web.app:app \
@@ -29,38 +41,15 @@ ExecStart=/home/sebastian/ft8-appliance/backend/.venv/bin/uvicorn \
 
 Restart=always
 RestartSec=5
-# Damit der watchdog nicht in einer Endlos-Restart-Schleife endet (z.B.
-# wenn der Bug das READY=1 verhindert), gibt systemd nach 5 Restarts in
-# 120 s auf und setzt den Service auf failed. Mode-Watchdog im
-# orchestrator + ntfy-Push würden Sebastian dann via mode-watchdog-
-# Decode-Funkstille-Detektion warnen.
 
-# Hardening note: NoNewPrivileges is intentionally NOT set so the WLAN-
-# manager API can shell out to ``sudo nmcli`` (the appliance user has a
-# NOPASSWD sudoers rule scoped to this single-user box). ProtectSystem=full
-# (vs strict) leaves /etc writable for ``sudo`` so NetworkManager can drop
-# system-connection files. The web layer only binds to the LAN.
-#
-# ProtectHome wurde von "read-only" auf "false" gestellt, weil das
-# Code-Verzeichnis unter /home/sebastian/ft8-appliance liegt und
-# self-update.sh dort schreibend zugreifen können muss (git checkout,
-# pip install). Der Self-Update-Service läuft als derselbe User und
-# muss zudem Python-Bytecode-Caches und venv-Updates schreiben dürfen.
 ProtectSystem=full
 ProtectHome=false
 ReadWritePaths=/var/lib/ft8-appliance /var/log/ft8-appliance /etc/ft8-appliance
 PrivateTmp=true
-SupplementaryGroups=plugdev dialout netdev
+# audio: USB-Soundkarte des Rigs; video: vcgencmd (Temperatur, Drosselung).
+# Hier statt in /etc/group, damit ein Dienstbenutzer sie nicht dauerhaft traegt.
+SupplementaryGroups=plugdev dialout netdev audio video
 
-# Liveness-Watchdog: Orchestrator pingt alle 10s sd_notify("WATCHDOG=1")
-# über die asyncio-Heartbeat-Task. Wenn der event-loop hängt oder die
-# Heartbeat-Task stirbt, killt systemd den Prozess nach 30s und startet
-# neu (Restart=always). 30s ist großzügig — Heartbeat alle 10s gibt
-# uns 2 verpasste Pings Spielraum (StartLimitBurst fängt Loop ab).
-#
-# Hat bis v0.2.0 NICHT funktioniert weil sd_notify nirgends aufgerufen
-# wurde — siehe docs/self_update.md "Watchdog NICHT aktiv" für die
-# Geschichte. Jetzt wired.
 NotifyAccess=main
 WatchdogSec=30
 
