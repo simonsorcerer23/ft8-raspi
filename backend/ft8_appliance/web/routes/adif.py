@@ -106,6 +106,15 @@ def _operator_label(orch: Orchestrator, operator: str | None = None) -> str:
     return raw.upper().strip()
 
 
+def _export_filename(filter_op: str | None) -> str:
+    """Dateiname des ADIF-Exports. Nur Zeichen, die in Rufzeichen vorkommen
+    und in einem Dateinamen unbedenklich sind ("/" aus 9A/DK9XR wird "_")."""
+    if not filter_op:
+        return "alle_ft8.adif"
+    safe = "".join(c if c.isalnum() or c == "-" else "_" for c in filter_op.lower())
+    return f"{safe}_ft8.adif"
+
+
 def _manual_filename(operator: str, batch_id: str) -> str:
     return f"{operator.lower()}_clublog_manual_{batch_id}.adif"
 
@@ -159,10 +168,12 @@ async def export_adif(
     v0.21.2 — optionaler ?operator=<call>-Filter fuer saubere ClubLog/QRZ-
     Account-Trennung. Ohne Parameter: alle QSOs (alter Default).
     """
-    # Multi-Operator: aktiver Operator bestimmt Dateinamen. Wenn ein QSO
-    # eine andere user_callsign hat (z.B. ein DK9XR-QSO im DO3XR-Export),
-    # schreiben wir das per-row in OPERATOR + STATION_CALLSIGN — der
-    # Dateiname zeigt aber den AKTIVEN Operator des Exports.
+    # Der Dateiname sagt, was drin ist: mit Filter das Rufzeichen, ohne
+    # Filter "alle". Vorher trug der ungefilterte Export den Namen des
+    # aktiven Operators, obwohl die QSOs aller Operatoren darin standen —
+    # wer die Datei bei ClubLog/LoTW unter diesem Rufzeichen hochlaedt,
+    # mischt fremde QSOs ins Log (Audit 14.11.2026, F7). OPERATOR und
+    # STATION_CALLSIGN stehen ohnehin je Zeile richtig drin.
     active_op = orch.config.operator.callsign.upper()
     filter_op = operator.upper().strip() if operator else None
     cty = getattr(getattr(orch, "integrations", None), "cty", None)
@@ -173,8 +184,7 @@ async def export_adif(
             stmt = stmt.where(Qso.user_callsign == filter_op)
         rows = list((await s.execute(stmt)).scalars())
 
-    label = (filter_op or active_op).lower()
-    filename = f"{label}_ft8.adif"
+    filename = _export_filename(filter_op)
     return PlainTextResponse(
         _render_adif(rows, active_op, cty),
         headers={

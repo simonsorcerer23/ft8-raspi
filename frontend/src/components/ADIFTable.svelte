@@ -10,7 +10,6 @@
   // gefiltert. Verhindert das Schicken von DK9XR-QSOs in den DO3XR-
   // ClubLog-Account beim manuellen Upload.
   const exportUrl = $derived(activeCall ? api.adifUrl(activeCall) : api.adifUrl());
-  const exportName = $derived(`${(activeCall ?? 'log').toLowerCase()}_ft8.adif`);
   let manualStatus = $state(null);
   let manualExport = $state(null);
   let manualOperators = $state([]);
@@ -130,7 +129,8 @@
   async function downloadActiveExport(event) {
     event?.preventDefault();
     try {
-      await api.downloadAdif(activeCall, exportName);
+      // Kein Dateiname von hier: den vergibt der Server (Content-Disposition).
+      await api.downloadAdif(activeCall);
       exportError = null;
     } catch (e) {
       exportError = e.message;
@@ -166,8 +166,8 @@
 <div class="wrap">
   <div class="header">
     <h2>QSO-Log</h2>
-    <a class="export" href={exportUrl} download={exportName} onclick={downloadActiveExport}>
-      ⬇ ADIF Export ({activeCall ?? 'alle'})
+    <a class="export" href={exportUrl} download onclick={downloadActiveExport}>
+      {t('log.adif_export', { who: activeCall ?? t('log.adif_all') })}
     </a>
   </div>
   {#if exportError}<p class="manual-error">{exportError}</p>{/if}

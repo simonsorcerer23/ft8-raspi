@@ -591,4 +591,8 @@ export const en = {
 
   // Wizard: Leistungsfeld (Audit 14.11.2026, F3)
   'wiz.default_power': 'Default TX power (max {max} W)',
+
+  // ADIF-Export je Operator (Audit 14.11.2026, F7)
+  'log.adif_export': '⬇ ADIF export ({who})',
+  'log.adif_all': 'all',
 };

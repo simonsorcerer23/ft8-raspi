@@ -50,3 +50,105 @@ def test_f3_keine_komponente_fuehrt_eine_eigene_rig_tabelle() -> None:
         if re.search(r"\bic7300mk2\s*:", txt):
             eigene.append(datei.name)
     assert not eigene, f"eigene Rig-Tabelle statt lib/rigs.js: {eigene}"
+
+
+# --- F7: Statistik und ADIF-Export je Operator ------------------------------
+
+@pytest.fixture
+def db():
+    import asyncio
+
+    from ft8_appliance.db.session import create_all, init_engine
+
+    init_engine(":memory:")
+    asyncio.run(create_all())
+    yield
+
+
+def _client(callsign: str = "DK9XR"):
+    from fastapi.testclient import TestClient
+
+    from ft8_appliance.web import create_app
+    from tests.test_web import FakeOrchestrator
+
+    class _Operator:
+        pass
+
+    class _Config:
+        operator = _Operator()
+
+    _Config.operator.callsign = callsign
+    orch = FakeOrchestrator()
+    orch.config = _Config()
+    app = create_app()
+    app.state.orchestrator = orch
+    return TestClient(app, client=("127.0.0.1", 50000))
+
+
+def _seed_zwei_operatoren() -> None:
+    """Zwei QSOs von DK9XR, eines von DO3XR — alle von heute."""
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    from ft8_appliance.db import session_scope
+    from ft8_appliance.db.models import Qso
+
+    async def seed() -> None:
+        now = datetime.now(UTC)
+        async with session_scope() as s:
+            for i, (call, op) in enumerate(
+                (("EA5KB", "DK9XR"), ("JA1XYZ", "DK9XR"), ("W1AW", "DO3XR"))
+            ):
+                s.add(Qso(
+                    call=call, band="15m", freq_hz=21_074_000, mode="FT8",
+                    rst_sent=-10, rst_rcvd=-12, grid_rcvd="IM99",
+                    qso_start=now - timedelta(seconds=30 + i),
+                    qso_end=now - timedelta(seconds=i),
+                    my_grid="JN58", my_power_w=50, swr_avg=1.1,
+                    notes=None, my_lat=None, my_lon=None, user_callsign=op,
+                    clublog_uploaded=False,
+                ))
+
+    asyncio.run(seed())
+
+
+def test_f7_statistik_zaehlt_nur_den_aktiven_operator(db) -> None:
+    """ "QSOs heute" mischte DK9XR und DO3XR; das Log darunter filterte."""
+    _seed_zwei_operatoren()
+
+    dk = _client("DK9XR").get("/api/stats").json()
+    assert dk["callsign"] == "DK9XR"
+    assert (dk["qso_7d"], dk["qso_total"]) == (2, 2)
+
+    do = _client("DO3XR").get("/api/stats").json()
+    assert do["callsign"] == "DO3XR"
+    assert (do["qso_7d"], do["qso_total"]) == (1, 1)
+
+
+def test_f7_adif_dateiname_sagt_was_drin_ist(db) -> None:
+    """Mit Filter das Rufzeichen, ohne Filter "alle" — nie der aktive
+    Operator ueber einer Datei mit den QSOs aller Operatoren."""
+    _seed_zwei_operatoren()
+    client = _client("DK9XR")
+
+    r = client.get("/api/log/adif?operator=do3xr")
+    assert 'filename="do3xr_ft8.adif"' in r.headers["content-disposition"]
+    assert "W1AW" in r.text and "EA5KB" not in r.text
+
+    r = client.get("/api/log/adif")
+    assert 'filename="alle_ft8.adif"' in r.headers["content-disposition"]
+    assert "W1AW" in r.text and "EA5KB" in r.text
+
+
+def test_f7_adif_dateiname_ohne_pfadzeichen(db) -> None:
+    r = _client().get("/api/log/adif", params={"operator": '9a/dk9xr"x'})
+    assert 'filename="9a_dk9xr_x_ft8.adif"' in r.headers["content-disposition"]
+
+
+def test_f7_funk_tab_exportiert_mit_aktivem_rufzeichen() -> None:
+    """Kein fester Dateiname und kein ungefilterter Export im Funk-Tab."""
+    for name in ("StatsDashboard.svelte", "ADIFTable.svelte"):
+        txt = (KOMPONENTEN / name).read_text(encoding="utf-8")
+        assert "dk9xr_ft8.adif" not in txt, name
+        assert "api.downloadAdif(activeCall)" in txt, name
+    assert "api.adifUrl()" not in (KOMPONENTEN / "StatsDashboard.svelte").read_text(encoding="utf-8")
