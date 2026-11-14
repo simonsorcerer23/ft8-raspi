@@ -612,6 +612,12 @@ class StateMachine:
         self.ctx.auto_answer = False
         self.ctx.cq_fallback_active = False
         self.ctx.idle_slots_without_pick = 0
+        # Nach Stop gehoert das Rig dem, der davor sitzt. Bis 2026-11-14
+        # blieben die Vormerkungen fuer den RR73-Nachklang und die
+        # Wiederaufnahme stehen: Wiederholte der letzte Partner seinen
+        # Report, tastete die Station noch bis zu dreimal ein RR73.
+        self.ctx.recent_logged.clear()
+        self.ctx.recent_qso_ctx.clear()
         self._pending.append(Action("STOP_TX", {}))
 
     def on_user_skip_qso(self) -> None:

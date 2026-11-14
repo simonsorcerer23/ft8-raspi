@@ -67,6 +67,7 @@ def _orch(monkeypatch):
         state_machine = StateMachine(ctx=MachineContext(callsign="DK9XR", my_grid="JN58"))
         _worked_dxccs: set = set()
         _last_decodes: list = []
+        _slot_history: list = []
         _active_continent_hours: set = set()
         _band_conditions_day: dict = {}
         _band_conditions_night: dict = {}

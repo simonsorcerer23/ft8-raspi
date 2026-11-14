@@ -43,7 +43,7 @@ def test_greift_erst_nach_einer_wartezeit():
 def test_hebt_nur_auf_wenn_alle_bedingungen_erfuellt_sind():
     q = _quelle()
     assert "first_failure" in q
-    nach_pruefung = q.split("if offen is None:", 1)
+    nach_pruefung = q.split("if offen is None and not self._swr_cut_gesperrt:", 1)
     assert len(nach_pruefung) == 2, "die Pruefung muss das Aufheben umschliessen"
     assert "on_user_reset_lock" in nach_pruefung[1]
 
@@ -123,6 +123,7 @@ def _waechter(hw, *, runden=3):
     o.state_machine = _SM()
     o._hardware_state = hw
     o._lock_seit = None
+    o._swr_cut_gesperrt = False
     o._lock_heilungen = []
     o._lock_push_at = 0.0
     o._LOCK_GEDULD_S = 0.0          # Geduld im Test abkürzen
@@ -180,6 +181,7 @@ def test_pendeln_wird_nach_drei_heilungen_gestoppt():
     o.state_machine = _SM()
     o._hardware_state = _hw()
     o._lock_seit = None
+    o._swr_cut_gesperrt = False
     o._lock_heilungen = []
     o._lock_push_at = 0.0
     o._LOCK_GEDULD_S = 0.0

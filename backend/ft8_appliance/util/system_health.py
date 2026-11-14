@@ -35,6 +35,20 @@ class ChronyStatus:
     stratum: int | None = None
     rms_offset_s: float | None = None
     leap_status: str | None = None
+
+    @property
+    def synchronisiert(self) -> bool:
+        """Hat chronyd wirklich eine Quelle?
+
+        Ohne Quelle meldet ``chronyc tracking`` Stratum 0, Abweichung
+        0,000 s und "Leap status : Not synchronised". Bis 2026-11-14 galt
+        hier jedes Stratum unter 16 als synchron: Ein Pi, der ohne Netz
+        und ohne GPS mit der Uhr vom letzten Herunterfahren startete,
+        bekam so einen gruenen Zeit-Guard und durfte senden.
+        """
+        if self.stratum is None or not 1 <= self.stratum <= 15:
+            return False
+        return not (self.leap_status or "").lower().startswith("not")
     # Name der aktuellen Quelle aus "Reference ID : 47505300 (GPS)".
     # "GPS" heisst: der SHM-Refclock liefert wirklich — dann ist die
     # Architektur-Zusage aus §3.5 erfuellt. Alles andere ist NTP.

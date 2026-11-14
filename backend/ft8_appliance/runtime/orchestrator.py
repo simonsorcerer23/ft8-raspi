@@ -95,6 +95,8 @@ from ..integrations import (
     QrzClient,
 )
 from ..integrations.mf_lookup import get_mf_lookup
+from ..integrations.psk_bandaktivitaet import ModusMeldungen, modus_meldungen
+from ..util.propagation import _BAND_TO_HAMQSL_BUCKET as HAMQSL_BANDGRUPPE
 
 
 # Endstufenstrom, unter dem sicher empfangen und ueber dem sicher gesendet
@@ -677,6 +679,10 @@ class Orchestrator:
     # PSK-Reporter-Meldungen je Band im eigenen Feld (letzte 5 min) und wann geholt
     _psk_bandaktivitaet: dict[str, int] = field(default_factory=dict, init=False)
     _psk_bandaktivitaet_at: float = field(default=0.0, init=False)
+    # dasselbe je 10-kHz-Zeile im Grossfeld, fuer die Trennung FT8/FT4
+    _psk_grossfeld_zeilen: dict[int, int] = field(default_factory=dict, init=False)
+    _psk_grossfeld_at: float = field(default=0.0, init=False)
+    _ft4_sperre_gemerkt_at: float = field(default=0.0, init=False)
     _autopilot_ft4_null_probe_counts: dict[str, int] = field(
         default_factory=dict, init=False
     )
@@ -800,6 +806,10 @@ class Orchestrator:
     # zuletzt hinausging.
     _lock_log_at: float = field(default=-1e9, init=False)
     _tx_aufgeschoben_nr: int = field(default=0, init=False)
+    # Zaehlt Stop und Panic. Eine Aussendung, die schon aus der Warteschlange
+    # geholt ist und nur noch auf die Slot-Grenze wartet, vergleicht ihn
+    # danach: Bis 2026-11-14 ging sie auch nach Stop noch hinaus.
+    _stop_nr: int = field(default=0, init=False)
     _gestartet_mono: float = field(default_factory=time.monotonic, init=False)
     _rig_weg_seit: float = field(default=0.0, init=False)
     _rig_bedient_at: float = field(default=0.0, init=False)
@@ -1002,6 +1012,12 @@ class Orchestrator:
     # Flag verhindert Push-Spam wenn der gleiche TX-Burst mehrfach
     # gepollt wird vor PTT auf False geht.
     _swr_runaway_active: bool = field(default=False, init=False)
+    # Die Sperre stammt von einer SWR-Notabschaltung im Burst. Im Empfang
+    # liest das Rig wieder 1,0; ohne dieses Merkmal hielt der Sperr-Waechter
+    # die Lage fuer geheilt und gab nach zehn Minuten wieder frei, bis zu
+    # dreimal je Stunde in dieselbe kaputte Antenne. Nur "Entsperren" von
+    # Hand nimmt es zurueck.
+    _swr_cut_gesperrt: bool = field(default=False, init=False)
     # SWR-Settling-Period (Sebastian 2026-05-24): nach jedem PTT-On
     # braucht das IC-7300-SWR-Meter ~1-2 s bis es den AKTUELLEN Wert
     # misst — vorher liefert es noch Peak-Hold vom letzten Burst
@@ -1608,9 +1624,8 @@ class Orchestrator:
             try:
                 jetzt = time.monotonic()
                 if jetzt - letzter_abgleich >= self._QSL_LISTE_INTERVALL_S:
-                    for op in self.config.operators:
-                        if op.eqsl_user and op.eqsl_password:
-                            await self._qsl_liste_abgleichen(op)
+                    for op in self._qsl_operatoren():
+                        await self._qsl_liste_abgleichen(op)
                     letzter_abgleich = jetzt
                 await self._qsl_bilder_nachholen()
             except asyncio.CancelledError:
@@ -1618,6 +1633,18 @@ class Orchestrator:
             except Exception as exc:
                 log.warning("eQSL-Posteingang: %s", exc)
             await asyncio.sleep(self._QSL_RUNDE_PAUSE_S)
+
+    def _qsl_operatoren(self) -> list:
+        """Wessen eQSL-Posteingang diese Station abholt: nur der aktive Operator.
+
+        Bis 2026-11-14 lief der Abgleich fuer jeden Operator mit Zugangsdaten.
+        Seit es zwei Stationen gibt, die beide Operatoren in der Konfiguration
+        haben, holte jede beide Posteingaenge: doppelte Meldungen, und der
+        MK2-Pi lud Raymonds 7857 Karten ein zweites Mal herunter, gegen das
+        Tempolimit von eQSL.
+        """
+        op = self.config.operator
+        return [op] if op is not None and op.eqsl_user and op.eqsl_password else []
 
     async def _qsl_liste_abgleichen(self, op) -> None:
         """Neue Bestaetigungen in die Datenbank uebernehmen.
@@ -1734,8 +1761,7 @@ class Orchestrator:
             MINDESTABSTAND_S, EqslInboxError, Karteneintrag, hole_karte,
         )
 
-        opern = {o.callsign: o for o in self.config.operators
-                 if o.eqsl_user and o.eqsl_password}
+        opern = {o.callsign: o for o in self._qsl_operatoren()}
         if not opern:
             return
 
@@ -2755,6 +2781,7 @@ class Orchestrator:
 
     async def handle_stop(self) -> None:
         self._tx_aufgeschoben_nr += 1      # Aufgeschobenes verfaellt
+        self._stop_nr += 1
         self.state_machine.on_user_stop()
         await self._drain_actions()
         # Stop schaltet beide Schalter aus → ergibt "off"
@@ -2762,6 +2789,7 @@ class Orchestrator:
 
     async def handle_panic(self) -> None:
         self._tx_aufgeschoben_nr += 1      # Aufgeschobenes verfaellt
+        self._stop_nr += 1
         # Panic = same as stop + force PTT off + lock to prevent retries
         # v0.65.5: Mode-Watchdog kurz stummschalten. Panic lässt boot_mode auf
         # "hunt" (resume nach Restart), stoppt aber auto_answer → der Watchdog
@@ -2777,6 +2805,12 @@ class Orchestrator:
             log.warning("panic: PTT off failed: %s", exc)
 
     async def handle_reset_lock(self) -> None:
+        # Der ALC-Wert wird nur in eigenen Bursts gemessen. Nach einer
+        # ALC-Sperre blieb der letzte, zu hohe Wert stehen, und der Guard
+        # sperrte beim naechsten Sendeversuch sofort wieder: Bis 2026-11-14
+        # half nur ein Neustart des Dienstes.
+        self._last_alc_pct = None
+        self._swr_cut_gesperrt = False
         self.state_machine.on_user_reset_lock()
 
     async def handle_reply_to(self, decoded: DecodedMsg) -> None:
@@ -2907,6 +2941,13 @@ class Orchestrator:
         except Exception as exc:
             log.warning("persist_config failed: %s", exc)
 
+    async def merke_config_stand(self) -> None:
+        """Den laufenden Stand in die Aenderungshistorie schreiben (PUT /api/config)."""
+        await self._merke_config_stand(self.config.model_dump(
+            exclude_none=True,
+            exclude={"rig": set(RIG_COMPUTED_FIELDS), "operator": True},
+        ))
+
     async def _merke_config_stand(self, roh: dict) -> None:
         """Eine Zeile in die Aenderungshistorie — aber ohne Geheimnisse.
 
@@ -2941,7 +2982,7 @@ class Orchestrator:
             async with session_scope() as s:
                 s.add(ConfigHistory(ts=datetime.now(UTC), yaml_snapshot=text))
         except Exception as exc:
-            log.debug("Konfigurationsstand nicht gespeichert: %s", exc)
+            log.warning("Konfigurationsstand nicht gespeichert: %s", exc)
 
     def _boot_mode_from_state(self) -> str:
         """boot_mode aus den beiden Schaltern ableiten, statt ihn zu raten.
@@ -3845,6 +3886,11 @@ class Orchestrator:
         """Wrap rig.set_freq + Echo-Registration fuer Tamper-Detection."""
         await self.rig.set_freq(hz)
         self._register_app_command("freq_hz", int(hz))
+        # Sofort, nicht erst beim naechsten Poll: Sonst liegt zwischen dem
+        # Frequenzbefehl und der Leistungsgrenze ein Fenster, in dem ein
+        # Burst mit der Leistung des alten Bands hinausgehen kann.
+        neu = self._band_for_rig_freq(int(hz))
+        await self._bandwechsel_pruefen(neu.name if neu is not None else None, "set_freq")
         # Sebastian v0.5.2: Race-Window markieren. Der naechste rig-poll
         # sieht ggf. das Rig noch auf der ALTEN Freq (oder gerade
         # mittendrin im Sprung) und wuerde sonst einen False-Positive-
@@ -4347,6 +4393,13 @@ class Orchestrator:
                 "tx-power safety-floor (%s): aktuell %dW <= safe %dW — keine Aenderung",
                 reason, self._tx_power_w, safe,
             )
+            # Beim Operator- und Rig-Wechsel wurde der interne Wert gerade
+            # erst ueberschrieben; das Geraet steht noch, wo der Vorgaenger
+            # es gelassen hat. Bis 2026-11-14 ging dann kein Befehl hinaus:
+            # DO3XR sendete mit den 100 W von DK9XR weiter, und der naechste
+            # Poll uebernahm sie als "extern verstellt".
+            if reason in ("operator_switch", "rig_change"):
+                await self._rig_auf_leistung(self._tx_power_w, reason)
             return
         old = self._tx_power_w
         log.info(
@@ -4376,6 +4429,33 @@ class Orchestrator:
             )
         self._tx_power_w = safe
         self._maybe_persist_runtime_state(force=True)
+
+    async def _rig_auf_leistung(self, watt: int, anlass: str) -> None:
+        """Den internen Leistungswert ans Geraet schicken, falls es setzbar ist."""
+        if not _rig_profil_von(self.config).power_settable:
+            return
+        max_w = self.config.rig.effective_max_power_w
+        try:
+            await self.rig.set_rfpower(watt / max_w)
+            self._register_app_command("rfpower_norm", watt / max_w)
+        except Exception as exc:
+            log.warning("tx-power (%s): set_rfpower failed: %s", anlass, exc)
+
+    async def _bandwechsel_pruefen(self, band: str | None, anlass: str) -> None:
+        """Die Leistungsgrenze des neuen Bands durchsetzen, bevor dort gesendet wird.
+
+        Bis 2026-11-14 bemerkte nur ``status()`` einen Bandwechsel, und das
+        erst nach den Aussendungen des Slots: Ohne offene Weboberflaeche ging
+        der erste Burst auf dem neuen Band mit der alten Leistung hinaus,
+        etwa 70 W auf 60 m, wo 15 W gelten.
+        """
+        if band is None or band == self._last_active_band:
+            return
+        vorher = self._last_active_band
+        self._last_active_band = band
+        log.info("band change detected %s -> %s (%s), tx-power safety-floor",
+                 vorher or "?", band, anlass)
+        await self._apply_tx_power_safety_floor("band_change", band=band)
 
     async def handle_set_antenna(self, name: str) -> None:
         """Select the active antenna profile (drives band-lockout guard)."""
@@ -5288,6 +5368,11 @@ class Orchestrator:
                     if spots:
                         self._psk_bandaktivitaet = spots
                         self._psk_bandaktivitaet_at = time.monotonic()
+                    if "FT4" in self._autopilot_allowed_modes():
+                        zeilen = await client.zeilen_im_grossfeld(loc)
+                        if zeilen:
+                            self._psk_grossfeld_zeilen = zeilen
+                            self._psk_grossfeld_at = time.monotonic()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -5335,6 +5420,70 @@ class Orchestrator:
                 attempts=st.attempts, completed=st.completed,
             )
         return neu, True
+
+    def _autopilot_psk_modi(self, band: str) -> ModusMeldungen | None:
+        """FT8- und FT4-Meldungen im Grossfeld fuer *band*.
+
+        None, wenn der Schalter aus ist, die Daten zu alt sind, sich FT8 und
+        FT4 auf dem Band eine 10-kHz-Zeile teilen oder so wenig FT8 gemeldet
+        wird, dass auch null FT4-Meldungen nichts hiessen.
+        """
+        op = self.config.operating
+        if (
+            not op.autopilot_psk_aktivitaet
+            or not self._psk_grossfeld_zeilen
+            or time.monotonic() - self._psk_grossfeld_at > self._PSK_AKTIVITAET_MAX_ALTER_S
+        ):
+            return None
+        cfg = next((b for b in self.config.bands if b.name == band), None)
+        if cfg is None:
+            return None
+        lage = modus_meldungen(
+            self._psk_grossfeld_zeilen, cfg.freq_for_mode("FT8"), cfg.freq_for_mode("FT4"),
+        )
+        if lage is None or lage.ft8 < self._PSK_AKTIVITAET_MIN_SPOTS:
+            return None
+        return lage
+
+    def _autopilot_ft4_psk_sperre(
+        self, band: str, ft4: AutopilotStats, ft8: AutopilotStats,
+    ) -> ModusMeldungen | None:
+        """Die PSK-Lage, wenn sie einen FT4-Versuch verbietet, sonst None.
+
+        Gilt nur fuer den Versuch ins Blaue: Sobald es eigene FT4-Zahlen gibt
+        (dichte Decodes oder genug Anrufe), zaehlen die. Gesperrt wird nur,
+        wenn im ganzen Grossfeld praktisch kein FT4 gemeldet wird; die
+        Schaetzung darueber wird bis zum Lesetermin nur mitgeschrieben.
+        """
+        op = self.config.operating
+        ft4_probe_min_decodes = max(op.autopilot_min_decodes, op.autopilot_ft4_probe_min_decodes)
+        if ft4.decodes >= ft4_probe_min_decodes or ft4.attempts >= op.autopilot_min_attempts:
+            return None
+        lage = self._autopilot_psk_modi(band)
+        if lage is None or lage.ft4 >= self._PSK_AKTIVITAET_MIN_SPOTS:
+            return None
+        return lage
+
+    async def _autopilot_ft4_versuch_merken(
+        self, band: str, ereignis: str, ft8_decodes: int,
+    ) -> None:
+        """Schreibt nach ft4_probe_log (Messplan ft4_probe_psk)."""
+        if not self.db_enabled:
+            return
+        from ..db.models import Ft4ProbeLog
+
+        lage = self._autopilot_psk_modi(band)
+        try:
+            async with session_scope() as s:
+                s.add(Ft4ProbeLog(
+                    ts=datetime.now(UTC), band=band, ereignis=ereignis,
+                    ft8_decodes=ft8_decodes,
+                    psk_ft8=lage.ft8 if lage else None,
+                    psk_ft4=lage.ft4 if lage else None,
+                    geschaetzt=round(ft8_decodes * lage.ft4 / lage.ft8) if lage else None,
+                ))
+        except Exception as exc:
+            log.debug("FT4-Versuch nicht gespeichert: %s", exc)
 
     async def _autopilot_bandwechsel_merken(
         self, von_band: str | None, decision: AutopilotDecision,
@@ -5467,7 +5616,9 @@ class Orchestrator:
             if 6 <= hour <= 18
             else self._band_conditions_night
         )
-        cond = (conds.get(band_name) or "").lower()
+        # hamqsl meldet je Bandgruppe ("17m-15m"), nicht je Band. Bis
+        # 2026-11-14 wurde mit "15m" gesucht und nie etwas gefunden.
+        cond = (conds.get(HAMQSL_BANDGRUPPE.get(band_name, band_name)) or "").lower()
         if "good" in cond:
             prior += 10.0
         elif "fair" in cond:
@@ -5567,6 +5718,11 @@ class Orchestrator:
                 and ft4.completion_pct >= op.autopilot_ft4_good_completion_pct
             ):
                 return "FT4", f"FT4 completion {ft4.completion_pct:.1f}% is good"
+            if "FT8" in modes and (lage := self._autopilot_ft4_psk_sperre(band, ft4, ft8)):
+                return (
+                    "FT8",
+                    f"no FT4 reported in own field (psk FT4={lage.ft4}, FT8={lage.ft8})",
+                )
             return "FT4", "decode density high enough for FT4 rate mode"
 
         if "FT8" in modes:
@@ -5748,6 +5904,44 @@ class Orchestrator:
             return best
         return None
 
+    async def _autopilot_ft4_sperre_melden(
+        self,
+        active_band: str | None,
+        current_mode: str,
+        stats: dict[tuple[str, str], AutopilotStats],
+        now: float,
+    ) -> None:
+        """Haelt fest, dass ein FT4-Versuch an der PSK-Lage scheiterte.
+
+        Hoechstens einmal je Cooldown: Die Sperre gilt jede Minute neu, im
+        Protokoll soll sie so oft stehen, wie sonst ein Versuch gelaufen waere.
+        """
+        op = self.config.operating
+        modes = self._autopilot_allowed_modes()
+        if active_band is None or current_mode != "FT8" or "FT4" not in modes:
+            return
+        if self._autopilot_ft4_block_remaining_s(active_band) > 0:
+            return
+        ft8 = stats.get((active_band, "FT8"), AutopilotStats(active_band, "FT8"))
+        ft4 = stats.get((active_band, "FT4"), AutopilotStats(active_band, "FT4"))
+        if ft8.decodes < max(op.autopilot_min_decodes, op.autopilot_ft4_probe_min_decodes):
+            return
+        lage = self._autopilot_ft4_psk_sperre(active_band, ft4, ft8)
+        if lage is None:
+            return
+        if (
+            self._ft4_sperre_gemerkt_at > 0
+            and now - self._ft4_sperre_gemerkt_at < op.autopilot_cooldown_min * 60
+        ):
+            return
+        self._ft4_sperre_gemerkt_at = now
+        log.info(
+            "autopilot: kein FT4-Versuch auf %s — im Grossfeld %d FT4- gegen %d "
+            "FT8-Meldungen, eigene FT8-Decodes %d",
+            active_band, lage.ft4, lage.ft8, ft8.decodes,
+        )
+        await self._autopilot_ft4_versuch_merken(active_band, "gesperrt", ft8.decodes)
+
     async def _maybe_run_autopilot(self) -> None:
         op = self.config.operating
         if not op.autopilot_enabled:
@@ -5794,6 +5988,7 @@ class Orchestrator:
             stats = await self._autopilot_collect_stats(bands, modes)
             stats, psk_genutzt = self._autopilot_psk_schaetzung(stats, active_band)
             decision = self._autopilot_decision(active_band, current_mode, stats)
+            await self._autopilot_ft4_sperre_melden(active_band, current_mode, stats, now)
         if decision is None:
             return
         if decision.band == active_band and decision.mode == current_mode:
@@ -5816,6 +6011,11 @@ class Orchestrator:
                 f"{b}={self._psk_bandaktivitaet.get(b, 0)}" for b in bands)
         await self._apply_autopilot_target(decision.band, decision.mode, reason)
         await self._autopilot_bandwechsel_merken(active_band, decision, psk_genutzt, reason)
+        if decision.band == active_band and current_mode == "FT8" and decision.mode == "FT4":
+            await self._autopilot_ft4_versuch_merken(
+                decision.band, "versuch",
+                stats.get((decision.band, "FT8"), AutopilotStats(decision.band, "FT8")).decodes,
+            )
         self._autopilot_last_switch_at = now
         self._autopilot_last_reason = reason
         self._push_status()
@@ -5872,7 +6072,7 @@ class Orchestrator:
                 grund = sm.ctx.last_lock_reason or "unbekannt"
                 offen = first_failure(evaluate(self._hardware_state, sm.limits))
 
-                if offen is None:
+                if offen is None and not self._swr_cut_gesperrt:
                     self._lock_heilungen = [
                         t for t in self._lock_heilungen if jetzt - t < 3600.0
                     ]
@@ -7309,7 +7509,7 @@ class Orchestrator:
                     for qso in rows:
                         if attempted >= 20:
                             break
-                        backoff_s = min(3600.0, 300.0 * (2 ** qso.qrz_upload_attempts))
+                        backoff_s = min(3600.0, 300.0 * (2 ** min(qso.qrz_upload_attempts, 8)))
                         last_qrz = _as_utc(qso.qrz_last_attempt_at)
                         if last_qrz is not None and (now - last_qrz).total_seconds() < backoff_s:
                             continue
@@ -7454,7 +7654,7 @@ class Orchestrator:
                     if not op.ist_heimatruf(on_air):
                         ohne_konto[on_air] = ohne_konto.get(on_air, 0) + 1
                     continue
-                backoff_s = min(3600.0, 900.0 * (2 ** q.eqsl_upload_attempts))
+                backoff_s = min(3600.0, 900.0 * (2 ** min(q.eqsl_upload_attempts, 8)))
                 zuletzt = _as_utc(q.eqsl_last_attempt_at)
                 if zuletzt is not None and (jetzt - zuletzt).total_seconds() < backoff_s:
                     continue
@@ -7477,6 +7677,16 @@ class Orchestrator:
         try:
             ergebnis = await upload(user, passwort, faellig, qth_nickname=nickname)
         except EqslError as exc:
+            if exc.netz:
+                # eQSL nicht erreicht: kein Versuch. Bis 2026-11-14 zaehlte
+                # jeder Netzausfall mit, und nach 15 Durchgaengen (13,5 h
+                # ohne Internet am Standort) standen die QSOs als
+                # hochgeladen im Log, ohne je uebertragen zu sein.
+                for q in faellig:
+                    q.eqsl_upload_attempts -= 1
+                log.warning("eQSL nicht erreichbar (%s), %d QSOs bleiben offen",
+                            exc, len(faellig))
+                return
             if exc.hart:
                 # Zugangsdaten stimmen nicht. Nicht als hochgeladen
                 # verbuchen — sonst waeren die QSOs nach dem Richten
@@ -7592,7 +7802,7 @@ class Orchestrator:
                 if not op.lotw_location_for(on_air):
                     ohne_ort[on_air] = ohne_ort.get(on_air, 0) + 1
                     continue
-                backoff_s = min(7200.0, 1800.0 * (2 ** q.lotw_upload_attempts))
+                backoff_s = min(7200.0, 1800.0 * (2 ** min(q.lotw_upload_attempts, 8)))
                 zuletzt = _as_utc(q.lotw_last_attempt_at)
                 if zuletzt is not None and (jetzt - zuletzt).total_seconds() < backoff_s:
                     continue
@@ -7697,6 +7907,13 @@ class Orchestrator:
                 cert_password=op.lotw_cert_password,
             )
         except LotwError as exc:
+            if exc.netz:
+                # Wie bei eQSL: LoTW nicht erreicht ist kein Versuch.
+                for q in faellig:
+                    q.lotw_upload_attempts -= 1
+                log.warning("LoTW nicht erreichbar (%s), %d QSOs bleiben offen",
+                            exc, len(faellig))
+                return
             if exc.hart:
                 # Fehlendes Zertifikat, unbekannte Station Location, von
                 # LoTW zurueckgewiesen: nichts als hochgeladen verbuchen,
@@ -7829,7 +8046,7 @@ class Orchestrator:
                 if log_call is None:
                     ohne_log[on_air] = ohne_log.get(on_air, 0) + 1
                     continue
-                backoff_s = min(3600.0, 600.0 * (2 ** qso.clublog_upload_attempts))
+                backoff_s = min(3600.0, 600.0 * (2 ** min(qso.clublog_upload_attempts, 8)))
                 last_cl = _as_utc(qso.clublog_last_attempt_at)
                 if last_cl is not None and (now - last_cl).total_seconds() < backoff_s:
                     continue
@@ -8127,6 +8344,10 @@ class Orchestrator:
             rows = list((await s.execute(
                 select(PickAttempt.continent, PickAttempt.outcome, PickAttempt.ts)
                 .where(PickAttempt.ts >= since)
+                # Nur eigene Anrufe. Eingehende Anrufe schliessen viel oefter
+                # ab und hoben bis 2026-11-14 die Quote eines Kontinents ueber
+                # die Schwelle des Kontinent-Gates.
+                .where(PickAttempt.pick_kind == "cq")
             )).all())
         by: dict[str, list[int]] = {}
         je_zelle: dict[tuple[str, int], list[int]] = {}
@@ -8898,6 +9119,7 @@ class Orchestrator:
             if self._swr_runaway_active:
                 return  # bereits in diesem Burst gehandled, nicht spammen
             self._swr_runaway_active = True
+            self._swr_cut_gesperrt = True
             log.warning(
                 "SWR-Runaway: %.2f >= hard %.2f — forcing PTT off + TX_LOCKED",
                 swr, hard,
@@ -9333,6 +9555,19 @@ class Orchestrator:
         Leere. Auch die Pile-Up-Erkennung zaehlte die Anrufer des falschen
         Slots.
         """
+        # lonely_cq: gleichparitaetiger Slot davor (h[-2]) und der Slot
+        # dazwischen (h[-1]); der aktuelle haengt noch nicht in der Historie.
+        # Bis 2026-11-14 stand das in _refresh_hardware_state, also vor dem
+        # Decode: Gerechnet wurde mit dem vorigen Slot, im Kontext standen
+        # immer die einsamen Rufer der Gegenparitaet, nie die aktuellen. Es
+        # ist derselbe Fehler, der fuer den Rest dieser Methode am 11.09.
+        # behoben wurde.
+        h = self._slot_history
+        self.state_machine.ctx.lonely_cq_calls = detect_lonely_cqs(
+            decodes,
+            h[-1] if len(h) >= 1 else None,
+            h[-2] if len(h) >= 2 else None,
+        )
         new_dxcc: set[str] = set()
         call_to_dxcc: dict[str, str] = {}
         call_to_latlon: dict[str, tuple[float, float]] = {}
@@ -9411,6 +9646,8 @@ class Orchestrator:
             self._chrony = await read_chrony_tracking()
         except Exception:
             self._chrony = None
+
+        await self._bandwechsel_pruefen(self._current_band(), "slot")
 
         gps = self.gps.snapshot
         rig = self._last_rig
@@ -9576,13 +9813,12 @@ class Orchestrator:
                     _hint_lib.ft8_shim_hash_table_save(str(_c).upper().encode("ascii", "ignore"), 0)
         except Exception:
             pass
-        # 2026-09-06 lonely_cq: gleichparitaetiger Slot davor + Slot dazwischen
-        h = self._slot_history
-        self.state_machine.ctx.lonely_cq_calls = detect_lonely_cqs(
-            self._last_decodes,
-            h[-2] if len(h) >= 2 else None,
-            h[-3] if len(h) >= 3 else None,
-        )
+        # Das Band, auf dem das Rig steht. Bis 2026-11-14 setzte niemand
+        # ctx.band; es blieb beim Vorgabewert "20m". "Neues Land auf diesem
+        # Band", "neues Feld auf diesem Band" und die Frequenz-Reputation
+        # rechneten deshalb auf jedem Band mit der 20-m-Liste: Am MK2 auf
+        # 15 m galt jede Station als neu.
+        self.state_machine.ctx.band = self._current_band() or self.state_machine.ctx.band
         # PSK-Reciprocity: aktueller Set "wer hat uns recently gehört".
         # Wird vom _psk_reciprocity_refresh-Loop periodisch upgedated;
         # hier nur in den ctx kopieren damit der Picker O(1) lookup hat.
@@ -9597,11 +9833,7 @@ class Orchestrator:
         # chrony as "synced" — the time_guard's offset check is the real
         # gate. None means chronyc tracking didn't return data at all,
         # which we treat as not-synced.
-        chrony_synced = (
-            self._chrony is not None
-            and self._chrony.stratum is not None
-            and self._chrony.stratum < 16
-        )
+        chrony_synced = self._chrony is not None and self._chrony.synchronisiert
 
         self._hardware_state = HardwareState(
             gps_fix_mode=gps.mode,
@@ -9920,7 +10152,16 @@ class Orchestrator:
 
     # ------------------------------------------------------------------ action dispatch
     async def _drain_actions(self) -> None:
+        stop_nr = self._stop_nr
         for action in self.state_machine.drain_actions():
+            if action.kind == "TX_MESSAGE" and self._stop_nr != stop_nr:
+                # Die Aktionen laufen der Reihe nach, ein Burst dauert 12,6 s.
+                # Kommt in dieser Zeit ein Stop, gilt er auch fuer das, was
+                # noch in dieser Liste steht (etwa das CQ nach dem RR73).
+                # Geloggt wird trotzdem, nur gesendet nicht mehr.
+                log.info("TX %r entfaellt: Stop kam, waehrend die vorige "
+                         "Aktion lief", action.payload.get("message", ""))
+                continue
             self._action_log.append(LoggedAction(ts=datetime.now(UTC), action=action))
             handler = self._action_handlers.get(action.kind)
             if handler is None:
@@ -9945,6 +10186,7 @@ class Orchestrator:
         # wirklich hinausgeht oder erneut aufgeschoben wird.
         if not payload.get("_aufgeschoben"):
             self._tx_aufgeschoben_nr += 1
+        stop_nr = self._stop_nr
         audio_freq_hz = float(payload.get("freq_offset_hz", 1500))
         amplitude = 0.9 * max(0.0, min(1.0, self._audio_gain))
         payload["audio_gain"] = self._audio_gain
@@ -9988,6 +10230,13 @@ class Orchestrator:
             # Sendestart aus — und drei solche Meldungen in Folge stufen den
             # Decoder zurueck.
             await asyncio.sleep(rest_bis_grenze + 0.02)
+            # In der Wartezeit kann jemand Stop gedrueckt oder ein Waechter
+            # gesperrt haben. Entschieden wurde davor.
+            from ..statemachine.states import State as _State
+            if stop_nr != self._stop_nr or self.state_machine.state is _State.TX_LOCKED:
+                log.info("TX %r entfaellt: waehrend der Wartezeit bis zur "
+                         "Slot-Grenze gestoppt oder gesperrt", text)
+                return
 
         if self._tx_burst_active:
             # Vorgezogen: Frueher stand diese Pruefung erst hinter dem Synth,
@@ -10138,6 +10387,13 @@ class Orchestrator:
             # Nur solange das QSO mit ihm noch laeuft.
             if sm.qso is None or sm.qso.their_call != partner:
                 return
+        # Seit der Entscheidung sind bis zu zwei Slots vergangen, und in
+        # QSO-Zustaenden prueft kein Tick die Guards. Bis 2026-11-14 ging die
+        # Aussendung ungeprueft hinaus, auch wenn inzwischen jemand den VFO
+        # auf eine fremde Frequenz gedreht hatte.
+        await self._refresh_hw_for_control()
+        if not sm._check_guards(self._hardware_state):
+            return
         payload["_aufgeschoben"] = True
         await self._do_tx_message(payload)
 
