@@ -172,6 +172,13 @@ nach dem Anschließen der Hardware einmal `sudo ./deploy/install.sh` aus
 `--enable-services`, sonst bricht der Lauf am Start von `ft8-rigctld` ab,
 falls das Rig noch nicht antwortet.
 
+**Achtung:** Ein Lauf ohne `--enable-services` nimmt den drei Units
+(`ft8-rigctld`, `ft8-controller`, `ft8-self-update.timer`) den Autostart
+wieder (`systemctl disable` in Schritt 8/8 von `deploy/install.sh`). Laufende
+Dienste laufen weiter, kommen nach dem nächsten Neustart aber nicht mehr
+hoch. Danach also den Autostart wie unter Punkt 4 neu setzen oder, sobald
+das Rig antwortet, `sudo ./deploy/install.sh --enable-services` ausführen.
+
 Zur Einordnung: Die Satellitenzeit über USB streut rund 200 ms und wird von
 chrony darum nur als Rückfallebene gehalten; die Netzquellen liegen bei
 Mikrosekunden. Für FT8 mit seinem 15-s-Raster reicht beides mit weitem
@@ -255,3 +262,31 @@ nichts mehr starten lässt.
 Hängt er trotz APST aus wieder beim Senden, ist Einstreuung wahrscheinlicher:
 Ferritkerne an USB- und Stromkabel, Pi weiter weg vom Rig, oder die SD-Karte
 als Bootmedium.
+
+### Handinstallationen, nicht im Repo
+
+NVMe-Wache und Kernel-Mitschrift sind am MK2-Pi von Hand eingerichtet. Die
+Dateien liegen nicht unter `deploy/`, `deploy/install.sh` richtet sie nicht
+ein, und das Self-Update pflegt sie nicht:
+
+| Datei auf dem MK2-Pi | Aufgabe |
+|---|---|
+| `/usr/local/sbin/nvme-wache` | Skript der NVMe-Wache |
+| `/etc/systemd/system/nvme-wache.service` | startet die Wache |
+| `/etc/systemd/system/kernel-log-sd.service` | schreibt die Kernelmeldungen auf die SD-Karte |
+| `/etc/systemd/system/mnt-sdkarte.mount` | hängt die SD-Karte unter `/mnt/sdkarte` ein |
+
+Dazu die Kernelparameter in `/boot/firmware/cmdline.txt`
+(`nvme_core.default_ps_max_latency_us=0 pcie_aspm=off pcie_port_pm=off`).
+
+**Lücke:** Der Inhalt des Skripts und der drei Units ist hier nicht
+abgedruckt; dieses Dokument beschreibt nur, was sie tun. Solange das so
+ist, lassen sie sich nur aus der Sicherung wiederherstellen, nicht aus dem
+Repo. Die nächtliche Sicherung nimmt die vier Dateien und `cmdline.txt` seit
+14.11.2026 mit (`scripts/backup-appliance.sh`, Liste `PATHS`; Ziel für den
+MK2-Pi siehe `docs/backup.md`). `scripts/restore-appliance.sh` spielt sie
+nicht ein: Es überträgt nur `config.yaml`, `/var/lib/ft8-appliance`, hostapd,
+WLAN-Profile, den Release-Schlüssel und `cty.dat`. Nach einem Neuaufbau des
+MK2-Pi müssen die vier Dateien und die Kernelparameter also von Hand aus dem
+Archiv geholt werden. Offen: die vier Dateien vom MK2-Pi holen und hier
+abdrucken oder unter `deploy/` ablegen.

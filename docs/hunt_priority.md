@@ -33,13 +33,20 @@ ist konventionell `snr` als Tie-Breaker.
 
 | Name | Bedingung | Score | Datenquelle |
 |---|---|---|---|
+| `not_bad_reputation` | Call steht **nicht** auf der Soft-Blacklist (mehrfach erfolglos angerufen); 0 wirkt wie ein Filter | 0/1 | `ctx.soft_blacklist` (Basis-Rufzeichen) |
+| `not_his_tx_slot` | Station sendet **nicht** in dem Slot, in dem wir antworten würden; ohne gelernte Parität 1 | 0/1 | `ctx.op_slot_parity` (ab drei Decodes je Station) |
+| `not_in_pileup` | Call steckt **nicht** in einem Pile-Up; ein neues DXCC bekommt trotzdem 1 | 0/1 | `ctx.pile_up_calls` (Erkennung im Orchestrator) |
 | `marine_psk` | Call ist Marinefunker **und** hat uns laut PSK Reporter recently gehört | 0/1 | `marinefunker.json` + PSK-Cache |
 | `marine` | Call ist Marinefunker (auch ohne PSK-Confirmation) | 0/1 | `marinefunker.json` |
 | `tail_end_target` | Station hat in den letzten 30 s ein RR73/RRR/73 gesendet (= QSO beendet, jetzt frei) — 24 h Cooldown pro Station | 0/1 | `tail_end_candidates` + Toggle `tail_end_hunter_enabled` |
 | `new_dxcc_psk` | Call ist aus neuem DXCC **und** PSK sagt „hört uns" | 0/1 | cty.dat + PSK-Cache |
 | `new_dxcc` | Call ist aus neuem DXCC (auch ohne PSK) | 0/1 | cty.dat + worked-Set |
+| `grayline` | Rufer steht gerade in seinem Grayline-Fenster (Sonnenhöhe an seinem Standort zwischen −6° und +6°) | 0/1 | `ctx.call_to_latlon` + `util.propagation.is_in_grayline` |
+| `band_open` | hamqsl meldet für das Band „Good" (Tag/Nacht nach Sonnenstand am eigenen QTH); gilt dann für alle Rufer | 0/1 | hamqsl-Bandbedingungen + `util.propagation.is_band_open_for_dx` |
+| `active_hour` | Die UTC-Stunde lohnt für den Kontinent des Rufers: Abschlussquote der Zelle (Kontinent, Stunde) mindestens im Mittel (`hunt_zellen_prior`), sonst Top-50-%-Stunden aus der QSO-Tabelle | 0/1 | `ctx.zellen_success` bzw. `ctx.active_continent_hours` |
+| `buddy_seen` | Call schon gearbeitet, aber nicht auf diesem Band | 0/1 | `ctx.worked` + `ctx.worked_call_band` |
 | `continent_prior` | Kontinent des Ziels hat in der eigenen Pick-Telemetrie (14 Tage, ≥ 20 Picks) eine mindestens durchschnittliche Vollendungsquote; unbekannt = 1 — 2026-09-07 | 0/1 | `pick_attempt` → `continent_success` (Orchestrator, alle 30 min) |
-| `lonely_cq` | Rufer hat im gleichparitätigen Slot davor schon CQ gerufen und wurde dazwischen von niemandem angerufen (kein Pile-Up, hört zu) — 2026-09-06, aus der Pick-Telemetrie (56 % „went silent“) | 0/1 | Slot-Historie im Orchestrator (`detect_lonely_cqs`) |
+| `lonely_cq` | Rufer hat im gleichparitätigen Slot davor schon CQ gerufen und wurde dazwischen von niemandem angerufen (kein Pile-Up, hört zu) — 2026-09-06, aus der Pick-Telemetrie (56 % „went silent“). Bis zum 14.11.2026 (behoben in v0.195.0) löste der Tier nie aus, weil vor dem Decode gerechnet wurde, also mit den Rufern der Gegenparität | 0/1 | Slot-Historie im Orchestrator (`detect_lonely_cqs`) |
 | `psk_heard_us` | PSK Reporter sagt: dieser Call hat uns recently gespottet | 0/1 | PSK-Cache |
 | `new_dxcc_band` | DXCC haben wir, aber NICHT auf diesem Band (5BWAS) | 0/1 | `worked_dxcc_band`-Set |
 | `new_grid` | Neues Maidenhead-Grid (VUCC-Award) | 0/1 | `worked_grids`-Set |
@@ -51,7 +58,8 @@ ist konventionell `snr` als Tie-Breaker.
 
 ## Default-Reihenfolge
 
-Aus `OperatingConfig.hunt_priority`:
+Aus `OperatingConfig.hunt_priority` (`backend/ft8_appliance/config/models.py`),
+22 Stufen:
 
 1. `not_bad_reputation` — Soft-Blacklist meiden (Filter, v0.15.0)
 2. `not_his_tx_slot` — Slot-Parity-Awareness (Filter, v0.15.0)
@@ -69,10 +77,15 @@ Aus `OperatingConfig.hunt_priority`:
 14. `new_grid_band` — Grid auf diesem Band noch nicht (VUCC-Band)
 15. `not_worked` — Neue Calls (auch routine)
 16. `dxcc_rarity` — Rarity-Bonus
-17. `psk_heard_us` — PSK sagt „hört uns" (v0.65.3 ZURÜCKGESTUFT, s.u.)
-18. `psk_snr` — graduelles PSK-Reciprocity-Signal
-19. `snr` — Haupt-Tie-Breaker (bestes Signal gewinnt)
-20. `tail_end_target` — Tail-End-Pick (v0.65.2 UNTER `snr`, s.u.)
+17. `continent_prior` — Kontinent mit mindestens durchschnittlicher Quote in der eigenen Telemetrie (2026-09-07)
+18. `lonely_cq` — Rufer ruft unbeantwortet weiter (2026-09-06)
+19. `psk_heard_us` — PSK sagt „hört uns" (v0.65.3 ZURÜCKGESTUFT, s.u.)
+20. `psk_snr` — graduelles PSK-Reciprocity-Signal
+21. `snr` — Haupt-Tie-Breaker (bestes Signal gewinnt)
+22. `tail_end_target` — Tail-End-Pick (v0.65.2 UNTER `snr`, s.u.)
+
+Fehlt in einer bestehenden `config.yaml` eine Stufe, fügt die Validierung
+sie beim Laden vor `snr` ein (`_migrate_missing_tiers`).
 
 **Begründung der Default-Reihenfolge** (Sebastian-Wunsch 2026-05-26):
 - Marinefunker top weil persönliche Community (Raymond ist Mitglied)

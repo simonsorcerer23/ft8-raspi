@@ -9,9 +9,9 @@ Für historische Begründungen siehe commit-history.
 1. **Du auf Workstation:** `./scripts/release.sh v0.1.5` → frontend
    wird gebaut, static/ committed, `_version.py` aktualisiert,
    Tag erstellt, gepusht.
-2. **Pi (`ft8`)** holt sich den neuen Tag binnen ~10 min via
-   `ft8-self-update.timer`. Pre-flight checks, panic-stop, checkout,
-   sync system-files (units + sudoers), restart, health-probe.
+2. **Jede Station** holt sich den neuen Tag binnen ~10 min via
+   `ft8-self-update.timer`. Signaturprüfung, Wartemodus, checkout,
+   sync system-files (units + sudoers), panic-stop, restart, health-probe.
 3. **Wenn was schief geht:** automatischer Rollback auf vorherigen
    Commit-Hash, ntfy 🟡.
 4. **Wenn auch Rollback schief geht:** ntfy 🔴, manueller Eingriff.
@@ -48,19 +48,53 @@ Pro Lauf, in dieser Reihenfolge:
 1. `flock /tmp/ft8-self-update.lock` — nur eine Instanz gleichzeitig
 2. `git fetch --tags --prune` — bei Network-Fail still exit 0
 3. Latest semver tag bestimmen, mit `git describe` vergleichen
-4. Wenn keine neuere Version: still exit 0
-5. **Idle-Check** via `GET /api/status`: `state==IDLE && !current_qso_call && !rig.ptt`. Wenn nicht idle: skip + ntfy 🟡 + exit 0
-6. Rollback-Target festhalten: `$(git rev-parse HEAD)`
-7. `git checkout $LATEST_TAG`
-8. Wenn `pyproject.toml` sich geändert hat: `pip install -e .[hardware]`
-9. Wenn `vendor/ft8_lib/` da: `make` (no-op wenn unverändert)
-10. `_build_ft8` für die cffi-Extension (no-op wenn unverändert)
-11. **System-File-Sync** (siehe nächster Abschnitt)
-12. **Panic** via `POST /api/control/panic` + 2s Sleep
-13. `sudo systemctl restart ft8-controller`
-14. **Health-Probe** via `GET /api/system/version` 200 OK (3 retries × 4s, 12s initial wait)
-15. Bei Fail: Rollback (checkout zurück + pip + restart + Health-Probe)
-16. Erfolg: ntfy 🟢
+4. Wenn keine neuere Version: still exit 0 (vorher nur das rigctld-Envfile
+   abgleichen). Kein Downgrade: ist der aktuelle Tag neuer, ebenfalls exit 0
+5. **Signaturprüfung** des Tags samt Tag-Name im signierten Objekt (siehe
+   „Signierte Releases"). Abgelehnt: ntfy 🔴, exit 1, Station unverändert
+6. **Idle-Check** via `GET /api/status`. Meldet der Controller
+   `update_safe: true` (IDLE, TX_LOCKED oder CQ-Rückfall ohne QSO), geht es
+   weiter. Sonst kündigt das Skript das Update an (**Wartemodus**, siehe
+   unten) und wartet bis zu 4 Minuten auf `update_safe`; danach noch bis zu
+   einer Minute, bis kein Burst mehr läuft. Antwortet die API gar nicht,
+   wird trotzdem aktualisiert (der Controller ist dann tot, das Update
+   vielleicht die Reparatur)
+7. Wartemodus setzen, falls noch nicht geschehen (auch aus dem Leerlauf)
+8. Rollback-Target festhalten: `$(git rev-parse HEAD)`
+9. `git checkout $LATEST_TAG`
+10. Wenn `pyproject.toml` sich geändert hat: `pip install -e .[hardware]`
+11. Wenn `vendor/ft8_lib/` da: `make` (no-op wenn unverändert)
+12. `_build_ft8` für die cffi-Extension (no-op wenn unverändert)
+13. **System-File-Sync** (siehe nächster Abschnitt)
+14. **Panic** via `POST /api/control/panic` + 2s Sleep
+15. `sudo systemctl restart ft8-controller`
+16. **Health-Probe** via `GET /api/system/version` 200 OK (3 retries × 4s, 12s initial wait)
+17. Bei Fail: Rollback (checkout zurück + pip + restart + Health-Probe)
+18. Erfolg: ntfy 🟢
+
+## Wartemodus (update-hold)
+
+`POST /api/control/update-hold` mit `{"enabled": true}` kündigt dem
+Controller das Update an (`Orchestrator.handle_update_hold`): Das laufende
+QSO wird zu Ende gebracht, neue Anrufe und CQ-Rufe unterbleiben, und
+`update_safe` im Status wird true, sobald kein QSO mehr läuft und kein Burst
+spielt. Eingeführt am 2026-09-07; vorher übersprang das Skript den Lauf,
+wenn die Station nicht in IDLE stand, und fand im Hunting-Betrieb
+stundenlang kein Fenster.
+
+Seit 2026-11-14 (v0.195.0):
+
+- **Der Wartemodus wird wieder gelöst.** Endet das Skript, ohne den
+  Controller neu gestartet zu haben (Checkout oder Build gescheitert),
+  nimmt ein `trap … EXIT` den Wartemodus mit `{"enabled": false}` zurück.
+  Vorher blieb er stehen: Am 06.09. und 08.09. rief die Station nach einem
+  gescheiterten Checkout niemanden mehr an, gemeldet wurde nur „checkout
+  failed". Nach einem Neustart des Controllers ist nichts zu lösen, der
+  neue Prozess startet ohne Wartemodus.
+- **Er wird auch aus dem Leerlauf gesetzt.** Checkout, pip und der Bau des
+  Decoders dauern ein bis zwei Minuten; ein QSO, das in dieser Zeit beginnt,
+  würde der Neustart mittendrin abschneiden. Vorher wurde der Wartemodus nur
+  gesetzt, wenn beim Idle-Check gerade ein QSO lief.
 
 ## System-File-Sync (kritisch)
 
@@ -163,18 +197,25 @@ hinweg etc.) bleibt Sache der Mode-/Decode-Watchdogs im orchestrator.
 
 ## ntfy-Channels
 
-- `ft8-system-ft8` (System-Pushes des Pi `ft8`)
+- `ft8-system-<hostname>` (System-Pushes der jeweiligen Station;
+  `NTFY_TOPIC="ft8-system-$(hostname)"` in `self-update.sh`)
 
-Einmal in der ntfy-App abonnieren. Server `https://ntfy.sh`.
-Der Topic-Name wird aus dem Hostnamen abgeleitet — käme je ein weiterer
-Pi dazu, bekäme er automatisch seinen eigenen Kanal.
+Einmal je Station in der ntfy-App abonnieren. Server `https://ntfy.sh`.
+Der Topic-Name wird aus dem Hostnamen abgeleitet; jede Station hat damit
+ihren eigenen Kanal.
 
-Push-Formate:
+Push-Formate (`<hostname>` setzt das Skript mit `$(hostname)` ein; für den
+SSH-Aufruf von der Workstation gilt der Tailscale-Name der Station):
 - 🟢 `Update v0.1.3 → v0.1.4 ok (16s)`
-- 🟡 `Update v0.1.4 verfügbar, skip (state=QSO_REPORT)`
+- 🟡 `Update v0.1.4 install/restart failed → rolled back zu v0.1.3`
 - 🟡 `Update v0.1.4 health-check failed → rolled back zu v0.1.3`
-- 🔴 `Update UND Rollback failed — manueller Eingriff: ssh ft8 ...`
-- ⚙ `Self-Update: sudoers-Snippet hat sich geändert. Einmalig manuell installieren: ssh ft8 'sudo install -m 440 ~/...'`
+- 🔴 `Self-Update FATAL: Tag v0.1.4 ist nicht mit einem zugelassenen Schluessel signiert — kein Update, Pi bleibt auf v0.1.3`
+- 🔴 `Self-Update FATAL: git checkout v0.1.4 failed — Pi bleibt auf v0.1.3`
+- 🔴 `Self-Update FATAL: Update UND Rollback failed — manueller Eingriff: ssh <hostname> 'sudo systemctl status ft8-controller'`
+- ⚙ `Self-Update: sudoers-Snippet hat sich geändert. Einmalig manuell: ssh <hostname> 'cd <APP_DIR> && deploy/render-install-files.sh … && sudo install -m 440 …'`
+
+Eine Meldung „Update verfügbar, skip (state=…)" gibt es seit dem Wartemodus
+(2026-09-07) nicht mehr.
 
 ## Frontend / UI
 
@@ -263,6 +304,14 @@ root-eigen zurück. Eine aus der Sicherung aufgebaute Station prüft also weiter
 Das Self-Update prüft den Tag **vor** dem Wartemodus und vor dem Checkout;
 ein abgelehnter Tag lässt die Station unverändert und meldet sich. Fehlt die
 Datei, bleibt es beim alten Verhalten, mit Warnung im Log.
+
+**Tag-Name im signierten Objekt (seit 2026-11-14, v0.195.0):** `git
+verify-tag` prüft das Tag-Objekt, nicht den Namen, unter dem es im Repo
+hängt. Wer pushen kann, konnte das signierte Objekt eines alten Releases
+unter einem neuen Namen ablegen (`refs/tags/v9.9.9`): Die Station hielt die
+alte Version für die neueste und nahm kein echtes Release mehr an. Das
+Skript liest deshalb die Zeile `tag <name>` aus dem Objekt (`git cat-file
+tag`) und bricht ab, wenn sie nicht dem Namen des Tags entspricht.
 
 ## Einmalige Migration: rsync-Pi → git-Pi
 
