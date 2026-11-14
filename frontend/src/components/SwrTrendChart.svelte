@@ -71,7 +71,7 @@
     for (let i = 0; i <= 4; i++) {
       const ts = tMin + (tRange * i / 4);
       const ageH = (Date.now() - ts) / 3_600_000;
-      const label = ageH < 1 ? 'jetzt'
+      const label = ageH < 1 ? t('chart.now')
                   : ageH < 24 ? `-${ageH.toFixed(0)}h`
                   : `-${(ageH / 24).toFixed(1)}d`;
       xTicks.push({ x: PAD_L + (PLOT_W * i / 4), label });

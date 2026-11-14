@@ -96,7 +96,7 @@
   {#if visible.length === 0}
     <p class="empty">
       {onlyToMe
-        ? 'Keine Decodes an dich in dieser Liste.'
+        ? t('dl.empty_only_me')
         : t('dl.empty')}
     </p>
   {:else}

@@ -263,3 +263,57 @@ def test_f9_eqsl_qth_nickname_wird_ausgeliefert_und_laesst_sich_leeren() -> None
 def test_f9_formular_startet_mit_dem_gespeicherten_nickname() -> None:
     txt = (KOMPONENTEN / "OperatorAdminPanel.svelte").read_text(encoding="utf-8")
     assert "eqsl_qth_nickname: op.eqsl_qth_nickname ?? ''" in txt
+
+
+# --- F6: NR-Lampe am Schalter, ANF und Tuner sichtbar -----------------------
+
+def test_f6_nr_lampe_haengt_am_schalter() -> None:
+    """nr_level bleibt bei ausgeschaltetem NR auf dem letzten Wert stehen —
+    die Lampe leuchtete, obwohl NR aus war."""
+    txt = (KOMPONENTEN / "RigPanel.svelte").read_text(encoding="utf-8")
+    assert "class:on={rig.nr_on === true}>NR<" in txt
+    assert "rig.nr_level" not in txt
+    assert "class:on={rig.anf_on}>ANF<" in txt
+    assert "class:on={rig.tuner_on}>TUNER<" in txt
+
+
+def test_f6_status_liefert_die_schalter() -> None:
+    from ft8_appliance.web.routes.status import RigSnapshotOut
+
+    assert {"nr_on", "anf_on", "tuner_on"} <= set(RigSnapshotOut.model_fields)
+
+
+# --- F10: sichtbare Texte ueber t(), keine falsche Filterbreite -------------
+
+@pytest.mark.parametrize(("datei", "roh"), [
+    ("RigPanel.svelte", "weniger Sensitivity"),
+    ("RigPanel.svelte", "Standard-Modus"),
+    ("RigPanel.svelte", ">offline<"),
+    ("RigPanel.svelte", "Instantaneous ALC"),
+    ("RigPanel.svelte", "Audio-gain factor"),
+    ("DecodeList.svelte", "Keine Decodes an dich"),
+    ("QsoConversation.svelte", ">seit {"),
+    ("QsoConversation.svelte", 'title="Marinefunker'),
+    ("ADIFTable.svelte", "'Zeit (UTC)'"),
+    ("ADIFTable.svelte", "'Frequenz'"),
+    ("ADIFTable.svelte", "<h2>QSO-Log</h2>"),
+    ("ADIFTable.svelte", "'alle'"),
+    ("ADIFTable.svelte", 'title="nur Marinefunker'),
+    ("SwrTrendChart.svelte", "'jetzt'"),
+])
+def test_f10_text_laeuft_ueber_den_katalog(datei: str, roh: str) -> None:
+    txt = (KOMPONENTEN / datei).read_text(encoding="utf-8")
+    assert roh not in txt, f"{datei}: {roh!r} steht hart im Quelltext"
+
+
+def test_f10_keine_feste_filterbreite_im_text() -> None:
+    """Die Icom-Profile stellen 3600 Hz ein, FT-817/818 gar keine Breite —
+    "2700 Hz" im Knopf- und Schaltertext war fuer keines davon richtig."""
+    from ft8_appliance.config.models import _RIG_TABLE
+
+    assert {p.mode_width_hz for p in _RIG_TABLE.values()} != {2700}
+    for lang in ("de", "en"):
+        txt = (FRONTEND / "lib" / "locales" / f"{lang}.js").read_text(encoding="utf-8")
+        for key in ("control.restore_rig", "cfg.rig_auto_restore"):
+            zeile = next(z for z in txt.splitlines() if f"'{key}'" in z)
+            assert "2700" not in zeile, zeile
