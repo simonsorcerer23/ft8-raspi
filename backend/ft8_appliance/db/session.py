@@ -174,6 +174,17 @@ async def create_all(default_user_callsign: str | None = None) -> None:
         await _migrate_decode_columns(conn)
         await _migrate_pick_attempt_columns(conn)
         await _migrate_band_noise_columns(conn)
+        await _migrate_bandwechsel_columns(conn)
+
+
+async def _migrate_bandwechsel_columns(conn) -> None:
+    """v0.199.0 — Vergleichsgruppe fuer PSK-getragene Bandwechsel."""
+    res = await conn.exec_driver_sql("PRAGMA table_info(bandwechsel_log)")
+    existing = {row[1] for row in res.fetchall()}
+    if existing and "ausgefuehrt" not in existing:
+        await conn.exec_driver_sql(
+            "ALTER TABLE bandwechsel_log ADD COLUMN ausgefuehrt BOOLEAN NOT NULL DEFAULT 1"
+        )
 
 
 async def _migrate_pick_candidate_columns(conn) -> None:

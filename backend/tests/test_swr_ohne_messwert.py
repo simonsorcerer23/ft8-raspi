@@ -61,8 +61,12 @@ def test_guter_wert_laesst_durch():
 def test_orchestrator_erfindet_keinen_ersatzwert():
     """Der Kern: 1,0 waere eine Messung, die nie stattgefunden hat."""
     q = inspect.getsource(orch_mod.Orchestrator._refresh_hardware_state)
-    assert "swr=rig.swr," in q
+    assert "swr=self._swr_fuer_guard(rig)," in q
     assert "else 1.0" not in q
+    # Seit 2026-11-14 entscheidet _swr_fuer_guard: beim Icom der Schnappschuss
+    # unveraendert (auch None), beim FT-817/818 nur ein Wert aus eigenem Burst.
+    q2 = inspect.getsource(orch_mod.Orchestrator._swr_fuer_guard)
+    assert "return rig.swr" in q2 and "1.0" not in q2
 
 
 def test_fehlender_wert_wird_gemeldet():

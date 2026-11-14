@@ -618,3 +618,99 @@ def test_befehl_nach_beginn_des_schnappschusses_wird_erkannt(tmp_path) -> None:
     assert o._befehl_nach_snapshot("rfpower_norm") is True
     o._snapshot_begonnen_at = _time.monotonic() + 0.001           # der naechste Schnappschuss
     assert o._befehl_nach_snapshot("rfpower_norm") is False
+
+
+# ---------------------------------------------------------------------------
+# Akku-Abfrage und FT-817/818 (hamlib-Quelltext gelesen am 14.11.2026)
+
+async def test_versorgungsspannung_kommt_ueber_vd_meter() -> None:
+    """ "l VOLTSEN" kennt hamlib nicht; der battery_guard konnte nie ausloesen."""
+    from ft8_appliance.rig.rigctld_client import RigctldClient
+
+    c = RigctldClient()
+    gefragt: list[str] = []
+
+    async def _send(line: str) -> str:
+        gefragt.append(line)
+        return {"l VD_METER": "13.8684"}.get(line, "RPRT -1")
+    c._send = _send
+    assert await c.get_battery_v() == pytest.approx(13.8684)
+    assert "l VOLTSEN" not in gefragt
+    snap = await c.snapshot()
+    assert snap.battery_v == pytest.approx(13.8684)
+
+
+def _orch_ft817(tmp_path):
+    o = _orch_mit_pfad(tmp_path)
+    o.db_enabled = False
+    o.config.rig.model = "ft817"
+    return o
+
+
+def test_ft817_swr_im_empfang_zaehlt_nicht(tmp_path) -> None:
+    """hamlib gibt beim FT-817 im Empfang einen Zwischenspeicher zurueck: 10 nach dem
+    Start, danach die Watt der letzten Leistungsabfrage. Der Guard haette gesperrt."""
+    import time as _time
+
+    from ft8_appliance.rig.rigctld_client import RigSnapshot
+
+    o = _orch_ft817(tmp_path)
+    assert o._swr_fuer_guard(RigSnapshot(freq_hz=14_074_000, swr=10.0)) is None
+    o._tx_burst_active = True
+    o._buche_swr(1.3)                                  # gemessen in der eigenen Aussendung
+    o._tx_burst_active = False
+    assert o._swr_fuer_guard(RigSnapshot(freq_hz=14_074_000, swr=5.0)) == 1.3
+    o._swr_burst_proben[:] = [(_time.monotonic() - 3600, 1.3)]
+    assert o._swr_fuer_guard(RigSnapshot(freq_hz=14_074_000, swr=5.0)) is None
+
+    icom = _orch_mit_pfad(tmp_path)
+    icom.config.rig.model = "ic7300"
+    assert icom._swr_fuer_guard(RigSnapshot(freq_hz=14_074_000, swr=1.0)) == 1.0
+
+
+def test_ft817_profil_weiss_dass_die_leistung_ein_messwert_ist() -> None:
+    from ft8_appliance.config.models import _RIG_TABLE
+
+    assert {m for m, p in _RIG_TABLE.items() if p.leistung_ist_messwert_w} == {"ft817", "ft818"}
+    assert all(not _RIG_TABLE[m].power_settable for m in ("ft817", "ft818"))
+
+
+# ---------------------------------------------------------------------------
+# Kontrollarm: Schattenprotokoll bei Gates, die an der Listenlaenge haengen
+
+def test_kontrollarm_protokolliert_auch_das_einzelkandidaten_gate() -> None:
+    """Zwei CQs, -24 und -18 dB. Im Regelarm faellt der erste am SNR-Boden, der zweite
+    ist dann allein und faellt als einzelner schwacher Rufer. Im Kontrollarm blieb die
+    Liste zweistellig, das zweite Gate griff nicht, und der Rufer galt als
+    "kein Gate haette verhindert"."""
+    from datetime import UTC, datetime
+
+    from ft8_appliance.statemachine.machine import StateMachine
+    from ft8_appliance.statemachine.states import DecodedMsg, MachineContext
+
+    def sm(kontrolle: bool) -> StateMachine:
+        s = StateMachine(ctx=MachineContext(callsign="DK9XR", my_grid="JN58td"))
+        s.ctx.auto_answer = True
+        s.ctx.hunt_priority = ["snr"]
+        s.ctx.worked_grids = {"JO31"}
+        s.ctx.worked_grid_band = {("JO31", "20m")}
+        s.ctx.hunt_snr_floor_db = -22
+        s.ctx.hunt_sole_min_snr_db = -16
+        s.ctx.kontroll_arm = kontrolle
+        return s
+
+    def cq(call: str, snr: int) -> DecodedMsg:
+        return DecodedMsg(ts=datetime.now(UTC), call_from=call, call_to=None, grid="JO31",
+                          message=f"CQ {call} JO31", snr_db=snr, dt_s=0.2,
+                          freq_offset_hz=1500, band="20m")
+
+    regel = sm(False)
+    assert regel._pick_hunt_target([cq("DL1AAA", -24), cq("DL2BBB", -18)]) is None
+    verworfen = {k["call"]: k["verworfen_von"] for k in regel._last_pick_diag["kandidaten"]}
+    assert verworfen == {"DL1AAA": "snr_floor", "DL2BBB": "einzelner_schwacher_cq"}
+
+    kontrolle = sm(True)
+    gewaehlt = kontrolle._pick_hunt_target([cq("DL1AAA", -24), cq("DL2BBB", -18)])
+    assert gewaehlt is not None                      # der Kontrollarm ruft trotzdem
+    schatten = {k["call"]: k["haette_verworfen"] for k in kontrolle._last_pick_diag["kandidaten"]}
+    assert schatten == {"DL1AAA": "snr_floor", "DL2BBB": "einzelner_schwacher_cq"}

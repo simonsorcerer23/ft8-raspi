@@ -177,12 +177,17 @@ class RigctldClient:
         return float(line)
 
     async def get_battery_v(self) -> float | None:
-        """Read the IC-705 internal battery voltage via Hamlib level VOLTSEN.
+        """Versorgungsspannung des Rigs ueber das hamlib-Level VD_METER, in Volt.
 
-        Returns None if the rig doesn't expose it (e.g. external power).
+        Bis 2026-11-14 fragte das "VOLTSEN" ab. Dieses Level kennt hamlib
+        nicht (rigctld antwortet RPRT -1), der Wert war also immer None und
+        der battery_guard konnte auf keinem Geraet ausloesen. VD_METER fuehren
+        IC-705, IC-7300 und IC-7300MK2 (``rigctl --dump-caps``, hamlib 4.7.2);
+        am MK2 gelesen: 13,87 V. Im Akkubetrieb des IC-705 ist das die
+        Akkuspannung. FT-817/818 haben kein Spannungslevel, dort bleibt None.
         """
         try:
-            return await self.get_level("VOLTSEN")
+            return await self.get_level("VD_METER")
         except Exception:
             return None
 

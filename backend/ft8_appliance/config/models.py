@@ -1166,6 +1166,12 @@ class RigProfil:
     # FT-817/818: ``Set level`` kennt nur BAND_SELECT — Leistung wird am
     # Geraet gewaehlt (0,5/1/2,5/5 W), die Appliance liest sie nur.
     power_settable: bool = True
+    # FT-817/818: "l RFPOWER" ist die Anzeige des Leistungsmessers in Watt
+    # (hamlib rigs/yaesu/ft817.c: ft817_get_tx_level mit FT817_PWR_CAL,
+    # 0,5 bis 5,0), keine Einstellung zwischen 0 und 1. Im Empfang kommt
+    # dort der zuletzt zwischengespeicherte SWR-Wert zurueck, nach dem Start
+    # also 10. Der Wert zaehlt deshalb nur waehrend der eigenen Aussendung.
+    leistung_ist_messwert_w: bool = False
     # Filterbreite per CAT: Icom ja; beim FT-817 nicht dokumentiert, also
     # Modus ohne Breite setzen (0 = Normalfilter) und keinen Filter-Alarm.
     bandwidth_settable: bool = True
@@ -1202,9 +1208,11 @@ _RIG_TABLE: dict[str, RigProfil] = {
     # die RTS-Leitung desselben Ports, Audio ueber die CM108-Soundkarte
     # des Digirig. Leistung laut hamlib 5 W, nur lesbar.
     "ft817":    RigProfil(1020, 5, "Yaesu FT-817 (Digirig)", cat_baud=4800, ptt_type="rts",
-                          power_settable=False, bandwidth_settable=False, mode_width_hz=0),
+                          power_settable=False, bandwidth_settable=False, mode_width_hz=0,
+                          leistung_ist_messwert_w=True),
     "ft818":    RigProfil(1041, 5, "Yaesu FT-818 (Digirig)", cat_baud=4800, ptt_type="rts",
-                          power_settable=False, bandwidth_settable=False, mode_width_hz=0),
+                          power_settable=False, bandwidth_settable=False, mode_width_hz=0,
+                          leistung_ist_messwert_w=True),
 }
 
 RIG_MODELS = tuple(_RIG_TABLE)

@@ -2832,9 +2832,22 @@ class StateMachine:
         #   anwenden, ohne die bestehende Priority-Liste zu ersetzen.
         now_ts = datetime.now(UTC).timestamp()
         strict = self.ctx.hunt_strict_until > now_ts
-        if len(cqs) == 1 and not self._is_high_confidence_pick(cqs[0], strict=False):
+        # Die beiden folgenden Gates haengen an der Listenlaenge ("nur ein
+        # Kandidat uebrig"). Im Kontrollarm kuerzt kein Gate die Liste, sie
+        # ist dort also laenger als im Regelarm, und die Gates griffen nicht:
+        # Ein Rufer, den die Regel als einzigen Rest verworfen haette, galt
+        # bis 2026-11-14 als "kein Gate haette verhindert" und verunreinigte
+        # die Vergleichsgruppe. Gezaehlt wird deshalb, was der Regelarm noch
+        # uebrig haette.
+        def _rest() -> list:
+            if not kontrolle:
+                return cqs
+            return [d for d in cqs if id(d) not in self._haette_verworfen]
+
+        rest = _rest()
+        if len(rest) == 1 and not self._is_high_confidence_pick(rest[0], strict=False):
             if kontrolle:
-                self._haette_verworfen.setdefault(id(cqs[0]), "einzelner_schwacher_cq")
+                self._haette_verworfen.setdefault(id(rest[0]), "einzelner_schwacher_cq")
             else:
                 # Nur im Regelarm bricht der Slot hier ab. Im Kontrollarm
                 # laeuft der Kandidat weiter und wird angerufen — genau
@@ -2847,11 +2860,12 @@ class StateMachine:
                     "kandidaten": self._kandidaten_protokoll(None),
                 }
                 return None
-        if len(cqs) == 1 and self._ist_aussichtsloses_fernziel(cqs[0]):
+        rest = _rest()
+        if len(rest) == 1 and self._ist_aussichtsloses_fernziel(rest[0]):
             # Der Slot geht an den CQ-Fallback: gerufen zu werden ist hier
             # aussichtsreicher als ins Leere zu rufen.
             if kontrolle:
-                self._haette_verworfen.setdefault(id(cqs[0]), "fernziel_allein")
+                self._haette_verworfen.setdefault(id(rest[0]), "fernziel_allein")
             else:
                 # Nur im Regelarm bricht der Slot hier ab. Im Kontrollarm
                 # laeuft der Kandidat weiter und wird angerufen — genau

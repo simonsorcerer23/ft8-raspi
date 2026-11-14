@@ -328,14 +328,14 @@ MESSPLAN: tuple[Messung, ...] = (
     Messung(
         "autopilot_psk", "laufend",
         "Waehlt der Autopilot mit der PSK-Aktivitaet im eigenen Feld ein Band, auf dem "
-        "danach mehr QSOs gelingen als davor?",
+        "danach mehr QSOs gelingen, als wenn er geblieben waere?",
         ("bandwechsel_log", "config:autopilot_psk_aktivitaet"),
         "Autopilot: Bandwechsel und QSOs davor/danach",
-        "Ab 10 Wechseln mit psk_genutzt: QSOs in der Stunde nach dem Wechsel gegen die "
-        "Stunde davor. Liegt danach im Mittel nicht darunter, bleibt der Schalter an. "
-        "Liegt es bei mindestens zwei Dritteln der Wechsel darunter, Schalter aus. "
-        "Weniger als 10 Wechsel bis zum Lesetermin: weiterlaufen lassen, 14 Tage spaeter "
-        "erneut lesen.",
+        "Jeder zweite Wechsel, den die PSK-Schaetzung traegt, unterbleibt zur Kontrolle "
+        "(bandwechsel_log.ausgefuehrt). Ab 10 Entscheidungen je Gruppe: QSOs in der "
+        "Stunde danach, gewechselt gegen gehalten, urteil_rate(). 'echt' mehr nach dem "
+        "Wechsel: Schalter bleibt an, die Kontrolle entfaellt. 'echt' weniger: Schalter "
+        "aus. Sonst weiterlaufen lassen und 14 Tage spaeter erneut lesen.",
         lesen_ab=date(2026, 11, 26),
         danach="Sebastian entscheidet ueber den Schalter. Bleibt er an, ist er auch "
                "der Kandidat fuer die Station, sobald dort eine Mehrbandantenne ohne "
@@ -343,7 +343,12 @@ MESSPLAN: tuple[Messung, ...] = (
         seit=date(2026, 11, 12),
         quelle="MK2 an Raymonds Antenne (15/10 m fuer DO3XR), 12.11.2026: Der Autopilot "
                "zaehlte nur das aktive Band; psk-freq.pl zeigte 15 m mit 106 Meldungen "
-               "gegen 10 m mit 8 im Feld JN58.",
+               "gegen 10 m mit 8 im Feld JN58. Regel am 14.11.2026 ersetzt (Audit P10): "
+               "Die erste verglich die Stunde nach dem Wechsel mit der davor. Gewechselt "
+               "wird aber gerade dann, wenn das Band schwach war; 'danach nicht "
+               "schlechter' war damit immer erfuellt, ob die Schaetzung hilft oder nicht. "
+               "Bis dahin gab es keinen einzigen Wechsel. Solange es kein Nachtband gibt, "
+               "kommen Entscheidungen nur zwischen 15 und 10 m zustande, also selten.",
     ),
     Messung(
         "ft4_probe_psk", "laufend",

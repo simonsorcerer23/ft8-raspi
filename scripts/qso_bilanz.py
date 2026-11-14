@@ -1775,11 +1775,14 @@ def main() -> int:
         print("    Takt min misst nur den Augenblick der Probe; im Leerlauf sind 1500 MHz normal.")
 
     print("\n=== Autopilot: Bandwechsel und QSOs davor/danach ===")
-    # Seit 2026-11-12 (Messplan autopilot_psk). Je Wechsel die QSOs in der
-    # Stunde davor und danach; getrennt danach, ob die PSK-Schaetzung einging.
+    # Seit 2026-11-12 (Messplan autopilot_psk). Seit 14.11. mit Vergleichsgruppe:
+    # Jeder zweite Wechsel, den die PSK-Schaetzung traegt, unterbleibt. Verglichen
+    # werden die QSOs in der Stunde danach, gewechselt gegen gehalten.
+    ausgefuehrt_da = hat_spalte(con, "bandwechsel_log", "ausgefuehrt")
     try:
         wechsel = con.execute(
-            "select w.ts, w.von_band, w.nach_band, w.psk_von, w.psk_nach, w.psk_genutzt,"
+            "select w.ts, w.von_band, w.nach_band, w.psk_von, w.psk_nach, w.psk_genutzt, "
+            + ("w.ausgefuehrt" if ausgefuehrt_da else "1") + ","
             "  (select count(*) from qso q where q.qso_end >= datetime(w.ts, '-60 minutes')"
             "     and q.qso_end < w.ts),"
             "  (select count(*) from qso q where q.qso_end >= w.ts"
@@ -1791,20 +1794,23 @@ def main() -> int:
         print("    keine Wechsel (Tabelle leer)")
     else:
         tabelle([(str(ts)[:16], f"{v or '?'} -> {n}", pv if pv is not None else "-",
-                  pn if pn is not None else "-", "ja" if g else "nein", vor, nach)
-                 for ts, v, n, pv, pn, g, vor, nach in wechsel[-20:]],
-                ("Zeit (UTC)", "Wechsel", "PSK von", "PSK nach", "PSK genutzt",
-                 "QSOs 1 h davor", "1 h danach"))
-        for genutzt in (1, 0):
-            teil = [(vor, nach) for *_, g, vor, nach in wechsel if bool(g) == bool(genutzt)]
-            if teil:
-                schlechter = sum(1 for vor, nach in teil if nach < vor)
-                print(f"    PSK {'genutzt' if genutzt else 'nicht genutzt'}: {len(teil)} Wechsel, "
-                      f"davor {sum(v for v, _ in teil) / len(teil):.1f}, danach "
-                      f"{sum(n for _, n in teil) / len(teil):.1f} QSOs je Stunde, "
-                      f"{schlechter} davon schlechter")
-        print("    Die Stunde danach enthaelt auch Tageszeit und Ausbreitung; erst"
-              " viele Wechsel trennen das vom Bandwechsel.")
+                  pn if pn is not None else "-", "ja" if g else "nein",
+                  "gewechselt" if a else "gehalten", vor, nach)
+                 for ts, v, n, pv, pn, g, a, vor, nach in wechsel[-20:]],
+                ("Zeit (UTC)", "Wechsel", "PSK von", "PSK nach", "PSK trug",
+                 "Ausgang", "QSOs 1 h davor", "1 h danach"))
+        gruppe = {True: [], False: []}
+        for *_, g, a, _vor, nach in wechsel:
+            if g:
+                gruppe[bool(a)].append(nach)
+        gew, geh = gruppe[True], gruppe[False]
+        print(f"    PSK-getragen: {len(gew)}-mal gewechselt, {len(geh)}-mal zur Kontrolle gehalten")
+        if gew and geh:
+            print(f"    QSOs in der Stunde danach: gewechselt {sum(gew) / len(gew):.1f}, "
+                  f"gehalten {sum(geh) / len(geh):.1f} — "
+                  f"{urteil_rate(sum(gew), float(len(gew)), sum(geh), float(len(geh)))}")
+        if min(len(gew), len(geh)) < 10:
+            print("    Unter 10 Entscheidungen je Gruppe — noch nicht entscheiden.")
 
     print("\n=== Autopilot: FT4-Versuche gegen die PSK-Schaetzung ===")
     # Seit 2026-11-14 (Messplan ft4_probe_psk). Je Versuch: was die PSK-Lage

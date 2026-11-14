@@ -365,9 +365,15 @@ class BandwechselLog(Base):
     # Meldungen im eigenen Feld (letzte 5 min); None ohne PSK-Daten
     psk_von: Mapped[int | None] = mapped_column(Integer, nullable=True)
     psk_nach: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # True, wenn die PSK-Schaetzung in die Entscheidung einging
+    # True, wenn die PSK-Schaetzung die Entscheidung getragen hat: Ohne sie
+    # waere der Autopilot nicht auf dieses Band gegangen. (Bis 2026-11-14
+    # hiess das nur "die Schaetzung lag vor"; Zeilen gab es bis dahin keine.)
     psk_genutzt: Mapped[bool] = mapped_column(Boolean, default=False)
     grund: Mapped[str] = mapped_column(String(400))
+    # False = zur Kontrolle NICHT gewechselt (Vergleichsgruppe, seit
+    # 2026-11-14). Ohne sie misst "QSOs danach gegen davor" nur, dass ein
+    # Band, das gerade schwach war, sich wieder erholt.
+    ausgefuehrt: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
 # ---------------------------------------------------------------------------
 class Ft4ProbeLog(Base):

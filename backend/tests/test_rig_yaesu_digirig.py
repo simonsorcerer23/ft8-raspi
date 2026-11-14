@@ -134,7 +134,7 @@ async def test_leistung_wird_bei_ft817_nicht_gesetzt() -> None:
 def test_poll_meldet_bei_ft817_keinen_fremdeingriff() -> None:
     """Der Poll-Block muss vor dem Tamper-Vergleich das Profil fragen."""
     s = (WURZEL / "backend" / "ft8_appliance" / "runtime" / "orchestrator.py").read_text()
-    i = s.index("if not _rig_profil_von(self.config).power_settable:\n                    # Leistung wird am Geraet gewaehlt")
+    i = s.index("if not _profil.power_settable:\n                    # Leistung wird am Geraet gewaehlt")
     assert i < s.index('elif abs(rig_watts - self._tx_power_w) >= max(1, max_w // 20):')
     assert "_notify_power_over_cap(rig_watts, legal)" in s
     assert "_rig_profil_von(self.config).bandwidth_settable and rig_bw is not None" in s

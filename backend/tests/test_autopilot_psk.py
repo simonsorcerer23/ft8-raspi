@@ -265,3 +265,80 @@ def test_wechselt_auch_mit_ft4_erlaubt_wenn_das_andere_band_klar_mehr_los_hat() 
     entscheidung = o._autopilot_decision("15m", "FT8", stats)
     assert entscheidung is not None
     assert (entscheidung.band, entscheidung.mode) == ("10m", "FT8")
+
+
+# ---------------------------------------------------------------------------
+# Vergleichsgruppe fuer PSK-getragene Wechsel (Audit P10, 14.11.2026)
+
+def test_kontrolle_haelt_die_haelfte_und_ist_nachrechenbar() -> None:
+    """Die alte Regel verglich die Stunde nach dem Wechsel mit der davor und konnte
+    nicht scheitern. Jetzt unterbleibt jeder zweite Wechsel zur Kontrolle."""
+    from ft8_appliance.runtime import Orchestrator
+
+    basis = 1_800_000_000.0
+    gehalten = [Orchestrator._autopilot_kontrolle_haelt(basis + 60 * i) for i in range(2000)]
+    assert 0.45 < sum(gehalten) / len(gehalten) < 0.55
+    # dieselbe Minute, dieselbe Antwort
+    a = Orchestrator._autopilot_kontrolle_haelt(basis + 5)
+    assert a == Orchestrator._autopilot_kontrolle_haelt(basis + 55)
+
+
+async def test_gehaltener_wechsel_wird_protokolliert_und_nicht_ausgefuehrt(monkeypatch) -> None:
+    o = _orch()
+    _psk(o, {"15m": 20, "10m": 200})
+    o.state_machine.ctx.auto_answer = True
+
+    async def _stats(bands, modes):
+        return _stats_roh()
+    monkeypatch.setattr(o, "_autopilot_collect_stats", _stats)
+    monkeypatch.setattr(type(o), "_autopilot_kontrolle_haelt", staticmethod(lambda now: True))
+    gemerkt = []
+
+    async def _merken(von, decision, psk_genutzt, grund, *, ausgefuehrt=True):
+        gemerkt.append((von, decision.band, psk_genutzt, ausgefuehrt))
+    monkeypatch.setattr(o, "_autopilot_bandwechsel_merken", _merken)
+    angewandt = []
+
+    async def _anwenden(band, mode, reason):
+        angewandt.append(band)
+    monkeypatch.setattr(o, "_apply_autopilot_target", _anwenden)
+    await o._maybe_run_autopilot()
+    assert gemerkt == [("15m", "10m", True, False)]
+    assert angewandt == []                              # nicht gewechselt
+    assert o._autopilot_last_switch_at > 0              # Cooldown laeuft trotzdem
+
+    # Nicht in der Kontrollgruppe: wechseln und als ausgefuehrt merken.
+    monkeypatch.setattr(type(o), "_autopilot_kontrolle_haelt", staticmethod(lambda now: False))
+    o._autopilot_last_switch_at = 0.0
+    o._autopilot_last_eval_at = 0.0
+    gemerkt.clear()
+    await o._maybe_run_autopilot()
+    assert angewandt == ["10m"] and gemerkt == [("15m", "10m", True, True)]
+
+
+def _stats_roh():
+    return {
+        ("15m", "FT8"): AutopilotStats("15m", "FT8", decodes=40),
+        ("10m", "FT8"): AutopilotStats("10m", "FT8"),
+    }
+
+
+async def test_bestehende_tabelle_bekommt_die_spalte_ausgefuehrt(tmp_path) -> None:
+    """Auf den Stationen gibt es bandwechsel_log schon ohne die Spalte."""
+    from sqlalchemy import text
+
+    from ft8_appliance.db.session import _migrate_bandwechsel_columns, init_engine
+
+    eng = init_engine(tmp_path / "alt.sqlite")
+    async with eng.begin() as c:
+        await c.execute(text(
+            "create table bandwechsel_log (id integer primary key, ts datetime, "
+            "von_band varchar(8), nach_band varchar(8) not null, nach_modus varchar(4) not null, "
+            "psk_von integer, psk_nach integer, psk_genutzt boolean, grund varchar(400))"))
+        await c.execute(text(
+            "insert into bandwechsel_log (ts, nach_band, nach_modus, psk_genutzt, grund) "
+            "values ('2026-11-13 10:00:00', '10m', 'FT8', 1, 'alt')"))
+        await _migrate_bandwechsel_columns(c)
+        await _migrate_bandwechsel_columns(c)                    # zweimal schadet nicht
+        zeile = (await c.execute(text("select ausgefuehrt from bandwechsel_log"))).fetchone()
+    assert zeile[0] == 1                                          # alte Wechsel gelten als ausgefuehrt

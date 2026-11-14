@@ -59,6 +59,26 @@ Kartennamen setzen — die Auto-Wahl nimmt sonst die erste Karte. Pegel nach
 Digirig-Doku: Aufnahme 20–50 %, Wiedergabe ~80 %, so dass ALC gerade nicht
 anspricht; der ALC-Regler der Appliance merkt sich den Wert je Rig-Modell.
 
+## Leistung und SWR: nur während der eigenen Aussendung (seit v0.199.0)
+
+Aus dem hamlib-Quelltext (`rigs/yaesu/ft817.c`, gelesen am 14.11.2026) und
+`rigctl --dump-caps` von hamlib 4.7.2:
+
+* `l RFPOWER` ist beim FT-817/818 die Anzeige des Leistungsmessers in Watt
+  (0,5 bis 5,0), keine Einstellung zwischen 0 und 1. Die eingestellte
+  Leistung lässt sich per CAT nicht lesen.
+* Im Empfang gibt hamlib für Leistung und SWR einen Zwischenspeicher zurück.
+  Er steht nach dem Start auf 10, und die Leistungsabfrage überschreibt ihn
+  mit dem Wattwert.
+* Ein Level für die Versorgungsspannung gibt es nicht.
+
+Die Appliance nimmt deshalb bei diesen beiden Profilen
+(`RigProfil.leistung_ist_messwert_w`) Leistung und SWR nur, solange sie
+selbst sendet. Der SWR-Guard urteilt über den letzten Wert aus einem eigenen
+Burst (höchstens zehn Minuten alt), sonst über keinen. Bis v0.198.0 hätte
+die Station im Empfang „50 W" angezeigt und der SWR-Guard vor der ersten
+Aussendung gesperrt. Am Gerät ist das nicht geprüft.
+
 ## Was nicht geprüft ist
 
 Alles oben ist aus hamlib-Fähigkeiten und Doku abgeleitet, nicht am Gerät

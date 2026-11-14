@@ -624,6 +624,10 @@ class Orchestrator:
     # Push feuern — der Set selbst rast oft als false-positive ein
     # weil rig-poll die Aenderung sieht bevor das echo registered ist.
     _dial_set_at: float = field(default=0.0, init=False)
+    # Spitzenwert des Empfangspegels fuer die Anzeige. Stand bis 2026-11-14
+    # nur in start(); status() vor dem Start warf einen AttributeError.
+    _rx_audio_dbfs_peak: float | None = field(default=None, init=False)
+    _rx_audio_dbfs_peak_ts: float = field(default=0.0, init=False)
     _betriebsart_gerichtet_at: float = field(default=0.0, init=False)
     # Wann der laufende Rig-Schnappschuss begonnen hat (monotonic)
     _snapshot_begonnen_at: float = field(default=0.0, init=False)
@@ -5663,9 +5667,19 @@ class Orchestrator:
         except Exception as exc:
             log.debug("FT4-Versuch nicht gespeichert: %s", exc)
 
+    @staticmethod
+    def _autopilot_kontrolle_haelt(now: float) -> bool:
+        """Gehoert diese Entscheidung zur Vergleichsgruppe? Die Haelfte, nachrechenbar.
+
+        Aus der Minute der Entscheidung gehasht statt gewuerfelt: Ein
+        Zufallswert im Arbeitsspeicher laesst sich hinterher nicht pruefen.
+        """
+        minute = int(now // 60)
+        return hashlib.sha256(f"autopilot_psk_kontrolle|{minute}".encode()).digest()[0] < 128
+
     async def _autopilot_bandwechsel_merken(
         self, von_band: str | None, decision: AutopilotDecision,
-        psk_genutzt: bool, grund: str,
+        psk_genutzt: bool, grund: str, *, ausgefuehrt: bool = True,
     ) -> None:
         """Schreibt den Wechsel nach bandwechsel_log (Messplan autopilot_psk)."""
         if not self.db_enabled or decision.band == von_band:
@@ -5683,9 +5697,10 @@ class Orchestrator:
                     psk_von=psk.get(von_band) if (psk and von_band) else None,
                     psk_nach=psk.get(decision.band) if psk else None,
                     psk_genutzt=psk_genutzt, grund=grund[:400],
+                    ausgefuehrt=ausgefuehrt,
                 ))
         except Exception as exc:
-            log.debug("Bandwechsel nicht gespeichert: %s", exc)
+            log.warning("Bandwechsel nicht gespeichert: %s", exc)
 
     async def _autopilot_collect_stats(
         self, bands: list[str], modes: list[str]
@@ -6172,9 +6187,14 @@ class Orchestrator:
             stats = await self._autopilot_collect_stats(bands, modes)
             decision = self._autopilot_ft4_probe_escape(active_band, modes, stats)
         else:
-            stats = await self._autopilot_collect_stats(bands, modes)
-            stats, psk_genutzt = self._autopilot_psk_schaetzung(stats, active_band)
+            roh = await self._autopilot_collect_stats(bands, modes)
+            stats, psk_da = self._autopilot_psk_schaetzung(roh, active_band)
             decision = self._autopilot_decision(active_band, current_mode, stats)
+            # Getragen hat die Schaetzung den Wechsel nur, wenn es ohne sie
+            # nicht auf dieses Band gegangen waere.
+            if psk_da and decision is not None and decision.band != active_band:
+                ohne = self._autopilot_decision(active_band, current_mode, roh)
+                psk_genutzt = ohne is None or ohne.band != decision.band
             await self._autopilot_ft4_sperre_melden(active_band, current_mode, stats, now)
         if decision is None:
             return
@@ -6196,6 +6216,19 @@ class Orchestrator:
         if psk_genutzt and self._psk_bandaktivitaet:
             reason += "; psk " + ", ".join(
                 f"{b}={self._psk_bandaktivitaet.get(b, 0)}" for b in bands)
+        if psk_genutzt and decision.band != active_band and self._autopilot_kontrolle_haelt(time.time()):
+            # Vergleichsgruppe (Messplan autopilot_psk): Jeder zweite Wechsel,
+            # den die PSK-Schaetzung traegt, unterbleibt. Nur so laesst sich
+            # sagen, ob die QSOs danach vom Wechsel kommen oder davon, dass
+            # sich ein schwaches Band von selbst erholt. Der Cooldown gilt wie
+            # nach einem Wechsel, sonst fiele die Entscheidung jede Minute neu.
+            log.info("autopilot: Wechsel %s -> %s zur Kontrolle NICHT ausgefuehrt (%s)",
+                     active_band, decision.band, reason)
+            await self._autopilot_bandwechsel_merken(
+                active_band, decision, True, reason, ausgefuehrt=False)
+            self._autopilot_last_switch_at = now
+            self._autopilot_last_reason = "kontrolle: " + reason
+            return
         await self._apply_autopilot_target(decision.band, decision.mode, reason)
         await self._autopilot_bandwechsel_merken(active_band, decision, psk_genutzt, reason)
         if decision.band == active_band and current_mode == "FT8" and decision.mode == "FT4":
@@ -8706,10 +8739,21 @@ class Orchestrator:
             # Nur bei spürbarer Abweichung (>=5 %) updaten damit
             # Mess-Jitter nicht die Anzeige zappeln lässt.
             rfp = self._last_rig.rfpower_norm
+            _profil = _rig_profil_von(self.config)
+            if _profil.leistung_ist_messwert_w and not (
+                    self._tx_burst_active and self._last_rig.ptt):
+                # FT-817/818: Ausserhalb der eigenen Aussendung ist der Wert
+                # keine Leistung (s. RigProfil.leistung_ist_messwert_w). Bis
+                # 2026-11-14 wurde er trotzdem uebernommen: Im Empfang haette
+                # die Station "50 W" angezeigt und ins Log geschrieben.
+                rfp = None
             if rfp is not None:
                 max_w = self.config.rig.effective_max_power_w
-                rig_watts = max(1, int(round(rfp * max_w)))
-                if not _rig_profil_von(self.config).power_settable:
+                if _profil.leistung_ist_messwert_w:
+                    rig_watts = max(1, int(round(rfp)))          # schon Watt
+                else:
+                    rig_watts = max(1, int(round(rfp * max_w)))
+                if not _profil.power_settable:
                     # Leistung wird am Geraet gewaehlt: kein "extern verstellt",
                     # der Ist-Wert IST der Sollwert. Nur ueber dem legalen Cap
                     # gibt es eine Meldung — einmal je neuem Wert.
@@ -9258,6 +9302,26 @@ class Orchestrator:
             "kein SWR, obwohl gesendet wird — der Guard kann nicht greifen",
             (jetzt - self._swr_fehlt_seit) / 60.0,
         )
+
+    def _swr_fuer_guard(self, rig) -> float | None:
+        """Der Stehwellenwert, ueber den der swr_guard vor dem Senden urteilt.
+
+        Icom liest im Empfang 1,0, dort gilt der Schnappschuss. Beim
+        FT-817/818 ist der Wert ausserhalb der Aussendung keiner: hamlib
+        gibt dann einen Zwischenspeicher zurueck, der nach dem Start auf 10
+        steht und den die Leistungsabfrage mit Watt ueberschreibt
+        (rigs/yaesu/ft817.c, ft817_get_tx_level). Mit dem Schnappschuss
+        haette der Guard dort vor der ersten Aussendung gesperrt und nach
+        jeder mit 5 W wieder. Fuer solche Geraete zaehlt der letzte Wert aus
+        einem eigenen Burst, hoechstens zehn Minuten alt, sonst None.
+        """
+        if not _rig_profil_von(self.config).leistung_ist_messwert_w:
+            return rig.swr
+        if self._swr_burst_proben:
+            t, wert = self._swr_burst_proben[-1]
+            if time.monotonic() - t <= 600.0:
+                return wert
+        return None
 
     def _swr_mittel_der_bursts(self, fenster_s: float = 180.0) -> float | None:
         """Mittel der Stehwellenwerte aus den eigenen Bursts der letzten Minuten.
@@ -10099,7 +10163,7 @@ class Orchestrator:
             # eine Messung, die nie stattgefunden hat. Der swr_guard
             # behandelt None ausdruecklich, das Ausbleiben des Rigs
             # faengt der rig_link_guard ueber das Snapshot-Alter.
-            swr=rig.swr,
+            swr=self._swr_fuer_guard(rig),
             # ALC aus dem letzten TX-Burst (Peak, gesetzt an der
             # PTT-Abfallflanke). Stand hier bis 2026-07-30 hartkodiert auf
             # 0 — der alc_guard konnte darum nie feuern. None = seit dem
