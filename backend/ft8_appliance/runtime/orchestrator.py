@@ -25,6 +25,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import random
 import socket
 import typing
@@ -1126,6 +1127,7 @@ class Orchestrator:
             pass
         self._init_integrations()
         await self._hydrate_from_db()
+        self._qrz_historie_laden()
         # v0.36.0 — beim Start frueher gespillte (nicht-geloggte) QSOs
         # nachtragen, falls die DB beim letzten Lauf voll/locked war.
         try:
@@ -1995,6 +1997,7 @@ class Orchestrator:
         self._sync_global_integrations_from_operator(new_op)
         # Worked-Sets + Blacklist neu hydratisieren (auf neuen User filtern)
         await self._hydrate_from_db()
+        self._qrz_historie_laden()
         # Integrations (QRZ, ntfy) neu mit den per-Operator-Credentials
         self._init_integrations()
         self._tx_power_w = new_op.default_power_w
@@ -7350,6 +7353,82 @@ class Orchestrator:
         self._last_storm_alert_at = now
         self._last_storm_alert_km = nearest_km
 
+    def _qrz_historie_anwenden(self, eintraege) -> tuple[int, set[str]]:
+        """(Rufzeichen, Band, Feld) aus dem QRZ-Logbuch in die Worked-Sets uebernehmen."""
+        added_calls = 0
+        added_dxccs: set[str] = set()
+        for call, band, grid in eintraege:
+            if not call:
+                continue
+            if call not in self._worked_calls:
+                self._worked_calls.add(call)
+                added_calls += 1
+            # DXCC immer selbst ueber cty.dat, damit es zur
+            # Live-Klassifikation passt.
+            if self.integrations.cty is not None:
+                ctyrec = self.integrations.cty.lookup(call)
+                if ctyrec is not None:
+                    country = ctyrec.entity.name
+                    if country not in self._worked_dxccs:
+                        self._worked_dxccs.add(country)
+                        added_dxccs.add(country)
+                    # Die Band-Kombination auch dann, wenn das Land schon
+                    # gearbeitet ist (jetzt vielleicht auf neuem Band).
+                    if band:
+                        self._worked_dxcc_band.add((country, band))
+            if len(grid) >= 4:
+                g4 = grid[:4]
+                self._worked_grids.add(g4)
+                if band:
+                    self._worked_grid_band.add((g4, band))
+        return added_calls, added_dxccs
+
+    def _qrz_historie_pfad(self) -> Path:
+        """Je Operator eine Datei neben runtime_state.json."""
+        call = re.sub(r"[^A-Z0-9]", "_", self.config.operator.callsign.upper())
+        return self._runtime_state_path.with_name(f"qrz_historie_{call}.json")
+
+    def _qrz_historie_speichern(self, eintraege) -> None:
+        """Das Ergebnis des Abgleichs auf die Platte legen.
+
+        Bis 2026-11-14 lag es nur im Arbeitsspeicher. Der Zeitpunkt des
+        letzten Abgleichs ueberlebte den Neustart, die Daten nicht: Nach
+        jedem Self-Update fehlte der Station bis zu 24 Stunden lang alles,
+        was nicht in ihrer eigenen Datenbank steht. Am 14.11. zaehlte die
+        Station nach zwei Neustarts 1614 gearbeitete Rufzeichen statt 7349,
+        rief laengst Gearbeitete als neu an und meldete alte Laender als
+        neues DXCC.
+        """
+        if not self.db_enabled:
+            return
+        pfad = self._qrz_historie_pfad()
+        try:
+            tmp = pfad.with_name(pfad.name + ".tmp")
+            tmp.write_text(json.dumps([list(e) for e in eintraege],
+                                      separators=(",", ":")), encoding="utf-8")
+            os.replace(tmp, pfad)
+        except OSError as exc:
+            log.warning("QRZ-Historie nicht gespeichert (%s): %s", pfad, exc)
+
+    def _qrz_historie_laden(self) -> None:
+        """Den letzten Abgleich des aktiven Operators zurueckholen (Start, Operatorwechsel)."""
+        if not self.db_enabled:
+            return
+        try:
+            pfad = self._qrz_historie_pfad()
+            if not pfad.is_file():
+                return
+            eintraege = [tuple(e) for e in json.loads(pfad.read_text(encoding="utf-8"))
+                         if isinstance(e, list) and len(e) == 3]
+        except (OSError, ValueError) as exc:
+            log.warning("QRZ-Historie nicht lesbar: %s", exc)
+            return
+        added_calls, added_dxccs = self._qrz_historie_anwenden(eintraege)
+        log.info("QRZ-Historie vom letzten Abgleich: %d Eintraege, +%d Rufzeichen, "
+                 "+%d DXCC (gesamt %d Rufzeichen / %d DXCC)",
+                 len(eintraege), added_calls, len(added_dxccs),
+                 len(self._worked_calls), len(self._worked_dxccs))
+
     async def _qrz_logbook_sync_loop(self) -> None:
         """Holt Dads komplettes QRZ-Logbook und füllt die Worked-Sets.
 
@@ -7404,41 +7483,14 @@ class Orchestrator:
                              "geaendert — Ergebnis verworfen")
                     continue
                 auth_failures = 0
-                added_calls = 0
-                added_dxccs: set[str] = set()
-                for rec in records:
-                    call = rec.get("call", "").upper().strip()
-                    if not call:
-                        continue
-                    if call not in self._worked_calls:
-                        self._worked_calls.add(call)
-                        added_calls += 1
-                    # DXCC: ADIF nutzt entweder Nummer (dxcc-Field) oder
-                    # cty.dat-Lookup. Wir lookup'en immer selbst über
-                    # cty.dat damit Konsistenz mit der Live-Klassifikation
-                    # gewahrt bleibt.
-                    # Band extrahieren BEVOR DXCC-Lookup damit wir's für
-                    # 5BWAS-Tracking nutzen können (v0.10.0)
-                    band = rec.get("band", "").lower().strip()
-                    if self.integrations.cty is not None:
-                        ctyrec = self.integrations.cty.lookup(call)
-                        if ctyrec is not None:
-                            country = ctyrec.entity.name
-                            if country not in self._worked_dxccs:
-                                self._worked_dxccs.add(country)
-                                added_dxccs.add(country)
-                            # 5BWAS: DXCC-Band-Combo immer adden, auch
-                            # wenn das Land schon worked ist (jetzt vielleicht
-                            # auf neuem Band).
-                            if band:
-                                self._worked_dxcc_band.add((country, band))
-                    # Grids: 4-Char-Normalisierung
-                    grid = rec.get("gridsquare", "").upper().strip()
-                    if len(grid) >= 4:
-                        g4 = grid[:4]
-                        self._worked_grids.add(g4)
-                        if band:
-                            self._worked_grid_band.add((g4, band))
+                eintraege = sorted({
+                    (rec.get("call", "").upper().strip(),
+                     rec.get("band", "").lower().strip(),
+                     rec.get("gridsquare", "").upper().strip()[:4])
+                    for rec in records if rec.get("call", "").strip()
+                })
+                added_calls, added_dxccs = self._qrz_historie_anwenden(eintraege)
+                self._qrz_historie_speichern(eintraege)
                 log.info(
                     "QRZ logbook sync done: %d records, +%d new calls, "
                     "+%d new DXCCs (total worked: %d calls / %d DXCCs)",

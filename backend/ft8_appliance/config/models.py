@@ -482,10 +482,19 @@ class OperatingConfig(BaseModel):
     # Absolutwert aber so klein, dass auch ein Pi 4B ueber 13 s Reserve je
     # Slot behaelt. Default "extreme" ist daher auch auf Pi 4 tragfaehig.
     decoder_mode: Literal["standard", "deep", "multi", "extreme"] = "extreme"
-    # v0.7.0 Build 3: Auto-Notch fuer lokale QRM-Linien. Default True
-    # weil's bei sauberer Umgebung 0 Overhead hat (Detector findet keine
-    # Peaks → apply_notches ist no-op).
-    auto_notch_enabled: bool = True
+    # Auto-Notch fuer lokale QRM-Linien (v0.7.0). Ab Werk AUS seit
+    # 2026-11-14 (Sebastian): Die fruehere Begruendung fuer "an" ("bei
+    # sauberer Umgebung findet der Detektor keine Peaks") stimmt nicht. Er
+    # sieht sich nur die letzten 4 s des Slots an und haelt die Toene einer
+    # Station, die zweimal auf derselben Frequenz ruft, fuer einen
+    # Dauertraeger. Simulation ohne jeden Stoertraeger: Kerben in 113 von
+    # 120 Slots, 345 von 367 auf FT8-Signalen, 4,4 % weniger Decodes und
+    # zwar die lauten. Live am MK2: 875 Neuberechnungen in 24 h mit Kerben
+    # bei 1200 bis 1260 Hz, der Breite eines FT8-Signals. Wer wirklich einen
+    # Dauertraeger im Passband hat, schaltet ihn ein; ein brauchbarer
+    # Detektor muesste ueber ganze Slots mitteln und nur Linien nehmen, die
+    # auch in der Sendepause (13,5 bis 15 s) stehen.
+    auto_notch_enabled: bool = False
     # VERALTET, wirkungslos: CQ_CALLING sendet an jeder paritaetspassenden
     # Slot-Grenze, das Intervall ergibt sich daraus (30 s bei FT8). Bleibt
     # wegen extra="forbid" im Modell, ist aber aus der Oberflaeche entfernt.

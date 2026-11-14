@@ -259,6 +259,8 @@ def _sync_stub(key: str | None) -> SimpleNamespace:
         stub.notes.append((service, exc))
 
     stub._note_drain_outcome = note
+    stub._qrz_historie_anwenden = lambda e: Orchestrator._qrz_historie_anwenden(stub, e)
+    stub._qrz_historie_speichern = lambda e: None
     return stub
 
 

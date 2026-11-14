@@ -244,3 +244,56 @@ def test_posteingang_holt_nur_der_aktive_operator() -> None:
     assert [op.callsign for op in o._qsl_operatoren()] == ["DO3XR"]
     cfg.operators[1].eqsl_password = None
     assert o._qsl_operatoren() == []
+
+
+# ---------------------------------------------------------------------------
+# QRZ-Historie ueberlebt den Neustart
+
+def _orch_mit_pfad(tmp_path):
+    from unittest.mock import AsyncMock
+
+    from ft8_appliance.runtime import FakeSlotClock, Orchestrator
+
+    cfg = AppConfig.model_validate({
+        "operators": [{"callsign": "DK9XR", "license_class": "A"},
+                      {"callsign": "DO3XR", "license_class": "E"}],
+        "active_callsign": "DK9XR",
+    })
+
+    async def _keine(_t):
+        return []
+    o = Orchestrator(config=cfg, rig=AsyncMock(), gps=AsyncMock(), decode_source=_keine,
+                     slot_clock=FakeSlotClock(count=0), db_enabled=True)
+    o._runtime_state_path = tmp_path / "runtime_state.json"
+    return o
+
+
+def test_qrz_historie_ueberlebt_den_neustart(tmp_path) -> None:
+    """Nach jedem Self-Update fehlte bis zu 24 h alles, was nicht in der eigenen DB steht:
+    am 14.11. standen 1614 statt 7349 gearbeitete Rufzeichen im Status."""
+    alt = _orch_mit_pfad(tmp_path)
+    eintraege = [("EA4GA", "20m", "IN80"), ("W1AW", "15m", "FN31"), ("W1AW", "20m", "FN31")]
+    alt._qrz_historie_anwenden(eintraege)
+    alt._qrz_historie_speichern(eintraege)
+
+    neu = _orch_mit_pfad(tmp_path)                     # der Prozess nach dem Neustart
+    assert neu._worked_calls == set()
+    neu._qrz_historie_laden()
+    assert neu._worked_calls == {"EA4GA", "W1AW"}
+    assert ("FN31", "15m") in neu._worked_grid_band and "IN80" in neu._worked_grids
+
+
+def test_qrz_historie_liegt_je_operator(tmp_path) -> None:
+    o = _orch_mit_pfad(tmp_path)
+    o._qrz_historie_speichern([("EA4GA", "20m", "IN80")])
+    o.config.active_callsign = "DO3XR"
+    assert o._qrz_historie_pfad().name == "qrz_historie_DO3XR.json"
+    o._qrz_historie_laden()                             # fuer DO3XR liegt nichts
+    assert o._worked_calls == set()
+
+
+def test_kaputte_qrz_historie_haelt_den_start_nicht_auf(tmp_path) -> None:
+    o = _orch_mit_pfad(tmp_path)
+    o._qrz_historie_pfad().write_text("{kein json")
+    o._qrz_historie_laden()
+    assert o._worked_calls == set()
