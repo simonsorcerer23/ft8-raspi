@@ -8,7 +8,8 @@
   const labels = $derived({
     IDLE: t('stateind.IDLE'), CQ_CALLING: t('stateind.CQ_CALLING'),
     QSO_RESPOND: t('stateind.QSO_RESPOND'), QSO_REPORT: t('stateind.QSO_REPORT'),
-    QSO_LOG: t('stateind.QSO_LOG'), TX_LOCKED: t('stateind.TX_LOCKED'),
+    QSO_LOG: t('stateind.QSO_LOG'), QSO_GRACE: t('stateind.QSO_GRACE'),
+    TX_LOCKED: t('stateind.TX_LOCKED'),
     UNKNOWN: t('stateind.UNKNOWN'),
   });
 
@@ -30,7 +31,8 @@
     background: var(--panel);
     border-left: 5px solid #475569;
   }
-  .banner.cq-calling, .banner.qso-respond, .banner.qso-report, .banner.qso-log {
+  .banner.cq-calling, .banner.qso-respond, .banner.qso-report, .banner.qso-log,
+  .banner.qso-grace {
     border-left-color: var(--accent);
   }
   .banner.tx-locked { border-left-color: var(--danger); background: rgba(239,68,68,0.1); }

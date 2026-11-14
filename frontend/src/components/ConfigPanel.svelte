@@ -2,18 +2,9 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { t } from '../lib/i18n.svelte.js';
+  import { RIG_MODELS, rigKnown, rigLabel, rigMaxPowerW, rigSerialHint } from '../lib/rigs.js';
   import SystemUpdateCard from './SystemUpdateCard.svelte';
 
-  // Stock max-power per rig. Mirrors backend RigConfig._RIG_TABLE — used
-  // to bound the default-power slider when the operator switches rig.
-  const RIG_DEFAULTS = {
-    ic705:    { label: 'Icom IC-705 (QRP, 10 W)',         max_power_w: 10  },
-    ic7300:   { label: 'Icom IC-7300 (Desktop, 100 W)',   max_power_w: 100 },
-    ic7300mk2: { label: 'Icom IC-7300MK2 (Desktop, 100 W)', max_power_w: 100 },
-    ic9700:   { label: 'Icom IC-9700 (VHF/UHF, 100 W)',   max_power_w: 100 },
-    ic7610:   { label: 'Icom IC-7610 (Top-Class, 100 W)', max_power_w: 100 },
-    qmx_plus: { label: 'QRP Labs QMX/QMX+ (QRP, 5 W)',    max_power_w: 5   },
-  };
   // Lizenzklassen — Label fürs Dropdown ($derived: reagiert auf Sprachwechsel).
   const LICENSE_LABELS = $derived({
     A: t('lic.A'),
@@ -92,7 +83,7 @@
         cfg.rig.model = top.model;
         cfg.rig.serial_device = top.serial_device;
         cfg.rig.max_power_w = null;  // reset override → rig stock max
-        const cap = RIG_DEFAULTS[top.model].max_power_w;
+        const cap = rigMaxPowerW(top.model);
         if (cfg.operator.default_power_w > cap) cfg.operator.default_power_w = cap;
         detectMsg = { kind: 'ok', text: t('cfg.detected', { desc: top.description }) };
       }
@@ -104,7 +95,7 @@
   // Effective max-power for the slider: explicit override wins over the
   // rig's stock max.
   function powerCap(c) {
-    return c?.rig?.max_power_w ?? RIG_DEFAULTS[c?.rig?.model ?? 'ic705'].max_power_w;
+    return c?.rig?.max_power_w ?? rigMaxPowerW(c?.rig?.model ?? 'ic705');
   }
 
   function configToYaml(c) {
@@ -425,19 +416,20 @@
             <span>{t('cfg.model')}</span>
             <select bind:value={cfg.rig.model} onchange={() => {
               // Snap default_power_w into the new rig's max when switching.
-              const cap = RIG_DEFAULTS[cfg.rig.model].max_power_w;
+              const cap = rigMaxPowerW(cfg.rig.model);
               if (cfg.operator.default_power_w > cap) cfg.operator.default_power_w = cap;
               // Clear an explicit override so the rig's stock max kicks in.
               cfg.rig.max_power_w = null;
               // Suggest a sensible default serial-by-id for known rigs.
-              if (cfg.rig.model === 'ic705')
-                cfg.rig.serial_device = '/dev/serial/by-id/usb-Icom_Inc._IC-705-if00';
-              else if (cfg.rig.model === 'ic7300')
-                cfg.rig.serial_device = '/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller-if00-port0';
+              const hint = rigSerialHint(cfg.rig.model);
+              if (hint) cfg.rig.serial_device = hint;
             }}>
-              {#each Object.entries(RIG_DEFAULTS) as [id, info]}
-                <option value={id}>{info.label}</option>
+              {#each RIG_MODELS as id}
+                <option value={id}>{rigLabel(id)}</option>
               {/each}
+              {#if !rigKnown(cfg.rig.model)}
+                <option value={cfg.rig.model}>{rigLabel(cfg.rig.model)}</option>
+              {/if}
             </select>
           </label>
           <label>
@@ -458,7 +450,7 @@
           </label>
           <label>
             <span>{t('cfg.max_power_override')}</span>
-            <input type="number" placeholder={String(RIG_DEFAULTS[cfg.rig.model].max_power_w)}
+            <input type="number" placeholder={String(rigMaxPowerW(cfg.rig.model))}
                    bind:value={cfg.rig.max_power_w} min="1" max="200"/>
           </label>
         </div>

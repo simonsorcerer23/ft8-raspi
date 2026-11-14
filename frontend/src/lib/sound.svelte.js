@@ -1,10 +1,53 @@
 // Browser Notification API + audio chimes for QSO milestones.
 //
-// Listens to /sse/status — when state transitions to IDLE coming from
-// QSO_REPORT/CLOSING, that's a QSO complete: chime + browser notification.
+// Der QSO-Ton haengt am Zaehler der geloggten QSOs (qso_total aus
+// /api/stats, gefiltert auf den aktiven Operator), nicht an einer
+// Zustandsfolge. Bis zum 14.11.2026 galt "QSO_REPORT/QSO_LOG → IDLE" als
+// fertiges QSO. Ein geloggtes QSO laeuft aber ueber QSO_GRACE, der Ton kam
+// also nie bei Erfolg — dafuer bei jedem Timeout und jedem Skip aus
+// QSO_REPORT (Audit F4). Ein Zustandswechsel auf /sse/status ist jetzt nur
+// noch der Anlass nachzuzaehlen.
 // Sound is generated on-the-fly via Web Audio (no asset to ship).
+import { api } from './api.js';
+import { t } from './i18n.svelte.js';
 
 let lastState = null;
+let lastPartner = null;
+// Stand des QSO-Zaehlers und der Operator, zu dem er gehoert. Wechselt der
+// Operator, ist der neue Stand nur die neue Basis, kein Anlass fuer einen Ton.
+let qsoCall = null;
+let qsoCount = null;
+let qsoCheckRunning = false;
+let qsoCheckTimers = [];
+
+function utcHm() { return new Date().toISOString().slice(11, 16); }
+
+async function checkQsoCount() {
+  if (qsoCheckRunning) return;
+  qsoCheckRunning = true;
+  try {
+    const s = await api.stats();
+    const n = s?.qso_total;
+    if (typeof n !== 'number') return;
+    const call = s.callsign ?? null;
+    if (qsoCount !== null && call === qsoCall && n > qsoCount) {
+      chime(880, 150);
+      setTimeout(() => chime(1320, 150), 180);
+      notify(t('sound.qso_title'), t('sound.qso_body', { total: n, time: utcHm() }));
+    }
+    qsoCall = call;
+    qsoCount = n;
+  } catch { /* Box nicht erreichbar — beim naechsten Anlass wieder */ }
+  finally { qsoCheckRunning = false; }
+}
+
+function scheduleQsoCheck() {
+  // Zweimal nachsehen: kurz nach dem Wechsel und noch einmal spaeter, falls
+  // der Log-Eintrag beim ersten Blick noch nicht geschrieben war.
+  qsoCheckTimers.forEach(clearTimeout);
+  qsoCheckTimers = [setTimeout(checkQsoCount, 1_000), setTimeout(checkQsoCount, 8_000)];
+}
+
 let soundEnabled = true;
 
 export function setSoundEnabled(on) { soundEnabled = on; }
@@ -67,24 +110,30 @@ export function attachDecodeStream(decodeStore) {
 
 export function attachStatusStream() {
   const es = new EventSource(_sseUrl('/sse/status'));
+  checkQsoCount();   // Basis fuer den QSO-Zaehler
   es.addEventListener('status', (ev) => {
     try {
       const s = JSON.parse(ev.data);
       const prev = lastState; lastState = s.state;
+      const prevPartner = lastPartner; lastPartner = s.current_qso_call ?? null;
+      // Anlass zum Nachzaehlen: Zustand oder Gegenstation hat gewechselt.
+      if (prev && (prev !== s.state || prevPartner !== lastPartner)) scheduleQsoCheck();
       if (prev && prev !== s.state) {
-        // QSO_REPORT -> IDLE (or QSO_LOG -> IDLE) = QSO complete
-        if ((prev === 'QSO_REPORT' || prev === 'QSO_LOG') && s.state === 'IDLE') {
-          chime(880, 150);
-          setTimeout(() => chime(1320, 150), 180);
-          notify('QSO complete', `Logged at ${new Date().toLocaleTimeString()}`);
-        }
         // -> TX_LOCKED = alarm
         if (s.state === 'TX_LOCKED') {
           chime(330, 600);
-          notify('TX gesperrt', s.last_lock_reason ?? '');
+          notify(t('sound.tx_locked_title'), s.last_lock_reason ?? '');
         }
       }
     } catch {}
   });
-  return () => es.close();
+  return () => {
+    es.close();
+    qsoCheckTimers.forEach(clearTimeout);
+    qsoCheckTimers = [];
+    lastState = null;
+    lastPartner = null;
+    qsoCall = null;
+    qsoCount = null;
+  };
 }

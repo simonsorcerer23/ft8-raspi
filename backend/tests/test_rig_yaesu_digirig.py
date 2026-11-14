@@ -149,17 +149,23 @@ def test_restore_nimmt_modus_und_breite_aus_dem_profil() -> None:
 # -------------------------------------------------------- Frontend-Paritaet
 
 def test_frontend_listen_kennen_jedes_backend_modell() -> None:
-    """Drei Listen im Frontend, eine Tabelle im Backend — dieser Test ist
-    die Klammer, bis das Frontend die Liste vom Backend holt."""
-    fe = WURZEL / "frontend" / "src" / "components"
-    for f, muster in (("ControlPanel.svelte", r"const RIG_MAX_W = \{([^}]*)\}"),
-                      ("RigPanel.svelte", r"const MODEL_LABELS = \{([^}]*)\}"),
-                      ("RigPanel.svelte", r"const MODEL_MAX_W = \{([^}]*)\}"),
-                      ("FirstBootWizard.svelte", r"const RIG_DEFAULTS = \{(.*?)\n  \};")):
-        block = re.search(muster, (fe / f).read_text(), re.S)
-        assert block, (f, muster)
-        keys = set(re.findall(r"(?:^|[{,\s])([a-z0-9_]+)\s*:", block.group(1), re.M))
-        assert keys >= set(RIG_MODELS), (f, set(RIG_MODELS) - keys)
+    """Eine Tabelle im Frontend (lib/rigs.js), eine im Backend — dieser Test
+    ist die Klammer, bis das Frontend die Liste vom Backend holt.
+
+    Bis zum 14.11.2026 waren es vier Listen in vier Komponenten, und dieser
+    Test sah nur drei davon: Die vierte (ConfigPanel) kannte ft817/ft818
+    nicht, und die Konfigseite blieb mit so einem Rig leer (Audit F3).
+    Werksleistung und Verbot eigener Listen prueft
+    test_audit_2026_11_14_oberflaeche.py.
+    """
+    src = WURZEL / "frontend" / "src"
+    block = re.search(r"export const RIGS = \{(.*?)\n\};", (src / "lib" / "rigs.js").read_text(), re.S)
+    assert block, "RIGS-Tabelle in lib/rigs.js nicht gefunden"
+    keys = set(re.findall(r"^  ([a-z0-9_]+):\s*\{", block.group(1), re.M))
+    assert keys == set(RIG_MODELS), (keys ^ set(RIG_MODELS))
+    for f in ("ConfigPanel.svelte", "ControlPanel.svelte", "RigPanel.svelte",
+              "FirstBootWizard.svelte"):
+        assert "from '../lib/rigs.js'" in (src / "components" / f).read_text(), f
 
 
 def test_mk2_braucht_das_neue_rigctld_die_anderen_nehmen_es_wenn_es_da_ist() -> None:

@@ -4,20 +4,9 @@
   // (configurable later in ConfigPanel for those who want push alerts).
   import { api } from '../lib/api.js';
   import { t } from '../lib/i18n.svelte.js';
+  import { RIG_MODELS, rigLabel, rigMaxPowerW, rigSerialHint } from '../lib/rigs.js';
 
   let { onDone = () => {} } = $props();
-
-  // Stock max-power per rig. Keep in sync with backend _RIG_TABLE.
-  const RIG_DEFAULTS = {
-    ic705:  { label: 'Icom IC-705 (QRP portable, 10 W)',  max_power_w: 10  },
-    ic7300: { label: 'Icom IC-7300 (Desktop, 100 W)',     max_power_w: 100 },
-    ic7300mk2: { label: 'Icom IC-7300MK2 (Desktop, 100 W)', max_power_w: 100 },
-    ic9700: { label: 'Icom IC-9700 (VHF/UHF, 100 W)',     max_power_w: 100 },
-    ic7610: { label: 'Icom IC-7610 (Top-Class, 100 W)',   max_power_w: 100 },
-    qmx_plus: { label: 'QRP Labs QMX/QMX+ (5 W)',         max_power_w: 5 },
-    ft817:  { label: 'Yaesu FT-817 am Digirig (5 W)',    max_power_w: 5 },
-    ft818:  { label: 'Yaesu FT-818 am Digirig (5 W)',    max_power_w: 5 },
-  };
 
   let step = $state(1);
   let cfg = $state({
@@ -50,7 +39,7 @@
         const top = cands[0];
         cfg.rig.model = top.model;
         cfg.rig.serial_device = top.serial_device;
-        cfg.operator.default_power_w = RIG_DEFAULTS[top.model].max_power_w;
+        cfg.operator.default_power_w = rigMaxPowerW(top.model);
         detectMsg = { kind: 'ok', text: t('wiz.detected', { desc: top.description }) };
       }
     } catch (e) {
@@ -61,13 +50,10 @@
   function onRigChange() {
     // When the rig switches, snap default_power_w to half the new rig's
     // stock max (2026-10-08: Anfangswert 50 %, hochregeln bleibt moeglich).
-    cfg.operator.default_power_w = Math.max(1, Math.floor(RIG_DEFAULTS[cfg.rig.model].max_power_w / 2));
+    cfg.operator.default_power_w = Math.max(1, Math.floor(rigMaxPowerW(cfg.rig.model) / 2));
     // Adjust the serial-by-id hint to match (operator can edit on page 1).
-    if (cfg.rig.model === 'ic705') {
-      cfg.rig.serial_device = '/dev/serial/by-id/usb-Icom_Inc._IC-705-if00';
-    } else if (cfg.rig.model === 'ic7300') {
-      cfg.rig.serial_device = '/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller-if00-port0';
-    }
+    const hint = rigSerialHint(cfg.rig.model);
+    if (hint) cfg.rig.serial_device = hint;
   }
 
   function configToYaml() {
@@ -138,8 +124,8 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
           </button>
         </span>
         <select bind:value={cfg.rig.model} onchange={onRigChange}>
-          {#each Object.entries(RIG_DEFAULTS) as [id, info]}
-            <option value={id}>{info.label}</option>
+          {#each RIG_MODELS as id}
+            <option value={id}>{rigLabel(id)}</option>
           {/each}
         </select>
         {#if detectMsg}
@@ -149,9 +135,9 @@ ${qrzEnabled ? `    user: ${c.qrz.user}\n    password: ${c.qrz.password}\n` : ''
         {/if}
       </label>
       <label>
-        <span>Standard-Sendeleistung (max {RIG_DEFAULTS[cfg.rig.model].max_power_w} W)</span>
+        <span>{t('wiz.default_power', { max: rigMaxPowerW(cfg.rig.model) })}</span>
         <input type="number" bind:value={cfg.operator.default_power_w}
-               min="1" max={RIG_DEFAULTS[cfg.rig.model].max_power_w}/>
+               min="1" max={rigMaxPowerW(cfg.rig.model)}/>
       </label>
     </div>
     <div class="nav">

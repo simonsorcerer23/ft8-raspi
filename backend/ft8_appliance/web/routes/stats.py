@@ -290,6 +290,9 @@ class BestDx(BaseModel):
 
 
 class TodayStats(BaseModel):
+    # Operator, auf den sich die QSO-Zahlen beziehen (der aktive). Die
+    # Decode-Zahlen gelten fuer die Station, nicht fuer den Operator.
+    callsign: str | None = None
     qso_today: int
     dxccs_today: int
     qso_7d: int
@@ -308,16 +311,23 @@ async def stats(orch: Orchestrator = Depends(get_orchestrator)) -> TodayStats:
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = now - timedelta(days=7)
     hour_start = now - timedelta(hours=1)
+    # Nur QSOs des aktiven Operators — wie das Log-Tab (web/routes/log.py).
+    # Vorher zaehlte "QSOs heute" DK9XR und DO3XR zusammen, waehrend das
+    # Log darunter nur einen von beiden zeigte (Audit 14.11.2026, F7).
+    my_call = orch.config.operator.callsign
+    mine = Qso.user_callsign == my_call
 
     async with session_scope() as s:
         q_today_n = (await s.execute(
-            select(func.count()).select_from(Qso).where(Qso.qso_start >= today_start)
+            select(func.count()).select_from(Qso)
+            .where(mine).where(Qso.qso_start >= today_start)
         )).scalar_one()
         q_7d_n = (await s.execute(
-            select(func.count()).select_from(Qso).where(Qso.qso_start >= week_start)
+            select(func.count()).select_from(Qso)
+            .where(mine).where(Qso.qso_start >= week_start)
         )).scalar_one()
         q_total = (await s.execute(
-            select(func.count()).select_from(Qso)
+            select(func.count()).select_from(Qso).where(mine)
         )).scalar_one()
         d_h_n = (await s.execute(
             select(func.count()).select_from(Decode).where(Decode.ts >= hour_start)
@@ -337,7 +347,7 @@ async def stats(orch: Orchestrator = Depends(get_orchestrator)) -> TodayStats:
             (
                 await s.execute(
                     select(Qso.call, Qso.band, Qso.grid_rcvd)
-                    .where(Qso.qso_start >= today_start)
+                    .where(mine).where(Qso.qso_start >= today_start)
                     .order_by(desc(Qso.qso_start))
                 )
             ).all()
@@ -363,6 +373,7 @@ async def stats(orch: Orchestrator = Depends(get_orchestrator)) -> TodayStats:
             )
 
     return TodayStats(
+        callsign=my_call,
         qso_today=q_today_n,
         dxccs_today=len(dxccs_today_set),
         qso_7d=q_7d_n,

@@ -7,6 +7,7 @@
   import { mapStore, decodeStore, statusStore } from '../lib/stores.svelte.js';
   import { utcMillis, fmtUtcTime, fmtUtcDateTime, parseUtc } from '../lib/time.js';
   import { greatCircle, gridToLatLon } from '../lib/geo.js';
+  import { esc } from '../lib/html.js';
 
   let el;
   let map;
@@ -65,7 +66,7 @@
           iconSize: [18, 18], iconAnchor: [9, 9],
         }),
       }).bindPopup(
-        `<strong>Du</strong><br>${d.operator_lat.toFixed(3)}, ${d.operator_lon.toFixed(3)}`
+        `<strong>${esc(t('map.popup_you'))}</strong><br>${d.operator_lat.toFixed(3)}, ${d.operator_lon.toFixed(3)}`
       ).addTo(map);
     }
 
@@ -130,21 +131,25 @@
         radius: 5, color: colour, weight: 2,
         fillColor: colour, fillOpacity: opacity,
       }).bindPopup(
-        `<strong>${d.call_from}</strong><br>` +
-        `${d.message}<br>` +
-        `${d.grid} · ${d.snr_db ?? '?'} dB · ${d.band ?? ''}<br>` +
+        `<strong>${esc(d.call_from)}</strong><br>` +
+        `${esc(d.message)}<br>` +
+        `${esc(d.grid)} · ${esc(d.snr_db ?? '?')} dB · ${esc(d.band)}<br>` +
         `<small>${fmtUtcTime(d.ts)} UTC</small>`
       ).addTo(liveArcLayer);
     }
   }
 
+  // Popups und Tooltips setzt Leaflet als HTML. Alles, was nicht aus dieser
+  // Datei stammt — Rufzeichen, Decode-Texte, DX-Cluster-Kommentare, auch die
+  // uebersetzten Beschriftungen — geht deshalb durch esc() (Audit 14.11.2026,
+  // F12: sp.comment und sp.country gingen roh ins Popup).
   function buildStationPopup(m) {
-    const lines = [`<strong>${m.call}</strong>`, `Grid: ${m.grid}`];
-    if (m.band) lines.push(`Band: ${m.band}`);
-    if (m.snr_best != null) lines.push(`Best SNR: ${m.snr_best} dB`);
-    if (m.count > 1) lines.push(`Heard: ${m.count}×`);
-    if (m.last_worked) lines.push(`Worked: ${fmtUtcDateTime(m.last_worked)}`);
-    if (m.last_seen)   lines.push(`Seen:   ${fmtUtcDateTime(m.last_seen)}`);
+    const lines = [`<strong>${esc(m.call)}</strong>`, `Grid: ${esc(m.grid)}`];
+    if (m.band) lines.push(`${esc(t('map.band'))}: ${esc(m.band)}`);
+    if (m.snr_best != null) lines.push(`${esc(t('map.popup_best_snr'))}: ${esc(m.snr_best)} dB`);
+    if (m.count > 1) lines.push(esc(t('map.popup_count', { n: m.count })));
+    if (m.last_worked) lines.push(`${esc(t('map.popup_last_worked'))}: ${esc(fmtUtcDateTime(m.last_worked))}`);
+    if (m.last_seen)   lines.push(`${esc(t('map.popup_last_seen'))}: ${esc(fmtUtcDateTime(m.last_seen))}`);
     return lines.join('<br>');
   }
 
@@ -168,11 +173,11 @@
         const lon = sp.lon + (idx > 1 ? jitter : -jitter);
         const m = L.marker([lat, lon], { icon: makeDot(COLOURS.dx, 10) });
         m.bindPopup(
-          `<strong>${sp.spotted}</strong> · ${sp.band ?? ''}<br>` +
-          `<small>${sp.country ?? '?'} (${sp.continent ?? '?'})</small><br>` +
+          `<strong>${esc(sp.spotted)}</strong> · ${esc(sp.band)}<br>` +
+          `<small>${esc(sp.country ?? '?')} (${esc(sp.continent ?? '?')})</small><br>` +
           `${(sp.freq_hz / 1000).toFixed(1)} kHz<br>` +
-          `<em>${sp.comment ?? ''}</em><br>` +
-          `<small>${sp.spotter} · ${fmtUtcTime(sp.ts)} UTC</small>`
+          `<em>${esc(sp.comment)}</em><br>` +
+          `<small>${esc(sp.spotter)} · ${fmtUtcTime(sp.ts)} UTC</small>`
         );
         m.addTo(dxLayer);
       }
@@ -187,10 +192,10 @@
       for (const loc of r.locations) {
         const marker = L.marker([loc.lat, loc.lon], { icon: makeDot(COLOURS.loc, 18) });
         marker.bindPopup(
-          `<strong>📍 Operating location</strong><br>` +
-          `${loc.qso_count} QSOs<br>` +
-          `${t('map.popup_bands')}: ${loc.bands.join(', ')}<br>` +
-          `${t('map.popup_time')}: ${fmtUtcDateTime(loc.first_qso).slice(0,10)} – ${fmtUtcDateTime(loc.last_qso).slice(0,10)}`
+          `<strong>${esc(t('map.popup_oploc'))}</strong><br>` +
+          `${esc(loc.qso_count)} QSOs<br>` +
+          `${esc(t('map.popup_bands'))}: ${esc(loc.bands.join(', '))}<br>` +
+          `${esc(t('map.popup_time'))}: ${esc(fmtUtcDateTime(loc.first_qso).slice(0,10))} – ${esc(fmtUtcDateTime(loc.last_qso).slice(0,10))}`
         );
         marker.addTo(locLayer);
       }
@@ -245,13 +250,16 @@
     renderGrid();
     renderTerminator();
     // HF-Propagation folgt der Tageslicht-Grenze — alle 5 min reicht.
-    setInterval(renderTerminator, 5 * 60 * 1000);
-    const t = setInterval(() => {
+    // Beide Timer werden beim Verlassen der Karte geloescht. Der fuer den
+    // Terminator lief bis zum 14.11.2026 weiter: jeder Besuch des Karten-Tabs
+    // liess einen zurueck, der auf der entfernten Karte weiterzeichnete (F12).
+    const terminatorTimer = setInterval(renderTerminator, 5 * 60 * 1000);
+    const pollTimer = setInterval(() => {
       mapStore.refresh();
       refreshDx();
       refreshHeatmap();
     }, 30_000);
-    return () => clearInterval(t);
+    return () => { clearInterval(pollTimer); clearInterval(terminatorTimer); };
   });
 
   onDestroy(() => { map?.remove(); });
@@ -443,7 +451,8 @@
         radius: 3, color, weight: 1, opacity: 0.8,
         fillColor: color, fillOpacity: 0.5,
       }).bindTooltip(
-        `${b.azimuth_deg}° · ${b.distance_km} km · ${b.report_count} Reports · ${b.latest_age_h}h alt`,
+        esc(t('map.cov_tip', { az: b.azimuth_deg, km: b.distance_km,
+                               n: b.report_count, h: b.latest_age_h })),
         { direction: 'top' }
       ).addTo(coverageLayer);
     }

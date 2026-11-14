@@ -2,6 +2,10 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { t } from '../lib/i18n.svelte.js';
+  import { statusStore } from '../lib/stores.svelte.js';
+
+  // Kacheln und Export gelten fuer den aktiven Operator, wie das Log-Tab.
+  const activeCall = $derived(statusStore.value.callsign);
 
   let stats = $state({ qso_today: 0, dxccs_today: 0, qso_7d: 0, qso_total: 0,
                        decodes_last_hour: 0, decodes_last_hour_by_mode: {},
@@ -36,7 +40,8 @@
   async function downloadAdif(event) {
     event?.preventDefault();
     try {
-      await api.downloadAdif(null, 'dk9xr_ft8.adif');
+      // Kein Dateiname von hier: den vergibt der Server (Content-Disposition).
+      await api.downloadAdif(activeCall);
       exportError = null;
     } catch (e) {
       exportError = e.message;
@@ -44,17 +49,19 @@
   }
 
   onMount(() => {
-    refresh();
     const t = setInterval(refresh, 60_000);
     return () => clearInterval(t);
   });
+  // Sofort beim Einhaengen und bei jedem Operatorwechsel neu laden — sonst
+  // stuenden bis zu einer Minute die Zahlen des vorigen Operators da.
+  $effect(() => { activeCall; refresh(); });
 </script>
 
 <div class="wrap">
   <div class="head">
     <h2>{t('stats.today')}</h2>
-    <a class="export" href={api.adifUrl()} download="dk9xr_ft8.adif" onclick={downloadAdif}>
-      ⬇ ADIF Export
+    <a class="export" href={api.adifUrl(activeCall)} download onclick={downloadAdif}>
+      {t('log.adif_export', { who: activeCall ?? t('log.adif_all') })}
     </a>
   </div>
   {#if exportError}<p class="err">{exportError}</p>{/if}

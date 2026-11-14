@@ -40,7 +40,7 @@
         {#if conv.partner_grid}<span class="grid">{conv.partner_grid}</span>{/if}
         {#if conv.our_snr_sent != null}<span class="snr">SNR↑ {conv.our_snr_sent > 0 ? '+' : ''}{conv.our_snr_sent}</span>{/if}
         {#if conv.partner_snr_received != null}<span class="snr">SNR↓ {conv.partner_snr_received > 0 ? '+' : ''}{conv.partner_snr_received}</span>{/if}
-        {#if conv.started_at}<span class="duration">seit {shortTime(conv.started_at)}</span>{/if}
+        {#if conv.started_at}<span class="duration">{t('qso.since', { time: shortTime(conv.started_at) })}</span>{/if}
       </div>
     {/if}
   </header>
@@ -54,7 +54,7 @@
           <span class="time">{shortTime(e.ts)}</span>
           <span class="arrow">{e.direction === 'tx' ? '↑' : '↓'}</span>
           <span class="icon">{kindIcon(e.kind)}</span>
-          {#if e.mf_mfnr}<span class="mf-badge" title="Marinefunker MF #{e.mf_mfnr}">⚓</span>{/if}
+          {#if e.mf_mfnr}<span class="mf-badge" title={t('dl.tip_mf', { nr: e.mf_mfnr })}>⚓</span>{/if}
           <span class="msg">{e.message}</span>
         </div>
       {/each}

@@ -10,7 +10,6 @@
   // gefiltert. Verhindert das Schicken von DK9XR-QSOs in den DO3XR-
   // ClubLog-Account beim manuellen Upload.
   const exportUrl = $derived(activeCall ? api.adifUrl(activeCall) : api.adifUrl());
-  const exportName = $derived(`${(activeCall ?? 'log').toLowerCase()}_ft8.adif`);
   let manualStatus = $state(null);
   let manualExport = $state(null);
   let manualOperators = $state([]);
@@ -130,7 +129,8 @@
   async function downloadActiveExport(event) {
     event?.preventDefault();
     try {
-      await api.downloadAdif(activeCall, exportName);
+      // Kein Dateiname von hier: den vergibt der Server (Content-Disposition).
+      await api.downloadAdif(activeCall);
       exportError = null;
     } catch (e) {
       exportError = e.message;
@@ -149,25 +149,25 @@
     return logStore.sortDir === 'desc' ? ' ▼' : ' ▲';
   }
 
-  const headers = [
-    { col: 'qso_start',  label: 'Zeit (UTC)' },
-    { col: 'call',       label: 'Call' },
+  const headers = $derived([
+    { col: 'qso_start',  label: t('log.col_time') },
+    { col: 'call',       label: t('common.call') },
     { col: 'band',       label: 'Band' },
     { col: 'mode',       label: 'Mode' },
-    { col: 'freq_hz',    label: 'Frequenz' },
+    { col: 'freq_hz',    label: t('log.col_freq') },
     { col: 'rst_sent',   label: 'RST↑' },
     { col: 'rst_rcvd',   label: 'RST↓' },
     { col: 'grid_rcvd',  label: 'Grid' },
     { col: 'my_power_w', label: 'P' },
     { col: 'swr_avg',    label: 'SWR' },
-  ];
+  ]);
 </script>
 
 <div class="wrap">
   <div class="header">
-    <h2>QSO-Log</h2>
-    <a class="export" href={exportUrl} download={exportName} onclick={downloadActiveExport}>
-      ⬇ ADIF Export ({activeCall ?? 'alle'})
+    <h2>{t('log.title')}</h2>
+    <a class="export" href={exportUrl} download onclick={downloadActiveExport}>
+      {t('log.adif_export', { who: activeCall ?? t('log.adif_all') })}
     </a>
   </div>
   {#if exportError}<p class="manual-error">{exportError}</p>{/if}
@@ -270,12 +270,12 @@
            value={logStore.filters.dxcc}
            style="max-width: 9rem"
            oninput={(e) => logStore.setFilter('dxcc', e.target.value)}/>
-    <label class="mf-filter" title="nur Marinefunker-Mitglieder">
+    <label class="mf-filter" title={t('log.marine_title')}>
       <input type="checkbox" checked={logStore.filters.marine}
              onchange={(e) => logStore.setFilter('marine', e.target.checked)}/>
       ⚓ {t('log.marine')}
     </label>
-    <button class="clear" onclick={() => logStore.clearFilters()}>↺ Reset</button>
+    <button class="clear" onclick={() => logStore.clearFilters()}>{t('log.reset_filters')}</button>
     <span class="count">{logStore.total} {t('log.hits')}</span>
   </div>
 
@@ -305,7 +305,7 @@
             <td class="ts">{shortTs(q.qso_start)}</td>
             <td class="call-col">
               {#if q.flag}<span class="flag" title={q.call}>{q.flag}</span>{/if}
-              {#if q.mf_mfnr}<span class="mf-badge" title="Marinefunker MF #{q.mf_mfnr}">⚓</span>{/if}
+              {#if q.mf_mfnr}<span class="mf-badge" title={t('dl.tip_mf', { nr: q.mf_mfnr })}>⚓</span>{/if}
               <span class="call" style="color: {COLOURS.worked}">{q.call}</span>
             </td>
             <td>{q.band}</td>

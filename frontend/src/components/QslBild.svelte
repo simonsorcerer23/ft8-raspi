@@ -15,7 +15,7 @@
   // Der Beobachter spart den Rest: Bei 60 Kacheln je Seite waeren das 60
   // gleichzeitige Abrufe, von denen die meisten unter dem Bildschirmrand
   // liegen. Geladen wird, was zu sehen ist.
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { api } from '../lib/api.js';
 
   let { id, alt = '' } = $props();
@@ -28,17 +28,36 @@
     if (url) { URL.revokeObjectURL(url); url = null; }
   }
 
+  let zerstoert = false;
+
   async function laden() {
+    // Die Antwort gehoert zu der Karte, fuer die gefragt wurde. Ist
+    // inzwischen eine andere dran (oder die Kachel weg), wird sie verworfen
+    // und die blob:-Adresse gleich wieder freigegeben.
+    const fuer = id;
     try {
-      url = await api.qslBildUrl(id);
+      const neu = await api.qslBildUrl(fuer);
+      if (zerstoert || fuer !== id) { URL.revokeObjectURL(neu); return; }
+      url = neu;
     } catch {
-      fehler = true;
+      if (!zerstoert && fuer === id) fehler = true;
     }
   }
+
+  // Wechselt die id, gehoert das geladene Bild zur vorigen Karte. Das
+  // passiert in der Grossansicht beim Blaettern mit den Pfeiltasten: Die
+  // Komponente bleibt dieselbe, nur die id aendert sich. Bis zum 14.11.2026
+  // brach der Lade-Effekt bei gesetzter url ab, und unter den neuen Daten
+  // stand das alte Bild (Audit F8).
+  $effect(() => {
+    id;
+    untrack(() => { freigeben(); fehler = false; });
+  });
 
   // Sichtbarkeit beobachten. Ohne IntersectionObserver (alte Browser,
   // Testumgebungen) wird sofort geladen — lieber etwas zu viel als nichts.
   $effect(() => {
+    id;   // bei einer neuen Karte neu beobachten und laden
     if (!el || url || fehler) return;
     if (typeof IntersectionObserver !== 'function') { laden(); return; }
     const beobachter = new IntersectionObserver((eintraege) => {
@@ -50,7 +69,7 @@
     return () => beobachter.disconnect();
   });
 
-  onDestroy(freigeben);
+  onDestroy(() => { zerstoert = true; freigeben(); });
 </script>
 
 <span class="huelle" bind:this={el}>
