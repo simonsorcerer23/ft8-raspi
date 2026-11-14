@@ -61,7 +61,7 @@ async def test_rig_snapshot_collects_everything() -> None:
         await client.connect()
         snap = await client.snapshot()
         assert snap.freq_hz == 14_074_000
-        assert snap.mode == "USB"
+        assert snap.mode == "PKTUSB"
         assert snap.ptt is False
         assert snap.swr == pytest.approx(1.4)
         assert snap.rfpower_norm == pytest.approx(1.0)

@@ -470,3 +470,45 @@ async def test_frequenzwechsel_wird_abgelehnt_wenn_der_burst_nicht_endet(monkeyp
     with pytest.raises(RuntimeError):
         await o.handle_set_freq(21_074_000)
     o.rig.set_freq.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Guard fuer Betriebsart und Split
+
+def test_mode_guard_sperrt_ausserhalb_des_datenbetriebs():
+    """Bis 2026-11-14 kam bei USB statt USB-D nur eine Meldung, getastet wurde weiter."""
+    from ft8_appliance.statemachine.guards import (
+        DEFAULT_GUARDS, evaluate, first_failure, mode_guard,
+    )
+
+    lim = GuardLimits()
+    gut = HardwareState(rig_betriebsart="PKTUSB", rig_betriebsart_soll="PKTUSB", rig_split=False)
+    assert mode_guard(gut, lim).ok
+    falsch = HardwareState(rig_betriebsart="USB", rig_betriebsart_soll="PKTUSB")
+    r = mode_guard(falsch, lim)
+    assert not r.ok and r.code == "guard.mode" and r.params == {"ist": "USB", "soll": "PKTUSB"}
+    split = HardwareState(rig_betriebsart="PKTUSB", rig_betriebsart_soll="PKTUSB", rig_split=True)
+    assert mode_guard(split, lim).code == "guard.split"
+    # Unbekanntes sperrt nicht: ein Rig, das die Betriebsart nicht meldet, bleibt bedienbar.
+    assert mode_guard(HardwareState(), lim).ok
+    assert mode_guard(HardwareState(rig_betriebsart_soll="PKTUSB"), lim).ok
+    namen = [g.__name__ for g in DEFAULT_GUARDS]
+    assert namen.index("dial_guard") < namen.index("mode_guard") < namen.index("license_guard")
+    hw = HardwareState(rig_betriebsart="AM", rig_betriebsart_soll="PKTUSB",
+                       dial_on_configured_freq=True, rig_link_age_s=1.0,
+                       antenna_covers_band=True, band_allowed_for_license=True)
+    offen = first_failure(evaluate(hw, lim))
+    assert offen is not None and offen.name == "mode_guard"
+
+
+async def test_station_sendet_nicht_wenn_das_rig_auf_usb_steht():
+    async def src(tick):
+        return [_d("EA1ABC", None, "CQ EA1ABC IN73", grid="IN73")]
+
+    o = _orch(_cfg(), src)
+    o._last_rig = RigSnapshot(freq_hz=14_074_000, mode="USB")
+    o.state_machine.ctx.auto_answer = True
+    await o.process_slot(_tick(0, 1_700_000_000.0))
+    assert o.state_machine.state is State.TX_LOCKED
+    assert "USB" in (o.state_machine.ctx.last_lock_reason or "")
+    assert not any(a.kind == "TX_MESSAGE" for a in o._action_log)

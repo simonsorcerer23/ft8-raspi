@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 @dataclass
 class RigState:
     freq_hz: int = 14_074_000  # 20m FT8
-    mode: str = "USB"
+    mode: str = "PKTUSB"   # Datenbetrieb, wie ihn der mode_guard verlangt
     bandwidth_hz: int = 2700
     ptt: bool = False
     swr: float = 1.2
@@ -161,6 +161,9 @@ class MockRigctld:
             "NR": self.state.nr_level,
             "AGC": float(self.state.agc_int),
             "VOLTSEN": self.state.battery_v,
+            # In hamlib sind Vorverstaerker und Abschwaecher Level (dB).
+            "PREAMP": 1.0 if self.state.preamp_on else 0.0,
+            "ATT": 12.0 if self.state.att_on else 0.0,
         }
         if name in mapping:
             return f"{mapping[name]}\n"

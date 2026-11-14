@@ -57,6 +57,12 @@ _DE: dict[str, str] = {
         "Rig steht auf {mhz} MHz — kein konfigurierter FT8/FT4-Dial "
         "(Toleranz {tol} Hz). Band waehlen oder Rollback"
     ),
+    "guard.mode": (
+        "Rig steht auf {ist} statt {soll} — im Sprechfunk-Modus kommt die "
+        "Modulation nicht von der USB-Buchse. Am Geraet auf Datenbetrieb stellen "
+        "oder Rig-Reset druecken"
+    ),
+    "guard.split": "Split ist am Rig eingeschaltet — die Aussendung ginge auf dem zweiten VFO hinaus",
     # --- CEPT-Sperrgruende (integrations/cept.py) ---
     "cept.unknown_country": "Land {code} nicht in CEPT-DB — manuell pruefen",
     "cept.suspended": (
@@ -324,6 +330,11 @@ _EN: dict[str, str] = {
         "Rig is on {mhz} MHz — not a configured FT8/FT4 dial "
         "(tolerance {tol} Hz). Pick a band or roll back"
     ),
+    "guard.mode": (
+        "Rig is in {ist} instead of {soll} — in a voice mode the modulation does "
+        "not come from the USB port. Switch the rig to data mode or press rig reset"
+    ),
+    "guard.split": "Split is on at the rig — the transmission would go out on the second VFO",
     "cept.unknown_country": "Country {code} not in the CEPT database — check manually",
     "cept.suspended": (
         "{name}: CEPT membership suspended (as of 2026-05-16) — no guest "

@@ -69,6 +69,13 @@ class HardwareState:
     dial_on_configured_freq: bool | None = None
     # Nur fuer den Sperrgrund des dial_guard (Anzeige in MHz).
     rig_freq_hz: int | None = None
+    # Betriebsart am Geraet und die, die das Rig-Profil fuer den Datenbetrieb
+    # verlangt (bei Icom PKTUSB). None = unbekannt, dann urteilt der
+    # mode_guard nicht.
+    rig_betriebsart: str | None = None
+    rig_betriebsart_soll: str | None = None
+    # Split am Geraet an? None = unbekannt.
+    rig_split: bool | None = None
     # Sekunden seit dem letzten BRAUCHBAREN Rig-Snapshot (einer mit
     # Frequenz). None = seit dem Start noch keiner angekommen, also kein
     # Verlust den wir feststellen koennten — siehe rig_link_guard.
@@ -200,6 +207,29 @@ def dial_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
             {"mhz": mhz, "tol": lim.dial_tolerance_hz},
         )
     return GuardResult(True, "dial_guard")
+
+
+def mode_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
+    """Blocke TX, wenn das Rig nicht im Datenbetrieb steht oder Split an ist.
+
+    Bis 2026-11-14 gab es dafuer nur eine Meldung aufs Handy
+    (``rig_auto_restore`` ist ab Werk aus), und die Station tastete weiter.
+    Steht ein Icom aber auf USB statt USB-D, nimmt es die Modulation nicht
+    von der USB-Buchse: Getastet wird dann ein leerer Traeger oder das
+    Mikrofon. Bei Split geht die Aussendung auf dem zweiten VFO hinaus.
+
+    Unbekannte Werte (None) sperren nicht; ein Geraet, das die Betriebsart
+    nicht meldet, bleibt bedienbar.
+    """
+    if (hw.rig_betriebsart and hw.rig_betriebsart_soll
+            and hw.rig_betriebsart != hw.rig_betriebsart_soll):
+        return GuardResult(
+            False, "mode_guard", "guard.mode",
+            {"ist": hw.rig_betriebsart, "soll": hw.rig_betriebsart_soll},
+        )
+    if hw.rig_split is True:
+        return GuardResult(False, "mode_guard", "guard.split")
+    return GuardResult(True, "mode_guard")
 
 
 def swr_guard(hw: HardwareState, lim: GuardLimits) -> GuardResult:
@@ -334,6 +364,7 @@ DEFAULT_GUARDS: tuple[Guard, ...] = (
     # Direkt dahinter: steht das Rig auf keinem konfigurierten Dial, ist
     # das Band-Urteil von license/antenna wertlos (Region-2-Kanten).
     dial_guard,
+    mode_guard,
     license_guard,
     antenna_guard,
     swr_guard,

@@ -4028,6 +4028,10 @@ class Orchestrator:
     async def handle_set_mode(self, mode: str, bandwidth_hz: int = 2700) -> None:
         """Wrap rig.set_mode + Echo-Registration fuer Tamper-Detection."""
         await self.rig.set_mode(mode, bandwidth_hz)
+        # Den Schnappschuss mitziehen, sonst sperrt der mode_guard bis zum
+        # naechsten Poll gegen die alte Betriebsart.
+        if self._last_rig is not None:
+            self._last_rig.mode = mode
         self._register_app_command("mode", mode)
         self._register_app_command("bandwidth_hz", int(bandwidth_hz))
 
@@ -10012,6 +10016,9 @@ class Orchestrator:
             # Frequenzen als "80 m"/"40 m" durch.
             dial_on_configured_freq=self._dial_on_configured_freq(),
             rig_freq_hz=rig.freq_hz,
+            rig_betriebsart=rig.mode,
+            rig_betriebsart_soll=_rig_profil_von(self.config).digital_mode,
+            rig_split=rig.split_on,
             # Alter des letzten brauchbaren Rig-Snapshots. Ohne das
             # urteilen swr/battery/antenna/license-Guard bei totem rigctld
             # ueber lauter None und gehen dabei alle auf gruen.
