@@ -135,7 +135,7 @@ Claude darf **vorschlagen**, soll aber niemals destruktive Aktionen autonom ausf
 | GPS keine Fixes | VK-162 Sichtkontakt zum Himmel? Kabel? `sudo systemctl restart gpsd` |
 | Hohe CPU-Temp | Aktive Kühlung? Argon-Fan läuft? |
 | Plattenplatz knapp | `journalctl --vacuum-time=7d` + Decode-Rolling-Window verkleinern |
-| Hänger im State Machine | `curl -X POST http://ft8.local/api/control/reset-state` |
+| Hänger im State Machine | `curl -X POST http://ft8.local/api/control/reset-lock` |
 | Komplett-Reboot | `sudo reboot` |
 
 ---
