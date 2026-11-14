@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.195.1 — 2026-11-14
+- fix: Autopilot setzt beim Moduswechsel immer den Dial, und der Dial-Guard verlangt den Dial der eingestellten Betriebsart — nach dem Neustart auf v0.195.0 rief der MK2 zwei Minuten lang FT4-CQ auf 21,074 MHz, weil ein veralteter Frequenzwert den FT4-Dial vortaeuschte
+
 ## v0.195.0 — 2026-11-14
 - docs: Audit der ganzen Box vom 14.11. — 78 Befunde, 30 behoben, neun Fragen an den Betreiber
 - fix: Decoder schreibt keine Debug-Zeilen mehr ins Journal, Controller wartet beim Start auf den Zeitabgleich — neun von zehn Journalzeilen waren 'N_FFT = …' (5400 je Stunde), und Telemetrie der ersten Sekunden trug die Uhr vom letzten Herunterfahren
