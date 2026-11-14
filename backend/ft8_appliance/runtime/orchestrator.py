@@ -961,6 +961,8 @@ class Orchestrator:
     # ueberlebt Boot + ersten Bandaufschlag ungeklemmt, s.
     # _apply_tx_power_safety_floor.
     _tx_power_from_state: bool = field(default=False, init=False)
+    # Betriebsart des letzten Laufs aus runtime_state (None = unbekannt).
+    _betriebsart_aus_state: str | None = field(default=None, init=False)
     # Burst-Peak-basiertes ALC-Adjustment: Samples werden waehrend
     # eines TX-Bursts gesammelt und am Burst-Ende (PTT-Abfallflanke)
     # ausgewertet — verhindert Per-Tick-Oszillation zwischen Bursts.
@@ -1208,6 +1210,7 @@ class Orchestrator:
                 "boot_mode=%s wiederhergestellt: auto_cq=%s, auto_answer=%s",
                 bm, self.state_machine.ctx.auto_cq, self.state_machine.ctx.auto_answer,
             )
+        await self._betriebsart_vom_letzten_lauf()
         # FT4 mode needs a 7.5-s slot clock. The default-constructed
         # SlotClock is 15-s (FT8); recreate it for FT4. Tests inject a
         # FakeSlotClock with its own slot_seconds, so only swap when
@@ -3856,6 +3859,28 @@ class Orchestrator:
             )
         return changed
 
+    async def _betriebsart_vom_letzten_lauf(self) -> None:
+        """Mit Autopilot in der zuletzt gefahrenen Betriebsart starten.
+
+        Der Autopilot wechselt FT8/FT4 nur im Speicher. Bis 2026-11-14
+        begann deshalb jeder Neustart in der Betriebsart aus der Config: Am
+        MK2 stand dort FT4, und nach dem Self-Update um 18:39 hoerte die
+        Station fuenf Minuten auf einem leeren FT4-Kanal, waehrend auf FT8
+        253 Decodes im Fenster lagen. Ohne Autopilot gilt weiter die Config
+        — dann hat der Betreiber die Betriebsart selbst gewaehlt.
+        """
+        modus = getattr(self, "_betriebsart_aus_state", None)
+        if modus is None or not self.config.operating.autopilot_enabled:
+            return
+        if modus not in self._autopilot_allowed_modes():
+            return
+        alt = self._valid_digital_mode(self.config.operating.mode)
+        if modus == alt:
+            return
+        self.config.operating.mode = modus  # type: ignore[assignment]
+        await self._sync_digital_mode_runtime(
+            alt, modus, "Neustart: Betriebsart des letzten Laufs")
+
     async def _apply_autopilot_target(
         self, target_band: str, target_mode: str, reason: str
     ) -> None:
@@ -3869,6 +3894,8 @@ class Orchestrator:
         old_mode = self._valid_digital_mode(self.config.operating.mode)
         self.config.operating.mode = target_mode
         await self._sync_digital_mode_runtime(old_mode, target_mode, reason)
+        if old_mode != target_mode:
+            self._maybe_persist_runtime_state(force=True)
 
         target_hz = band_cfg.freq_for_mode(target_mode) * 1000
         current_hz = self._last_rig.freq_hz if self._last_rig else None
@@ -9605,6 +9632,10 @@ class Orchestrator:
                 self._qrz_sync_at = 0.0
                 self._upload_stau_gemeldet_at = 0.0
                 self._maintenance_at = 0.0
+            # Betriebsart, in der die Station zuletzt lief. start() nimmt
+            # sie nur, wenn der Autopilot die Betriebsart fuehrt.
+            modus = data.get("digital_mode")
+            self._betriebsart_aus_state = modus if modus in ("FT8", "FT4") else None
             # tx_power_w: Sebastian 2026-05-24 — jetzt im runtime_state
             # statt in operator.default_power_w (siehe handle_tx_power).
             persisted_pwr = data.get("tx_power_w")
@@ -9699,6 +9730,11 @@ class Orchestrator:
                     # Minuten nach jedem Neustart erneut.
                     "maintenance_at": round(self._maintenance_at, 0),
                     "rig_weg_seit": round(self._rig_weg_seit, 0),
+                    # Die Betriebsart, in der die Station gerade laeuft. Der
+                    # Autopilot aendert sie nur im Speicher; ohne diesen Wert
+                    # begann jeder Neustart in der Betriebsart der Config.
+                    "digital_mode": self._valid_digital_mode(
+                        self.config.operating.mode),
                 }),
                 encoding="utf-8",
             )

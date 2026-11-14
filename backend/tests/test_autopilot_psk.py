@@ -342,3 +342,68 @@ async def test_bestehende_tabelle_bekommt_die_spalte_ausgefuehrt(tmp_path) -> No
         await _migrate_bandwechsel_columns(c)                    # zweimal schadet nicht
         zeile = (await c.execute(text("select ausgefuehrt from bandwechsel_log"))).fetchone()
     assert zeile[0] == 1                                          # alte Wechsel gelten als ausgefuehrt
+
+
+# ---------------------------------------------------------------- Neustart
+# 2026-11-14: Der Autopilot wechselt FT8/FT4 nur im Speicher. Nach dem
+# Self-Update um 18:39 startete der MK2 in FT4 (so stand es in der Config),
+# obwohl der Autopilot um 17:59 auf FT8 gegangen war — fuenf Minuten auf
+# einem leeren FT4-Kanal.
+
+
+def _orch_mit_state(tmp_path, *, autopilot: bool, config_modus: str,
+                    state_modus: str | None) -> Orchestrator:
+    import json
+
+    orch = _orch()
+    orch.config.operating.autopilot_enabled = autopilot
+    orch.config.operating.mode = config_modus
+    orch._runtime_state_path = tmp_path / "runtime_state.json"
+    if state_modus is not None:
+        orch._runtime_state_path.write_text(
+            json.dumps({"digital_mode": state_modus}), encoding="utf-8")
+    orch._audio_gain = 0.5
+    orch._load_runtime_state()
+    return orch
+
+
+async def test_neustart_nimmt_die_betriebsart_des_autopiloten(tmp_path) -> None:
+    orch = _orch_mit_state(tmp_path, autopilot=True, config_modus="FT4",
+                           state_modus="FT8")
+    await orch._betriebsart_vom_letzten_lauf()
+    assert orch.config.operating.mode == "FT8"
+    assert orch.slot_clock.slot_seconds == 15.0
+
+
+async def test_neustart_ohne_autopilot_bleibt_bei_der_config(tmp_path) -> None:
+    orch = _orch_mit_state(tmp_path, autopilot=False, config_modus="FT4",
+                           state_modus="FT8")
+    await orch._betriebsart_vom_letzten_lauf()
+    assert orch.config.operating.mode == "FT4"
+
+
+async def test_neustart_ohne_gemerkte_betriebsart_bleibt_bei_der_config(tmp_path) -> None:
+    for state in (None, "RTTY"):
+        orch = _orch_mit_state(tmp_path, autopilot=True, config_modus="FT4",
+                               state_modus=state)
+        await orch._betriebsart_vom_letzten_lauf()
+        assert orch.config.operating.mode == "FT4"
+
+
+async def test_neustart_nimmt_keine_gesperrte_betriebsart(tmp_path) -> None:
+    orch = _orch_mit_state(tmp_path, autopilot=True, config_modus="FT8",
+                           state_modus="FT4")
+    orch.config.operating.autopilot_allowed_modes = ["FT8"]
+    await orch._betriebsart_vom_letzten_lauf()
+    assert orch.config.operating.mode == "FT8"
+
+
+async def test_autopilot_wechsel_landet_im_runtime_state(tmp_path) -> None:
+    import json
+
+    orch = _orch_mit_state(tmp_path, autopilot=True, config_modus="FT8",
+                           state_modus=None)
+    orch.handle_set_freq = AsyncMock()
+    await orch._apply_autopilot_target("15m", "FT4", "test")
+    gemerkt = json.loads(orch._runtime_state_path.read_text(encoding="utf-8"))
+    assert gemerkt["digital_mode"] == "FT4"
