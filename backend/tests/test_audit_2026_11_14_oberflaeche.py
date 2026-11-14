@@ -200,3 +200,15 @@ def test_f7_funk_tab_exportiert_mit_aktivem_rufzeichen() -> None:
         assert "dk9xr_ft8.adif" not in txt, name
         assert "api.downloadAdif(activeCall)" in txt, name
     assert "api.adifUrl()" not in (KOMPONENTEN / "StatsDashboard.svelte").read_text(encoding="utf-8")
+
+
+# --- F8: QSL-Grossansicht zeigt beim Blaettern das Bild der neuen Karte ------
+
+def test_f8_qsl_bild_verwirft_das_bild_beim_wechsel_der_karte() -> None:
+    """Die Komponente wird beim Blaettern wiederverwendet; der Lade-Effekt
+    brach bei gesetzter url ab und liess das alte Bild stehen."""
+    txt = (KOMPONENTEN / "QslBild.svelte").read_text(encoding="utf-8")
+    # Ein Effekt haengt an der id und gibt das alte Bild frei ...
+    assert re.search(r"\$effect\(\(\) => \{\s*id;\s*untrack\(\(\) => \{ freigeben\(\);", txt)
+    # ... und eine verspaetete Antwort fuer die vorige Karte wird verworfen.
+    assert "fuer !== id" in txt
