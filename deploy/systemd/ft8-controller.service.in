@@ -24,6 +24,15 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=FT8_CONFIG=/etc/ft8-appliance/config.yaml
 
+# Erst die Uhr, dann der Controller: Der Pi hat keine gepufferte Uhr und
+# startet mit der Zeit vom letzten Herunterfahren. Am MK2-Pi (2026-11-13)
+# lief der Controller zwei Sekunden vor dem Zeitabgleich an und schrieb
+# Protokoll und Telemetrie mit einer 22 Stunden alten Uhrzeit. Gesendet
+# wurde nicht, das sperrt der Zeit-Guard. Hoechstens 12 Versuche im
+# 5-Sekunden-Takt; ohne Netz und ohne GPS startet er danach trotzdem.
+ExecStartPre=-/usr/bin/chronyc waitsync 12 0.5 0 5
+TimeoutStartSec=180
+
 ExecStart=@APP_DIR@/backend/.venv/bin/uvicorn \
     ft8_appliance.web.app:app \
     --host 0.0.0.0 \

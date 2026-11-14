@@ -1,7 +1,10 @@
 #include "monitor.h"
 #include <common/common.h>
 
-#define LOG_LEVEL LOG_INFO
+// LOG_WARN statt LOG_INFO (2026-11-14): monitor_init schrieb bei jedem
+// Decoder-Pass drei Zeilen nach stderr, im Betrieb 5400 Journalzeilen je
+// Stunde und neun von zehn Zeilen des Controllers.
+#define LOG_LEVEL LOG_WARN
 #include <ft8/debug.h>
 
 #include <stdlib.h>
