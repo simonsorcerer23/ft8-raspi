@@ -41,6 +41,7 @@ from typing import Any, overload
 from sqlalchemy import func, select
 
 from .. import i18n as _i18n
+from .._version import __version__ as _app_version
 from ..config.models import _RIG_TABLE, RIG_COMPUTED_FIELDS, RigProfil
 from ..config import AppConfig, OperatorConfig
 
@@ -1440,6 +1441,7 @@ class Orchestrator:
                 my_call=self.config.operator.callsign,
                 my_grid=self.config.operator.default_locator or "",
                 contact_email=i.psk_reporter.contact_email,
+                decoder_software=f"ft8-appliance {_app_version}",
             )
         except Exception as exc:
             log.warning("psk_reporter client init: %s", exc)

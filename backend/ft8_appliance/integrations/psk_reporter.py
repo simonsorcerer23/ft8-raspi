@@ -69,6 +69,7 @@ class PskReporterClient(Integration):
         my_call: str = "",
         my_grid: str = "",
         contact_email: str | None = None,
+        decoder_software: str = "ft8-appliance",
     ) -> None:
         super().__init__(
             enabled=enabled, base_url=None, timeout=timeout, cache_ttl_s=cache_ttl_s
@@ -79,8 +80,10 @@ class PskReporterClient(Integration):
         self.contact_email = (contact_email or "").strip() or None
         self.my_call = my_call.upper()
         self.my_grid = my_grid.upper()
-        # IPFIX-Observation-Domain-ID: 1 ist Standard für PSK Reporter.
-        self._observation_domain_id = 1
+        self.decoder_software = decoder_software
+        # Kennung des Absenders: zufaellig, je Instanz konstant (pskdev.html).
+        # Bis 2026-11-14 stand hier fest 1, fuer beide Stationen dieselbe.
+        self._observation_domain_id = random.randint(1, 0xFFFF_FFFF)
         # Sequence-Counter über die UDP-Verbindungs-Lebensdauer.
         self._sequence_number = 0
         # Random Source-ID — bleibt für die ganze Session konstant.
@@ -223,7 +226,10 @@ class PskReporterClient(Integration):
     def _build_ipfix_packet(self, spots: list[_PendingSpot]) -> bytes:
         """Pack header + 2 templates + 2 data sets in ein UDP-Paket."""
         export_time = int(time.time())
-        self._sequence_number += 1
+        # Die Sequenznummer zaehlt Berichte, nicht Pakete (pskdev.html): Sie
+        # steht im Kopf fuer den Stand VOR diesem Paket.
+        sequenz = self._sequence_number
+        self._sequence_number += len(spots)
 
         # --- Template-Set: Definition der zwei Records ---
         # Receiver-Template (was wir = unser Pi melden)
@@ -238,16 +244,24 @@ class PskReporterClient(Integration):
             enterprise_id=30351,
         )
         # Sender-Template (eine pro empfangener Station)
+        # Feldnummern nach https://pskreporter.info/pskdev.html (gelesen am
+        # 2026-11-14): 30351.1 senderCallsign, .3 senderLocator, .5 frequency,
+        # .6 sNR, .10 mode, .11 informationSource (1 Byte, Wert 1 =
+        # automatisch dekodiert), dazu IANA 150 flowStartSeconds ohne
+        # Enterprise-Nummer. Bis 2026-11-14 stand die Betriebsart unter .3
+        # (dem Locator des Senders), der Locator unter .4 (dem des
+        # Empfaengers) und die Quelle unter einer Nummer, die es nicht gibt:
+        # Die Berichte kamen an, aber ohne Betriebsart.
         tx_template = self._pack_template(
             self._TX_TEMPLATE_ID,
             [
-                (0x8001 | 0x8000, 0xFFFF),  # SenderCallsign (varlen)
-                (0x8005, 4),                # Frequency uint32
-                (0x8006, 1),                # sNR int8
-                (0x8003 | 0x8000, 0xFFFF),  # Mode (varlen)
-                (0x8004 | 0x8000, 0xFFFF),  # SenderLocator (varlen) — re-use
-                (0x8096, 4),                # InfoSource uint32 (4=automatic)
-                (150, 4),                   # flowStartSeconds (IANA std)
+                (0x8001, 0xFFFF),           # senderCallsign
+                (0x8005, 4),                # frequency, Hz
+                (0x8006, 1),                # sNR, int8
+                (0x800A, 0xFFFF),           # mode
+                (0x8003, 0xFFFF),           # senderLocator
+                (0x800B, 1),                # informationSource
+                (150, 4),                   # flowStartSeconds
             ],
             enterprise_id=30351,
         )
@@ -257,8 +271,10 @@ class PskReporterClient(Integration):
         rx_record = (
             self._pack_varstr(self.my_call)
             + self._pack_varstr(self.my_grid)
-            + self._pack_varstr("ft8-hochgericht/0.1")
-            + self._pack_varstr("IC-7300 + EFHW")
+            + self._pack_varstr(self.decoder_software)
+            # Antennenangabe bleibt leer: Bis 2026-11-14 stand hier fest
+            # "IC-7300 + EFHW", fuer jede Station und oeffentlich sichtbar.
+            + self._pack_varstr("")
         )
         rx_data = self._pack_set(self._RX_TEMPLATE_ID, rx_record)
 
@@ -271,7 +287,7 @@ class PskReporterClient(Integration):
                 + struct.pack(">b", max(-128, min(127, s.snr_db)))
                 + self._pack_varstr(s.mode)
                 + self._pack_varstr(s.sender_grid or "")
-                + struct.pack(">I", 4)  # automatic
+                + struct.pack(">B", 1)  # automatisch dekodiert
                 + struct.pack(">I", int(s.decoded_at.timestamp()))
             )
         tx_data = self._pack_set(self._TX_TEMPLATE_ID, tx_records)
@@ -282,7 +298,7 @@ class PskReporterClient(Integration):
             10,                  # IPFIX version
             16 + len(body),      # total length
             export_time,
-            self._sequence_number,
+            sequenz,
             self._observation_domain_id,
         )
         return header + body

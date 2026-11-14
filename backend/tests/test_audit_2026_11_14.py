@@ -461,3 +461,86 @@ def test_audiopuffer_haelt_gleichzeitiges_schreiben_und_lesen_aus() -> None:
     finally:
         stopp.set()
         faden.join()
+
+
+# ---------------------------------------------------------------------------
+# PSK-Reporter-Upload nach der Spezifikation (pskdev.html)
+
+def _ipfix_lesen(paket: bytes):
+    """Kleiner IPFIX-Leser: Kopf, Templates, Datensaetze nach Template."""
+    import struct
+
+    version, laenge, _zeit, sequenz, _kennung = struct.unpack(">HHIII", paket[:16])
+    assert version == 10 and laenge == len(paket)
+    templates: dict[int, list[tuple[int, int]]] = {}
+    saetze: dict[int, list[dict[int, object]]] = {}
+    pos = 16
+    while pos < len(paket):
+        set_id, set_len = struct.unpack(">HH", paket[pos:pos + 4])
+        rumpf = paket[pos + 4:pos + set_len]
+        pos += set_len
+        if set_id == 2:
+            p = 0
+            while p + 4 <= len(rumpf):
+                tid, anzahl = struct.unpack(">HH", rumpf[p:p + 4])
+                p += 4
+                if tid == 0:
+                    break
+                felder = []
+                for _ in range(anzahl):
+                    fid, flen = struct.unpack(">HH", rumpf[p:p + 4])
+                    p += 4
+                    if fid & 0x8000:
+                        assert struct.unpack(">I", rumpf[p:p + 4])[0] == 30351
+                        p += 4
+                    felder.append((fid, flen))
+                templates[tid] = felder
+        else:
+            p = 0
+            felder = templates[set_id]
+            mindest = sum(1 if flen == 0xFFFF else flen for _, flen in felder)
+            while len(rumpf) - p >= mindest and any(rumpf[p:]):
+                satz: dict[int, object] = {}
+                for fid, flen in felder:
+                    if flen == 0xFFFF:
+                        n = rumpf[p]
+                        satz[fid] = rumpf[p + 1:p + 1 + n].decode()
+                        p += 1 + n
+                    else:
+                        satz[fid] = int.from_bytes(rumpf[p:p + flen], "big", signed=(flen == 1))
+                        p += flen
+                saetze.setdefault(set_id, []).append(satz)
+    return sequenz, templates, saetze
+
+
+def test_psk_reporter_upload_traegt_die_betriebsart_unter_der_richtigen_nummer() -> None:
+    """Bis 2026-11-14 stand die Betriebsart unter 30351.3 (Locator des Senders) und die
+    Quelle unter einer Nummer, die es nicht gibt: Die Berichte kamen ohne Betriebsart an."""
+    from datetime import UTC, datetime
+
+    from ft8_appliance.integrations.psk_reporter import PskReporterClient, _PendingSpot
+
+    c = PskReporterClient(my_call="DO3XR", my_grid="JN58CH", decoder_software="ft8-appliance 0.196.0")
+    jetzt = datetime(2026, 11, 14, 16, 0, tzinfo=UTC)
+    spots = [
+        _PendingSpot(sender_call="EA3IVP", sender_grid="JN01", snr_db=-16,
+                     band_hz=21_140_417, mode="FT4", decoded_at=jetzt),
+        _PendingSpot(sender_call="K2EU", sender_grid=None, snr_db=2,
+                     band_hz=21_141_200, mode="FT4", decoded_at=jetzt),
+    ]
+    seq1, templates, saetze = _ipfix_lesen(c._build_ipfix_packet(spots))
+    seq2, _, _ = _ipfix_lesen(c._build_ipfix_packet(spots[:1]))
+    assert (seq1, seq2) == (0, 2)                 # zaehlt Berichte, nicht Pakete
+
+    sender = saetze[c._TX_TEMPLATE_ID]
+    assert [(fid, flen) for fid, flen in templates[c._TX_TEMPLATE_ID]] == [
+        (0x8001, 0xFFFF), (0x8005, 4), (0x8006, 1), (0x800A, 0xFFFF),
+        (0x8003, 0xFFFF), (0x800B, 1), (150, 4),
+    ]
+    assert sender[0] == {0x8001: "EA3IVP", 0x8005: 21_140_417, 0x8006: -16, 0x800A: "FT4",
+                         0x8003: "JN01", 0x800B: 1, 150: int(jetzt.timestamp())}
+    assert sender[1][0x8003] == "" and sender[1][0x8006] == 2
+    empfaenger = saetze[c._RX_TEMPLATE_ID][0]
+    assert empfaenger[0x8002] == "DO3XR" and empfaenger[0x8004] == "JN58CH"
+    assert empfaenger[0x8008] == "ft8-appliance 0.196.0"
+    assert empfaenger[0x8009] == ""               # keine erfundene Antennenangabe mehr
