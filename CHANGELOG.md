@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.198.0 — 2026-11-14
+- feat: Station stellt eine falsche Betriebsart und Split selbst zurueck und sendet bis dahin nicht; Vorab-Decode wird neu gemessen (Messplan vorab_decode, Lesetermin 28.11.) — die Messung vom September lief mit dem Paritaetsfehler und galt zu Unrecht als entschieden
+
 ## v0.197.1 — 2026-11-14
 - fix: wiederholt der Partner nach dem Abschluss sein RR73, kommt ein 73 hinterher; eigener Leistungsbefehl waehrend des Rig-Schnappschusses loest keinen Alarm 'extern verstellt' mehr aus — QSO_GRACE dauerte null Slots und konnte das 73 nie senden
 
