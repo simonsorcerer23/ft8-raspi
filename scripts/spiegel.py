@@ -57,6 +57,12 @@ PI = os.environ.get("FT8_PI", "http://ft8-pi5:8000").rstrip("/")
 #   ssh <station> 'curl -s localhost:8000/api/auth/token' | jq -r .api_read_token
 TOKEN_DATEI = Path(os.environ.get("FT8_SPIEGEL_TOKEN", "/etc/dk9xr-spiegel/token"))
 
+# Der Locator, der auf der Stationsseite steht. Vorgabe ist die erste
+# Station; ein Spiegel fuer eine zweite (ft8-mk2, seit 2026-11-14) setzt
+# FT8_SPIEGEL_GRID. Aus der Anlage kommt er bewusst nicht: Dort steht er auf
+# sechs Stellen genau, und was hier steht, ist oeffentlich.
+GRID = os.environ.get("FT8_SPIEGEL_GRID", "JN58BH")
+
 # Was vom Geraetestatus nach draussen darf. Alles andere bleibt hier.
 RIG_FELDER = ("freq_hz", "mode", "swr", "ptt")
 
@@ -146,9 +152,17 @@ def baue(token: str, *, mit_rufzeichen: bool) -> dict:
 
     return {
         "station": {
-            "call": status.get("callsign"), "grid": "JN58BH",
+            "call": status.get("callsign"), "grid": GRID,
             "lat": lat, "lon": lon,
             "zustand": status.get("state"),
+            # Seit 2026-11-14, fuer das Stationsboard: "aktiv" heisst nicht
+            # nur eingeschaltet, sondern im Betrieb. Die Station ruft oder
+            # antwortet nur, wenn einer der beiden Schalter an ist; im
+            # Hunting bleibt auto_cq aus, auch waehrend sie ersatzweise CQ
+            # ruft. modus ist die Betriebsart (FT8 oder FT4).
+            "auto_cq": bool(status.get("auto_cq")),
+            "auto_answer": bool(status.get("auto_answer")),
+            "modus": status.get("mode"),
             "band": status.get("active_band"),
             "freq_mhz": round((rig.get("freq_hz") or 0) / 1e6, 3),
             "power_w": status.get("tx_power_w"),

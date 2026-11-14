@@ -145,3 +145,24 @@ def test_tagesprofil_wird_nur_alle_viertelstunde_neu_geholt(tmp_path) -> None:
     jetzt = datei.stat().st_mtime
     assert not m.ist_faellig(datei, 900, jetzt=jetzt + 60)
     assert m.ist_faellig(datei, 900, jetzt=jetzt + 901)
+
+
+def test_betriebsschalter_und_locator_stehen_unter_station(monkeypatch) -> None:
+    """Fuer das Stationsboard (14.11.2026): "aktiv" heisst im Betrieb, nicht
+    nur eingeschaltet. Der Locator kommt aus der Umgebung, damit ein zweiter
+    Spiegel nicht den der ersten Station traegt."""
+    monkeypatch.setenv("FT8_SPIEGEL_GRID", "JN58CH")
+    m = _modul()
+    antworten = {
+        "/api/status": {"callsign": "DO3XR", "state": "CQ_CALLING", "mode": "FT4",
+                        "active_band": "15m", "tx_power_w": 50, "worked_count": 1,
+                        "auto_cq": False, "auto_answer": True,
+                        "rig": {"freq_hz": 21140000, "swr": 1.0, "ptt": False}},
+        "/api/stats": {"qso_today": 0, "best_dx_today": None},
+        "/api/map": {"operator_lat": 48.3, "operator_lon": 10.2, "markers": []},
+        "/api/psk/who-heard-me": {"reports": []},
+    }
+    m.hole = lambda pfad, token, timeout=20.0: antworten[pfad.split("?")[0]]
+    s = m.baue("egal", mit_rufzeichen=True)["station"]
+    assert (s["auto_cq"], s["auto_answer"], s["modus"]) == (False, True, "FT4")
+    assert s["grid"] == "JN58CH" and s["call"] == "DO3XR"
