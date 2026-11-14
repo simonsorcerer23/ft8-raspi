@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.199.1 — 2026-11-14
+- fix: Station startet mit Autopilot in der zuletzt gefahrenen Betriebsart statt in der aus der Config — nach dem Self-Update hoerte der MK2 fuenf Minuten auf einem leeren FT4-Kanal
+
 ## v0.199.0 — 2026-11-14
 - fix: Autopilot-Messung bekommt eine Vergleichsgruppe, Kontrollarm protokolliert auch die Einzelkandidaten-Gates, Versorgungsspannung kommt ueber VD_METER, FT-817/818 nimmt Leistung und SWR nur waehrend der eigenen Aussendung — die Messregel konnte nicht scheitern, der Akku-Guard nie ausloesen, und am FT-817 haette der SWR-Guard vor der ersten Aussendung gesperrt
 
