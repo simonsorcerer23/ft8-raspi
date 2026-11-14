@@ -241,7 +241,7 @@ def test_off_dial_is_the_reported_reason_not_antenna() -> None:
     (14_074_000, True),    # FT8-Dial 20m
     (14_074_400, True),    # innerhalb 500 Hz
     (14_075_000, False),   # 1 kHz daneben = FT8-Segment verlassen
-    (14_080_000, True),    # FT4-Default-Dial 20m zaehlt auch im FT8-Modus
+    (14_080_000, False),   # FT4-Dial im FT8-Modus: seit 2026-11-14 kein gueltiger Dial mehr
     (5_357_000, True),     # 60m FT8
     (5_335_000, False),    # "60m" laut Region-2-Kante, aber kein Dial -> Off-Band in DL
     (3_900_000, False),    # "80m" laut Kante, nicht konfiguriert

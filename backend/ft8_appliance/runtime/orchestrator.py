@@ -620,6 +620,10 @@ class Orchestrator:
     # Push feuern — der Set selbst rast oft als false-positive ein
     # weil rig-poll die Aenderung sieht bevor das echo registered ist.
     _dial_set_at: float = field(default=0.0, init=False)
+    # Die zuletzt selbst gesetzte Frequenz. Der Rig-Poll laeuft ihr bis zu
+    # ein paar Sekunden hinterher; wer in dieser Zeit entscheidet, muss mit
+    # diesem Wert rechnen, nicht mit dem alten Schnappschuss.
+    _dial_gesetzt_hz: int | None = field(default=None, init=False)
     # CQ-Idle-Watchdog (Sebastian 2026-05-24, Audit-Finding 1):
     # Wann hat der State_Machine zuletzt cq_count=0 gemeldet (= QSO
     # gerade erfolgreich abgeschlossen ODER frischer CQ-Start)? Wenn
@@ -3786,7 +3790,11 @@ class Orchestrator:
 
         target_hz = band_cfg.freq_for_mode(target_mode) * 1000
         current_hz = self._last_rig.freq_hz if self._last_rig else None
-        if current_hz != target_hz:
+        # Bei einem Moduswechsel den Dial immer setzen, auch wenn der
+        # Schnappschuss ihn schon dort sieht: Der kann aelter sein als der
+        # letzte eigene Frequenzbefehl. Dieselbe Frequenz noch einmal zu
+        # setzen kostet nichts.
+        if current_hz != target_hz or old_mode != target_mode:
             log.info(
                 "autopilot: set dial %s/%s -> %d Hz (%s)",
                 target_band, target_mode, target_hz, reason,
@@ -3797,8 +3805,6 @@ class Orchestrator:
                     self.decode_source.band_hint = target_band
                 except Exception:
                     pass
-        elif old_mode != target_mode:
-            await self._ensure_dial_matches_mode(reason)
 
     async def _ensure_dial_matches_mode(self, reason: str) -> None:
         """Stell Rig-Dial auf die mode-passende Sub-Band-Freq.
@@ -3886,6 +3892,14 @@ class Orchestrator:
         """Wrap rig.set_freq + Echo-Registration fuer Tamper-Detection."""
         await self.rig.set_freq(hz)
         self._register_app_command("freq_hz", int(hz))
+        # Den Schnappschuss gleich mitziehen. Am 2026-11-14 stellte die Box
+        # nach einem Neustart das Rig auf den FT8-Dial, der Autopilot
+        # schaltete eine Sekunde spaeter auf FT4, las im alten Schnappschuss
+        # noch den FT4-Dial und liess das Rig stehen: zwei Minuten FT4-CQ auf
+        # 21,074 MHz.
+        self._dial_gesetzt_hz = int(hz)
+        if self._last_rig is not None:
+            self._last_rig.freq_hz = int(hz)
         # Sofort, nicht erst beim naechsten Poll: Sonst liegt zwischen dem
         # Frequenzbefehl und der Leistungsgrenze ein Fenster, in dem ein
         # Burst mit der Leistung des alten Bands hinausgehen kann.
@@ -10077,12 +10091,26 @@ class Orchestrator:
         return dials
 
     def _dial_on_configured_freq(self) -> bool | None:
-        """Input fuer den dial_guard. None = Rig-Frequenz unbekannt."""
+        """Input fuer den dial_guard. None = Rig-Frequenz unbekannt.
+
+        Verlangt wird der Dial der *eingestellten Betriebsart*. Bis
+        2026-11-14 genuegte irgendein konfigurierter FT8- oder FT4-Dial; die
+        Abweichung zwischen Betriebsart und Dial sollte nur der
+        Tamper-Waechter melden. Damit durfte die Box FT4 auf dem FT8-Dial
+        senden, und genau das hat sie an diesem Tag getan.
+        """
         hz = self._last_rig.freq_hz
+        # Kurz nach einem eigenen Frequenzbefehl gilt der befohlene Wert:
+        # Ein Poll, der davor begonnen hat, bringt sonst die alte Frequenz
+        # zurueck und sperrt die Station fuer zehn Minuten.
+        if self._dial_gesetzt_hz is not None and time.time() - self._dial_set_at < 5.0:
+            hz = self._dial_gesetzt_hz
         if hz is None:
             return None
         tol = self.config.operating.dial_tolerance_hz
-        return any(abs(hz - d) <= tol for d in self.configured_dials_hz())
+        mode = self._valid_digital_mode(self.config.operating.mode)
+        soll = {int(b.freq_for_mode(mode)) * 1000 for b in self.config.bands}
+        return any(abs(hz - d) <= tol for d in soll)
 
     def _band_for_rig_freq(self, hz: int):
         """Welcher konfigurierte BandConfig deckt diese On-Air-Frequenz ab?

@@ -336,3 +336,49 @@ async def test_aufgeschobene_aussendung_geht_bei_gruenen_guards_hinaus(monkeypat
                "state": "QSO_REPORT", "freq_offset_hz": 1500}
     await o._sende_aufgeschoben(payload, o._tx_aufgeschoben_nr, time.time(), "W1AW")
     assert len([c for c in o.rig.set_ptt.await_args_list if c.args == (True,)]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Betriebsart und Dial gehoeren zusammen (Vorfall beim Ausrollen am 14.11.)
+
+def _cfg_15m() -> AppConfig:
+    return AppConfig(
+        operator=OperatorConfig(callsign="DO3XR", default_locator="JN58ch",
+                                default_power_w=10, license_class="E"),
+        rig=RigConfig(model="ic7300"),
+        bands=[BandConfig(name="15m", freq_khz=21074, freq_khz_ft4=21140, antenna="ant")],
+        antennas=[AntennaConfig(name="ant", bands=["15m"], auto_band_switch=True)],
+        operating=OperatingConfig(autopilot_enabled=True, autopilot_allowed_bands=["15m"]),
+    )
+
+
+async def test_autopilot_setzt_den_dial_auch_bei_veraltetem_schnappschuss():
+    """Neustart im FT4-Betrieb: Dial auf FT8 gestellt, eine Sekunde spaeter zurueck
+    auf FT4. Der Schnappschuss zeigte noch den FT4-Dial, das Rig blieb auf FT8 stehen."""
+    o = _orch(_cfg_15m(), freq_hz=21_140_000)       # der Schnappschuss ist alt
+    o._active_antenna = "ant"
+    await o._apply_autopilot_target("15m", "FT4", "probe")
+    o.rig.set_freq.assert_awaited_once_with(21_140_000)
+    assert o.config.operating.mode == "FT4"
+
+
+async def test_dial_guard_verlangt_den_dial_der_betriebsart():
+    o = _orch(_cfg_15m(), freq_hz=21_074_000)
+    o.config.operating.mode = "FT8"
+    assert o._dial_on_configured_freq() is True
+    o.config.operating.mode = "FT4"                # FT4 auf dem FT8-Dial
+    assert o._dial_on_configured_freq() is False
+    o._last_rig = RigSnapshot(freq_hz=21_140_000)
+    assert o._dial_on_configured_freq() is True
+
+
+async def test_nach_eigenem_frequenzbefehl_gilt_der_befohlene_wert():
+    """Ein Poll von vor dem Befehl bringt die alte Frequenz zurueck."""
+    o = _orch(_cfg_15m(), freq_hz=21_074_000)
+    o.config.operating.mode = "FT4"
+    await o.handle_set_freq(21_140_000)
+    assert o._last_rig.freq_hz == 21_140_000       # sofort mitgezogen
+    o._last_rig = RigSnapshot(freq_hz=21_074_000)  # der verspaetete Poll
+    assert o._dial_on_configured_freq() is True
+    o._dial_set_at -= 10.0                          # spaeter zaehlt wieder das Rig
+    assert o._dial_on_configured_freq() is False
