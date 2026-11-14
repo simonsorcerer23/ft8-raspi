@@ -125,7 +125,27 @@ class RigctldClient:
             # Drop the socket so the next _send rebuilds a clean stream.
             await self.close()
             raise
+        if not resp:
+            # Leere Antwort = rigctld hat die Verbindung geschlossen. Bis
+            # 2026-11-14 kam das als "" zurueck, und die Setter fuer Level,
+            # Funktionen, AGC und Split werteten "" als Erfolg: Im Log stand
+            # "zurueckgestellt", gesetzt war nichts.
+            await self.close()
+            raise ConnectionError("rigctld hat die Verbindung geschlossen")
         return resp.decode("ascii", errors="replace").rstrip("\r\n")
+
+    @staticmethod
+    def _ja_nein(line: str, was: str) -> bool:
+        """"1"/"0" lesen. Eine Fehlerantwort ("RPRT -11") ist weder noch.
+
+        Bis 2026-11-14 galt alles ausser "1" als aus. Ein rigctld, das die
+        PTT-Abfrage mit einem Fehler beantwortete, sah damit aus wie "PTT
+        aus", und der PTT-Stuck-Waechter stellte seinen Timer zurueck.
+        """
+        wert = line.strip()
+        if wert in ("0", "1"):
+            return wert == "1"
+        raise RuntimeError(f"{was}: {wert or 'keine Antwort'}")
 
     # ------------------------------------------------------------------ getters
     async def get_freq(self) -> int:
@@ -149,7 +169,7 @@ class RigctldClient:
     async def get_ptt(self) -> bool:
         async with self._lock:
             line = await self._send("t")
-        return line.strip() == "1"
+        return self._ja_nein(line, "t")
 
     async def get_level(self, name: str) -> float:
         async with self._lock:
@@ -223,10 +243,16 @@ class RigctldClient:
                 setattr(snap, attr, cast(await self.get_level(level_name)))
             except Exception:
                 pass
+        # Vorverstaerker und Abschwaecher sind in hamlib Level (dB), keine
+        # Funktionen: ``u PREAMP`` und ``u ATT`` liefern RPRT -1, und bis
+        # 2026-11-14 zeigte die Oberflaeche deshalb beide immer als "aus".
+        for attr, level_name in (("preamp_on", "PREAMP"), ("att_on", "ATT")):
+            try:
+                setattr(snap, attr, (await self.get_level(level_name)) > 0)
+            except Exception:
+                pass
         # On/off functions (Hamlib: ``u <name>`` returns 0/1)
         for attr, func_name in (
-            ("preamp_on", "PREAMP"),
-            ("att_on",    "ATT"),
             ("nb_on",     "NB"),
             ("nr_on",     "NR"),
             ("anf_on",    "ANF"),
@@ -264,7 +290,7 @@ class RigctldClient:
     async def get_func(self, name: str) -> bool:
         async with self._lock:
             line = await self._send(f"u {name}")
-        return line.strip() == "1"
+        return self._ja_nein(line, f"u {name}")
 
     async def set_level(self, name: str, value: float) -> None:
         async with self._lock:
