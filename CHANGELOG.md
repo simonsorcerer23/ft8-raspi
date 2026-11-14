@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.197.0 — 2026-11-14
+- docs: Audit-Stand nach v0.197.0 — 70 von 79 Befunden behoben
+- fix: Autopilot bewertet ein anderes Band auf der FT8-Zeile statt auf der leeren FT4-Zeile, Pile-Up-Erkennung zaehlt die Anrufer im Slot davor — je belebter das andere Band war, desto sicherer blieb der Autopilot stehen; die Pile-Up-Zaehlung suchte Anrufer im selben Slot wie das CQ, wo sie nie senden
+- fix: verspaetete Aussendung ragt nicht mehr in den Folgeslot, spaete Decoder-Funde gehen auf den naechsten eigenen Slot statt in den des Partners — bei 6 oder 11 s Verspaetung wurde trotzdem gesendet
+- fix: PSK-Reporter-Upload traegt die Betriebsart und die Quelle unter den Feldnummern der Spezifikation — die Berichte kamen ohne Betriebsart an, als Antenne stand fuer jede Station fest 'IC-7300 + EFHW'
+
 ## v0.196.0 — 2026-11-14
 - docs: Audit-Stand nach v0.196.0 — 61 von 79 Befunden behoben
 - fix: Station sperrt, wenn das Rig nicht im Datenbetrieb steht oder Split an ist — bisher kam nur eine Meldung, und bei USB statt USB-D wurde ein leerer Traeger oder das Mikrofon getastet (mode_guard)
