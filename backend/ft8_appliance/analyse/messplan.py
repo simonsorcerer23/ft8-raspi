@@ -68,7 +68,7 @@ KERN_PICK_ATTEMPT = frozenset({
 TELEMETRIE_TABELLEN = frozenset({
     "pick_attempt", "pick_candidate", "state_time_daily", "filter_drop_daily",
     "band_noise", "solar_log", "swr_log", "path_prediction", "psk_reporter_in",
-    "versorgung_log", "pi_waerme_log", "bandwechsel_log",
+    "versorgung_log", "pi_waerme_log", "bandwechsel_log", "ft4_probe_log",
 })
 
 _GATE_STUFEN = "Jede Gate-Stufe einzeln"
@@ -344,6 +344,25 @@ MESSPLAN: tuple[Messung, ...] = (
         quelle="MK2 an Raymonds Antenne (15/10 m fuer DO3XR), 12.11.2026: Der Autopilot "
                "zaehlte nur das aktive Band; psk-freq.pl zeigte 15 m mit 106 Meldungen "
                "gegen 10 m mit 8 im Feld JN58.",
+    ),
+    Messung(
+        "ft4_probe_psk", "laufend",
+        "Sagt die PSK-Aktivitaet im Grossfeld voraus, ob ein FT4-Versuch QSOs bringt?",
+        ("ft4_probe_log",),
+        "Autopilot: FT4-Versuche gegen die PSK-Schaetzung",
+        "Ab 30 Versuchen mit Schaetzung: am Median der Schaetzung teilen. Endet die "
+        "untere Haelfte hoechstens halb so oft mit einem FT4-QSO in 20 Minuten wie die "
+        "obere, wird der Median zur Mindestschaetzung fuer einen Versuch. Sonst bleibt "
+        "es bei der Sperre fuer 'gar kein FT4 gemeldet'. Weniger als 30 Versuche bis "
+        "zum Lesetermin: 14 Tage spaeter erneut lesen.",
+        lesen_ab=date(2026, 11, 26),
+        danach="Sebastian entscheidet ueber die Mindestschaetzung. ft4_probe_log ist "
+               "klein und laeuft weiter, damit sich die Schwelle nachpruefen laesst.",
+        seit=date(2026, 11, 14),
+        quelle="MK2 am 14.11.2026: sieben FT4-Versuche auf 15 m, drei davon ohne QSO "
+               "(08:47, 09:22, 10:10 Ortszeit, zusammen rund 30 Minuten). Ausloeser war "
+               "nur die FT8-Dichte. In vergleichbaren Stunden brachte FT4 16,7 QSOs je "
+               "Stunde gegen 11,6 auf FT8 (59 gegen 56 QSOs, z etwa 2).",
     ),
     Messung(
         "zeit_je_zustand", "dauerhaft",

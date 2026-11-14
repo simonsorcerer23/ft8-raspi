@@ -46,7 +46,7 @@ Caller können den Leerstring sicher konkatenieren ohne Layout-Bruch.
 | `GET /api/heard` | `HeardOut` | `flag` |
 | `GET /api/status` | `StatusResponse` | `current_qso_flag` |
 | `GET /api/qso/conversation` | `ConversationResponse` | `partner_flag` |
-| `GET /api/integrations/psk/who-heard-me` | `PskHeardRow` | `flag` |
+| `GET /api/psk/who-heard-me` | `PskHeardRow` | `flag` |
 
 Alle Felder default `""` → backward-compatible.
 
@@ -240,6 +240,8 @@ Der Hunt-Autopilot (`autopilot_enabled`, `autopilot_allowed_bands`, Fenster `aut
 Scharfschalten, sobald die Multiband-Antenne hängt: Häkchen an der Antenne setzen, `autopilot_allowed_bands` prüfen, `autopilot_enabled: true`.
 
 Seit 2026-11-12: `autopilot_psk_aktivitaet` (ab Werk aus). Der Autopilot zählt Decodes nur auf dem Band, auf dem das Rig steht; für die anderen erlaubten Bänder hatte er nur die Tageszeit-Prior und wechselte deshalb erst, wenn das eigene Band einschlief. Mit dem Schalter holt er alle 5 Minuten bei PSK Reporter (`psk-freq.pl?grid=<Feld>`), wie viel im eigenen 4-stelligen Feld je Band gemeldet wurde, und rechnet die eigenen Decodes damit auf die anderen Bänder hoch. Anrufversuche und Vollendungen bleiben echte Zahlen des aktiven Bands, ein Band, auf dem es läuft, behält also seinen Vorsprung. Ohne frische Daten (älter als 15 min) oder mit weniger als 5 Meldungen auf dem eigenen Band entscheidet er wie vorher. Jeder Wechsel landet in `bandwechsel_log`; Auswertung in `scripts/qso_bilanz.py` („Autopilot: Bandwechsel und QSOs davor/danach“), Messplan `autopilot_psk`.
+
+Seit 2026-11-14 prüft derselbe Schalter auch den Wechsel auf FT4. Bisher löste allein die FT8-Dichte (150 Decodes im Fenster) einen FT4-Versuch aus; ob auf FT4 jemand war, zeigte erst der Versuch. Am 14.11. gingen am MK2 drei von sieben Versuchen ohne QSO zurück. Jetzt holt der Autopilot zusätzlich die Meldungen im Großfeld (zwei Zeichen, `psk-freq.pl?grid=JN`) und trennt sie nach Betriebsart: Die Zeilen sind auf 10 kHz gerundete Sendefrequenzen, FT8 auf 15 m liegt in 21070000/21080000, FT4 in 21140000. Werden im Großfeld weniger als 5 FT4-Meldungen gezählt, unterbleibt der Versuch. Liegen eigene FT4-Zahlen vor (dichte Decodes oder genug Anrufe), zählen die und nicht die Meldungen. Auf Bändern, auf denen FT8 und FT4 dieselbe 10-kHz-Zeile belegen (20 m, 17 m, 12 m, 80 m), greift die Prüfung nicht. Jeder Versuch und jede Sperre steht mit der PSK-Lage und der daraus geschätzten Zahl an FT4-Decodes in `ft4_probe_log`; ab welcher Schätzung sich ein Versuch lohnt, entscheidet der Messplan-Eintrag `ft4_probe_psk` (Bilanz „Autopilot: FT4-Versuche gegen die PSK-Schätzung“).
 
 
 ### Nachtrag 2026-09-08: adaptiver Fallback, Wiederholungen, Kontinent-Gate

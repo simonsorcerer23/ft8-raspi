@@ -370,6 +370,31 @@ class BandwechselLog(Base):
     grund: Mapped[str] = mapped_column(String(400))
 
 # ---------------------------------------------------------------------------
+class Ft4ProbeLog(Base):
+    """Jeder FT4-Versuch des Autopiloten mit der PSK-Lage davor.
+
+    Seit 2026-11-14 (Messplan "ft4_probe_psk"): Der Autopilot wechselte auf
+    FT4, sobald FT8 dicht war, ohne zu wissen, ob auf FT4 jemand ist. Am 14.11.
+    gingen drei von sieben Versuchen ins Leere. Was der Versuch brachte, steht
+    in decode und qso; hier steht, was vorher bekannt war.
+    """
+    __tablename__ = "ft4_probe_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    band: Mapped[str] = mapped_column(String(8))
+    # "versuch" = auf FT4 gewechselt, "gesperrt" = wegen fehlender Meldungen nicht
+    ereignis: Mapped[str] = mapped_column(String(10))
+    # eigene FT8-Decodes im Autopilot-Fenster
+    ft8_decodes: Mapped[int] = mapped_column(Integer)
+    # Meldungen im Grossfeld (letzte 5 min); None ohne PSK-Daten
+    psk_ft8: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    psk_ft4: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ft8_decodes mal psk_ft4 / psk_ft8: erwartete FT4-Decodes im selben Fenster
+    geschaetzt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 class Blacklist(Base):
     __tablename__ = "blacklist"
 

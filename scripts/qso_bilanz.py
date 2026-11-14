@@ -1770,6 +1770,42 @@ def main() -> int:
         print("    Die Stunde danach enthaelt auch Tageszeit und Ausbreitung; erst"
               " viele Wechsel trennen das vom Bandwechsel.")
 
+    print("\n=== Autopilot: FT4-Versuche gegen die PSK-Schaetzung ===")
+    # Seit 2026-11-14 (Messplan ft4_probe_psk). Je Versuch: was die PSK-Lage
+    # vorher erwarten liess und was in den 5 und 20 Minuten danach kam.
+    try:
+        versuche = con.execute(
+            "select p.ts, p.band, p.ereignis, p.ft8_decodes, p.psk_ft8, p.psk_ft4, p.geschaetzt,"
+            "  (select count(*) from decode d where d.mode = 'FT4' and d.band = p.band"
+            "     and d.ts >= p.ts and d.ts < datetime(p.ts, '+5 minutes')),"
+            "  (select count(*) from qso q where q.mode = 'FT4' and q.band = p.band"
+            "     and q.qso_end >= p.ts and q.qso_end < datetime(p.ts, '+20 minutes'))"
+            " from ft4_probe_log p order by p.ts").fetchall()
+    except sqlite3.OperationalError:
+        versuche = []
+    if not versuche:
+        print("    keine Versuche (Tabelle leer)")
+    else:
+        tabelle([(str(ts)[:16], band, ereignis, f8, p8 if p8 is not None else "-",
+                  p4 if p4 is not None else "-", g if g is not None else "-", dec, q)
+                 for ts, band, ereignis, f8, p8, p4, g, dec, q in versuche[-20:]],
+                ("Zeit (UTC)", "Band", "Ereignis", "FT8-Decodes", "PSK FT8", "PSK FT4",
+                 "geschaetzt", "FT4-Decodes 5 min", "FT4-QSOs 20 min"))
+        gesperrt = sum(1 for v in versuche if v[2] == "gesperrt")
+        mit = sorted((v[6], v[8]) for v in versuche if v[2] == "versuch" and v[6] is not None)
+        print(f"    {len(versuche) - gesperrt} Versuche, {gesperrt}-mal gesperrt, "
+              f"{len(mit)} Versuche mit Schaetzung")
+        if len(mit) >= 2:
+            haelfte = len(mit) // 2
+            unten, oben = mit[:haelfte], mit[haelfte:]
+            print(f"    Median der Schaetzung: {oben[0][0]}")
+            for name, teil in (("untere Haelfte", unten), ("obere Haelfte", oben)):
+                treffer = sum(1 for _, q in teil if q > 0)
+                print(f"    {name}: {treffer} von {len(teil)} Versuchen mit FT4-QSO "
+                      f"({100 * treffer / len(teil):.0f} %)")
+        if len(mit) < 30:
+            print("    Unter 30 Versuchen mit Schaetzung — noch keine Schwelle ableiten.")
+
     print("\n=== Wunschliste: gesehen und versucht? ===")
     tabelle(con.execute(
         "select w.call, "
