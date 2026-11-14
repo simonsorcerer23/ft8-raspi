@@ -109,7 +109,7 @@ stateDiagram-v2
 
     QSO_RESPOND --> IDLE: timeout
     QSO_REPORT --> IDLE: timeout
-    IDLE --> TX_LOCKED: guard violated / panic
+    IDLE --> TX_LOCKED: guard violated
     TX_LOCKED --> IDLE: reset
 ```
 
@@ -203,13 +203,15 @@ Yaesu FT-817/818 via Digirig Mobile (CAT over MiniDin8, PTT over RTS, audio via
 the Digirig sound card; power is selected at the rig and only read back).
 Details and preparation: [docs/rig_yaesu_digirig.md](docs/rig_yaesu_digirig.md).
 
-The **IC-7300MK2** has had its own profile since v0.179.0 but is not yet
-tested on real hardware. Hamlib only knows it from 4.7.0 on (CI-V address B6h
-instead of 94h); Debian ships 4.6.2. `deploy/hamlib-bauen.sh` builds a newer
-Hamlib into `/opt/hamlib`, next to the distribution's. If present, all profiles
-have used it since v0.180.0 (compared against 4.6.2 on an IC-7300: same values,
-tested while transmitting); without it the distribution's rigctld stays in use. The MK2's USB name and sound card still have to be added to detection when
-one is first plugged in.
+The **IC-7300MK2** has had its own profile since v0.179.0 and has been in
+service on a second station since 2026-11-12 (v0.193.1–v0.193.4, Hamlib
+4.7.2). Hamlib only knows it from 4.7.0 on (CI-V address B6h instead of 94h);
+Debian ships 4.6.2. `deploy/hamlib-bauen.sh` builds a newer Hamlib into
+`/opt/hamlib`, next to the distribution's. If present, all profiles have used
+it since v0.180.0 (compared against 4.6.2 on an IC-7300: same values, tested
+while transmitting); without it the distribution's rigctld stays in use.
+Detection (`rig/detect.py`) recognises the MK2 by its USB name; the rig has
+native USB with two serial ports, of which the first is CI-V.
 
 ### Every rule carries a number
 
@@ -246,19 +248,29 @@ decided A/B test is still running and which data is written without anyone
 evaluating it. It came out of an audit on 2026-09-17: 20 of 36 measurement
 columns without evaluation and three A/B tests without a defined end.
 
-Since v0.150.0 an **expected-value model** runs as an A/B against the chain:
-instead of seven yes/no gates every candidate gets one number, success
+In v0.150.0 an **expected-value model** was put up as an A/B against the
+chain: instead of seven yes/no gates every candidate gets one number, success
 probability times target value, and is called when that beats the yield of a
 CQ call per second. The probability comes from our own telemetry per SNR
 class, continent and PSK evidence, shrunk towards the mean; the value is a
-preference (new DXCC, watchlist, rare target). The balance sheet checks
-calibration: if the model says ten percent, ten percent must come true.
+preference (new DXCC, watchlist, rare target). It lost and has been off since
+2026-09-15 (`hunt_erwartungswert_ab`, default false): 1.82 QSOs per hour
+against 2.66 in the rule arm. The model stays in the code, and the balance
+sheet still checks its calibration: if it says ten percent, ten percent must
+come true.
 
 This is what keeps the feature list honest. Measured results that changed the
 code:
 
 - Targets below −13 dB complete at 4.4 %, above −10 dB at 24.8 % → weak
-  targets are gated behind a PSK Reporter reception report.
+  targets were gated behind a PSK Reporter reception report
+  (`hunt_weak_requires_psk`). An A/B refuted the gate on 2026-09-21: 165
+  QSOs with it against 163 without. It has been off by default since.
+- Replying on the quietest audio bin instead of the caller's frequency lost
+  its A/B, decided 2026-09-17: 15.4 % completion against 19.5 % on the
+  caller's frequency. `hunt_reply_quiet_freq` and `hunt_reply_ab_test` are
+  off by default; only callers at the edge of the audio window are still
+  answered on a quiet bin (`hunt_reply_edge_dodge`).
 - The tail-end hunter underperformed its rank → demoted below the SNR
   tie-breaker instead of being deleted.
 - The watchlist never reached the picker: rare DX is by definition weak *and*
@@ -277,12 +289,16 @@ numbers that motivated each.
 
 ### Guardrails
 
-Pre-flight before any PTT: chrony synced with |offset| < 0.5 s (a GPS fix
-alone does not count), rig snapshot fresher than 60 s, dial within ±500 Hz of
-a configured FT8/FT4 frequency, antenna covers the band, power under the
-per-band cap of the operator's licence class, SWR and ALC watchdogs that only
-sample during our own bursts. Violation refuses the transmission and raises an
-alarm badge; a panic stop cuts PTT and locks TX until reset.
+Pre-flight before any PTT: chrony synced to a source (stratum 1–15, leap
+status not "Not synchronised") with |offset| < 0.5 s (a GPS fix alone does
+not count), rig snapshot fresher than 60 s, dial within ±500 Hz of the
+configured frequency of the mode currently set (FT8 or FT4), antenna covers
+the band, power under the per-band cap of the operator's licence class, SWR
+and ALC watchdogs that only sample during our own bursts. Violation refuses
+the transmission and raises an alarm badge. A panic stop drops the QSO,
+switches auto-CQ and hunting off (state IDLE) and forces PTT off. It does not
+lock TX, and unlike Stop it leaves `boot_mode` as it is, so the modes come
+back after a service restart.
 
 During operation further watchdogs run that do not check transmitting, but
 whether the station is still doing its job. Two of them came out of faults that
@@ -304,8 +320,9 @@ secrets redacted from API responses.
 **Picker** — 22 drag-sortable tiers (pile-up avoidance, tail-end pickup,
 grayline, soft-blacklist learned from own QSO history, band conditions,
 buddy-seen, graded `psk_snr`, DXCC rarity, 5BWAS, VUCC) plus hard gates for
-slot parity, DT window and audio band edges. **Reply strategy** — quiet-bin
-reply frequency with a running A/B against the caller's frequency, adaptive CQ
+slot parity, DT window and audio band edges. **Reply strategy** — reply on
+the caller's frequency (the quiet-bin alternative lost its A/B, see above),
+quiet bin only for callers at the edge of the audio window, adaptive CQ
 fallback, learning continent prior, per-callsign cooldowns.
 
 **Multi-operator** — two profiles, separate QRZ / Club Log credentials, log
@@ -357,7 +374,7 @@ cd vendor/ft8_lib && make && cd ../..
 cd backend
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-pytest                      # 1001 tests
+pytest                      # 1818 tests
 
 cd ../frontend
 npm install
@@ -374,14 +391,37 @@ every outbound integration.
 ssh pi@<host>
 git clone https://github.com/simonsorcerer23/ft8-raspi.git ~/ft8-appliance
 cd ~/ft8-appliance
-sudo ./deploy/install.sh
+sudo ./deploy/install.sh --release-key <release-key.pub>   # installs; services stay off
+# edit /etc/ft8-appliance/config.yaml, verify rig, audio and TX limits
+sudo ./deploy/install.sh --enable-services                 # starts rigctld, controller, update timer
+sudo ./deploy/dienstbenutzer-einrichten.sh                 # controller as user "ft8", no sudo
 ```
 
-`install.sh` defaults to the checked-out repo path and the invoking sudo user
-(falling back to the repo owner). For a dedicated account or non-standard
-path, pass `--user USER --dir APP_DIR`; the installer renders systemd units
-and self-update sudoers rules for that exact installation and stores the
-values in `/etc/ft8-appliance/install.env`. Subsequent releases roll out via
+`install.sh` needs Raspberry Pi OS trixie or newer (Python >= 3.12). It
+defaults to the checked-out repo path and the invoking sudo user (falling
+back to the repo owner). For a dedicated account or non-standard path, pass
+`--user USER --dir APP_DIR`; the installer renders systemd units and
+self-update sudoers rules for that exact installation and stores the values
+in `/etc/ft8-appliance/install.env`.
+
+- **Without `--enable-services` the appliance does not start.** `ft8-rigctld`,
+  `ft8-controller` and `ft8-self-update.timer` are installed but disabled,
+  so nothing can key the rig until rig, USB audio, serial device and the TX
+  limits in `config.yaml` have been checked on the hardware. Every later run
+  without the option disables the three units again (`systemctl disable`:
+  they no longer start at boot).
+- **Without `--release-key KEY.pub` updates are taken unverified.** The
+  option writes the public SSH key of whoever signs the releases to
+  `/etc/ft8-self-update/allowed_signers`; self-update then rejects any tag
+  not signed with it. No key is built in, and the installer prints a warning
+  at the end if none is installed.
+- **`deploy/dienstbenutzer-einrichten.sh`** moves the controller and rigctld
+  to a system user (default `ft8`) without login and without sudo, apart from
+  the commands the web UI triggers. `config.yaml` then belongs to that user
+  with mode 600. `--zurueck` reverts it.
+
+Details on signing, the service user and the update flow:
+[docs/self_update.md](docs/self_update.md). Subsequent releases roll out via
 `ft8-self-update.timer`. Cut one with `./scripts/release.sh vX.Y.Z`, which
 also generates [CHANGELOG.md](./CHANGELOG.md) from the commit log.
 

@@ -112,7 +112,7 @@ stateDiagram-v2
 
     QSO_RESPOND --> IDLE: Timeout
     QSO_REPORT --> IDLE: Timeout
-    IDLE --> TX_LOCKED: Wächter verletzt / Panik-Stopp
+    IDLE --> TX_LOCKED: Wächter verletzt
     TX_LOCKED --> IDLE: Reset
 ```
 
@@ -209,14 +209,15 @@ Yaesu FT-817/818 am Digirig Mobile (CAT über MiniDin8, PTT über RTS, Audio
 über die Digirig-Soundkarte; Leistung wird am Gerät gewählt und nur gelesen).
 Einzelheiten und Vorbereitung: [docs/rig_yaesu_digirig.md](docs/rig_yaesu_digirig.md).
 
-Das **IC-7300MK2** ist seit v0.179.0 als eigenes Profil vorbereitet, am Gerät
-aber noch nicht erprobt. hamlib kennt es erst ab 4.7.0 (CI-V-Adresse B6h statt
-94h); Debian liefert 4.6.2. `deploy/hamlib-bauen.sh` baut ein neueres hamlib
-nach `/opt/hamlib`, neben das der Distribution. Liegt es dort, nutzen es seit
+Das **IC-7300MK2** hat seit v0.179.0 ein eigenes Profil und ist seit dem
+12.11.2026 an einer zweiten Station im Betrieb (v0.193.1–v0.193.4, hamlib
+4.7.2). hamlib kennt es erst ab 4.7.0 (CI-V-Adresse B6h statt 94h); Debian
+liefert 4.6.2. `deploy/hamlib-bauen.sh` baut ein neueres hamlib nach
+`/opt/hamlib`, neben das der Distribution. Liegt es dort, nutzen es seit
 v0.180.0 alle Profile (am IC-7300 gegen 4.6.2 verglichen: gleiche Werte, im
 Sendebetrieb erprobt); fehlt es, bleibt es beim rigctld der Distribution.
-USB-Name und Soundkarte des MK2 müssen beim ersten Anstecken noch in die
-Erkennung eingetragen werden.
+Die Erkennung (`rig/detect.py`) findet das MK2 an seinem USB-Namen; das
+Gerät hat natives USB mit zwei seriellen Ports, der erste ist CI-V.
 
 ### Jede Regel trägt eine Zahl
 
@@ -256,19 +257,29 @@ Daten geschrieben werden, ohne dass jemand sie auswertet. Anlass war eine
 Bestandsaufnahme am 17.09.2026: 20 von 36 Messspalten ohne Auswertung und
 drei A/B-Tests ohne festgelegtes Ende.
 
-Gegen die Kette läuft seit v0.150.0 ein **Erwartungswert-Modell** als A/B:
+Mit v0.150.0 trat ein **Erwartungswert-Modell** als A/B gegen die Kette an:
 Statt sieben Ja-Nein-Gates bekommt jeder Kandidat eine Zahl, Erfolgschance
 mal Wert des Ziels, und wird angerufen, wenn sie je Sekunde den Ertrag eines
 CQ-Rufs erreicht. Die Chance kommt aus der eigenen Telemetrie je Signalklasse,
 Kontinent und Empfangsbeleg, zum Mittel geschrumpft; der Wert ist eine
-Präferenz (neues DXCC, Wunschliste, seltenes Ziel). Die Bilanz prüft die
-Kalibrierung: Sagt das Modell zehn Prozent, müssen zehn Prozent eintreten.
+Präferenz (neues DXCC, Wunschliste, seltenes Ziel). Es verlor und ist seit
+dem 15.09.2026 aus (`hunt_erwartungswert_ab`, ab Werk false): 1,82 QSOs je
+Stunde gegen 2,66 im Regelarm. Das Modell bleibt im Code, und die Bilanz
+prüft weiter seine Kalibrierung: Sagt es zehn Prozent, müssen zehn Prozent
+eintreten.
 
 Das hält die Funktionsliste ehrlich. Messergebnisse, die den Code geändert
 haben:
 
 - Ziele unter −13 dB kommen zu 4,4 % zum Abschluss, über −10 dB zu 24,8 % →
-  schwache Ziele nur noch mit Empfangsbeleg aus dem PSK Reporter.
+  schwache Ziele wurden nur noch mit Empfangsbeleg aus dem PSK Reporter
+  angerufen (`hunt_weak_requires_psk`). Ein A/B hat die Regel am 21.09.2026
+  widerlegt: 165 QSOs mit ihr gegen 163 ohne. Seitdem ist sie ab Werk aus.
+- Die Antwort im ruhigsten NF-Bin statt auf der Frequenz des Rufers verlor
+  ihren A/B, entschieden am 17.09.2026: 15,4 % Abschlüsse gegen 19,5 % auf
+  der Rufer-Frequenz. `hunt_reply_quiet_freq` und `hunt_reply_ab_test` sind
+  ab Werk aus; nur Rufer am Rand des NF-Fensters werden weiter auf einem
+  ruhigen Bin angerufen (`hunt_reply_edge_dodge`).
 - Der Tail-End-Hunter blieb hinter seinem Rang zurück → unter den
   SNR-Stichentscheid herabgestuft statt gelöscht.
 - Die Wunschliste erreichte den Picker nie: Seltenes DX ist per Definition
@@ -287,13 +298,17 @@ hält zu jedem die Zahlen fest, die ihn begründet haben.
 
 ### Wächter
 
-Pre-Flight vor jedem PTT: chrony synchron mit |Offset| < 0,5 s (ein GPS-Fix
-allein zählt nicht), Rig-Snapshot jünger als 60 s, Dial innerhalb ±500 Hz
-einer konfigurierten FT8/FT4-Frequenz, Antenne deckt das Band, Leistung unter
-der bandbezogenen Grenze der Lizenzklasse des Operators, SWR- und ALC-Wächter,
-die nur während eigener Sendungen messen. Eine Verletzung verweigert die
-Sendung und setzt ein Alarmzeichen; der Panik-Stopp kappt PTT und sperrt den
-Sender bis zum Reset.
+Pre-Flight vor jedem PTT: chrony auf eine Quelle synchronisiert (Stratum
+1–15, Leap-Status nicht „Not synchronised") mit |Offset| < 0,5 s (ein GPS-Fix
+allein zählt nicht), Rig-Snapshot jünger als 60 s, Dial innerhalb ±500 Hz der
+konfigurierten Frequenz der eingestellten Betriebsart (FT8 oder FT4), Antenne
+deckt das Band, Leistung unter der bandbezogenen Grenze der Lizenzklasse des
+Operators, SWR- und ALC-Wächter, die nur während eigener Sendungen messen.
+Eine Verletzung verweigert die Sendung und setzt ein Alarmzeichen. Der
+Panik-Stopp verwirft das QSO, schaltet Auto-CQ und Hunting aus (Zustand
+IDLE) und nimmt die PTT zurück. Er sperrt den Sender nicht, und anders als
+Stop lässt er `boot_mode` stehen: Nach einem Neustart des Dienstes laufen die
+Modi wieder an.
 
 Im laufenden Betrieb kommen Wächter dazu, die nicht das Senden prüfen, sondern
 ob die Station ihre Arbeit noch tut. Zwei davon sind aus Fehlern entstanden, die
@@ -317,9 +332,10 @@ API-Antworten entfernt.
 Tail-End, Grayline, aus der eigenen QSO-Historie gelernte Soft-Blacklist,
 Bandbedingungen, Buddy-seen, abgestuftes `psk_snr`, DXCC-Rarity, 5BWAS, VUCC)
 plus harte Gates für Slot-Parität, DT-Fenster und NF-Bandränder.
-**Antwortstrategie** — Antwort im ruhigsten Bin mit laufendem A/B gegen die
-Rufer-Frequenz, adaptiver CQ-Rückfall, lernender Kontinent-Prior, Sperrfristen
-je Rufzeichen.
+**Antwortstrategie** — Antwort auf der Frequenz des Rufers (die Alternative
+im ruhigsten Bin verlor ihren A/B, siehe oben), ruhiger Bin nur für Rufer am
+Rand des NF-Fensters, adaptiver CQ-Rückfall, lernender Kontinent-Prior,
+Sperrfristen je Rufzeichen.
 
 **Multi-Operator** — zwei Profile mit getrennten QRZ-/Club-Log-Zugängen,
 Logbuch-Ansichten und lizenzabhängigen Leistungsgrenzen. **Logbuch** —
@@ -370,7 +386,7 @@ cd vendor/ft8_lib && make && cd ../..
 cd backend
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-pytest                      # 1001 Tests
+pytest                      # 1818 Tests
 
 cd ../frontend
 npm install
@@ -387,15 +403,39 @@ wirkenden Integrationen sind darin bewusst abgeschaltet.
 ssh pi@<host>
 git clone https://github.com/simonsorcerer23/ft8-raspi.git ~/ft8-appliance
 cd ~/ft8-appliance
-sudo ./deploy/install.sh
+sudo ./deploy/install.sh --release-key <release-schluessel.pub>   # installiert; Dienste bleiben aus
+# /etc/ft8-appliance/config.yaml anpassen, Rig, Audio und Sendegrenzen prüfen
+sudo ./deploy/install.sh --enable-services                        # startet rigctld, Controller, Update-Timer
+sudo ./deploy/dienstbenutzer-einrichten.sh                        # Controller als Benutzer „ft8", ohne sudo
 ```
 
-`install.sh` nimmt standardmäßig den ausgecheckten Repo-Pfad und den
-aufrufenden sudo-Benutzer (ersatzweise den Repo-Eigentümer). Für ein eigenes
-Konto oder einen abweichenden Pfad `--user USER --dir APP_DIR` mitgeben; das
+`install.sh` braucht Raspberry Pi OS trixie oder neuer (Python >= 3.12). Es
+nimmt standardmäßig den ausgecheckten Repo-Pfad und den aufrufenden
+sudo-Benutzer (ersatzweise den Repo-Eigentümer). Für ein eigenes Konto oder
+einen abweichenden Pfad `--user USER --dir APP_DIR` mitgeben; das
 Installationsskript erzeugt systemd-Units und sudoers-Regeln für genau diese
-Installation und legt die Werte in `/etc/ft8-appliance/install.env` ab. Weitere
-Releases kommen über `ft8-self-update.timer`. Einen davon schneidet man mit
+Installation und legt die Werte in `/etc/ft8-appliance/install.env` ab.
+
+- **Ohne `--enable-services` läuft die Appliance nicht an.** `ft8-rigctld`,
+  `ft8-controller` und `ft8-self-update.timer` werden installiert, bleiben
+  aber abgeschaltet, damit nichts das Rig tasten kann, bevor Rig, USB-Audio,
+  serielle Schnittstelle und die Sendegrenzen in `config.yaml` an der
+  Hardware geprüft sind. Jeder spätere Lauf ohne die Option nimmt den drei
+  Units den Autostart wieder (`systemctl disable`).
+- **Ohne `--release-key KEY.pub` werden Updates ungeprüft übernommen.** Die
+  Option schreibt den öffentlichen SSH-Schlüssel dessen, der die Releases
+  signiert, nach `/etc/ft8-self-update/allowed_signers`; das Self-Update
+  lehnt danach jeden Tag ab, der nicht damit signiert ist. Ein Schlüssel ist
+  nicht eingebaut, und das Installationsskript warnt am Ende, wenn keiner
+  hinterlegt ist.
+- **`deploy/dienstbenutzer-einrichten.sh`** stellt Controller und rigctld auf
+  einen Systembenutzer (Vorgabe `ft8`) ohne Anmeldung und ohne sudo um, bis
+  auf die Befehle, die die Weboberfläche auslöst. `config.yaml` gehört danach
+  diesem Benutzer mit Modus 600. `--zurueck` nimmt es zurück.
+
+Einzelheiten zu Signatur, Dienstbenutzer und Update-Ablauf:
+[docs/self_update.md](docs/self_update.md). Weitere Releases kommen über
+`ft8-self-update.timer`. Einen davon schneidet man mit
 `./scripts/release.sh vX.Y.Z`, was auch [CHANGELOG.md](./CHANGELOG.md) aus dem
 Commit-Log erzeugt.
 

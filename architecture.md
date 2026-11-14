@@ -3,11 +3,13 @@
 **🇬🇧 English** · [🇩🇪 Deutsch](architecture.de.md)
 
 **Version:** 3.0
-**Status:** In field use — a single Raspberry Pi 4B 8 GB (`ft8`; the docs said Pi 5 for a while, the box is a 4B) in production (a
-second unit `ft8-2` was trialled during bring-up, then repurposed for another
-project, 2026-06)
-**Operators:** DK9XR + DO3XR (multi-operator, both on the one Pi)
-**Rigs:** Icom IC-705 / IC-7300
+**Status:** In field use — two stations, each on a Raspberry Pi 5: `ft8-pi5`
+(since 2026-09, it replaced the Pi 4B) and `ft8-mk2` (since 2026-11-12). A
+unit `ft8-2` was trialled during bring-up, then repurposed for another
+project (2026-06).
+**Operators:** DK9XR on `ft8-pi5`, DO3XR on `ft8-mk2` (multi-operator; both
+profiles are configured on each station)
+**Rigs:** Icom IC-705 / IC-7300 / IC-7300MK2
 
 > Note: this document started life as a planning paper. It is continuously
 > reconciled with the actual state; the full release history lives in
@@ -182,11 +184,11 @@ rigctld   gpsd          ft8_lib       IC-705 USB audio
 ### 4.4 Frontend: Svelte 5
 
 - Built with Vite → static files → mounted by FastAPI
-- SSE (not WebSocket) for push: decodes, status, heard updates
+- SSE (not WebSocket) for push: two streams, `/sse/decodes` and `/sse/status`
 - **Map:** Leaflet, offline tiles preinstalled on the NVMe (world @ zoom 1-5, Europe @ zoom 6-10, ~5 GB)
 - **PWA manifest:** "add to home screen"
 - **Languages:** German (Dad), English — toggle in the UI
-- **Theme:** auto day/night based on GPS time + sun position
+- **Theme:** one fixed dark theme; an auto day/night switch was planned and never built
 
 **Tile-serving separation (mandatory):** the offline tiles physically live in `/var/lib/ft8-appliance/tiles/` (next to `qso.sqlite`) and are served by FastAPI as its own `StaticFiles` mount under `/tiles/{z}/{x}/{y}.png` — **not** as part of the Vite build bundle. Leaflet references them via a URL template. This keeps `backend/ft8_appliance/web/static/` (the Vite build output) small (<10 MB), and tiles can be updated or regenerated independently of an app update. Important: tiles deliberately live **outside** the git workdir (`/home/sebastian/ft8-appliance/`) so that `ft8-self-update.service` (= `git checkout vX.Y.Z`) never touches them.
 
@@ -197,7 +199,7 @@ systemd units:
 | Unit | Purpose |
 |---|---|
 | `ft8-controller.service` | Python app |
-| `rigctld.service` | Hamlib daemon |
+| `ft8-rigctld.service` | Hamlib daemon (`rigctld`) |
 | `gpsd.service` | GPS daemon |
 | `chrony.service` | time |
 | `ft8-ap-fallback.service` + `ft8-hostapd.service` | AP fallback — started by the controller's watchdog after `network.fallback_delay_s` without any upstream link, or by hand from the Wi-Fi page |
@@ -212,9 +214,11 @@ HTTP API must not be open. Enforced via ASGI middleware (`web/auth.py`):
 
 - **localhost (127.0.0.1/::1) is trusted** — anyone on the Pi has full access via SSH anyway, and the self-update health probe runs over localhost.
 - **Static SPA / assets / tiles / captive probes** are open (login must load, the AP captive portal must work).
-- **Everything under `/api` and `/sse`** needs the **master token** (`api_token`) via `Authorization: Bearer` OR `?token=` (query form for SSE, since `EventSource` cannot set headers). The master token can be set as a **memorable login password** (`POST /api/auth/token`).
-- **Separate, tightly scoped `ntfy_action_token`:** only for operational control toggles (stop/cq/hunt/reset-lock/set-mode/tx-power/set-freq/panic), embedded in the ntfy lock-screen buttons. A topic leak therefore grants no secret/shutdown access.
-- **Secret redaction:** `GET /api/config` returns no plaintext secrets; `config.yaml` is `0600`.
+- **Everything under `/api` and `/sse`** needs the **master token** (`api_token`) via `Authorization: Bearer` OR `?token=` (query form for SSE, since `EventSource` cannot set headers). The master token can be set as a **memorable login password** (`POST /api/auth/token`). `/api/docs` and `/api/openapi.json` stay reachable without a token.
+- **Read token (`api_read_token`, since 2026-09-28):** for the mirror on a web server (`scripts/spiegel.py`). It opens only GET/HEAD on the paths in `LESE_PFADE` (`web/auth.py`): `/api/status`, `/api/stats`, `/api/map`, `/api/psk/who-heard-me`, `/api/psk/tagesprofil`, `/api/qsl`, `/api/qsl/stand` and `/api/qsl/<id>/bild`. No configuration, no credentials, no control. Before that the master token sat on the web server. Generated at startup if missing.
+- **No token loaded, no access (since 2026-11-14, v0.195.0):** if no `api_token` is loaded (for instance because `config.yaml` cannot be read), every `/api` and `/sse` request from anywhere but localhost gets 503. Until then such requests went through unauthenticated.
+- **`ntfy_action_token` is retired (2026-09-13, v0.141.0).** It was a narrow token for the control toggles, embedded in the action buttons of the ntfy messages, and therefore sat in clear text on a public topic. The buttons are gone, the middleware no longer accepts the token, and an existing value is deleted from the config at startup. The field remains in the model only so that old `config.yaml` files still load.
+- **Secret redaction:** `GET /api/config` returns no plaintext secrets. `config.yaml` is written with mode `0600`; once `deploy/dienstbenutzer-einrichten.sh` has run it belongs to the service user.
 - **No network binding restriction** (binds `0.0.0.0`), because the AP fallback needs reachability on all interfaces — the token protects everywhere equally.
 
 ---
@@ -276,9 +280,9 @@ partner repeats their RR73 (= our RR73 was not decoded). If so: we send a
 Otherwise, after one slot, on to CQ_CALLING (auto_cq=True) or IDLE.
 
 **Before every TX transition the state machine checks:**
-- Time guard: chrony synced (stratum < 16) with |offset| < 0.5 s — a GPS fix alone does not count (see §3.5)
+- Time guard: chrony synced to a source with |offset| < 0.5 s — a GPS fix alone does not count (see §3.5). Since 2026-11-14 (v0.195.0) "synced" means stratum 1–15 and a leap status other than "Not synchronised"; before, any stratum below 16 passed, including the stratum 0 that chrony reports without a source
 - Rig-link guard: the rig has delivered a usable snapshot within the last 60 s
-- Dial guard: the rig sits within ±500 Hz of a configured FT8/FT4 dial (guards against off-band TX after a manual VFO turn)
+- Dial guard: the rig sits within ±500 Hz (`operating.dial_tolerance_hz`) of the configured dial of the mode currently set (guards against off-band TX after a manual VFO turn). Since v0.195.1 the FT8 dial no longer passes while the mode is FT4, and vice versa; for five seconds after an own frequency command the commanded value counts, not the last poll
 - PTT watchdog: max. 18 s per transmission
 - ALC: level in the green zone
 - SWR: < configured threshold (default 2.0)
@@ -291,7 +295,7 @@ On violation of any condition: TX is refused, the UI shows an alarm badge.
 Additional modes:
 - **Hunting:** instead of calling CQ, respond to other stations' CQs (button selects which)
 - **Run vs. S&P:** "Run" stays on frequency, "S&P" answers + moves on
-- **Panic stop:** immediate PTT off + state → IDLE, TX lock until button reset
+- **Panic stop:** like Stop (QSO dropped, auto-CQ and hunting off, state → IDLE) plus an immediate PTT off. No TX lock, and `boot_mode` is not rewritten, so the modes come back after a service restart (`Orchestrator.handle_panic`)
 
 ---
 
@@ -352,12 +356,12 @@ Additional modes:
 
 ### 6.2 Smart operating
 
-- **20-tier hunting picker** (configurable priority order,
+- **22-tier hunting picker** (configurable priority order,
   `OperatingConfig.hunt_priority`, drag-and-drop in the UI): lexicographic
   scoring across tiers such as `not_bad_reputation`, `not_in_pileup`,
   `tail_end_target`, `grayline` (coordinates since v0.135.0 from the decode's grid, falling back to the cty.dat entity centre — which sat a median 1130 km off for North America), `band_open`, `buddy_seen`, `new_dxcc(_band)`,
   `psk_heard_us`, `psk_snr`, `new_grid(_band)`, `not_worked`,
-  `dxcc_rarity`, `snr`.
+  `dxcc_rarity`, `continent_prior`, `lonely_cq`, `snr`.
   Details: [`docs/hunt_priority.md`](docs/hunt_priority.md).
 - **A/B: weak targets without a reception report (since v0.143.0):** the
   `hunt_weak_requires_psk` filter discards more candidates than any other
@@ -370,7 +374,9 @@ Additional modes:
   it measures the side effect instead of the benefit. Both arms get the
   same number of 15-minute blocks, so the QSO count is directly the yield
   per unit of time. Its own salt in the arm hash keeps it out of lockstep
-  with the two other running tests.
+  with the two other running tests. **Ended 2026-09-21, refuted:** 165 QSOs with
+  the filter against 163 without. `hunt_weak_requires_psk` and
+  `hunt_weak_requires_psk_ab` have been off by default since.
 - **Push notifications without action buttons (since v0.141.0):** ntfy
   messages used to carry buttons (stop, CQ, hunting, power, band) whose URL
   embedded the narrow ``ntfy_action_token`` in clear text. The topic is
@@ -470,6 +476,83 @@ Additional modes:
     + memory `feedback_wsjtx_korrektheit.md`. **Note:** this is **not**
     a feature-parity sweep (that is separately scoped and capped via
     `project_ft8_wsjtx_tier.md`)
+
+#### Autopilot: band and FT8/FT4 switch
+
+The autopilot (`Orchestrator._maybe_run_autopilot`) supports hunting by
+choosing the band/mode pair the station works on. It is off by default. It
+evaluates at most once a minute, and only while the state machine is IDLE,
+hunting is on and auto-CQ is off, PTT is off and the rig frequency is known.
+The switches and their history are also in [`docs/flags.md`](docs/flags.md).
+
+| Switch | Default | Effect |
+|---|---|---|
+| `operating.autopilot_enabled` | `false` | master switch |
+| `operating.autopilot_allowed_bands` | `["15m"]` | bands it may choose; a band must also be configured, permitted for the licence class and covered by the active antenna |
+| `operating.autopilot_allowed_modes` | `FT8`, `FT4` | modes it may choose |
+| `antennas[].auto_band_switch` | `false` | only with this flag may the autopilot leave the band the rig is on (multiband antenna that needs no tuning); without it only the FT8/FT4 switch remains |
+| `operating.autopilot_psk_aktivitaet` | `false` | use PSK Reporter activity, see below |
+| `operating.autopilot_window_min` / `autopilot_cooldown_min` | 15 / 20 | measurement window / pause after a switch, in minutes |
+
+**What it rates.** For every allowed band/mode pair it counts, over the
+window, own decodes, call attempts and completed QSOs (tables `decode` and
+`pick_attempt`). The score is a weak time-of-day prior per band, plus the
+hamqsl band condition (good +10, fair +4, poor −8), plus 0.2 per decode
+(capped at 400 decodes), 0.8 per call attempt, 10 per completed QSO and,
+from `autopilot_min_attempts` (6) attempts on, a quarter point per percent
+of completion. Another band is taken only if it leads the current one by 12
+points, or if the current band has fewer than `autopilot_min_decodes` (30)
+decodes in the window.
+
+**FT8 or FT4.** From 150 decodes in the window
+(`autopilot_ft4_probe_min_decodes`) the band counts as dense enough for an
+FT4 attempt. The attempt ends after `autopilot_ft4_probe_dwell_min` (5)
+minutes if it brought fewer than 150 FT4 decodes and no QSO. Two attempts in
+a row with at most three FT4 decodes and no QSO pause FT4 on that band for
+120 minutes, doubling up to 360. Once there are at least six FT4 call attempts, a
+completion rate below 8 % sends the station back to FT8 and one of 12 % or
+more keeps it on FT4.
+
+**PSK Reporter activity (`autopilot_psk_aktivitaet`, since 2026-11-12).**
+Own decodes exist only for the band the rig is on. With the switch on, the
+station asks PSK Reporter every five minutes how many reports there were per
+band in its own four-character locator field
+(`integrations/psk_bandaktivitaet.py`) and scales its own decodes to the
+other bands: own decodes × reports there / reports here. Call attempts and
+completions stay real figures of the active band. There is no estimate when
+the data is older than 15 minutes or the own band has fewer than five
+reports. Every band change is written to `bandwechsel_log`; measurement plan
+entry `autopilot_psk`.
+
+**FT4 check against PSK reports (since 2026-11-14, v0.195.0).** Until then
+the FT8 density alone triggered an FT4 attempt. With the same switch the
+station now also fetches the reports in its large field (two characters) and
+splits them by mode via their 10-kHz rows. With fewer than five FT4 reports
+there (and at least five FT8 reports) the attempt is skipped, unless own FT4
+figures exist. With the standard dials the split is possible on 40 m, 15 m
+and 10 m only; on the other bands FT8 and FT4 share a row and the check does
+not apply. Every attempt and every skipped one is written to `ft4_probe_log`
+with the PSK figures and the FT4 decodes estimated from them; measurement
+plan entry `ft4_probe_psk`, to be read from 2026-11-26.
+
+**On a switch** the autopilot sets the mode and, on a mode change, always
+the dial (v0.195.1); the power limit of a new band applies before the first
+burst there (`docs/tx_power_safety.md`).
+
+**Known limits (audit 2026-11-14, P5–P7 and L5).** With the present rating
+the band change practically never triggers; on the MK2 station it did not
+change between 15 m and 10 m once in two days.
+
+- P5 (open): as soon as another band shows a lot of activity it is rated on
+  its FT4 row. That row is empty, so the band does not win exactly then.
+- P7 (open): the PSK estimate is multiplicative. If the own band is dead,
+  the estimate for every other band is zero.
+- L5 (open): the time-of-day prior is identical for 10 m, 12 m and 15 m.
+- P6 (fixed in v0.195.0): the hamqsl conditions never reached the autopilot;
+  it looked up "15m" in a table keyed "17m-15m".
+
+Whether to rebuild the rating or to rest the band change is an open
+decision of the operator (`docs/audit_2026_11_14.md`, section 9, no. 5).
 
 ### 6.3 Antenna protection
 
@@ -643,11 +726,11 @@ operators:
 active_callsign: DK9XR           # current operator (hot-switch via API)
 operator_auto_login_seconds: 30  # auto-default after service start
 api_token: "..."                 # API login (settable as password); 0600, redacted from GET
-ntfy_action_token: "..."         # tight token only for ntfy control buttons
+api_read_token: "..."            # read-only token for the mirror (GET on LESE_PFADE only)
 ```
 
 > `operating:` has further fields beyond the ones shown below, among them
-> `mode` (FT8/FT4), `hunt_priority` (20-tier order), `hunt_profile`,
+> `mode` (FT8/FT4), `hunt_priority` (22-tier order), `hunt_profile`,
 > `hunt_skip_worked`, `hunt_dxcc_only`, `qso_cooldown_min`,
 > `psk_reciprocity_enabled`, `tail_end_hunter_enabled`, `boot_mode`,
 > `mode_watchdog_min`.
@@ -949,8 +1032,9 @@ hochgericht-ft8/
 
 ### 9.2 Bring-up phases
 
-> **Status:** all phases completed — the appliance is in productive field
-> use on a single Pi (`ft8`). (A second Pi `ft8-2` was trialled during
+> **Status:** all phases completed — the appliance is in productive use on
+> two stations (Tailscale nodes `ft8-pi5` and, since 2026-11-12, `ft8-mk2`;
+> see `docs/operations.md`). (A second Pi `ft8-2` was trialled during
 > bring-up, then repurposed for another project.) The following list is the
 > original bring-up order (historical).
 

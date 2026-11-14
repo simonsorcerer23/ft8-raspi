@@ -36,6 +36,31 @@ Dann reicht `ssh ft8-pi5`. **Nicht `ft8`:** Unter diesem Namen steht im
 Tailnet noch der alte, abgeschaltete Knoten — ein Aufruf läuft still ins
 Timeout.
 
+## Zwei Stationen (seit 12.11.2026)
+
+| Tailscale-Name | Operator | Rig |
+|---|---|---|
+| `ft8-pi5` | DK9XR | Rig der Station |
+| `ft8-mk2` | DO3XR | IC-7300MK2 (Profil `ic7300mk2`, hamlib 4.7.2 unter `/opt/hamlib`) |
+
+- Alle Befehle in diesem Dokument gelten je Station; für die zweite den
+  Host tauschen, etwa `ssh ft8-mk2 'bash -s' < scripts/pi-check.sh`.
+- Jede Station hat ihre eigene Datenbank
+  (`/var/lib/ft8-appliance/qso.sqlite`: Logbuch, Telemetrie, QSL-Karten),
+  ihre eigene `config.yaml` und ihren eigenen `runtime_state.json`.
+- Den eQSL-Posteingang holt jede Station nur für ihren aktiven Operator
+  (`Orchestrator._qsl_operatoren`, seit 14.11.2026). Vorher holte jede
+  Station die Posteingänge aller Operatoren mit Zugangsdaten.
+- Gesichert wird je Station in ein eigenes Ziel
+  (`scripts/backup-alle-stationen.sh`), siehe `docs/backup.md`.
+- Releases zieht jede Station selbst (`ft8-self-update.timer`); die
+  Meldungen dazu gehen an `ft8-system-<hostname>`.
+- Die Skripte auf der Workstation zielen ohne Angabe auf `ft8-pi5`:
+  `scripts/spiegel.py` (`FT8_PI`, `FT8_SPIEGEL_GRID`), `scripts/qsl_stand.py`
+  (`FT8_PI_SSH`), `scripts/restore-appliance.sh` (zweites Argument).
+- Nur am MK2-Pi: NVMe-Wache und Kernel-Mitschrift auf die SD-Karte, von
+  Hand eingerichtet, siehe `docs/pi5_migration.md`.
+
 ---
 
 ## 2. Der "Pi-Check" Workflow (für Shake-Down)
@@ -191,17 +216,28 @@ des Monats um 08:15 als Push.
 
 ## 6. TX-Power Safety-Floor (seit v0.2.3)
 
-Bei jedem Reset-Event (Boot, Operator-Wechsel, Rig-Wechsel,
-Bandwechsel) wird die TX-Leistung **runter geclamped** auf
-`max(1, effective_max_power_w(band) // 2)` — aber nur wenn aktuell
-darüber. QRP-Settings darunter bleiben unangetastet (Variante B).
+Bei Operator-Wechsel, Rig-Wechsel und Bandwechsel wird die TX-Leistung
+**runter geclamped** auf `max(1, effective_max_power_w(band) // 2)` — aber
+nur wenn aktuell darüber. QRP-Settings darunter bleiben unangetastet
+(Variante B).
+
+Ein Neustart klemmt seit 2026-09-09 nicht mehr auf die Hälfte: Die zuletzt
+eingestellte Leistung steht in `runtime_state.json` und bleibt beim Start
+und beim ersten Bandaufschlag stehen, begrenzt nur auf das Maximum von
+Lizenzklasse und Rig. Ohne gemerkten Wert greift der Vorsichtswert wie
+bisher.
+
+Seit 2026-11-14 (v0.195.0) gilt die Grenze des neuen Bands schon vor dem
+ersten Burst dort, und beim Operator- und Rig-Wechsel geht der Zielwert
+immer ans Gerät.
 
 Details + Edge-Cases: siehe `docs/tx_power_safety.md`.
 
-**Praktische Konsequenz für den Pi-Check:** wenn nach einem Restart
-die TX-Power im UI plötzlich auf 50 W steht obwohl du vorher 80 W
-hattest — das ist Absicht, nicht Bug. Im Log: `tx-power safety-floor
-(boot): clamp 80W -> 50W`.
+**Praktische Konsequenz für den Pi-Check:** Steht nach einem Restart die
+alte Leistung in der UI, ist das Absicht. Im Log: `tx-power safety-floor
+(boot): 70W aus runtime_state bleiben stehen …`. Geht die Leistung nach
+einem Bandwechsel herunter, ebenfalls: `tx-power safety-floor
+(band_change): clamp 80W -> 50W (band=10m)`.
 
 ---
 
