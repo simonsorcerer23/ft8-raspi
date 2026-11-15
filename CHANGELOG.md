@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.1 — 2026-11-15
+- feat: Rotor-Trockenlauf entscheidet mit echten PSK-Daten ohne Rotor und zeigt vorab, wie oft und wie weit gedreht wuerde; Verschleissgrenze von 1440 Grad Drehweg je Tag
+
 ## v0.200.0 — 2026-11-15
 - feat: Rotor-Nachfuehrung dreht die Richtantenne dorthin, wo Empfaenger im eigenen Feld laut PSK Reporter die meisten Sender hoeren — nie beim Senden oder im QSO, Handbetrieb hat Vorrang, jede zweite Stunde Kontrolle; standardmaessig aus, vorbereitet fuer RC5B-3 mit ERC-Interface
 
