@@ -69,6 +69,7 @@ TELEMETRIE_TABELLEN = frozenset({
     "pick_attempt", "pick_candidate", "state_time_daily", "filter_drop_daily",
     "band_noise", "solar_log", "swr_log", "path_prediction", "psk_reporter_in",
     "versorgung_log", "pi_waerme_log", "bandwechsel_log", "ft4_probe_log",
+    "rotor_log",
 })
 
 _GATE_STUFEN = "Jede Gate-Stufe einzeln"
@@ -349,6 +350,28 @@ MESSPLAN: tuple[Messung, ...] = (
                "schlechter' war damit immer erfuellt, ob die Schaetzung hilft oder nicht. "
                "Bis dahin gab es keinen einzigen Wechsel. Solange es kein Nachtband gibt, "
                "kommen Entscheidungen nur zwischen 15 und 10 m zustande, also selten.",
+    ),
+    Messung(
+        "rotor_nachfuehrung", "laufend",
+        "Bringt es mehr QSOs je Stunde, die Richtantenne dorthin zu drehen, wo "
+        "Empfaenger im eigenen Feld gerade die meisten Sender hoeren?",
+        ("rotor_log",),
+        "Rotor-Nachfuehrung: QSOs je Stunde mit und ohne Drehen",
+        "In jeder zweiten Stunde (Hash der UTC-Stunde) wird entschieden, aber nicht "
+        "gedreht. Ab 60 Stunden je Arm: QSOs je Stunde, dreht gegen Kontrolle, "
+        "urteil_rate(). 'echt' mehr mit Drehen: Kontrolle entfaellt, die Nachfuehrung "
+        "dreht immer. 'echt' weniger: Nachfuehrung aus. Sonst weiterlaufen lassen und "
+        "14 Tage spaeter erneut lesen. Gibt es bis zum Lesetermin keine einzige "
+        "ausgefuehrte Drehung, haengt das Interface noch nicht: Termin verschieben.",
+        lesen_ab=date(2027, 1, 15),
+        danach="Sebastian entscheidet, ob die Nachfuehrung an bleibt. rotor_log ist "
+               "klein (eine Zeile je 10 min Betrieb) und laeuft weiter.",
+        seit=date(2026, 11, 15),
+        quelle="Sebastian 08.10. und 15.11.2026: die Antenne am MK2 soll sich selbst "
+               "optimal drehen. Am 15.11. aus 57 000 eigenen Decodes: morgens "
+               "Asien bei 30-60 Grad, ab Mittag Nordamerika bei 300 Grad. Der "
+               "Lesetermin ist geschaetzt: Das ERC-Interface fuer den RC5B-3 ist "
+               "noch nicht eingebaut.",
     ),
     Messung(
         "ft4_probe_psk", "laufend",

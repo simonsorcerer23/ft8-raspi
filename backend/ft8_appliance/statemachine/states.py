@@ -184,6 +184,9 @@ class MachineContext:
     # 2026-09-07: Self-Update wartet nur das laufende QSO ab, keine neuen
     # Picks/CQs/Antworten mehr ("Ping-Pong abwarten, dann Update").
     drain_for_update: bool = False
+    # 2026-11-15: Rotor dreht — wie beim Update nichts Neues anfangen, bis
+    # die Antenne steht (Richtung zwischen alt und neu hilft niemandem).
+    rotor_dreht: bool = False
     hunt_reply_ab_test: bool = False
     reply_ab_counter: int = 0
     idle_slots_without_pick: int = 0

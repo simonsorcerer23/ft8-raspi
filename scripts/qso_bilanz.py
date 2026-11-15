@@ -1812,6 +1812,39 @@ def main() -> int:
         if min(len(gew), len(geh)) < 10:
             print("    Unter 10 Entscheidungen je Gruppe — noch nicht entscheiden.")
 
+    print("\n=== Rotor-Nachfuehrung: QSOs je Stunde mit und ohne Drehen ===")
+    # Seit 2026-11-15 (Messplan rotor_nachfuehrung). Jede Stunde mit
+    # mindestens einer Entscheidung gehoert zu einem Arm: In Kontrollstunden
+    # (Hash der UTC-Stunde, wie im Orchestrator) wird nicht gedreht.
+    import hashlib
+    try:
+        stunden = con.execute(
+            "select distinct strftime('%s', ts) / 3600 from rotor_log").fetchall()
+        gedreht = con.execute(
+            "select count(*) from rotor_log where ausgefuehrt = 1").fetchone()[0]
+    except sqlite3.OperationalError:
+        stunden, gedreht = [], 0
+    if not stunden:
+        print("    keine Entscheidungen (Nachfuehrung aus oder Tabelle leer)")
+    else:
+        arm = {"dreht": [], "kontrolle": []}
+        for (h,) in stunden:
+            h = int(h)
+            k = hashlib.sha256(f"rotor_kontrolle|{h}".encode()).digest()[0] < 128
+            n = con.execute(
+                "select count(*) from qso where strftime('%s', qso_end) / 3600 = ?",
+                (h,)).fetchone()[0]
+            arm["kontrolle" if k else "dreht"].append(n)
+        tabelle([(name, len(v), sum(v), f"{sum(v) / len(v):.2f}" if v else "-")
+                 for name, v in arm.items()],
+                ("Arm", "Stunden", "QSOs", "QSOs je Stunde"))
+        d, k = arm["dreht"], arm["kontrolle"]
+        print(f"    {gedreht} Drehungen ausgefuehrt")
+        if d and k:
+            print(f"    {urteil_rate(sum(d), float(len(d)), sum(k), float(len(k)))}")
+        if min(len(d), len(k)) < 60:
+            print("    Unter 60 Stunden je Arm — noch nicht entscheiden.")
+
     print("\n=== Autopilot: FT4-Versuche gegen die PSK-Schaetzung ===")
     # Seit 2026-11-14 (Messplan ft4_probe_psk). Je Versuch: was die PSK-Lage
     # vorher erwarten liess und was in den 5 und 20 Minuten danach kam.

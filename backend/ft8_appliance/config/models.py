@@ -1223,6 +1223,50 @@ RIG_COMPUTED_FIELDS: frozenset[str] = frozenset(
 )
 
 
+class RotorConfig(BaseModel):
+    """Rotor-Nachfuehrung (seit 2026-11-15, standardmaessig aus).
+
+    Die Station dreht die Richtantenne dorthin, wo das Band gerade offen
+    ist — gemessen an den Sendern, die Empfaenger im eigenen 4-stelligen
+    Feld laut PSK Reporter hoeren (analyse/richtung.py). Sie dreht nicht
+    je QSO: Der Rotor ist langsamer als ein FT8-QSO.
+
+    Am MK2 ist das Steuergeraet ein Create RC5B-3 mit Endanschlag im
+    Sueden; angesteuert wird es ueber ein DF9GR-ERC-Interface und
+    hamlib ``rotctld`` (Modell 404).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = Field(default=4533, ge=1, le=65535)
+    # Nur drehen, wenn diese Antenne aktiv ist (AntennaConfig.name).
+    antenne: str = ""
+    # Wo der mechanische Anschlag liegt; der Rotor dreht nie darueber.
+    endanschlag_grad: float = Field(default=180.0, ge=0.0, lt=360.0)
+    # Halber Oeffnungswinkel mal zwei: welche Sender "vorn" zaehlen.
+    oeffnung_grad: float = Field(default=60.0, ge=20.0, le=180.0)
+    # Kleinere Korrekturen bringen bei 60 Grad Oeffnung nichts.
+    min_schritt_grad: float = Field(default=30.0, ge=10.0, le=180.0)
+    # Erst ab so vielen verschiedenen Sendern ueberhaupt entscheiden.
+    min_sender: int = Field(default=20, ge=5, le=500)
+    # Im Ziel muessen so viel mehr Sender sein (0,25 = 25 %).
+    min_vorteil: float = Field(default=0.25, ge=0.0, le=5.0)
+    # Nahe Stationen zaehlen nicht mit (Richtung zweitrangig).
+    min_km: float = Field(default=1000.0, ge=0.0, le=20000.0)
+    # Nach einer Drehung so lange stehen bleiben.
+    halten_min: int = Field(default=20, ge=5, le=240)
+    # Wie oft neu entschieden wird (PSK Reporter: hoechstens alle 5 min).
+    takt_min: int = Field(default=10, ge=5, le=60)
+    # Laenger darf eine Drehung nicht dauern; sonst gilt der Rotor als
+    # haengend, die Nachfuehrung ruht und es kommt eine Meldung.
+    fahrzeit_max_s: int = Field(default=150, ge=20, le=600)
+    # Weicht die Richtung ohne eigenen Befehl um mehr als toleranz_grad ab,
+    # hat jemand am Steuergeraet gedreht: Handbetrieb hat Vorrang.
+    toleranz_grad: float = Field(default=10.0, ge=2.0, le=45.0)
+    hand_pause_min: int = Field(default=120, ge=10, le=1440)
+
+
 class RigConfig(BaseModel):
     """Per-rig glue config. Drives both rigctld launch and orchestrator clamps."""
 
@@ -1312,6 +1356,7 @@ class AppConfig(BaseModel):
     antennas: list[AntennaConfig] = Field(default_factory=list)
     operating: OperatingConfig = Field(default_factory=OperatingConfig)
     rig: RigConfig = Field(default_factory=RigConfig)
+    rotor: RotorConfig = Field(default_factory=RotorConfig)
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
     ui: UiConfig = Field(default_factory=UiConfig)

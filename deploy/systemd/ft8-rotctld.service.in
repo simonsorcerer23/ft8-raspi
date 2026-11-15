@@ -1,0 +1,24 @@
+[Unit]
+Description=Hamlib rotctld fuer die Rotor-Nachfuehrung (configured from /etc/default/ft8-rotctld)
+After=systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+StartLimitIntervalSec=0
+
+# Seit 2026-11-15. Wird bewusst NICHT von install.sh oder dem Self-Update
+# eingerichtet: Erst wenn das Rotor-Interface eingebaut und am USB ist, von
+# Hand installieren und einschalten — Anleitung in docs/rotor.md.
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=dialout
+# ROT_MODEL (404 = DF9GR ERC), ROT_DEVICE (/dev/serial/by-id/...),
+# ROT_ARGS (etwa "-s 9600", wenn die ERC-Anleitung eine Rate verlangt; leer
+# = Vorgabe des hamlib-Treibers). -T 127.0.0.1: nur lokal erreichbar.
+EnvironmentFile=/etc/default/ft8-rotctld
+ExecStart=/opt/hamlib/bin/rotctld -m ${ROT_MODEL} -r ${ROT_DEVICE} -T 127.0.0.1 -t 4533 $ROT_ARGS
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -689,6 +689,19 @@ toggle (default German, the operators are German hams):
 
 ---
 
+#### Rotator tracking (since v0.200.0, off by default)
+
+`Orchestrator._rotor_loop` drives a beam via hamlib `rotctld`
+(`rig/rotctld_client.py`). The direction comes from `analyse/richtung.py`:
+distinct senders heard by other receivers in the own 4-character grid square
+(PSK Reporter, `integrations/psk_richtung.py`), counted per 10-degree bin
+beyond 1000 km; the beam points at the 60-degree window with the most of
+them. It turns only while hunting in IDLE without PTT, pauses new picks and
+CQ while moving (`ctx.rotor_dreht`), stops when a transmission starts, never
+crosses the end stop, and yields to manual turning at the controller. Every
+second UTC hour is a control hour (decided and logged in `rotor_log`, not
+turned). Details and hardware notes: [docs/rotor.md](docs/rotor.md).
+
 ## 7. Data model
 
 ### 7.1 `config.yaml`

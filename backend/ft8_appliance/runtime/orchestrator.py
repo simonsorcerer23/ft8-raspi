@@ -550,6 +550,7 @@ class OrchestratorStatus:
     # Vorab-Decode: Laeufe, letzte Dauer, Ausbeute und wie viel Vorsprung vor
     # der Slot-Grenze blieb. Negativ = der Durchgang wurde erst danach fertig.
     vorab_stats: dict[str, float] | None = None
+    rotor: dict | None = None
 
 
 @dataclass
@@ -883,6 +884,14 @@ class Orchestrator:
     # Eigene Statistik: slot_phasen_s wird vom regulaeren Durchgang komplett
     # ersetzt, ein dort abgelegter Vorab-Wert waere beim Abfragen immer weg.
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
+    # Rotor-Nachfuehrung (seit 2026-11-15). Zeiten in time.monotonic().
+    _rotor_status: dict = field(default_factory=dict, init=False)
+    _rotor_soll: float | None = field(default=None, init=False)
+    _rotor_befehl_at: float = field(default=0.0, init=False)
+    _rotor_gedreht_at: float = field(default=-1e9, init=False)
+    _rotor_entschieden_at: float = field(default=-1e9, init=False)
+    _rotor_ruht_bis: float = field(default=0.0, init=False)
+    _rotor_angehalten: bool = field(default=False, init=False)
     # Sperr-Waechter: seit wann steht TX_LOCKED, und wie oft wurde
     # zuletzt selbst geheilt (Pendelschutz) — s. _sperr_waechter_loop.
     _lock_seit: float | None = field(default=None, init=False)
@@ -1293,6 +1302,7 @@ class Orchestrator:
         if self.db_enabled and Path("/sys/class/thermal/thermal_zone0/temp").exists():
             self._spawn(self._pi_waerme_loop(), name="pi-waerme")
         self._spawn(self._psk_bandaktivitaet_loop(), name="psk-bandaktivitaet")
+        self._spawn(self._rotor_loop(), name="rotor-nachfuehrung")
         self._spawn(self._continent_prior_loop(), name="continent-prior")
         self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
         if (
@@ -2663,6 +2673,7 @@ class Orchestrator:
             context_health=self._context_health(),
             slot_phasen_s=(dict(self._slot_phasen_s) if self._slot_phasen_s else None),
             vorab_stats=(dict(self._vorab_stats) if self._vorab_stats else None),
+            rotor=(dict(self._rotor_status) if self.config.rotor.enabled else None),
             cq_count=self.state_machine.ctx.cq_count,
             current_qso_call=(
                 self.state_machine.qso.their_call if self.state_machine.qso else None
@@ -5556,6 +5567,216 @@ class Orchestrator:
     _PSK_AKTIVITAET_MAX_ALTER_S: typing.ClassVar[float] = 900.0
     # Unter so vielen Meldungen auf dem eigenen Band ist das Verhaeltnis Zufall
     _PSK_AKTIVITAET_MIN_SPOTS: typing.ClassVar[int] = 5
+
+    # ------------------------------------------------------------ Rotor
+    @staticmethod
+    def _rotor_kontrolle_haelt(jetzt_wall: float) -> bool:
+        """Kontrollstunde? Dann wird entschieden und protokolliert, nicht gedreht.
+
+        Stundenweise statt je Entscheidung: Verglichen werden QSOs je
+        Stunde, und eine Stunde soll ganz zu einem Arm gehoeren. Aus der
+        UTC-Stunde gehasht, damit es sich hinterher nachrechnen laesst.
+        """
+        stunde = int(jetzt_wall // 3600)
+        return hashlib.sha256(f"rotor_kontrolle|{stunde}".encode()).digest()[0] < 128
+
+    def _rotor_darf_anfangen(self) -> str | None:
+        """None, wenn jetzt gedreht werden darf; sonst der Grund dagegen."""
+        from ..statemachine.states import State
+        cfg = self.config.rotor
+        sm = self.state_machine
+        if cfg.antenne and self._active_antenna != cfg.antenne:
+            return "andere_antenne"
+        if not sm.ctx.auto_answer or sm.ctx.auto_cq:
+            return "nicht_im_hunting"
+        if sm.state is not State.IDLE or sm.ctx.drain_for_update:
+            return "qso_laeuft"
+        if self._tx_burst_active or self._ptt_was_on:
+            return "sendet"
+        return None
+
+    async def _rotor_merken(self, band: str | None, ist: float | None, ent, gesamt: int,
+                            weg: float, ausgefuehrt: bool, grund: str) -> None:
+        if not self.db_enabled:
+            return
+        from ..db.models import RotorLog
+        try:
+            async with session_scope() as s:
+                s.add(RotorLog(
+                    ts=datetime.now(UTC), band=band, ist_grad=ist,
+                    ziel_grad=float(ent.ziel_grad), punkte_ist=ent.punkte_ist,
+                    punkte_ziel=ent.punkte_ziel, sender_gesamt=gesamt,
+                    drehweg_grad=round(weg, 1), ausgefuehrt=ausgefuehrt, grund=grund,
+                ))
+        except Exception as exc:
+            log.warning("rotor_log: %s", exc)
+
+    async def _rotor_ruhen(self, push_key: str, ist: float, soll: float, **extra) -> None:
+        cfg = self.config.rotor
+        self._rotor_ruht_bis = time.monotonic() + cfg.hand_pause_min * 60
+        self._rotor_soll = None
+        self.state_machine.ctx.rotor_dreht = False
+        self._rotor_status["ruht_bis_min"] = cfg.hand_pause_min
+        log.warning("Rotor: %s — Nachfuehrung ruht %d min (ist %.0f, soll %.0f)",
+                    push_key, cfg.hand_pause_min, ist, soll)
+        ntfy = self.integrations.ntfy
+        if ntfy is not None and ntfy.enabled:
+            try:
+                await ntfy.notify(
+                    _t(push_key, ist=f"{ist:.0f}", soll=f"{soll:.0f}",
+                       min=cfg.hand_pause_min, **extra),
+                    title=_t("push.rotor_title"), priority="default", tags=["compass"],
+                )
+            except Exception as exc:
+                log.debug("rotor push: %s", exc)
+
+    async def _rotor_schritt(self, client, psk) -> float:
+        """Ein Durchgang der Nachfuehrung; liefert die Wartezeit bis zum naechsten.
+
+        Reihenfolge: Position lesen → eine laufende Drehung begleiten (bei
+        PTT anhalten, Ankunft oder Haenger erkennen) → Handbetrieb erkennen
+        → wenn faellig, neu entscheiden.
+        """
+        from ..analyse import richtung as ri
+
+        cfg = self.config.rotor
+        sm = self.state_machine
+        jetzt = time.monotonic()
+        try:
+            ist = await client.position()
+        except Exception as exc:
+            if sm.ctx.rotor_dreht:
+                log.warning("Rotor: Position nicht lesbar waehrend der Drehung: %s", exc)
+            sm.ctx.rotor_dreht = False
+            self._rotor_status.update({"ist_grad": None, "fehler": str(exc)[:120]})
+            return 30.0
+        self._rotor_status.update({"ist_grad": round(ist, 1), "fehler": None})
+
+        # --- laufende Drehung begleiten
+        if sm.ctx.rotor_dreht and self._rotor_soll is not None:
+            soll = self._rotor_soll
+            sendet = self._tx_burst_active or self._ptt_was_on
+            if sendet and not self._rotor_angehalten:
+                # Nie waehrend einer Aussendung drehen (etwa ein 73 auf ein
+                # spaetes RR73, das auch in der Pause noch rausgeht).
+                try:
+                    await client.stopp()
+                except Exception as exc:
+                    log.warning("Rotor: Stopp bei PTT fehlgeschlagen: %s", exc)
+                self._rotor_angehalten = True
+                return 1.0
+            if self._rotor_angehalten:
+                if sendet:
+                    return 1.0
+                self._rotor_angehalten = False
+                await client.drehe_auf(soll)
+                self._rotor_befehl_at = jetzt
+                return 2.0
+            if ri.winkelabstand(ist, soll) <= cfg.toleranz_grad:
+                sm.ctx.rotor_dreht = False
+                log.info("Rotor: auf %.0f Grad angekommen (%.0f s)", ist, jetzt - self._rotor_befehl_at)
+                return 30.0
+            if jetzt - self._rotor_befehl_at > cfg.fahrzeit_max_s:
+                try:
+                    await client.stopp()
+                except Exception:
+                    pass
+                await self._rotor_ruhen("push.rotor_haengt", ist, soll, s=cfg.fahrzeit_max_s)
+                return 30.0
+            return 2.0
+
+        # --- Handbetrieb: Abweichung ohne eigenen Befehl
+        if self._rotor_soll is None:
+            self._rotor_soll = ist          # Start oder nach einer Pause: uebernehmen
+        elif ri.winkelabstand(ist, self._rotor_soll) > cfg.toleranz_grad:
+            await self._rotor_ruhen("push.rotor_hand", ist, self._rotor_soll)
+            return 30.0
+        if jetzt < self._rotor_ruht_bis:
+            return 30.0
+        self._rotor_status.pop("ruht_bis_min", None)
+
+        # --- neu entscheiden
+        if (jetzt - self._rotor_entschieden_at < cfg.takt_min * 60
+                or jetzt - self._rotor_gedreht_at < cfg.halten_min * 60):
+            return 30.0
+        hindernis = self._rotor_darf_anfangen()
+        band = self._current_band()
+        loc = self.config.operator.default_locator or ""
+        if hindernis or not band or len(loc) < 4:
+            self._rotor_status["grund"] = hindernis or "band_oder_locator_fehlt"
+            return 30.0
+        self._rotor_entschieden_at = jetzt
+        sender = await psk.sender_im_feld(loc, band)
+        if not sender:
+            self._rotor_status["grund"] = "keine_psk_daten"
+            return 30.0
+        faecher = ri.zaehle_sender(sender, loc, min_km=cfg.min_km)
+        ent = ri.entscheide(
+            ist, faecher, oeffnung_grad=cfg.oeffnung_grad,
+            min_schritt_grad=cfg.min_schritt_grad, min_sender=cfg.min_sender,
+            min_vorteil=cfg.min_vorteil,
+        )
+        gesamt = sum(faecher.values())
+        weg = ri.drehweg(ist, ent.ziel_grad, cfg.endanschlag_grad)
+        self._rotor_status.update({
+            "ziel_grad": ent.ziel_grad, "punkte_ist": ent.punkte_ist,
+            "punkte_ziel": ent.punkte_ziel, "sender": gesamt, "grund": ent.grund,
+        })
+        if not ent.drehen:
+            await self._rotor_merken(band, ist, ent, gesamt, 0.0, False, ent.grund)
+            return 30.0
+        kontrolle = self._rotor_kontrolle_haelt(time.time())
+        self._rotor_gedreht_at = jetzt     # beide Arme halten danach gleich lange
+        if kontrolle:
+            self._rotor_status["grund"] = "kontrolle"
+            await self._rotor_merken(band, ist, ent, gesamt, weg, False, "kontrolle")
+            log.info("Rotor: %.0f → %d Grad waere besser (%d gegen %d Sender), "
+                     "Kontrollstunde — bleibt stehen", ist, ent.ziel_grad,
+                     ent.punkte_ziel, ent.punkte_ist)
+            return 30.0
+        sm.ctx.rotor_dreht = True
+        try:
+            await client.drehe_auf(ent.ziel_grad)
+        except Exception as exc:
+            sm.ctx.rotor_dreht = False
+            log.warning("Rotor: Drehbefehl fehlgeschlagen: %s", exc)
+            return 30.0
+        self._rotor_soll = float(ent.ziel_grad)
+        self._rotor_befehl_at = jetzt
+        await self._rotor_merken(band, ist, ent, gesamt, weg, True, "besser")
+        log.info("Rotor: %.0f → %d Grad (%d gegen %d Sender im Oeffnungswinkel, "
+                 "%d gemeldet, Drehweg %.0f Grad)", ist, ent.ziel_grad,
+                 ent.punkte_ziel, ent.punkte_ist, gesamt, weg)
+        return 2.0
+
+    async def _rotor_loop(self) -> None:
+        """Rotor-Nachfuehrung; wartet, solange ``rotor.enabled`` aus ist."""
+        from ..integrations.psk_richtung import PskRichtung
+        from ..rig.rotctld_client import RotctldClient
+
+        psk = PskRichtung()
+        client: RotctldClient | None = None
+        await asyncio.sleep(30)  # Boot-grace
+        while True:
+            warte = 30.0
+            try:
+                cfg = self.config.rotor
+                if not cfg.enabled:
+                    self.state_machine.ctx.rotor_dreht = False
+                    if client is not None:
+                        await client.close()
+                        client = None
+                else:
+                    if client is None or (client.host, client.port) != (cfg.host, cfg.port):
+                        client = RotctldClient(cfg.host, cfg.port)
+                    warte = await self._rotor_schritt(client, psk)
+            except asyncio.CancelledError:
+                self.state_machine.ctx.rotor_dreht = False
+                raise
+            except Exception as exc:
+                self.state_machine.ctx.rotor_dreht = False
+                log.warning("rotor-nachfuehrung: %s", exc)
+            await asyncio.sleep(warte)
 
     async def _psk_bandaktivitaet_loop(self) -> None:
         """Holt alle 5 Minuten die PSK-Aktivitaet je Band im eigenen Feld.

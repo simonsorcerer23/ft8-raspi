@@ -338,6 +338,11 @@ configurable radius. **Bilingual throughout** — UI, backend messages and push
 notifications, with three CI gates keeping the catalogs in sync.
 **Self-update** — pulls tagged releases every 10 min, finishes the running QSO
 first, health-checks after restart, auto-rollback on failure.
+**Rotator tracking** (off by default, prepared for a Create RC5B-3 with a DF9GR
+ERC interface) — turns the beam toward the direction where other receivers in
+the own grid square currently hear the most stations (PSK Reporter), never
+while transmitting or mid-QSO; manual control at the box wins. See
+[docs/rotor.md](docs/rotor.md).
 
 ## Repo layout
 

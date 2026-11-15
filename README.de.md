@@ -350,6 +350,11 @@ NG3K-ADXO-Kalender) und für Gewitter innerhalb eines einstellbaren Radius.
 drei CI-Prüfungen halten die Kataloge synchron. **Selbst-Update** — holt
 getaggte Releases alle 10 min, beendet erst das laufende QSO, prüft nach dem
 Neustart die Gesundheit und rollt bei Fehlern zurück.
+**Rotor-Nachführung** (standardmäßig aus, vorbereitet für ein Create RC5B-3 mit
+ERC-Interface von DF9GR) — dreht die Richtantenne dorthin, wo andere Empfänger
+im eigenen Feld gerade die meisten Stationen hören (PSK Reporter), nie während
+einer Aussendung oder mitten im QSO; Handbetrieb am Steuergerät hat Vorrang.
+Siehe [docs/rotor.md](docs/rotor.md).
 
 ## Repo-Aufbau
 

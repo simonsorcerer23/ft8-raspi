@@ -376,6 +376,31 @@ class BandwechselLog(Base):
     ausgefuehrt: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
 # ---------------------------------------------------------------------------
+class RotorLog(Base):
+    """Jede Entscheidung der Rotor-Nachfuehrung (seit 2026-11-15).
+
+    Messplan "rotor_nachfuehrung": Bringt das Nachdrehen mehr QSOs je
+    Stunde als das Stehenlassen? In Kontrollstunden wird entschieden und
+    protokolliert, aber nicht gedreht (``ausgefuehrt`` False).
+    """
+    __tablename__ = "rotor_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    band: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    ist_grad: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ziel_grad: Mapped[float] = mapped_column(Float)
+    # Verschiedene Sender im Oeffnungswinkel, laut PSK Reporter im eigenen Feld
+    punkte_ist: Mapped[int] = mapped_column(Integer)
+    punkte_ziel: Mapped[int] = mapped_column(Integer)
+    sender_gesamt: Mapped[int] = mapped_column(Integer)
+    # Grad, die der Rotor tatsaechlich faehrt (Endanschlag beachtet)
+    drehweg_grad: Mapped[float] = mapped_column(Float)
+    ausgefuehrt: Mapped[bool] = mapped_column(Boolean, default=True)
+    grund: Mapped[str] = mapped_column(String(40))
+
+
+# ---------------------------------------------------------------------------
 class Ft4ProbeLog(Base):
     """Jeder FT4-Versuch des Autopiloten mit der PSK-Lage davor.
 

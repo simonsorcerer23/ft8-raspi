@@ -848,7 +848,7 @@ class StateMachine:
             return
 
         # Hunting mode: when idle and auto_answer is on.
-        if self.state is State.IDLE and self.ctx.auto_answer and not self.ctx.drain_for_update:
+        if self.state is State.IDLE and self.ctx.auto_answer and not self._nichts_neues():
             # PRIO 1 — jemand spricht UNS direkt an (Tail-Ender oder
             # verspaeteter Reply nach Slot-Verlust). Sebastian sah am
             # 2026-05-22 dass DM2HK "DK9XR DM2HK -20" sendete waehrend
@@ -1288,7 +1288,7 @@ class StateMachine:
             and self.ctx.hunt_cq_fallback
             and self.ctx.idle_slots_without_pick >= self.ctx.hunt_cq_fallback_after_slots
             and (tick is None or tick.posix >= self.ctx.cq_fallback_paused_until)
-            and not self.ctx.drain_for_update
+            and not self._nichts_neues()
             and self._check_guards(hw)
         ):
             # 2026-09-07: kein brauchbarer Rufer seit N Slots -> selbst CQ,
@@ -1309,9 +1309,11 @@ class StateMachine:
         # immer im TX → 0 RX-Decodes ueber 34 min trotz laufendem
         # Decoder. Funkstille-Watchdog feuerte voellig zu Recht.
         if self.state is State.CQ_CALLING:
-            if self.ctx.drain_for_update:
+            if self._nichts_neues():
                 # 2026-09-07: CQ ist kein QSO — fuer das Update sofort aufhoeren
-                log.info("CQ pausiert: Self-Update wartet")
+                # (seit 2026-11-15 auch, solange der Rotor dreht)
+                log.info("CQ pausiert: %s", "Self-Update wartet"
+                         if self.ctx.drain_for_update else "Rotor dreht")
                 self.ctx.cq_fallback_active = False
                 self.state = State.IDLE
                 return
@@ -2579,7 +2581,7 @@ class StateMachine:
         v0.11.0: zusaetzlich werden synthetische CQ-Decodes fuer aktive
         Tail-End-Candidates injiziert — siehe _build_synthetic_tail_end_decodes.
         """
-        if self.ctx.drain_for_update:
+        if self._nichts_neues():
             return None   # 2026-09-07: Update wartet — keine neuen Picks
         self._verworfen = {}
         self._haette_verworfen = {}
@@ -2973,6 +2975,10 @@ class StateMachine:
                 winner.call_from,
             )
         return winner
+
+    def _nichts_neues(self) -> bool:
+        """Keine neuen Picks, kein CQ: Update angekuendigt oder Rotor dreht."""
+        return self.ctx.drain_for_update or self.ctx.rotor_dreht
 
     def set_drain_for_update(self, enabled: bool) -> None:
         """2026-09-07: Self-Update angekuendigt — laufendes QSO zu Ende

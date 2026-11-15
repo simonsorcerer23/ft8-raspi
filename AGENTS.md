@@ -28,6 +28,7 @@ Lies zu Beginn einer neuen Arbeit mindestens:
    - TX-Leistung/Sicherheit: `docs/tx_power_safety.md`
    - Decoder/FT4/FT8: `docs/decoder_evolution.md`
    - CEPT/Auslandsbetrieb: `docs/cept_laenderliste.md`
+   - Rotor-Nachfuehrung: `docs/rotor.md`
 
 Aktuellen Status aus den oben genannten Projektquellen sowie aus Tests,
 APIs, Logs oder DB-Zustand ableiten. Dauerhafte Statusdateien gibt es

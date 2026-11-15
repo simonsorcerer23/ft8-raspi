@@ -697,6 +697,20 @@ im Header (Default Deutsch, die Operatoren sind deutsche Funkamateure):
 
 ---
 
+#### Rotor-Nachführung (seit v0.200.0, standardmäßig aus)
+
+`Orchestrator._rotor_loop` steuert eine Richtantenne über hamlib `rotctld`
+(`rig/rotctld_client.py`). Die Richtung kommt aus `analyse/richtung.py`:
+verschiedene Sender, die andere Empfänger im eigenen 4-stelligen Feld hören
+(PSK Reporter, `integrations/psk_richtung.py`), je 10-Grad-Fach ab 1000 km;
+die Antenne zeigt auf das 60-Grad-Fenster mit den meisten. Gedreht wird nur
+im Hunting, im Leerlauf und ohne PTT; während der Drehung keine neuen Picks
+und kein CQ (`ctx.rotor_dreht`), bei einer Aussendung hält der Rotor an, der
+Endanschlag wird nie gekreuzt, und Handbetrieb am Steuergerät hat Vorrang.
+Jede zweite UTC-Stunde ist Kontrollstunde (entschieden und in `rotor_log`
+protokolliert, nicht gedreht). Einzelheiten und Hardware:
+[docs/rotor.md](docs/rotor.md).
+
 ## 7. Daten-Modell
 
 ### 7.1 `config.yaml`

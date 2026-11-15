@@ -125,3 +125,11 @@ def is_in_ft8_segment(band: str, freq_hz: int, region: int) -> bool:
     # If we have no rule for this band/region, default to allowing —
     # better than blocking valid operation on a rule we don't know.
     return True
+
+
+def band_grenzen_hz(band: str) -> tuple[int, int] | None:
+    """(untere, obere) Bandgrenze in Hz fuer einen Bandnamen wie "15m"."""
+    for lo, hi, name in _BANDS:
+        if name == band:
+            return lo, hi
+    return None

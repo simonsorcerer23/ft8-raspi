@@ -12,6 +12,7 @@ from .models import (
     OperatingConfig,
     OperatorConfig,
     RigConfig,
+    RotorConfig,
     UiConfig,
     WifiProfile,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "OperatingConfig",
     "OperatorConfig",
     "RigConfig",
+    "RotorConfig",
     "UiConfig",
     "WifiProfile",
     "get_config",
