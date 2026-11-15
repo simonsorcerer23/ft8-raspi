@@ -1248,6 +1248,13 @@ class RotorConfig(BaseModel):
     antenne: str = ""
     # Wo der mechanische Anschlag liegt; der Rotor dreht nie darueber.
     endanschlag_grad: float = Field(default=180.0, ge=0.0, lt=360.0)
+    # Erlaubter Bogen, im Uhrzeigersinn von ``bereich_von_grad`` bis
+    # ``bereich_bis_grad`` — etwa wenn die Kabel am Mast keine volle Umdrehung
+    # hergeben oder eine Richtung verbaut ist. Beide leer = der ganze Weg
+    # zwischen den Endanschlaegen. Der Bogen darf den Endanschlag nicht
+    # enthalten.
+    bereich_von_grad: float | None = Field(default=None, ge=0.0, lt=360.0)
+    bereich_bis_grad: float | None = Field(default=None, ge=0.0, lt=360.0)
     # Halber Oeffnungswinkel mal zwei: welche Sender "vorn" zaehlen.
     oeffnung_grad: float = Field(default=60.0, ge=20.0, le=180.0)
     # Kleinere Korrekturen bringen bei 60 Grad Oeffnung nichts.
@@ -1272,6 +1279,24 @@ class RotorConfig(BaseModel):
     # Verschleissgrenze: so viel Drehweg je UTC-Tag, danach steht die
     # Antenne bis Mitternacht UTC (1440 Grad = vier volle Umdrehungen).
     max_drehweg_tag_grad: float = Field(default=1440.0, ge=90.0, le=36000.0)
+
+    @model_validator(mode="after")
+    def _bereich_pruefen(self) -> "RotorConfig":
+        von, bis = self.bereich_von_grad, self.bereich_bis_grad
+        if (von is None) != (bis is None):
+            raise ValueError("rotor: bereich_von_grad und bereich_bis_grad nur zusammen setzen")
+        if von is not None and bis is not None:
+            if 0.0 < (self.endanschlag_grad - von) % 360.0 < (bis - von) % 360.0:
+                raise ValueError(
+                    f"rotor: der Bereich {von:.0f}–{bis:.0f} Grad (im Uhrzeigersinn) "
+                    f"enthaelt den Endanschlag bei {self.endanschlag_grad:.0f} Grad")
+        return self
+
+    @property
+    def bereich(self) -> tuple[float, float] | None:
+        if self.bereich_von_grad is None or self.bereich_bis_grad is None:
+            return None
+        return (self.bereich_von_grad, self.bereich_bis_grad)
 
 
 class RigConfig(BaseModel):

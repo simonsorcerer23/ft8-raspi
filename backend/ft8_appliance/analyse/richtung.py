@@ -92,6 +92,23 @@ def zaehle_sender(
     return faecher
 
 
+def im_bereich(az: float, bereich: tuple[float, float] | None) -> bool:
+    """Liegt ``az`` im erlaubten Bogen (von, bis), im Uhrzeigersinn gelesen?
+
+    ``None`` heisst: der ganze Weg zwischen den Endanschlaegen.
+    """
+    if bereich is None:
+        return True
+    von, bis = bereich
+    return (az - von) % 360.0 <= (bis - von) % 360.0 + 1e-9
+
+
+def bereich_kreuzt_anschlag(bereich: tuple[float, float], endanschlag: float) -> bool:
+    """Ein Bogen, der den Endanschlag enthaelt, laesst sich nicht abfahren."""
+    von, bis = bereich
+    return 0.0 < (endanschlag - von) % 360.0 < (bis - von) % 360.0
+
+
 def punkte_bei(faecher: dict[int, int], az: float, oeffnung_grad: float) -> int:
     """Sender innerhalb des Oeffnungswinkels um ``az``."""
     halb = oeffnung_grad / 2.0
@@ -106,7 +123,8 @@ def _schwerpunkt(faecher: dict[int, int], az: float, oeffnung_grad: float) -> fl
 
 
 def beste_richtung(
-    faecher: dict[int, int], oeffnung_grad: float
+    faecher: dict[int, int], oeffnung_grad: float,
+    bereich: tuple[float, float] | None = None,
 ) -> tuple[int, int]:
     """(Azimut, Punkte) der Richtung mit den meisten Sendern im Fenster.
 
@@ -118,6 +136,8 @@ def beste_richtung(
     """
     bestes: tuple[int, int, float] = (0, -1, -1.0)
     for az in range(0, 360, RASTER_GRAD):
+        if not im_bereich(az, bereich):
+            continue
         p = punkte_bei(faecher, az, oeffnung_grad)
         w = _schwerpunkt(faecher, az, oeffnung_grad)
         if p > bestes[1] or (p == bestes[1] and w > bestes[2] + 1e-9):
@@ -154,6 +174,7 @@ def entscheide(
     min_schritt_grad: float,
     min_sender: int,
     min_vorteil: float,
+    bereich: tuple[float, float] | None = None,
 ) -> Entscheidung:
     """Soll gedreht werden, und wohin?
 
@@ -166,7 +187,7 @@ def entscheide(
       (``min_vorteil`` = 0,25 heisst 25 % mehr Sender).
     """
     gesamt = sum(faecher.values())
-    ziel, p_ziel = beste_richtung(faecher, oeffnung_grad)
+    ziel, p_ziel = beste_richtung(faecher, oeffnung_grad, bereich)
     if ist_grad is None:
         return Entscheidung(False, ziel, p_ziel, 0, "position_unbekannt")
     p_ist = punkte_bei(faecher, ist_grad, oeffnung_grad)

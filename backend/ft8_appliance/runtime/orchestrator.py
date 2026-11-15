@@ -5778,7 +5778,7 @@ class Orchestrator:
         ent = ri.entscheide(
             ist, faecher, oeffnung_grad=cfg.oeffnung_grad,
             min_schritt_grad=cfg.min_schritt_grad, min_sender=cfg.min_sender,
-            min_vorteil=cfg.min_vorteil,
+            min_vorteil=cfg.min_vorteil, bereich=cfg.bereich,
         )
         gesamt = sum(faecher.values())
         weg = ri.drehweg(ist, ent.ziel_grad, cfg.endanschlag_grad)

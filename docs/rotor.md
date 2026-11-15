@@ -45,6 +45,13 @@ morgens Japan und Asien bei 30–60 Grad, ab etwa 12 UTC Nordamerika bei
   `max_drehweg_tag_grad`); danach bleibt die Antenne bis Mitternacht UTC
   stehen. Der Zähler lebt im Arbeitsspeicher und beginnt nach einem
   Neustart von vorn.
+- Ein **erlaubter Bereich** (`bereich_von_grad` bis `bereich_bis_grad`, im
+  Uhrzeigersinn gelesen) begrenzt die Nachführung zusätzlich — etwa wenn
+  die Kabel am Mast keine volle Umdrehung hergeben oder eine Richtung
+  verbaut ist. Beispiel: 200 bis 160 lässt 40 Grad um den Anschlag im Süden
+  frei. Der Bereich darf den Endanschlag nicht enthalten, sonst lehnt die
+  Konfiguration ihn ab. Innerhalb des Bereichs bleibt auch jeder Drehweg im
+  Bereich, weil der Anschlag nie gekreuzt wird.
 - Der Endanschlag (beim Create RC5B-3 im Süden, „END" auf der Skala) wird
   nie gekreuzt; von 240 nach 120 Grad geht es über Norden.
 - **Handbetrieb hat Vorrang.** Steht die Antenne ohne eigenen Befehl mehr
@@ -108,14 +115,26 @@ eine 6-polige DIN-Buchse (Seite 18).
 3. Unit aus `deploy/systemd/ft8-rotctld.service.in` rendern
    (`@SERVICE_USER@` = Dienstbenutzer, am MK2 `ft8`), nach
    `/etc/systemd/system/` legen, `systemctl enable --now ft8-rotctld`.
-4. Von Hand prüfen, bevor die Station dreht:
+4. **Am Mast klären, bevor irgendetwas dreht:** Wie weit geben Koax und
+   Steuerleitung nach, ohne zu ziehen oder sich um den Mast zu wickeln?
+   Liegt der Anschlag wirklich im Süden? Steht etwas im Weg (Nachbarmast,
+   Abspannung, Baum)? Daraus folgen `endanschlag_grad` und, wenn nötig,
+   `bereich_von_grad`/`bereich_bis_grad`. Außerdem die Zeit für eine volle
+   Umdrehung bei der eingestellten SPEED-Stufe stoppen und `fahrzeit_max_s`
+   etwas darüber setzen (Vorgabe 150 s).
+5. Von Hand prüfen, bevor die Station dreht:
 
    ```bash
    echo p | nc -q1 127.0.0.1 4533        # muss die Skala des Steuergeraets zeigen
    echo 'P 90 0' | nc -q1 127.0.0.1 4533 # dreht nach Osten — am Geraet zusehen
    ```
 
-5. In der Config:
+   Dann knapp beiderseits des Anschlags: `P 170 0` und danach `P 190 0`.
+   Der Rotor muss dafür den langen Weg über Norden fahren, nicht 20 Grad
+   über Süden. Fährt er über Süden, stimmt die Kalibrierung des Interfaces
+   oder `endanschlag_grad` nicht — dann nicht einschalten.
+
+6. In der Config:
 
    ```yaml
    rotor:

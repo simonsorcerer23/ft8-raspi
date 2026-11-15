@@ -344,3 +344,45 @@ async def test_verschleissgrenze_je_tag() -> None:
     o._rotor_entschieden_at = -1e9
     await _beschliessen_und_drehen(o, rot, psk)
     assert rot.befehle and rot.befehle[0].startswith("P ")
+
+
+# ------------------------------------------------------- erlaubter Bereich
+# Ob die Kabel am Mast eine volle Umdrehung hergeben, ist offen. Mit einem
+# Bereich faehrt die Nachfuehrung nur darin.
+
+
+def test_bereich_im_uhrzeigersinn() -> None:
+    assert ri.im_bereich(300, (240, 120))         # ueber Norden
+    assert ri.im_bereich(30, (240, 120))
+    assert not ri.im_bereich(180, (240, 120))
+    assert ri.im_bereich(123, None)
+
+
+def test_bereich_begrenzt_das_ziel() -> None:
+    f = {60: 40, 300: 10}
+    e = ri.entscheide(300, f, oeffnung_grad=60, min_schritt_grad=30, min_sender=20,
+                      min_vorteil=0.25, bereich=(240, 20))   # Asien nicht erlaubt
+    assert e.drehen is False and ri.im_bereich(e.ziel_grad, (240, 20))
+
+
+def test_bereich_mit_endanschlag_wird_abgelehnt() -> None:
+    import pydantic
+    with pytest.raises(pydantic.ValidationError):
+        RotorConfig(bereich_von_grad=90, bereich_bis_grad=270)   # enthaelt Sueden
+    with pytest.raises(pydantic.ValidationError):
+        RotorConfig(bereich_von_grad=90)                          # nur eine Grenze
+    assert RotorConfig(bereich_von_grad=200, bereich_bis_grad=160).bereich == (200, 160)
+
+
+def test_drehweg_im_bereich_bleibt_im_bereich() -> None:
+    # Bogen 200..160 ueber Norden, Anschlag 180: jeder Weg zwischen zwei
+    # erlaubten Richtungen laeuft nur durch erlaubte Richtungen.
+    bereich, anschlag = (200.0, 160.0), 180.0
+    for von in range(200, 520, 20):
+        for nach in range(200, 520, 20):
+            a, b = von % 360, nach % 360
+            if not (ri.im_bereich(a, bereich) and ri.im_bereich(b, bereich)):
+                continue
+            u_a, u_b = (a - anschlag) % 360, (b - anschlag) % 360
+            for u in range(int(min(u_a, u_b)), int(max(u_a, u_b)) + 1):
+                assert ri.im_bereich((u + anschlag) % 360, bereich)
