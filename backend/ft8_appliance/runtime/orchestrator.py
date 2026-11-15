@@ -905,12 +905,17 @@ class Orchestrator:
     _vorab_stats: dict[str, float] = field(default_factory=dict, init=False)
     # Rotor-Nachfuehrung (seit 2026-11-15). Zeiten in time.monotonic().
     _rotor_status: dict = field(default_factory=dict, init=False)
+    # So lange darf eine beschlossene Drehung auf das QSO-Ende warten.
+    _ROTOR_WARTEN_MAX_S: typing.ClassVar[float] = 300.0
     _rotor_soll: float | None = field(default=None, init=False)
     _rotor_befehl_at: float = field(default=0.0, init=False)
     _rotor_gedreht_at: float = field(default=-1e9, init=False)
     _rotor_entschieden_at: float = field(default=-1e9, init=False)
     _rotor_ruht_bis: float = field(default=0.0, init=False)
     _rotor_angehalten: bool = field(default=False, init=False)
+    # Beschlossene Drehung, die auf das Ende des laufenden QSOs wartet:
+    # (Ziel, seit, Band, Ist, Entscheidung, Sender gesamt, Drehweg)
+    _rotor_wartend: tuple | None = field(default=None, init=False)
     # Drehweg des laufenden UTC-Tags (Verschleissgrenze); Tag als 'YYYY-MM-DD'
     _rotor_weg_tag: tuple[str, float] = field(default=("", 0.0), init=False)
     # Sperr-Waechter: seit wann steht TX_LOCKED, und wie oft wurde
@@ -5601,16 +5606,22 @@ class Orchestrator:
         stunde = int(jetzt_wall // 3600)
         return hashlib.sha256(f"rotor_kontrolle|{stunde}".encode()).digest()[0] < 128
 
-    def _rotor_darf_anfangen(self) -> str | None:
-        """None, wenn jetzt gedreht werden darf; sonst der Grund dagegen."""
-        from ..statemachine.states import State
+    def _rotor_voraussetzung(self) -> str | None:
+        """None, wenn ueberhaupt nachgefuehrt wird; sonst der Grund dagegen."""
         cfg = self.config.rotor
         sm = self.state_machine
         if cfg.antenne and self._active_antenna != cfg.antenne:
             return "andere_antenne"
         if not sm.ctx.auto_answer or sm.ctx.auto_cq:
             return "nicht_im_hunting"
-        if sm.state is not State.IDLE or sm.ctx.drain_for_update:
+        if sm.ctx.drain_for_update:
+            return "update"
+        return None
+
+    def _rotor_beschaeftigt(self) -> str | None:
+        """None, wenn die Station gerade frei ist (kein QSO, keine Aussendung)."""
+        from ..statemachine.states import State
+        if self.state_machine.state is not State.IDLE:
             return "qso_laeuft"
         if self._tx_burst_active or self._ptt_was_on:
             return "sendet"
@@ -5669,9 +5680,41 @@ class Orchestrator:
             if sm.ctx.rotor_dreht:
                 log.warning("Rotor: Position nicht lesbar waehrend der Drehung: %s", exc)
             sm.ctx.rotor_dreht = False
+            self._rotor_wartend = None
             self._rotor_status.update({"ist_grad": None, "fehler": str(exc)[:120]})
             return 30.0
         self._rotor_status.update({"ist_grad": round(ist, 1), "fehler": None})
+
+        # --- beschlossene Drehung wartet auf das Ende des QSOs. Solange
+        # steht ctx.rotor_dreht schon: kein neuer Anruf, kein CQ — das
+        # laufende QSO laeuft zu Ende, dann ist die Station frei. Ohne das
+        # traf die Pruefung auf einem vollen Band kaum je einen freien
+        # Moment (Trockenlauf 15.11.: die erste Entscheidung kam nicht).
+        if self._rotor_wartend is not None:
+            ziel, seit, band, ist0, ent, gesamt, weg = self._rotor_wartend
+            if self._rotor_voraussetzung() is not None or jetzt - seit > self._ROTOR_WARTEN_MAX_S:
+                self._rotor_wartend = None
+                sm.ctx.rotor_dreht = False
+                self._rotor_weg_tag = (self._rotor_weg_tag[0], max(0.0, self._rotor_weg_tag[1] - weg))
+                await self._rotor_merken(band, ist0, ent, gesamt, weg, False, "nicht_frei_geworden")
+                return 30.0
+            if self._rotor_beschaeftigt() is not None:
+                return 2.0
+            self._rotor_wartend = None
+            try:
+                await client.drehe_auf(ziel)
+            except Exception as exc:
+                sm.ctx.rotor_dreht = False
+                log.warning("Rotor: Drehbefehl fehlgeschlagen: %s", exc)
+                return 30.0
+            self._rotor_soll = float(ziel)
+            self._rotor_befehl_at = jetzt
+            self._rotor_gedreht_at = jetzt
+            await self._rotor_merken(band, ist0, ent, gesamt, weg, True, "besser")
+            log.info("Rotor: %.0f → %d Grad (%d gegen %d Sender im Oeffnungswinkel, "
+                     "%d gemeldet, Drehweg %.0f Grad, %.0f s auf das QSO-Ende gewartet)",
+                     ist, ziel, ent.punkte_ziel, ent.punkte_ist, gesamt, weg, jetzt - seit)
+            return 2.0
 
         # --- laufende Drehung begleiten
         if sm.ctx.rotor_dreht and self._rotor_soll is not None:
@@ -5720,7 +5763,7 @@ class Orchestrator:
         if (jetzt - self._rotor_entschieden_at < cfg.takt_min * 60
                 or jetzt - self._rotor_gedreht_at < cfg.halten_min * 60):
             return 30.0
-        hindernis = self._rotor_darf_anfangen()
+        hindernis = self._rotor_voraussetzung()
         band = self._current_band()
         loc = self.config.operator.default_locator or ""
         if hindernis or not band or len(loc) < 4:
@@ -5774,20 +5817,11 @@ class Orchestrator:
                      "Kontrollstunde — bleibt stehen", ist, ent.ziel_grad,
                      ent.punkte_ziel, ent.punkte_ist)
             return 30.0
+        # Beschliessen: ab jetzt nichts Neues anfangen; gedreht wird, sobald
+        # die Station frei ist (oben, im naechsten Durchgang).
         sm.ctx.rotor_dreht = True
-        try:
-            await client.drehe_auf(ent.ziel_grad)
-        except Exception as exc:
-            sm.ctx.rotor_dreht = False
-            log.warning("Rotor: Drehbefehl fehlgeschlagen: %s", exc)
-            return 30.0
-        self._rotor_soll = float(ent.ziel_grad)
-        self._rotor_befehl_at = jetzt
-        await self._rotor_merken(band, ist, ent, gesamt, weg, True, "besser")
-        log.info("Rotor: %.0f → %d Grad (%d gegen %d Sender im Oeffnungswinkel, "
-                 "%d gemeldet, Drehweg %.0f Grad)", ist, ent.ziel_grad,
-                 ent.punkte_ziel, ent.punkte_ist, gesamt, weg)
-        return 2.0
+        self._rotor_wartend = (ent.ziel_grad, jetzt, band, ist, ent, gesamt, weg)
+        return 0.5
 
     async def _rotor_loop(self) -> None:
         """Rotor-Nachfuehrung; wartet, solange ``rotor.enabled`` aus ist."""
@@ -5803,6 +5837,7 @@ class Orchestrator:
                 cfg = self.config.rotor
                 if not cfg.enabled:
                     self.state_machine.ctx.rotor_dreht = False
+                    self._rotor_wartend = None
                     if client is not None:
                         await client.close()
                         client = None
@@ -5816,9 +5851,11 @@ class Orchestrator:
                     warte = await self._rotor_schritt(client, psk)
             except asyncio.CancelledError:
                 self.state_machine.ctx.rotor_dreht = False
+                self._rotor_wartend = None
                 raise
             except Exception as exc:
                 self.state_machine.ctx.rotor_dreht = False
+                self._rotor_wartend = None
                 log.warning("rotor-nachfuehrung: %s", exc)
             await asyncio.sleep(warte)
 

@@ -27,10 +27,14 @@ morgens Japan und Asien bei 30–60 Grad, ab etwa 12 UTC Nordamerika bei
 
 ## Regeln
 
-- Gedreht wird nur im Hunting, im Leerlauf, ohne laufendes QSO und ohne
-  Aussendung. Im CQ-Betrieb bleibt die Antenne stehen.
-- Während der Drehung fängt die Station nichts Neues an: kein Anruf, kein
-  CQ (dieselbe Pause wie vor einem Self-Update).
+- Nachgeführt wird nur im Hunting; im CQ-Betrieb bleibt die Antenne stehen.
+- Entschieden wird auch während eines QSOs — auf einem vollen Band ist fast
+  immer eines im Gang, und eine Prüfung, die auf einen freien Moment wartet,
+  trifft ihn kaum (das zeigte der Trockenlauf am 15.11. sofort). Ist eine
+  Drehung beschlossen, fängt die Station nichts Neues mehr an (kein Anruf,
+  kein CQ, dieselbe Pause wie vor einem Self-Update), lässt das laufende QSO
+  zu Ende laufen und dreht dann. Wird sie in fünf Minuten nicht frei,
+  entfällt die Drehung.
 - Geht trotzdem eine Aussendung los (etwa ein 73 auf ein spätes RR73),
   hält der Rotor an und fährt danach weiter. Gedreht wird nie, während
   gesendet wird.

@@ -189,8 +189,15 @@ def _orch() -> Orchestrator:
     return o
 
 
+async def _beschliessen_und_drehen(o, rot, psk) -> None:
+    await o._rotor_schritt(rot, psk)               # beschliesst
+    await o._rotor_schritt(rot, psk)               # Station frei: dreht
+
+
 async def test_dreht_nach_asien_und_pausiert_neue_anrufe_bis_zur_ankunft() -> None:
     o, rot, psk = _orch(), _Rotor(300.0), _Psk(ASIEN)
+    await o._rotor_schritt(rot, psk)
+    assert rot.befehle == [] and o.state_machine.ctx.rotor_dreht is True
     await o._rotor_schritt(rot, psk)
     assert rot.befehle and rot.befehle[0].startswith("P ")
     ziel = float(rot.befehle[0].split()[1])
@@ -218,7 +225,7 @@ async def test_kontrollstunde_dreht_nicht() -> None:
 
 async def test_bei_ptt_wird_angehalten_und_danach_weitergedreht() -> None:
     o, rot, psk = _orch(), _Rotor(300.0), _Psk(ASIEN)
-    await o._rotor_schritt(rot, psk)
+    await _beschliessen_und_drehen(o, rot, psk)
     ziel = rot.befehle[0]
     o._tx_burst_active = True
     await o._rotor_schritt(rot, psk)
@@ -244,20 +251,45 @@ async def test_von_hand_gedreht_hat_vorrang() -> None:
 
 async def test_haengender_rotor_wird_angehalten() -> None:
     o, rot, psk = _orch(), _Rotor(300.0), _Psk(ASIEN)
-    await o._rotor_schritt(rot, psk)
+    await _beschliessen_und_drehen(o, rot, psk)
     o._rotor_befehl_at -= o.config.rotor.fahrzeit_max_s + 1
     await o._rotor_schritt(rot, psk)
     assert rot.befehle[-1] == "S"
     assert o.state_machine.ctx.rotor_dreht is False
 
 
-@pytest.mark.parametrize("stoerung", ["qso", "cq", "andere_antenne", "kein_hunting"])
-async def test_dreht_nur_im_hunting_ohne_qso(stoerung) -> None:
+async def test_im_qso_beschlossen_gedreht_erst_danach() -> None:
+    """Auf einem vollen Band laeuft fast immer ein QSO. Die Drehung wird
+    trotzdem beschlossen; danach faengt die Station nichts Neues an, das
+    laufende QSO laeuft zu Ende, dann dreht der Rotor."""
     from ft8_appliance.statemachine.states import State
     o, rot, psk = _orch(), _Rotor(300.0), _Psk(ASIEN)
-    if stoerung == "qso":
-        o.state_machine.state = State.QSO_REPORT
-    elif stoerung == "cq":
+    o.state_machine.state = State.QSO_REPORT
+    await o._rotor_schritt(rot, psk)
+    await o._rotor_schritt(rot, psk)
+    assert rot.befehle == [] and psk.abrufe == 1
+    assert o.state_machine.ctx.rotor_dreht is True          # kein neuer Anruf
+    o.state_machine.state = State.IDLE                       # QSO fertig
+    await o._rotor_schritt(rot, psk)
+    assert rot.befehle and rot.befehle[0].startswith("P ")
+
+
+async def test_wartet_hoechstens_fuenf_minuten_auf_das_qso_ende() -> None:
+    from ft8_appliance.statemachine.states import State
+    o, rot, psk = _orch(), _Rotor(300.0), _Psk(ASIEN)
+    o.state_machine.state = State.QSO_REPORT
+    await o._rotor_schritt(rot, psk)
+    ziel, seit, *rest = o._rotor_wartend
+    o._rotor_wartend = (ziel, seit - o._ROTOR_WARTEN_MAX_S - 1, *rest)
+    await o._rotor_schritt(rot, psk)
+    assert rot.befehle == [] and o._rotor_wartend is None
+    assert o.state_machine.ctx.rotor_dreht is False
+
+
+@pytest.mark.parametrize("stoerung", ["cq", "andere_antenne", "kein_hunting"])
+async def test_dreht_nur_im_hunting(stoerung) -> None:
+    o, rot, psk = _orch(), _Rotor(300.0), _Psk(ASIEN)
+    if stoerung == "cq":
         o.state_machine.ctx.auto_cq = True
     elif stoerung == "andere_antenne":
         o._active_antenna = "dipol"
@@ -310,5 +342,5 @@ async def test_verschleissgrenze_je_tag() -> None:
     assert o._rotor_status["grund"] == "tageslimit"
     o._rotor_weg_tag = ("2000-01-01", 99999.0)       # neuer Tag: Zaehler beginnt neu
     o._rotor_entschieden_at = -1e9
-    await o._rotor_schritt(rot, psk)
+    await _beschliessen_und_drehen(o, rot, psk)
     assert rot.befehle and rot.befehle[0].startswith("P ")
