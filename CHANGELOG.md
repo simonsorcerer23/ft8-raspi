@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.4 — 2026-11-15
+- fix: Rotor-Trockenlauf uebernimmt nach einem Neustart die letzte gedachte Richtung statt bei 0 Grad zu beginnen
+
 ## v0.200.3 — 2026-11-15
 - feat: Rotor-Nachfuehrung mit erlaubtem Drehbereich, falls die Kabel am Mast keine volle Umdrehung hergeben; Pruefschritte am Mast und am Anschlag in der Inbetriebnahme
 
