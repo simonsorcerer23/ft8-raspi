@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.0 — 2026-11-15
+- feat: Rotor-Nachfuehrung dreht die Richtantenne dorthin, wo Empfaenger im eigenen Feld laut PSK Reporter die meisten Sender hoeren — nie beim Senden oder im QSO, Handbetrieb hat Vorrang, jede zweite Stunde Kontrolle; standardmaessig aus, vorbereitet fuer RC5B-3 mit ERC-Interface
+
 ## v0.199.1 — 2026-11-14
 - fix: Station startet mit Autopilot in der zuletzt gefahrenen Betriebsart statt in der aus der Config — nach dem Self-Update hoerte der MK2 fuenf Minuten auf einem leeren FT4-Kanal
 
