@@ -1238,6 +1238,10 @@ class RotorConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
+    # Trockenlauf: entscheiden und protokollieren, ohne Rotor. Die Antenne
+    # gilt nach jeder Entscheidung als am Ziel; so zeigt rotor_log vorab,
+    # wie oft und wie weit gedreht wuerde.
+    trockenlauf: bool = False
     host: str = "127.0.0.1"
     port: int = Field(default=4533, ge=1, le=65535)
     # Nur drehen, wenn diese Antenne aktiv ist (AntennaConfig.name).
@@ -1265,6 +1269,9 @@ class RotorConfig(BaseModel):
     # hat jemand am Steuergeraet gedreht: Handbetrieb hat Vorrang.
     toleranz_grad: float = Field(default=10.0, ge=2.0, le=45.0)
     hand_pause_min: int = Field(default=120, ge=10, le=1440)
+    # Verschleissgrenze: so viel Drehweg je UTC-Tag, danach steht die
+    # Antenne bis Mitternacht UTC (1440 Grad = vier volle Umdrehungen).
+    max_drehweg_tag_grad: float = Field(default=1440.0, ge=90.0, le=36000.0)
 
 
 class RigConfig(BaseModel):

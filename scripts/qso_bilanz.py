@@ -1819,13 +1819,30 @@ def main() -> int:
     import hashlib
     try:
         stunden = con.execute(
-            "select distinct strftime('%s', ts) / 3600 from rotor_log").fetchall()
+            "select distinct strftime('%s', ts) / 3600 from rotor_log"
+            " where grund != 'trockenlauf'").fetchall()
         gedreht = con.execute(
             "select count(*) from rotor_log where ausgefuehrt = 1").fetchone()[0]
+        trocken = con.execute(
+            "select date(ts), count(*), sum(drehweg_grad) from rotor_log"
+            " where grund = 'trockenlauf' group by 1 order by 1").fetchall()
+        trocken_ziele = con.execute(
+            "select cast(strftime('%H', ts) as int), group_concat(cast(ziel_grad as int), ' ')"
+            " from rotor_log where grund = 'trockenlauf' group by 1 order by 1").fetchall()
+        entscheidungen = con.execute(
+            "select date(ts), count(*) from rotor_log group by 1").fetchall()
     except sqlite3.OperationalError:
-        stunden, gedreht = [], 0
+        stunden, gedreht, trocken, trocken_ziele, entscheidungen = [], 0, [], [], []
+    if trocken:
+        # Trockenlauf (seit 15.11.2026): ohne Rotor entschieden, die Antenne
+        # galt danach als am Ziel. Zaehlt nicht fuer die Messung.
+        je_tag = dict(entscheidungen)
+        print("    Trockenlauf — so oft und so weit wuerde gedreht:")
+        tabelle([(tag, je_tag.get(tag, 0), n, f"{weg or 0:.0f}") for tag, n, weg in trocken[-14:]],
+                ("Tag (UTC)", "Entscheidungen", "Drehungen", "Drehweg Grad"))
+        print("    Ziele je Stunde (UTC): " + "; ".join(f"{h:02d}: {z}" for h, z in trocken_ziele))
     if not stunden:
-        print("    keine Entscheidungen (Nachfuehrung aus oder Tabelle leer)")
+        print("    keine Entscheidungen mit Rotor (Nachfuehrung aus, Trockenlauf oder Tabelle leer)")
     else:
         arm = {"dreht": [], "kontrolle": []}
         for (h,) in stunden:

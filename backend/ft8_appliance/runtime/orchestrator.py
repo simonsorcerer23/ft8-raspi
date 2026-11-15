@@ -553,6 +553,25 @@ class OrchestratorStatus:
     rotor: dict | None = None
 
 
+
+
+class _TrockenRotor:
+    """Rotor fuer den Trockenlauf: steht sofort am Ziel, Start bei 0 Grad."""
+
+    def __init__(self) -> None:
+        self.az = 0.0
+
+    async def position(self) -> float:
+        return self.az
+
+    async def drehe_auf(self, az: float) -> None:
+        self.az = float(az) % 360.0
+
+    async def stopp(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
 @dataclass
 class Orchestrator:
     config: AppConfig
@@ -892,6 +911,8 @@ class Orchestrator:
     _rotor_entschieden_at: float = field(default=-1e9, init=False)
     _rotor_ruht_bis: float = field(default=0.0, init=False)
     _rotor_angehalten: bool = field(default=False, init=False)
+    # Drehweg des laufenden UTC-Tags (Verschleissgrenze); Tag als 'YYYY-MM-DD'
+    _rotor_weg_tag: tuple[str, float] = field(default=("", 0.0), init=False)
     # Sperr-Waechter: seit wann steht TX_LOCKED, und wie oft wurde
     # zuletzt selbst geheilt (Pendelschutz) — s. _sperr_waechter_loop.
     _lock_seit: float | None = field(default=None, init=False)
@@ -5725,8 +5746,27 @@ class Orchestrator:
         if not ent.drehen:
             await self._rotor_merken(band, ist, ent, gesamt, 0.0, False, ent.grund)
             return 30.0
-        kontrolle = self._rotor_kontrolle_haelt(time.time())
+        heute = datetime.now(UTC).strftime("%Y-%m-%d")
+        if self._rotor_weg_tag[0] != heute:
+            self._rotor_weg_tag = (heute, 0.0)
+        if self._rotor_weg_tag[1] + weg > cfg.max_drehweg_tag_grad:
+            self._rotor_status["grund"] = "tageslimit"
+            await self._rotor_merken(band, ist, ent, gesamt, weg, False, "tageslimit")
+            return 30.0
+        self._rotor_weg_tag = (heute, self._rotor_weg_tag[1] + weg)
+        self._rotor_status["drehweg_heute_grad"] = round(self._rotor_weg_tag[1])
         self._rotor_gedreht_at = jetzt     # beide Arme halten danach gleich lange
+        if cfg.trockenlauf:
+            # Ohne Rotor: nicht pausieren, keine Kontrollstunden — gefragt
+            # ist nur, wie oft und wie weit gedreht wuerde.
+            await client.drehe_auf(ent.ziel_grad)
+            self._rotor_soll = float(ent.ziel_grad)
+            self._rotor_status["grund"] = "trockenlauf"
+            await self._rotor_merken(band, ist, ent, gesamt, weg, False, "trockenlauf")
+            log.info("Rotor (Trockenlauf): %.0f → %d Grad (%d gegen %d Sender, Drehweg %.0f Grad)",
+                     ist, ent.ziel_grad, ent.punkte_ziel, ent.punkte_ist, weg)
+            return 30.0
+        kontrolle = self._rotor_kontrolle_haelt(time.time())
         if kontrolle:
             self._rotor_status["grund"] = "kontrolle"
             await self._rotor_merken(band, ist, ent, gesamt, weg, False, "kontrolle")
@@ -5755,7 +5795,7 @@ class Orchestrator:
         from ..rig.rotctld_client import RotctldClient
 
         psk = PskRichtung()
-        client: RotctldClient | None = None
+        client: RotctldClient | _TrockenRotor | None = None
         await asyncio.sleep(30)  # Boot-grace
         while True:
             warte = 30.0
@@ -5767,7 +5807,11 @@ class Orchestrator:
                         await client.close()
                         client = None
                 else:
-                    if client is None or (client.host, client.port) != (cfg.host, cfg.port):
+                    if cfg.trockenlauf:
+                        if not isinstance(client, _TrockenRotor):
+                            client = _TrockenRotor()
+                    elif (not isinstance(client, RotctldClient)
+                          or (client.host, client.port) != (cfg.host, cfg.port)):
                         client = RotctldClient(cfg.host, cfg.port)
                     warte = await self._rotor_schritt(client, psk)
             except asyncio.CancelledError:

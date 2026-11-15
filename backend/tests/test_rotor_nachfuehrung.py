@@ -284,3 +284,31 @@ def test_rotctld_unit_nur_lokal_und_nicht_automatisch_eingerichtet() -> None:
     # Erst nach dem Einbau des Interfaces von Hand einrichten
     assert "ft8-rotctld" not in (wurzel / "scripts/self-update.sh").read_text()
     assert "ft8-rotctld" not in (wurzel / "deploy/install.sh").read_text()
+
+
+async def test_trockenlauf_entscheidet_ohne_pause_und_ohne_kontrolle() -> None:
+    from ft8_appliance.runtime.orchestrator import _TrockenRotor
+    o, psk = _orch(), _Psk(ASIEN)
+    o.config.rotor.trockenlauf = True
+    o._rotor_kontrolle_haelt = lambda _t: True   # type: ignore[method-assign]  # gilt nicht
+    rot = _TrockenRotor()
+    await o._rotor_schritt(rot, psk)
+    assert 20 <= rot.az <= 50                     # "steht" sofort am Ziel
+    assert o.state_machine.ctx.rotor_dreht is False
+    assert o._rotor_status["grund"] == "trockenlauf"
+    await o._rotor_schritt(rot, psk)              # keine Hand-Erkennung: Position = Soll
+    assert "ruht_bis_min" not in o._rotor_status
+
+
+async def test_verschleissgrenze_je_tag() -> None:
+    from datetime import UTC, datetime
+    o, rot, psk = _orch(), _Rotor(300.0), _Psk(ASIEN)
+    heute = datetime.now(UTC).strftime("%Y-%m-%d")
+    o._rotor_weg_tag = (heute, o.config.rotor.max_drehweg_tag_grad - 10)
+    await o._rotor_schritt(rot, psk)
+    assert rot.befehle == []
+    assert o._rotor_status["grund"] == "tageslimit"
+    o._rotor_weg_tag = ("2000-01-01", 99999.0)       # neuer Tag: Zaehler beginnt neu
+    o._rotor_entschieden_at = -1e9
+    await o._rotor_schritt(rot, psk)
+    assert rot.befehle and rot.befehle[0].startswith("P ")

@@ -37,6 +37,10 @@ morgens Japan und Asien bei 30–60 Grad, ab etwa 12 UTC Nordamerika bei
 - Nach einer Drehung bleibt die Antenne mindestens 20 Minuten stehen;
   entschieden wird höchstens alle 10 Minuten. Gedreht wird erst bei
   mindestens 30 Grad Unterschied und 25 % mehr Sendern im Ziel.
+- Höchstens 1440 Grad Drehweg je UTC-Tag (vier volle Umdrehungen,
+  `max_drehweg_tag_grad`); danach bleibt die Antenne bis Mitternacht UTC
+  stehen. Der Zähler lebt im Arbeitsspeicher und beginnt nach einem
+  Neustart von vorn.
 - Der Endanschlag (beim Create RC5B-3 im Süden, „END" auf der Skala) wird
   nie gekreuzt; von 240 nach 120 Grad geht es über Norden.
 - **Handbetrieb hat Vorrang.** Steht die Antenne ohne eigenen Befehl mehr
@@ -45,6 +49,17 @@ morgens Japan und Asien bei 30–60 Grad, ab etwa 12 UTC Nordamerika bei
   das einmal per Push.
 - Kommt der Rotor nicht innerhalb von 150 Sekunden an, hält die Station
   ihn an, ruht ebenfalls und meldet es.
+
+## Trockenlauf
+
+Mit `rotor.trockenlauf: true` (und `enabled: true`) entscheidet die Station
+mit echten PSK-Daten, ohne dass ein Rotor angeschlossen sein muss. Die
+Antenne gilt nach jeder Entscheidung als am Ziel; neue Anrufe werden nicht
+pausiert, Kontrollstunden gibt es nicht. Die Bilanz zeigt im Abschnitt
+„Rotor-Nachfuehrung" Drehungen und Drehweg je Tag und die Ziele je Stunde —
+so lässt sich vor dem Einbau sehen, ob die Schwellen zu oft oder zu selten
+drehen lassen. Trockenlauf-Zeilen (`grund = 'trockenlauf'`) zählen nicht
+für die Messung.
 
 ## Messung
 
