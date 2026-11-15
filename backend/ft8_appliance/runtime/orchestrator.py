@@ -5823,6 +5823,27 @@ class Orchestrator:
         self._rotor_wartend = (ent.ziel_grad, jetzt, band, ist, ent, gesamt, weg)
         return 0.5
 
+    async def _rotor_letztes_trockenziel(self) -> float | None:
+        """Wo die gedachte Antenne des Trockenlaufs zuletzt stand.
+
+        Ohne das stand sie nach jedem Neustart wieder auf 0 Grad, und die
+        erste Entscheidung danach zaehlte als Drehung (15.11.2026, 12:10).
+        """
+        if not self.db_enabled:
+            return None
+        from sqlalchemy import select
+
+        from ..db.models import RotorLog
+        try:
+            async with session_scope() as s:
+                r = await s.execute(
+                    select(RotorLog.ziel_grad).where(RotorLog.grund == "trockenlauf")
+                    .order_by(RotorLog.id.desc()).limit(1))
+                return r.scalar_one_or_none()
+        except Exception as exc:
+            log.debug("rotor_log lesen: %s", exc)
+            return None
+
     async def _rotor_loop(self) -> None:
         """Rotor-Nachfuehrung; wartet, solange ``rotor.enabled`` aus ist."""
         from ..integrations.psk_richtung import PskRichtung
@@ -5845,6 +5866,9 @@ class Orchestrator:
                     if cfg.trockenlauf:
                         if not isinstance(client, _TrockenRotor):
                             client = _TrockenRotor()
+                            letzte = await self._rotor_letztes_trockenziel()
+                            if letzte is not None:
+                                client.az = letzte
                     elif (not isinstance(client, RotctldClient)
                           or (client.host, client.port) != (cfg.host, cfg.port)):
                         client = RotctldClient(cfg.host, cfg.port)

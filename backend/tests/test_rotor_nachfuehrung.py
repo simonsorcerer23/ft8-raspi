@@ -386,3 +386,17 @@ def test_drehweg_im_bereich_bleibt_im_bereich() -> None:
             u_a, u_b = (a - anschlag) % 360, (b - anschlag) % 360
             for u in range(int(min(u_a, u_b)), int(max(u_a, u_b)) + 1):
                 assert ri.im_bereich((u + anschlag) % 360, bereich)
+
+
+async def test_trockenlauf_ohne_datenbank_beginnt_bei_null() -> None:
+    o = _orch()
+    assert await o._rotor_letztes_trockenziel() is None
+
+
+def test_trockenlauf_uebernimmt_die_letzte_richtung_nach_neustart() -> None:
+    import inspect
+    from ft8_appliance.runtime import orchestrator as om
+    q = inspect.getsource(om.Orchestrator._rotor_loop)
+    assert "_rotor_letztes_trockenziel" in q
+    q = inspect.getsource(om.Orchestrator._rotor_letztes_trockenziel)
+    assert 'RotorLog.grund == "trockenlauf"' in q
