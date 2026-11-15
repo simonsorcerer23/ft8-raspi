@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.3 — 2026-11-15
+- feat: Rotor-Nachfuehrung mit erlaubtem Drehbereich, falls die Kabel am Mast keine volle Umdrehung hergeben; Pruefschritte am Mast und am Anschlag in der Inbetriebnahme
+
 ## v0.200.2 — 2026-11-15
 - fix: Rotor-Nachfuehrung beschliesst die Drehung auch waehrend eines QSOs und dreht danach — auf einem vollen Band traf die Pruefung sonst kaum je einen freien Moment
 
