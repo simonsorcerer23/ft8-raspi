@@ -258,6 +258,23 @@ Kernelmeldungen und startet den Pi per SysRq neu, sobald die NVMe weg ist
 Nach dem Ereignis nutzt sie nur Bash-Bordmittel, weil sich von der Platte
 nichts mehr starten lässt.
 
+**Vierter Ausfall 16.11. 02:28, nachts ohne Senden, nach 2,7 Tagen
+Laufzeit.** Gleiches Bild im Kernel-Log (`CSTS=0xffffffff`, `D3cold to D0`).
+Die Wache schrieb „Neustart in 20 s", der Neustart kam aber nie; der Pi
+stand 4,5 Stunden, bis die Steckdose aus- und eingeschaltet wurde.
+Vermutlich musste Bash für den Rest des Skripts Programmteile von der toten
+Platte nachladen. Am 13.11. lief sie nach 12 Minuten, da war noch alles im
+Speicher. Seit 16.11. arbeitet die Wache darum umgekehrt: Sie bedient den
+Hardware-Watchdog (`/dev/watchdog0`, Frist 60 s), solange
+`/sys/class/nvme/nvme0/state` „live" meldet, und hört damit auf, sobald
+die NVMe 15 s lang weg ist. Bleibt sie selbst hängen, hört sie ebenfalls
+auf. Beides setzt den Pi zurück, ohne dass noch etwas von der Platte laufen
+muss. systemd hat den Watchdog dafür abgegeben
+(`/etc/systemd/system.conf.d/nvme-wache.conf`, `RuntimeWatchdogSec=off`;
+systemd hatte ihn auch während des Hängers weiter bedient). Ein ordentliches
+`systemctl stop nvme-wache` schaltet den Watchdog ab; stürzt die Wache ab,
+startet systemd sie nach 2 s neu, bevor die Frist abläuft.
+
 Hängt er trotz APST aus wieder beim Senden, ist Einstreuung wahrscheinlicher:
 Ferritkerne an USB- und Stromkabel, Pi weiter weg vom Rig, oder die SD-Karte
 als Bootmedium.
@@ -272,13 +289,14 @@ ein, und das Self-Update pflegt sie nicht:
 |---|---|
 | `/usr/local/sbin/nvme-wache` | Skript der NVMe-Wache |
 | `/etc/systemd/system/nvme-wache.service` | startet die Wache |
+| `/etc/systemd/system.conf.d/nvme-wache.conf` | systemd gibt den Hardware-Watchdog ab |
 | `/etc/systemd/system/kernel-log-sd.service` | schreibt die Kernelmeldungen auf die SD-Karte |
 | `/etc/systemd/system/mnt-sdkarte.mount` | hängt die SD-Karte unter `/mnt/sdkarte` ein |
 
 Dazu die Kernelparameter in `/boot/firmware/cmdline.txt`
 (`nvme_core.default_ps_max_latency_us=0 pcie_aspm=off pcie_port_pm=off`).
 
-Der Inhalt der vier Dateien liegt seit 14.11.2026 unter `deploy/mk2-nvme/`
+Der Inhalt der Dateien liegt seit 14.11.2026 unter `deploy/mk2-nvme/`
 im Repo, so wie er am MK2-Pi steht. `deploy/install.sh` richtet sie nicht
 ein, weil sie nur an diesem Gerät gebraucht werden und die Mount-Unit die
 Partition der dortigen SD-Karte beim Namen nennt
@@ -289,14 +307,18 @@ Hand:
 sudo install -m 755 deploy/mk2-nvme/nvme-wache /usr/local/sbin/nvme-wache
 sudo install -m 644 deploy/mk2-nvme/mnt-sdkarte.mount deploy/mk2-nvme/kernel-log-sd.service \
      deploy/mk2-nvme/nvme-wache.service /etc/systemd/system/
+sudo install -d /etc/systemd/system.conf.d
+sudo install -m 644 deploy/mk2-nvme/system.conf.d-nvme-wache.conf \
+     /etc/systemd/system.conf.d/nvme-wache.conf
+sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 sudo systemctl enable --now mnt-sdkarte.mount kernel-log-sd.service nvme-wache.service
 ```
 
-Die nächtliche Sicherung nimmt die vier Dateien und `cmdline.txt` seit
+Die nächtliche Sicherung nimmt die Dateien und `cmdline.txt` seit
 14.11.2026 mit (`scripts/backup-appliance.sh`, Liste `PATHS`; Ziel für den
 MK2-Pi siehe `docs/backup.md`). `scripts/restore-appliance.sh` spielt sie
 nicht ein: Es überträgt nur `config.yaml`, `/var/lib/ft8-appliance`, hostapd,
 WLAN-Profile, den Release-Schlüssel und `cty.dat`. Nach einem Neuaufbau des
-MK2-Pi kommen die vier Dateien also aus `deploy/mk2-nvme/` und die
+MK2-Pi kommen die Dateien also aus `deploy/mk2-nvme/` und die
 Kernelparameter von Hand in `cmdline.txt`.

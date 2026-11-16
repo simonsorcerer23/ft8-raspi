@@ -61,6 +61,7 @@ PATHS=(
     # Handinstallationen am MK2-Pi (docs/pi5_migration.md, NVMe-Haenger):
     /usr/local/sbin/nvme-wache
     /etc/systemd/system/nvme-wache.service
+    /etc/systemd/system.conf.d/nvme-wache.conf   # systemd gibt den Hardware-Watchdog ab
     /etc/systemd/system/kernel-log-sd.service
     /etc/systemd/system/mnt-sdkarte.mount
 )

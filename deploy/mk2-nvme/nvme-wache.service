@@ -1,9 +1,14 @@
-# Startet den Pi neu, wenn die NVMe vom PCIe-Bus faellt (seit 2026-11-13).
+# Haelt den Hardware-Watchdog am Leben, solange die NVMe lebt (seit
+# 2026-11-13, Watchdog seit 2026-11-16). Siehe Kopf von nvme-wache.
 [Unit]
-Description=NVMe-Wache: Neustart bei verlorener NVMe
-RequiresMountsFor=/mnt/sdkarte
+Description=NVMe-Wache: Hardware-Watchdog, solange die NVMe lebt
+Wants=mnt-sdkarte.mount
+After=mnt-sdkarte.mount
 [Service]
 ExecStart=/usr/local/sbin/nvme-wache
-Restart=no
+# Nach einem Absturz rechtzeitig wieder bedienen (Watchdog-Frist 60 s);
+# ein ordentlicher Stopp schaltet den Watchdog ab.
+Restart=always
+RestartSec=2
 [Install]
 WantedBy=multi-user.target

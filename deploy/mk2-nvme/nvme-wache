@@ -1,23 +1,59 @@
 #!/bin/bash
-# NVMe-Wache (seit 2026-11-13): Faellt die NVMe vom PCIe-Bus (12.11. 18:20,
-# 13.11. 09:47, beide Male beim Senden), lebt der Kernel weiter, aber
-# nichts auf der Platte laeuft mehr — der Pi steht, bis jemand den Strom
-# zieht. Diese Wache liest die Kernelmeldungen und startet den Pi dann neu.
-# Nach dem Ereignis nur noch Bash-Bordmittel: Programme von der Platte
-# lassen sich nicht mehr starten.
+# NVMe-Wache am MK2-Pi (seit 2026-11-13, umgebaut 2026-11-16).
+#
+# Faellt die NVMe vom PCIe-Bus (12.11. 18:20, 13.11. 09:47 und 10:21,
+# 16.11. 02:28), lebt der Kernel weiter, aber nichts auf der Platte laeuft
+# mehr — der Pi steht, bis jemand den Strom zieht.
+#
+# Bis 16.11. las die Wache die Kernelmeldungen und loeste den Neustart per
+# SysRq selbst aus. Am 16.11. erkannte sie den Ausfall ("Neustart in 20 s"
+# steht im Log), der Neustart kam aber nie: Nach 2,7 Tagen Laufzeit musste
+# Bash dafuer offenbar Programmteile von der Platte nachladen und blieb an
+# der toten NVMe haengen. Eine Wache, die selbst etwas tun muss, wenn die
+# Platte weg ist, kann genau dann ausfallen.
+#
+# Jetzt umgekehrt: Die Wache haelt den Hardware-Watchdog des Pi am Leben,
+# solange die NVMe "live" meldet. Ist sie weg, hoert sie damit auf — und
+# bleibt die Wache selbst haengen, hoert sie ebenfalls auf. In beiden
+# Faellen setzt der Watchdog den Pi nach seiner Frist hart zurueck. Dafuer
+# hat systemd den Watchdog abgegeben (system.conf.d/nvme-wache.conf).
+#
+# Schleifenschutz: scharf erst nach 10 Minuten Laufzeit.
+# Wird der Dienst ordentlich gestoppt, schaltet das Magic-Close ("V") den
+# Watchdog ab; ein Absturz ohne Neustart des Dienstes setzt den Pi zurueck.
 LOG=/mnt/sdkarte/var/log/ft8-mk2/kernel.log
 FIFO=/run/nvme-wache.fifo
+ZUSTAND=/sys/class/nvme/nvme0/state
+TAKT_S=5
+FEHLER_MAX=3          # 3 x 5 s nicht "live" -> Watchdog nicht mehr bedienen
+
 [ -p $FIFO ] || mkfifo $FIFO
 exec 3<>$FIFO
-grep -q -m1 -E "nvme nvme0: (controller is down|Disabling device after reset failure)" < <(dmesg -W)
+warte() { read -r -t "$1" -u 3 _ || true; }
+
 read -r up _ < /proc/uptime
 up=${up%%.*}
-if [ "$up" -lt 600 ]; then
-    echo "nvme-wache: NVMe weg nach ${up} s Laufzeit - kein Neustart (Schleifenschutz)" >> $LOG
-    exit 1
-fi
-echo "nvme-wache: NVMe weg nach ${up} s Laufzeit - Neustart in 20 s" >> $LOG
-read -r -t 20 -u 3 _ || true
-echo s > /proc/sysrq-trigger
-read -r -t 5 -u 3 _ || true
-echo b > /proc/sysrq-trigger
+[ "$up" -lt 600 ] && warte $((600 - up))
+
+exec 4>/dev/watchdog0 || { echo "nvme-wache: /dev/watchdog0 nicht zu oeffnen" >> $LOG; exit 1; }
+trap 'printf V >&4; exec 4>&-; exit 0' TERM INT
+echo "nvme-wache: Watchdog scharf" >> $LOG
+
+fehler=0
+gemeldet=0
+while :; do
+    st=weg
+    read -r st < $ZUSTAND 2>/dev/null
+    if [ "$st" = live ]; then
+        fehler=0
+    else
+        fehler=$((fehler + 1))
+    fi
+    if [ $fehler -lt $FEHLER_MAX ]; then
+        printf . >&4
+    elif [ $gemeldet -eq 0 ]; then
+        gemeldet=1
+        echo "nvme-wache: NVMe-Zustand '$st' - Watchdog wird nicht mehr bedient, Neustart folgt" >> $LOG
+    fi
+    warte $TAKT_S
+done
