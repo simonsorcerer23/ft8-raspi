@@ -275,6 +275,21 @@ systemd hatte ihn auch während des Hängers weiter bedient). Ein ordentliches
 `systemctl stop nvme-wache` schaltet den Watchdog ab; stürzt die Wache ab,
 startet systemd sie nach 2 s neu, bevor die Frist abläuft.
 
+**SSD-Tausch 16.11. 08:52.** Die SK hynix (HFS001TEJ9X162N, 1 TB, 2230,
+Firmware 51730A10) wurde am Mint über einen USB-Adapter (RTL9210) geprüft und
+gegen eine Gigabyte GP-GSM2NE3512GNTD (512 GB, gebraucht, 2314 Betriebsstunden,
+keine Medienfehler) getauscht. Geklont mit `sfdisk -d` (gleiche Disk-ID, also
+gleiche PARTUUID), `dd` der Boot-Partition und `e2image -ra` der
+Systempartition; vorher `e2fsck -f` und `resize2fs` auf 512 GB im Image. Die
+alte SSD war am Mint unauffällig: SMART ohne Medienfehler und ohne Einträge im
+Fehlerprotokoll, 1 TB in 16 Minuten fehlerfrei gelesen, Controller dabei
+bis 81 °C (Warnschwelle 86 °C), ohne Drosselung. Im Journal steht vor keinem
+der vier Ausfälle ein Vorbote. Der Adapter reicht keinen NVMe-Selbsttest durch.
+Ein Defekt im Speicher ist damit unwahrscheinlich; ein Hänger des Controllers
+am PCIe-Bus lässt sich am USB nicht nachstellen. Fällt die NVMe auch mit der
+Gigabyte aus, liegt es an Adapterplatine, Flachkabel, Versorgung oder
+Einstreuung, nicht an der SSD.
+
 Hängt er trotz APST aus wieder beim Senden, ist Einstreuung wahrscheinlicher:
 Ferritkerne an USB- und Stromkabel, Pi weiter weg vom Rig, oder die SD-Karte
 als Bootmedium.
