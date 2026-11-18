@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.5 — 2026-11-18
+- fix: QSOs gehoeren dem Operator, unter dessen Rufzeichen sie gesendet wurden — am 18.11. kam ein DK9XR-QSO zehn Sekunden nach dem Wechsel auf DO3XR ins Log, wurde DO3XR zugeschrieben und blieb bei QRZ und Club Log liegen
+- docs: SSD-Tausch am MK2 am 16.11. — alte SK hynix am Mint ohne Befund (SMART sauber, 1 TB fehlerfrei gelesen), jetzt Gigabyte 512 GB; faellt die NVMe wieder aus, liegt es nicht an der SSD
+- fix: NVMe-Wache am MK2 bedient jetzt den Hardware-Watchdog statt selbst neu zu starten — am 16.11. erkannte sie den NVMe-Ausfall, der SysRq-Neustart kam aber nie, und der Pi stand 4,5 Stunden
+- feat: scripts/stationsvergleich.py stellt beide Stationen in den gemeinsamen Betriebsstunden nebeneinander, mit Empfaengern, die beide in derselben Stunde gemeldet haben, nach Richtung
+
 ## v0.200.4 — 2026-11-15
 - fix: Rotor-Trockenlauf uebernimmt nach einem Neustart die letzte gedachte Richtung statt bei 0 Grad zu beginnen
 
