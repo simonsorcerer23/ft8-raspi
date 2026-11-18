@@ -419,6 +419,17 @@ def _tier_not_his_tx_slot(d: DecodedMsg, ctx: MachineContext) -> int:
     return 0 if _sendet_wenn_wir_senden(d, ctx) else 1
 
 
+def _tier_watchlist(d: DecodedMsg, ctx: MachineContext) -> int:
+    """1 fuer Rufzeichen auf der Watchlist, sonst 0.
+
+    Bis 2026-11-18 hob die Watchlist nur die Sperren auf (SNR-Grenze,
+    Kontinent, Fernziel); in der Rangfolge kam sie nicht vor. Ein neues
+    DXCC oder ein Marinefunker im selben Slot gewann dann gegen den
+    Funkfreund, mit dem ein Kontakt zustande kommen soll (KJ4YKG).
+    """
+    return 1 if _in_watchlist(d.call_from, ctx.watchlist_calls) else 0
+
+
 def _tier_snr(d: DecodedMsg, ctx: MachineContext) -> int:
     """SNR als Tie-Breaker — bestes Signal gewinnt."""
     return d.snr_db if d.snr_db is not None else -99
@@ -456,6 +467,7 @@ def _tier_tail_end_target(d: DecodedMsg, ctx: MachineContext) -> int:
 HUNT_TIERS: dict[str, callable] = {  # type: ignore[type-arg]
     "not_bad_reputation": _tier_not_bad_reputation,  # v0.15.0
     "not_his_tx_slot":    _tier_not_his_tx_slot,     # v0.15.0
+    "watchlist":          _tier_watchlist,           # 2026-11-18
     "not_in_pileup":      _tier_not_in_pileup,       # v0.19.0
     "marine_psk":      _tier_marine_psk,
     "marine":          _tier_marine,

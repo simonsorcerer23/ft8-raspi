@@ -917,6 +917,7 @@ class OperatingConfig(BaseModel):
         default_factory=lambda: [
             "not_bad_reputation",  # v0.15.0 — Soft-Blacklist (filter)
             "not_his_tx_slot",     # v0.15.0 — Slot-Parity-Awareness (filter)
+            "watchlist",           # 2026-11-18 — Watchlist vor allen Award-Tiers
             "not_in_pileup",       # v0.19.0 — Pile-Up-Avoidance (filter)
             "marine_psk",        # Marinefunker + PSK sagt "hört uns"
             "marine",            # Marinefunker (auch ohne PSK)
@@ -970,7 +971,7 @@ class OperatingConfig(BaseModel):
         # Synchron mit statemachine.machine.HUNT_TIERS — der Test
         # test_hunt_tiers_registry_complete erzwingt das.
         known = [
-            "not_bad_reputation", "not_his_tx_slot", "not_in_pileup",
+            "not_bad_reputation", "not_his_tx_slot", "watchlist", "not_in_pileup",
             "marine_psk", "marine",
             "new_dxcc_psk", "new_dxcc",
             "grayline", "band_open", "active_hour", "buddy_seen",
@@ -980,6 +981,14 @@ class OperatingConfig(BaseModel):
         if not v:
             return list(known)  # leere Liste → komplette Default rein
         existing = list(v)
+        # Die Watchlist gehoert nach oben, nicht zu den uebrigen Nachzueglern
+        # vor 'snr': direkt hinter die beiden Filter (2026-11-18).
+        if "watchlist" not in existing:
+            pos = 0
+            for filt in ("not_bad_reputation", "not_his_tx_slot"):
+                if filt in existing:
+                    pos = max(pos, existing.index(filt) + 1)
+            existing.insert(pos, "watchlist")
         missing = [t for t in known if t not in existing]
         if not missing:
             return existing

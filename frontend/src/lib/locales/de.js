@@ -402,6 +402,7 @@ export const de = {
   'cfg.no_rig_found': 'Kein bekanntes Rig am USB gefunden.',
   'tier.not_bad_reputation': 'Soft-Blacklist meiden (Bail-Reason-aware)',
   'tier.not_his_tx_slot': 'Nicht in SEINEM TX-Slot anrufen',
+  'tier.watchlist': 'Rufzeichen auf der Watchlist',
   'tier.not_in_pileup': 'Pile-Up meiden (rare DX mit vielen Callern)',
   'tier.lonely_cq': 'Einsamer CQ-Rufer (ruft unbeantwortet weiter)',
   'tier.continent_prior': 'Kontinent mit überdurchschnittlicher Erfolgsquote (eigene Telemetrie)',

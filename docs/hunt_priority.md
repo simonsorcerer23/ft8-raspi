@@ -37,6 +37,7 @@ ist konventionell `snr` als Tie-Breaker.
 | `not_his_tx_slot` | Station sendet **nicht** in dem Slot, in dem wir antworten würden; ohne gelernte Parität 1 | 0/1 | `ctx.op_slot_parity` (ab drei Decodes je Station) |
 | `not_in_pileup` | Call steckt **nicht** in einem Pile-Up; ein neues DXCC bekommt trotzdem 1 | 0/1 | `ctx.pile_up_calls` (Erkennung im Orchestrator) |
 | `marine_psk` | Call ist Marinefunker **und** hat uns laut PSK Reporter recently gehört | 0/1 | `marinefunker.json` + PSK-Cache |
+| `watchlist` | Call steht auf der Watchlist des aktiven Operators (auch DXpeditionen aus NG3K) — 2026-11-18; vorher hob die Watchlist nur die Sperren auf, in der Rangfolge kam sie nicht vor | 0/1 | `watchlist` (DB) → `ctx.watchlist_calls` |
 | `marine` | Call ist Marinefunker (auch ohne PSK-Confirmation) | 0/1 | `marinefunker.json` |
 | `tail_end_target` | Station hat in den letzten 30 s ein RR73/RRR/73 gesendet (= QSO beendet, jetzt frei) — 24 h Cooldown pro Station | 0/1 | `tail_end_candidates` + Toggle `tail_end_hunter_enabled` |
 | `new_dxcc_psk` | Call ist aus neuem DXCC **und** PSK sagt „hört uns" | 0/1 | cty.dat + PSK-Cache |
@@ -59,30 +60,31 @@ ist konventionell `snr` als Tie-Breaker.
 ## Default-Reihenfolge
 
 Aus `OperatingConfig.hunt_priority` (`backend/ft8_appliance/config/models.py`),
-22 Stufen:
+23 Stufen:
 
 1. `not_bad_reputation` — Soft-Blacklist meiden (Filter, v0.15.0)
 2. `not_his_tx_slot` — Slot-Parity-Awareness (Filter, v0.15.0)
-3. `not_in_pileup` — Pile-Up-Avoidance (Filter, v0.19.0)
-4. `marine_psk` — Marinefunker mit PSK-Trust
-5. `marine` — Marinefunker (auch ohne PSK)
-6. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
-7. `new_dxcc` — Neues DXCC (auch ohne PSK)
-8. `grayline` — CQ-Rufer im eigenen Grayline-Fenster (v0.14.0)
-9. `band_open` — hamqsl: Band aktuell „Good" (v0.14.0)
-10. `active_hour` — DB-History: Continent jetzt aktiv (v0.16.0)
-11. `buddy_seen` — Worked auf anderem Band (RX-Pfad bekannt, v0.17.0)
-12. `new_dxcc_band` — 5BWAS-Award-Tracking
-13. `new_grid` — Neues Maidenhead-Grid (VUCC)
-14. `new_grid_band` — Grid auf diesem Band noch nicht (VUCC-Band)
-15. `not_worked` — Neue Calls (auch routine)
-16. `dxcc_rarity` — Rarity-Bonus
-17. `continent_prior` — Kontinent mit mindestens durchschnittlicher Quote in der eigenen Telemetrie (2026-09-07)
-18. `lonely_cq` — Rufer ruft unbeantwortet weiter (2026-09-06)
-19. `psk_heard_us` — PSK sagt „hört uns" (v0.65.3 ZURÜCKGESTUFT, s.u.)
-20. `psk_snr` — graduelles PSK-Reciprocity-Signal
-21. `snr` — Haupt-Tie-Breaker (bestes Signal gewinnt)
-22. `tail_end_target` — Tail-End-Pick (v0.65.2 UNTER `snr`, s.u.)
+3. `watchlist` — Rufzeichen auf der Watchlist (2026-11-18); bestehende Listen bekommen den Tier beim Laden an dieser Stelle
+4. `not_in_pileup` — Pile-Up-Avoidance (Filter, v0.19.0)
+5. `marine_psk` — Marinefunker mit PSK-Trust
+6. `marine` — Marinefunker (auch ohne PSK)
+7. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
+8. `new_dxcc` — Neues DXCC (auch ohne PSK)
+9. `grayline` — CQ-Rufer im eigenen Grayline-Fenster (v0.14.0)
+10. `band_open` — hamqsl: Band aktuell „Good" (v0.14.0)
+11. `active_hour` — DB-History: Continent jetzt aktiv (v0.16.0)
+12. `buddy_seen` — Worked auf anderem Band (RX-Pfad bekannt, v0.17.0)
+13. `new_dxcc_band` — 5BWAS-Award-Tracking
+14. `new_grid` — Neues Maidenhead-Grid (VUCC)
+15. `new_grid_band` — Grid auf diesem Band noch nicht (VUCC-Band)
+16. `not_worked` — Neue Calls (auch routine)
+17. `dxcc_rarity` — Rarity-Bonus
+18. `continent_prior` — Kontinent mit mindestens durchschnittlicher Quote in der eigenen Telemetrie (2026-09-07)
+19. `lonely_cq` — Rufer ruft unbeantwortet weiter (2026-09-06)
+20. `psk_heard_us` — PSK sagt „hört uns" (v0.65.3 ZURÜCKGESTUFT, s.u.)
+21. `psk_snr` — graduelles PSK-Reciprocity-Signal
+22. `snr` — Haupt-Tie-Breaker (bestes Signal gewinnt)
+23. `tail_end_target` — Tail-End-Pick (v0.65.2 UNTER `snr`, s.u.)
 
 Fehlt in einer bestehenden `config.yaml` eine Stufe, fügt die Validierung
 sie beim Laden vor `snr` ein (`_migrate_missing_tiers`).

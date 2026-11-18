@@ -330,6 +330,7 @@ def test_hunt_tiers_registry_complete():
         "new_dxcc_psk", "new_dxcc",
         "psk_heard_us", "psk_snr", "new_dxcc_band", "new_grid", "new_grid_band",
         "not_worked", "dxcc_rarity", "snr", "lonely_cq", "continent_prior",
+        "watchlist",  # 2026-11-18
     }
     assert set(HUNT_TIERS.keys()) == expected
 
@@ -374,8 +375,9 @@ def test_hunt_priority_auto_migration_adds_missing_tiers():
     assert "tail_end_target" in cfg.hunt_priority
     # snr bleibt am Ende
     assert cfg.hunt_priority[-1] == "snr"
-    # User-Reihenfolge bleibt vorne erhalten
-    assert cfg.hunt_priority[0] == "marine_psk"
+    # User-Reihenfolge bleibt vorne erhalten — nur die Watchlist kommt
+    # seit 2026-11-18 davor (Liste ohne die Filter-Tiers)
+    assert cfg.hunt_priority[:2] == ["watchlist", "marine_psk"]
 
 
 def test_hunt_priority_auto_migration_preserves_user_order():
@@ -384,11 +386,12 @@ def test_hunt_priority_auto_migration_preserves_user_order():
     # User hat new_dxcc nach oben gezogen
     user = ["new_dxcc", "marine", "snr"]
     cfg = OperatingConfig(hunt_priority=user)
-    assert cfg.hunt_priority[0] == "new_dxcc"  # User-Sortierung erhalten
-    assert cfg.hunt_priority[1] == "marine"
+    # User-Sortierung erhalten; die Watchlist kommt seit 2026-11-18 davor
+    assert cfg.hunt_priority[:3] == ["watchlist", "new_dxcc", "marine"]
     assert cfg.hunt_priority[-1] == "snr"
-    # v0.66.0: 20 known Tiers (+ psk_snr); 2026-09-06: 21 (+ lonely_cq)
-    assert len(cfg.hunt_priority) == 22
+    # v0.66.0: 20 known Tiers (+ psk_snr); 2026-09-06: 21 (+ lonely_cq);
+    # 2026-11-18: 23 (+ watchlist)
+    assert len(cfg.hunt_priority) == 23
 
 
 def test_hunt_priority_validator_keeps_unknown_tiers():
@@ -403,7 +406,7 @@ def test_hunt_priority_validator_empty_list_to_default():
     """Leere Liste in der Config → komplette Default-Liste."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 22  # v0.66.0
+    assert len(cfg.hunt_priority) == 23  # 2026-11-18 (+ watchlist)
     assert cfg.hunt_priority[0] == "not_bad_reputation"
 
 

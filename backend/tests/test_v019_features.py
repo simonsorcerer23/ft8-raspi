@@ -137,7 +137,9 @@ def test_default_hunt_priority_has_not_in_pileup_at_position_3():
     cfg = OperatingConfig()
     assert cfg.hunt_priority[0] == "not_bad_reputation"
     assert cfg.hunt_priority[1] == "not_his_tx_slot"
-    assert cfg.hunt_priority[2] == "not_in_pileup"
+    # 2026-11-18: die Watchlist steht zwischen den Filtern und not_in_pileup
+    assert cfg.hunt_priority[2] == "watchlist"
+    assert cfg.hunt_priority[3] == "not_in_pileup"
 
 
 def test_migration_adds_not_in_pileup():
@@ -151,4 +153,4 @@ def test_migration_len_is_21():
     """Current default: 20 known Tiers."""
     from ft8_appliance.config.models import OperatingConfig
     cfg = OperatingConfig(hunt_priority=[])
-    assert len(cfg.hunt_priority) == 22  # 2026-09-06: + lonely_cq
+    assert len(cfg.hunt_priority) == 23  # 2026-09-06: + lonely_cq; 2026-11-18: + watchlist

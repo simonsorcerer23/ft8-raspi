@@ -16,6 +16,7 @@
   const TIER_ICONS = {
     not_bad_reputation: '✋',
     not_his_tx_slot:    '⏱️',
+    watchlist:          '👀',
     not_in_pileup:      '🌪️',
     lonely_cq:          '🙋',
     continent_prior:    '🌍',
@@ -40,6 +41,7 @@
   const TIER_LABELS = $derived({
     not_bad_reputation: t('tier.not_bad_reputation'),
     not_his_tx_slot:    t('tier.not_his_tx_slot'),
+    watchlist:          t('tier.watchlist'),
     not_in_pileup:      t('tier.not_in_pileup'),
     lonely_cq:          t('tier.lonely_cq'),
     continent_prior:    t('tier.continent_prior'),
