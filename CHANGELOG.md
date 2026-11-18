@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.8 — 2026-11-18
+- feat: Marinefunker passieren das Kontinent-Gate wie schon das Fernziel-Gate — die vier US-Mitglieder der MF-Runde fielen ohne PSK-Bestaetigung aus Nordamerika heraus, bevor der marine-Tier sie nach oben holen konnte
+
 ## v0.200.7 — 2026-11-18
 - feat: Watchlist hat in der Rangfolge Vorrang (eigener Tier direkt hinter den beiden Filtern) — bisher hob sie nur die Sperren auf, und ein neues DXCC oder ein Marinefunker im selben Slot gewann gegen den Funkfreund, mit dem ein Kontakt zustande kommen soll
 
