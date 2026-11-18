@@ -34,6 +34,7 @@ def _stub(tmp_path, *, am_usb: bool, tx_gerade=False, vd=14.0, bedient=False, we
         _vd_log={False: (vd, jetzt - 100.0)},
         _rig_bedient_at=(jetzt - 120.0) if bedient else 0.0,
         _lock_push_at=0.0,
+        _erste_hw_messung_offen=False,
         _maybe_persist_runtime_state=lambda force=False: None,
     )
     o._gestartet_mono = jetzt - 300.0
