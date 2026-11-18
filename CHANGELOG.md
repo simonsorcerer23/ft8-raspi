@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.7 — 2026-11-18
+- feat: Watchlist hat in der Rangfolge Vorrang (eigener Tier direkt hinter den beiden Filtern) — bisher hob sie nur die Sperren auf, und ein neues DXCC oder ein Marinefunker im selben Slot gewann gegen den Funkfreund, mit dem ein Kontakt zustande kommen soll
+
 ## v0.200.6 — 2026-11-18
 - fix: keine dringende Sperr-Meldung mehr fuer die Startphase — die Zeitsperre aus dem 99-s-Platzhalter vor der ersten Messung hebt die Station selbst auf, echte Gruende meldet weiter der Sperr-Waechter
 - fix: nach dem Operator-Wechsel 50 % der Hoechstleistung von Rig und Klasse auf dem Band (IC-7300 50 W, FT-817 2 W) statt des festen Profilwerts — das MK2 lief nach einem Wechsel 45 Minuten mit den 10 W aus dem DO3XR-Profil
