@@ -8451,6 +8451,23 @@ class Orchestrator:
         except Exception as exc:
             log.info("ohne_einrichtung.json nicht schreibbar: %s", exc)
 
+    def _operator_fuer_station(self, station_callsign: str | None) -> str:
+        """Zu welchem Operator-Profil ein gesendetes Rufzeichen gehoert.
+
+        Passt der Basis-Call (DK9XR/MM -> DK9XR, EA8/DK9XR -> DK9XR) zu
+        genau einem konfigurierten Operator, gehoert das QSO ihm — auch wenn
+        inzwischen ein anderer aktiv ist. Sonst der aktive Operator.
+        """
+        from ..util.callsign import base_call
+
+        basis = base_call(station_callsign)
+        if basis:
+            treffer = [op.callsign for op in self.config.operators
+                       if op.callsign.upper() == basis]
+            if len(treffer) == 1:
+                return treffer[0]
+        return self.config.operator.callsign
+
     def _melde_ohne_einrichtung(self, dienst: str, op_call: str, on_air: str,
                                 anzahl: int) -> None:
         """Einmal je Dienst, Operator und On-Air-Call: Logzeile und Push.
@@ -11435,7 +11452,11 @@ class Orchestrator:
             my_lat=gps.lat,
             my_lon=gps.lon,
             # Multi-Operator-Tracking: welcher Operator hat diesen QSO?
-            user_callsign=self.config.operator.callsign,
+            # Aus dem gesendeten Rufzeichen, nicht aus dem aktiven Operator:
+            # Am 18.11.2026 kam das Log-Ende eines QSOs als DK9XR zehn
+            # Sekunden nach dem Wechsel auf DO3XR an und landete bei DO3XR —
+            # dort gab es kein Logbuch fuer DK9XR, die Uploads blieben liegen.
+            user_callsign=self._operator_fuer_station(payload.get("station_callsign")),
             # v0.22.0 — Was haben wir tatsaechlich gesendet (mit
             # DX-Prefix falls im Ausland). Null = wie user_callsign.
             station_callsign=payload.get("station_callsign"),
