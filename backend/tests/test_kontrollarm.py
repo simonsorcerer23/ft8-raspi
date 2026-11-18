@@ -318,3 +318,17 @@ def test_arm_steht_im_anrufdatensatz() -> None:
     assert len(paare) == maschine.count('"schwach_arm": bool(self.ctx.schwach_arm)') == 2
     orch = (wurzel / "runtime" / "orchestrator.py").read_text()
     assert orch.count('kontroll_arm=meta.get("kontroll_arm")') == 1
+
+
+def test_marinefunker_aus_nordamerika_passieren_das_kontinent_gate() -> None:
+    """18.11.2026: Die US-Mitglieder der MF-Runde fielen sonst ohne PSK-Bestaetigung heraus."""
+    sm = _sm()
+    sm.ctx.hunt_continent_gate = True
+    sm.ctx.hunt_continent_gate_pct = 5
+    sm.ctx.continent_success = {"NA": 0.01}
+    sm.ctx.call_to_continent = {"N4WIS": "NA", "K1ABC": "NA"}
+    sm.ctx.marine_calls = {"N4WIS"}
+    sm.ctx.kontroll_arm = False
+    ziel = sm._pick_hunt_target([_cq("N4WIS", snr=-5), _cq("K1ABC", snr=-5)])
+    assert ziel is not None and ziel.call_from == "N4WIS"
+    assert _verworfen(sm)["K1ABC"] == "kontinent_gate"

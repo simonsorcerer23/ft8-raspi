@@ -2668,6 +2668,12 @@ class StateMachine:
                     return True
                 if _in_watchlist(d.call_from, self.ctx.watchlist_calls):
                     return True
+                # Marinefunker wie beim Fernziel-Gate ausgenommen (2026-11-18):
+                # die vier US-Mitglieder der MF-Runde (KJ4YKG, KN4KL, N4WIS,
+                # N4XAT) fielen sonst aus Nordamerika (3 %) heraus, bevor der
+                # marine-Tier sie nach oben holen konnte.
+                if cu in self.ctx.marine_calls or (base_call(d.call_from) or "") in self.ctx.marine_calls:
+                    return True
                 return cu in self.ctx.psk_heard_us or (base_call(d.call_from) or "") in self.ctx.psk_heard_us
             _v = list(cqs)
             cqs = self._gate("kontinent_gate", _v,
