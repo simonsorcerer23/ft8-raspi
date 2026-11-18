@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.6 — 2026-11-18
+- fix: keine dringende Sperr-Meldung mehr fuer die Startphase — die Zeitsperre aus dem 99-s-Platzhalter vor der ersten Messung hebt die Station selbst auf, echte Gruende meldet weiter der Sperr-Waechter
+- fix: nach dem Operator-Wechsel 50 % der Hoechstleistung von Rig und Klasse auf dem Band (IC-7300 50 W, FT-817 2 W) statt des festen Profilwerts — das MK2 lief nach einem Wechsel 45 Minuten mit den 10 W aus dem DO3XR-Profil
+
 ## v0.200.5 — 2026-11-18
 - fix: QSOs gehoeren dem Operator, unter dessen Rufzeichen sie gesendet wurden — am 18.11. kam ein DK9XR-QSO zehn Sekunden nach dem Wechsel auf DO3XR ins Log, wurde DO3XR zugeschrieben und blieb bei QRZ und Club Log liegen
 - docs: SSD-Tausch am MK2 am 16.11. — alte SK hynix am Mint ohne Befund (SMART sauber, 1 TB fehlerfrei gelesen), jetzt Gigabyte 512 GB; faellt die NVMe wieder aus, liegt es nicht an der SSD
