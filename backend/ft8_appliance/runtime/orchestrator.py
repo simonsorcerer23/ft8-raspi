@@ -2081,7 +2081,14 @@ class Orchestrator:
         self._qrz_historie_laden()
         # Integrations (QRZ, ntfy) neu mit den per-Operator-Credentials
         self._init_integrations()
-        self._tx_power_w = new_op.default_power_w
+        # Regel seit 2026-11-18 (Sebastian): nach dem Wechsel 50 % dessen, was
+        # Rig und Lizenzklasse auf dem aktuellen Band zulassen (IC-7300 50 W,
+        # FT-817 2 W) — nicht mehr der feste Profilwert. Mit dem DO3XR-Profil
+        # (10 W) lief das MK2 nach einem Wechsel 45 Minuten mit 10 statt 50 W.
+        # default_power_w gilt nur noch, wenn das Band fuer die Klasse gar
+        # nicht freigegeben ist (dann sendet die Station ohnehin nicht).
+        haelfte = self._compute_safe_default_power_w(self._last_active_band)
+        self._tx_power_w = haelfte if haelfte is not None else new_op.default_power_w
         # Safety-Floor auch beim Operator-Wechsel: wenn default_power_w
         # des neuen Operators ueber effective_max/2 liegt, runter clampen.
         # Sebastian 2026-05-24 (v0.2.3).
@@ -12789,6 +12796,16 @@ class Orchestrator:
         log.warning("TX_LOCKED: %s", reason)
         if "rig_link_guard" in reason and self._rig_am_usb() is False:
             await self._melde_rig_weg()
+            return
+        # Vor der ersten echten Hardware-Messung stehen alle Werte bewusst auf
+        # "unmoeglich" (Uhr +99 s ...). Eine Sperre aus diesem Fenster hebt
+        # _loese_startsperre nach der ersten Messung selbst auf — der Push
+        # dazu kam trotzdem nach jedem Hochfahren (Sebastian 2026-11-18:
+        # "die nervige Zeitabweichungs-Warnung"). Bleibt ein echter Grund
+        # bestehen, meldet ihn der Sperr-Waechter.
+        if self._erste_hw_messung_offen:
+            log.info("TX-Sperre in der Startphase (%s) — kein Push, wird nach der "
+                     "ersten Messung geprueft", reason)
             return
         # ntfy-Push wenn aktiviert. Wichtig bei SWR/PA-Schutz-Locks
         # weil Dad sonst evtl. nicht merkt dass die Kiste still steht.

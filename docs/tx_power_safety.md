@@ -56,7 +56,7 @@ Aus drei diskutierten Varianten hat Sebastian (B) gewählt:
 | Event | Wo im Code | Trigger-Reason |
 |---|---|---|
 | **Boot / Service-Restart** | `Orchestrator.start()` nach `_load_runtime_state()` | `"boot"` |
-| **Operator-Wechsel** (z.B. DK9XR → DO3XR per UI) | `switch_operator()` nach Setting des neuen `default_power_w` | `"operator_switch"` |
+| **Operator-Wechsel** (z.B. DK9XR → DO3XR per UI) | `switch_operator()` nach Setzen von 50 % der Band-Höchstleistung | `"operator_switch"` |
 | **Rig-Wechsel** (User wählt anderes Rig in Config) | `on_config_changed()` bei Wechsel der `rig.hamlib_id` | `"rig_change"` |
 | **Bandwechsel** | `_bandwechsel_pruefen()`: nach jedem eigenen Frequenzbefehl (`handle_set_freq`) und je Slot (`_refresh_hardware_state`), dazu wie bisher `status()` | `"band_change"` |
 
@@ -75,6 +75,14 @@ Gerät. Das Rig stand weiter auf dem Wert des Vorgängers (DO3XR sendete mit
 den 100 W von DK9XR), und der nächste Poll übernahm ihn als „extern
 verstellt". Jetzt schickt `_rig_auf_leistung` den Zielwert bei diesen beiden
 Events immer hinaus, sofern das Rig die Leistung per CAT setzen kann.
+
+**Leistung nach dem Operator-Wechsel (seit 2026-11-18):** Der neue Operator
+bekommt 50 % dessen, was Rig und Lizenzklasse auf dem aktuellen Band
+zulassen — beim IC-7300 50 W, beim FT-817 2 W —, nicht mehr seinen festen
+`default_power_w`. Mit dem DO3XR-Profil (10 W) lief das MK2 nach einem
+Wechsel 45 Minuten mit 10 statt 50 W. `default_power_w` greift nur noch, wenn
+das Band für die Klasse gar nicht freigegeben ist; dann sendet die Station
+ohnehin nicht.
 
 ### Bandwechsel-Detail
 

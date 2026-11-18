@@ -654,3 +654,40 @@ async def test_andere_sperren_hebt_das_richten_nicht_auf():
     o._last_rig = RigSnapshot(freq_hz=14_074_000, mode="USB")
     await o._betriebsart_richten("probe")
     assert sm.state is State.TX_LOCKED
+
+
+def _zwei_operatoren(rig_model: str, do3xr_default: int) -> AppConfig:
+    return AppConfig(
+        operators=[
+            OperatorConfig(callsign="DK9XR", default_locator="JN58td",
+                           default_power_w=50, license_class="A"),
+            OperatorConfig(callsign="DO3XR", default_locator="JN58td",
+                           default_power_w=do3xr_default, license_class="E"),
+        ],
+        active_callsign="DK9XR",
+        rig=RigConfig(model=rig_model),
+        bands=[BandConfig(name="15m", freq_khz=21074, antenna="ant")],
+        antennas=[AntennaConfig(name="ant", bands=["15m"])],
+        operating=OperatingConfig(),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rig_model,profil_w,erwartet_w", [
+    ("ic7300mk2", 10, 50),   # 18.11.2026: DO3XR-Profil 10 W, MK2 lief danach mit 10 statt 50 W
+    ("ic7300", 100, 50),     # Profilwert ueber der Haelfte wird ebenso auf 50 % gesetzt
+    ("ft817", 1, 2),         # 5-W-Geraet: Haelfte, abgerundet auf ganze Watt
+])
+async def test_operatorwechsel_setzt_die_haelfte_der_hoechstleistung(rig_model, profil_w, erwartet_w):
+    """Regel seit 18.11.2026: nach dem Wechsel 50 % dessen, was Rig und Klasse zulassen."""
+    o = _orch(_zwei_operatoren(rig_model, profil_w), freq_hz=21_074_000)
+    o._last_active_band = "15m"
+    o._tx_power_w = 50
+
+    async def _nix(*a, **k):
+        return None
+    o._preflight_warn = _nix
+    o._init_integrations = lambda: None
+    await o.switch_operator("DO3XR")
+    await asyncio.sleep(0)
+    assert o._tx_power_w == erwartet_w
