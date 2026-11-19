@@ -98,6 +98,28 @@ Beim RS232-Bausatz verlangt die Anleitung eine eigene Versorgung, die nicht
 mit der Stationsmasse verbunden ist. Die Ausführungen „-P" haben stattdessen
 eine 6-polige DIN-Buchse (Seite 18).
 
+### Eigener Rechner am Rotor: `ft8-rotor` (Raspberry Pi Zero 2 W)
+
+Seit 2026-11-19 läuft `rotctld` nicht am MK2-Pi, sondern auf einem
+eigenen Zero 2 W (Hostname `ft8-rotor`, WLAN „Altec“), der beim ERC sitzt.
+Der MK2-Pi spricht ihn über das Netz an (`rotor.host`).
+
+- Unit `/etc/systemd/system/ft8-rotctld.service` (Benutzer `rotor`,
+  `/usr/bin/rotctld` aus Debian, hamlib 4.6.2, `-T 0.0.0.0`), Werte in
+  `/etc/default/ft8-rotctld` (`ROT_MODEL=404`, `-s 9600`). Angelegt, aber
+  aus, bis das ERC am USB hängt.
+- nftables: Port 4533 nur vom MK2-Pi (192.168.1.175) und über
+  `tailscale0`; sonst nur SSH, mDNS, DHCP.
+- `wpasupplicant` ist auf 2:2.10-24 festgehalten (`apt-mark hold`):
+  2:2.10-24+rpt3 meldet SAE an NetworkManager, und der WLAN-Chip des
+  Zero 2 W scheitert im WPA2/WPA3-Netz dann mit „Authentication timed
+  out“. Hold erst lösen, wenn Raspberry Pi das behoben hat
+  (`/var/local/ft8-rotor/LIESMICH`).
+
+In den Schritten unten heißt „am MK2-Pi“ für `rotctld` dann „am Zero“,
+und die Handprüfung läuft vom MK2-Pi aus gegen `ft8-rotor` statt
+`127.0.0.1`.
+
 ## Inbetriebnahme, wenn das Interface eingebaut ist
 
 1. Interface am USB des MK2-Pi anschließen und den Gerätenamen nachsehen:
