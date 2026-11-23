@@ -711,6 +711,10 @@ class Orchestrator:
     _autopilot_last_eval_at: float = field(default=0.0, init=False)
     _autopilot_last_switch_at: float = field(default=0.0, init=False)
     _autopilot_last_reason: str | None = field(default=None, init=False)
+    # Wanduhr (time.time) des letzten Betriebsart- oder Bandwechsels. Decodes
+    # aus Slots, die davor begannen, stammen von der alten Frequenz und
+    # duerfen keine Anrufe mehr ausloesen (_decodes_vor_wechsel).
+    _betrieb_gewechselt_at: float = field(default=0.0, init=False)
     # PSK-Reporter-Meldungen je Band im eigenen Feld (letzte 5 min) und wann geholt
     _psk_bandaktivitaet: dict[str, int] = field(default_factory=dict, init=False)
     _psk_bandaktivitaet_at: float = field(default=0.0, init=False)
@@ -3896,12 +3900,37 @@ class Orchestrator:
             # ueber den Wechsel stehen.
             self._op_slot_parity.clear()
             self._op_slot_parity_votes.clear()
+            self._betrieb_gewechselt()
             log.info(
                 "FT8/FT4 mode switch %s -> %s (%s): decoder + slot clock "
                 "live-retuned to %.1fs slots.",
                 old_mode, new_mode, reason, target_slot,
             )
         return changed
+
+    def _betrieb_gewechselt(self) -> None:
+        """Merkt den Wechsel von Betriebsart oder Band.
+
+        Am 23.11.2026 schaltete der Autopilot am MK2 um 10:05:15 auf FT4.
+        Eine Sekunde spaeter lieferte die zweite Decoder-Stufe noch zwei
+        Funde aus dem letzten FT8-Slot; der Picker rief daraufhin EA4ZM —
+        eine FT8-Station — und holte den Anruf 21 s spaeter auf 21,140 MHz
+        im FT4-Takt nach. Der Picker darf nur sehen, was nach dem Wechsel
+        empfangen wurde.
+        """
+        self._betrieb_gewechselt_at = time.time()
+        self.state_machine.last_decodes = []
+
+    def _decodes_vor_wechsel(self, slot_ende: float) -> bool:
+        """Endete das Audio dieser Decodes vor dem letzten Betriebswechsel?
+
+        *slot_ende* ist ``tick.posix``: Der Takt feuert an der Grenze und
+        decodiert den Slot, der dort endet (auch der Vorab-Durchgang setzt
+        ``posix`` auf die Grenze). Der erste Slot danach beginnt zwar
+        Sekundenbruchteile vor dem Wechsel, wird aber schon mit dem neuen
+        Decoder auf der neuen Frequenz gelesen und zaehlt.
+        """
+        return slot_ende <= self._betrieb_gewechselt_at
 
     async def _betriebsart_vom_letzten_lauf(self) -> None:
         """Mit Autopilot in der zuletzt gefahrenen Betriebsart starten.
@@ -3948,6 +3977,7 @@ class Orchestrator:
         # letzte eigene Frequenzbefehl. Dieselbe Frequenz noch einmal zu
         # setzen kostet nichts.
         if current_hz != target_hz or old_mode != target_mode:
+            self._betrieb_gewechselt()
             log.info(
                 "autopilot: set dial %s/%s -> %d Hz (%s)",
                 target_band, target_mode, target_hz, reason,
@@ -5039,6 +5069,9 @@ class Orchestrator:
                              "%.2f s vor der Grenze fertig",
                              st["laeufe"], dauer, len(decodes),
                              st["fertig_vor_grenze_s"])
+                if decodes and self._decodes_vor_wechsel(tick.posix):
+                    # Audio von vor dem Betriebswechsel (_betrieb_gewechselt)
+                    decodes = []
                 if decodes:
                     self._last_decodes = decodes
                     # Was hier verarbeitet wird, darf der regulaere Durchgang
@@ -5534,6 +5567,13 @@ class Orchestrator:
         # und ist rund eine Sekunde nach Slotbeginn da — puenktlich genug.
         # v0.189.0 hielt sie pauschal fuer spaet und schob jede von ihr
         # ausgeloeste Wiederholung um 30 s auf.
+        if self._decodes_vor_wechsel(tick.posix):
+            # Funde von der alten Frequenz oder im alten Takt: anzeigen und
+            # speichern ja, anrufen nein (_betrieb_gewechselt).
+            log.info("spaete Decodes aus Slot %d verworfen: vor dem Betriebswechsel",
+                     tick.index)
+            self._push_status()
+            return
         self.state_machine.ctx.spaete_charge = (
             self._slot_phase_s() > self.config.operating.tx_latency_max_s)
         try:
