@@ -9336,8 +9336,8 @@ class Orchestrator:
                         last = getattr(self, "_last_logged_drift_hz", None)
                         if last is None or abs(delta_hz - last) > 50:
                             log.info(
-                                "Frequenz-Drift: %d Hz (%+.0f Hz von %s/%d kHz)",
-                                actual_hz, delta_hz, band.name, band.freq_khz,
+                                "Frequenz-Drift: %d Hz (%+.0f Hz von %s/%.3f kHz)",
+                                actual_hz, delta_hz, band.name, expected_hz / 1000,
                             )
                             # ntfy-Push beim ERSTEN Verlassen des
                             # Toleranzfensters — nicht bei jedem Drift-
