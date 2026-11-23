@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.11 — 2026-11-23
+- fix: certifi ab 2026.10.18 vorgeschrieben — die CVE-Wache fand auf dem Pi 5 certifi 2026.7.22 mit den emSign-Wurzeln, deren Zwischen-CA-Schluessel kompromittiert sind (GHSA-6q48-6c7w-9gw2, kritisch); das Self-Update zieht es beim naechsten Lauf nach
+
 ## v0.200.10 — 2026-11-23
 - fix: die Frequenz-Drift-Meldung nennt die Sollfrequenz der Betriebsart statt der FT8-Bandvorgabe — am MK2 stand nach dem Wechsel auf FT4 "von 15m/21074 kHz", obwohl gegen 21140 kHz gemessen wurde
 
