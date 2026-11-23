@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.200.10 — 2026-11-23
+- fix: die Frequenz-Drift-Meldung nennt die Sollfrequenz der Betriebsart statt der FT8-Bandvorgabe — am MK2 stand nach dem Wechsel auf FT4 "von 15m/21074 kHz", obwohl gegen 21140 kHz gemessen wurde
+
 ## v0.200.9 — 2026-11-23
 - fix: nach einem FT8/FT4- oder Bandwechsel ruft die Station niemanden mehr aus alten Decodes an — am MK2 rief sie am 23.11. nach dem Wechsel auf FT4 die FT8-Station EA4ZM auf 21,140 MHz, weil die zweite Decoder-Stufe noch Funde aus dem letzten FT8-Slot lieferte
 - docs: rotctld laeuft auf eigenem Zero 2 W (ft8-rotor) — Unit, Firewall und festgehaltener wpasupplicant (SAE-Fehler im WPA2/WPA3-Netz)
