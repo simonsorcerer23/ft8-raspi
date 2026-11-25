@@ -115,6 +115,14 @@ Der MK2-Pi spricht ihn über das Netz an (`rotor.host`).
   Zero 2 W scheitert im WPA2/WPA3-Netz dann mit „Authentication timed
   out“. Hold erst lösen, wenn Raspberry Pi das behoben hat
   (`/var/local/ft8-rotor/LIESMICH`).
+- Netzwache seit 2026-11-25 (`deploy/rotor/`): Am 24.11. um 12:41 stürzte
+  der WLAN-Chip ab („brcmf … bus is down“, „mmc1: card 0001 removed“),
+  wlan0 kam nicht zurück, und der Zero lief 22 Stunden ohne Netz. Der
+  Timer `ft8-rotor-netzwache.timer` pingt alle 5 Minuten den Router;
+  fehlt er, verbindet er erst das WLAN neu, lädt dann `brcmfmac` neu und
+  startet nach 15 Minuten ohne Netz neu (nur wenn der Zero schon eine
+  Stunde läuft). Dazu WLAN-Stromsparen aus
+  (`/etc/NetworkManager/conf.d/90-wlan-stromsparen-aus.conf`).
 
 In den Schritten unten heißt „am MK2-Pi“ für `rotctld` dann „am Zero“,
 und die Handprüfung läuft vom MK2-Pi aus gegen `ft8-rotor` statt
