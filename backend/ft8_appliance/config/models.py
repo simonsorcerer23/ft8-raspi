@@ -1232,6 +1232,20 @@ RIG_COMPUTED_FIELDS: frozenset[str] = frozenset(
 )
 
 
+class ZentraleConfig(BaseModel):
+    """Meldungen an die Zentrale (seit 2026-11-25, ``zentrale/sender.py``).
+
+    Ohne ``url`` und ``token`` schickt die Station nichts. ``grid`` ist der
+    oeffentliche Locator auf der Stationsseite — bewusst nicht der genaue aus
+    der Anlage.
+    """
+    model_config = ConfigDict(extra="forbid")
+    url: str | None = None
+    token: str | None = None
+    grid: str = "JN58BH"
+    rufzeichen_zeigen: bool = True
+
+
 class RotorConfig(BaseModel):
     """Rotor-Nachfuehrung (seit 2026-11-15, standardmaessig aus).
 
@@ -1398,6 +1412,7 @@ class AppConfig(BaseModel):
     operating: OperatingConfig = Field(default_factory=OperatingConfig)
     rig: RigConfig = Field(default_factory=RigConfig)
     rotor: RotorConfig = Field(default_factory=RotorConfig)
+    zentrale: ZentraleConfig = Field(default_factory=ZentraleConfig)
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
     ui: UiConfig = Field(default_factory=UiConfig)

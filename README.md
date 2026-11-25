@@ -196,6 +196,15 @@ leave. `--ohne-rufzeichen` additionally strips every foreign callsign,
 `backend/tests/test_spiegel.py` assert exactly these omissions — tests that
 confirm something is *absent* from the output.
 
+**Since 2026-11-25 the station can also report outward itself** (`zentrale:` in
+`config.yaml`, `backend/ft8_appliance/zentrale/`). With `url` and `token` set it
+sends the same filtered `live.json` and `profil.json` content, its log and its
+eQSL cards to a collector inside the private network, still without opening a
+port. There is no queue of its own: the station asks the collector what it
+already has and sends the rest, so nothing is lost while it is offline.
+`backend/tests/test_zentrale.py` checks that the output matches the mirror's key
+for key.
+
 ### Supported rigs
 
 Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ and, since v0.151.0,

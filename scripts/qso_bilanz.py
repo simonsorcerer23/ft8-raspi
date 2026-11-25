@@ -79,7 +79,13 @@ def hole_db(quelle: str | None) -> Path:
 
 
 def _token() -> str:
-    """API-Token der Station — nur lesen, nie ausgeben."""
+    """API-Token der Station — nur lesen, nie ausgeben.
+
+    ``FT8_TOKEN`` ersetzt den Abruf per SSH; der Rauchtest setzt ihn fuer
+    seine Stellvertreter-Station.
+    """
+    if os.environ.get("FT8_TOKEN"):
+        return os.environ["FT8_TOKEN"]
     roh = subprocess.run(
         ["ssh", "-o", "BatchMode=yes", PI,
          # sudo: config.yaml gehoert seit 2026-09-28 dem Dienstbenutzer (600)

@@ -545,6 +545,8 @@ class OrchestratorStatus:
     # ableitet. Eine Quelle, die leer ist, macht jedes darauf gebaute Gate
     # und jeden Tier wirkungslos — ohne dass es irgendwo auffaellt.
     context_health: dict[str, int] | None = None
+    # Meldungen an die Zentrale: letzte_ok, letzter_fehler, Rueckstaende
+    zentrale: dict | None = None
     # Zeitaufteilung im Slot bis zur Sendeentscheidung (Sekunden je Abschnitt)
     slot_phasen_s: dict[str, float] | None = None
     # Vorab-Decode: Laeufe, letzte Dauer, Ausbeute und wie viel Vorsprung vor
@@ -1026,6 +1028,7 @@ class Orchestrator:
         default_factory=lambda: Path("/var/lib/ft8-appliance/psk_heard_cache.json"),
         init=False,
     )
+    _zentrale: Any = field(default=None, init=False)
     _runtime_state_path: Path = field(
         default_factory=lambda: Path("/var/lib/ft8-appliance/runtime_state.json"),
         init=False,
@@ -1334,6 +1337,7 @@ class Orchestrator:
         self._spawn(self._psk_bandaktivitaet_loop(), name="psk-bandaktivitaet")
         self._spawn(self._rotor_loop(), name="rotor-nachfuehrung")
         self._spawn(self._continent_prior_loop(), name="continent-prior")
+        self._starte_zentrale_falls_konfiguriert()
         self._spawn(self._dx_cluster_hint_loop(), name="dx-cluster-hint")
         if (
             self.db_enabled
@@ -1667,6 +1671,19 @@ class Orchestrator:
     def qsl_verzeichnis(self) -> Path:
         """Wo die Kartenbilder liegen. Neben der Datenbank, nicht im Repo."""
         return self._qsl_dir
+
+    def _starte_zentrale_falls_konfiguriert(self) -> None:
+        """Meldungen an die Zentrale, nur mit ``zentrale.url`` und ``zentrale.token``."""
+        z = self.config.zentrale
+        if not (self.db_enabled and z.url and z.token):
+            return
+        from ..zentrale.sender import Zentrale
+
+        self._zentrale = Zentrale(z.url, z.token, grid=z.grid,
+                                  mit_rufzeichen=z.rufzeichen_zeigen,
+                                  qsl_verzeichnis=self.qsl_verzeichnis)
+        log.info("Zentrale: Station meldet an %s", z.url)
+        self._spawn(self._zentrale.lauf(), name="zentrale")
 
     def starte_qsl_inbox_loop_falls_noetig(self, anlass: str) -> bool:
         """Wie bei eQSL und LoTW: von JEDEM Konfigurationsweg aufrufbar."""
@@ -2708,6 +2725,7 @@ class Orchestrator:
             filter_drops=(dict(self.state_machine.filter_drops)
                           if self.state_machine.filter_drops else None),
             context_health=self._context_health(),
+            zentrale=(self._zentrale.status() if self._zentrale is not None else None),
             slot_phasen_s=(dict(self._slot_phasen_s) if self._slot_phasen_s else None),
             vorab_stats=(dict(self._vorab_stats) if self._vorab_stats else None),
             rotor=(dict(self._rotor_status) if self.config.rotor.enabled else None),
@@ -11515,6 +11533,8 @@ class Orchestrator:
         try:
             async with session_scope() as s:
                 await repository.insert_qso(s, **qso_kwargs)
+            if self._zentrale is not None:
+                self._zentrale.neues_qso()
             # v0.36.0 — bei Erfolg: ggf. frueher gespillte QSOs nachtragen.
             await self._drain_spilled_qsos()
         except Exception as exc:

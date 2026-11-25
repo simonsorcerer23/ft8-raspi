@@ -13,8 +13,12 @@ Daten haben muesste.
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -189,11 +193,43 @@ def _baue_db(pfad: Path) -> None:
     eng.dispose()
 
 
+class _Station(BaseHTTPRequestHandler):
+    """Stellvertreter fuer /api/status der Station.
+
+    Bis 2026-11-25 fragte der Test den echten Pi 5 ab; war der offline, stand
+    "Station nicht erreichbar" in der Ausgabe, und der Test (und mit ihm jedes
+    Release) scheiterte, ohne dass am Code etwas falsch war.
+    """
+
+    def do_GET(self) -> None:  # noqa: N802
+        rumpf = json.dumps({
+            "context_health": {"gearbeitete_calls": 120, "soft_blacklist": 3,
+                               "wunschliste": 5, "kontinent_quoten": 6,
+                               "qso_cooldowns": 4},
+            "filter_drops": {"cooldown": 12, "schwach": 3},
+        }).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(rumpf)))
+        self.end_headers()
+        self.wfile.write(rumpf)
+
+    def log_message(self, *a) -> None:
+        pass
+
+
 def _laufe(db: Path) -> str:
-    r = subprocess.run(
-        [sys.executable, str(SKRIPT), "--db", str(db), "--tage", "7"],
-        capture_output=True, text=True, timeout=180,
-    )
+    server = HTTPServer(("127.0.0.1", 0), _Station)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    umgebung = {**os.environ, "FT8_PI": f"http://127.0.0.1:{server.server_port}",
+                "FT8_TOKEN": "test"}
+    try:
+        r = subprocess.run(
+            [sys.executable, str(SKRIPT), "--db", str(db), "--tage", "7"],
+            capture_output=True, text=True, timeout=180, env=umgebung,
+        )
+    finally:
+        server.shutdown()
     assert r.returncode == 0, r.stderr[-2000:]
     return r.stdout
 

@@ -202,6 +202,15 @@ fremden Rufzeichen heraus, `--ohne-qsl` die Kartengalerie. Die Tests in
 `backend/tests/test_spiegel.py` prüfen genau diese Auslassungen — ein Test,
 der bestätigt, dass etwas *nicht* in der Ausgabe steht.
 
+**Seit 25.11.2026 kann die Station auch selbst nach draußen melden**
+(`zentrale:` in `config.yaml`, `backend/ft8_appliance/zentrale/`). Mit `url` und
+`token` schickt sie denselben gefilterten Inhalt wie `live.json` und
+`profil.json`, dazu Logbuch und eQSL-Karten an eine Annahme im privaten Netz,
+weiterhin ohne offenen Port. Eine eigene Warteschlange gibt es nicht: Die
+Station fragt die Annahme, was dort schon liegt, und schickt den Rest; offline
+geht so nichts verloren. `backend/tests/test_zentrale.py` prüft, dass die
+Ausgabe Schlüssel für Schlüssel der des Spiegels entspricht.
+
 ### Unterstützte Rigs
 
 Icom IC-705, IC-7300, IC-9700, IC-7610, QRP Labs QMX/QMX+ und seit v0.151.0

@@ -121,6 +121,7 @@ class StatusResponse(BaseModel):
     # hat — zum Aufspueren von Gates, die zu viel oder gar nichts tun.
     filter_drops: dict | None = None
     context_health: dict | None = None
+    zentrale: dict | None = None
     slot_phasen_s: dict | None = None
     vorab_stats: dict | None = None
     # Rotor-Nachfuehrung (seit 2026-11-15); None, wenn aus
@@ -218,6 +219,7 @@ async def get_status(
         decoder_pass_stats=getattr(s, "decoder_pass_stats", None),
         filter_drops=getattr(s, "filter_drops", None),
         context_health=getattr(s, "context_health", None),
+        zentrale=getattr(s, "zentrale", None),
         slot_phasen_s=getattr(s, "slot_phasen_s", None),
         vorab_stats=getattr(s, "vorab_stats", None),
         rotor=getattr(s, "rotor", None),
