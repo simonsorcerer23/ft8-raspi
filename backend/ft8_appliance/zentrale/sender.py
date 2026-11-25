@@ -61,10 +61,12 @@ QSO_FELDER = ("call", "band", "freq_hz", "mode", "rst_sent", "rst_rcvd", "grid_r
 
 
 class ZentraleFehler(RuntimeError):
-    def __init__(self, text: str, *, warte_s: float | None = None, dauerhaft: bool = False):
+    def __init__(self, text: str, *, warte_s: float | None = None, dauerhaft: bool = False,
+                 status: int | None = None):
         super().__init__(text)
         self.warte_s = warte_s
         self.dauerhaft = dauerhaft
+        self.status = status
 
 
 def zeit_utc(dt: datetime | None) -> str | None:
@@ -174,7 +176,7 @@ class Zentrale:
                 warte = 60.0
             raise ZentraleFehler("Zentrale ausgelastet (429)", warte_s=warte)
         if r.status_code >= 400:
-            raise ZentraleFehler(f"{methode} {pfad}: HTTP {r.status_code}")
+            raise ZentraleFehler(f"{methode} {pfad}: HTTP {r.status_code}", status=r.status_code)
         if r.status_code == 204 or not r.content:
             return None
         return r.json()
@@ -324,11 +326,11 @@ class Zentrale:
             pfad = self._bild(k.pop("datei"))
             sha = None
             if pfad is not None and (k["medientyp"] or "image/jpeg") in BILD_TYPEN \
-                    and pfad.stat().st_size <= BILD_MAX:
+                    and 0 < pfad.stat().st_size <= BILD_MAX:
                 sha = await asyncio.to_thread(self._sha, pfad)
                 pfade[sha] = pfad
             if sha is None and k["schluessel"] in bekannt:
-                # Bild zu gross, falscher Typ oder ausserhalb des Ordners:
+                # Bild leer, zu gross, falscher Typ oder ausserhalb des Ordners:
                 # nicht jede Minute neu versuchen.
                 self._ungeeignet.add(k["schluessel"])
             zeilen.append({**k, "sha256": sha})
@@ -340,8 +342,18 @@ class Zentrale:
                 continue
             typ = next((z["medientyp"] for z in zeilen if z["sha256"] == sha), None)
             daten = await asyncio.to_thread(pfade[sha].read_bytes)
-            await self._rufe(c, "PUT", f"/v1/bild/{sha}", content=daten,
-                             headers={"Content-Type": typ or "image/jpeg"})
+            try:
+                await self._rufe(c, "PUT", f"/v1/bild/{sha}", content=daten,
+                                 headers={"Content-Type": typ or "image/jpeg"})
+            except ZentraleFehler as e:
+                if e.status is None or not 400 <= e.status < 500 or e.status == 408:
+                    raise
+                # Die Annahme lehnt genau dieses Bild ab: ueberspringen und
+                # merken, die uebrigen gehen weiter.
+                log.warning("Zentrale: Bild %s abgelehnt (HTTP %d), uebersprungen",
+                            sha[:12], e.status)
+                self._ungeeignet.update(z["schluessel"] for z in zeilen if z["sha256"] == sha)
+                continue
             geschickt += 1
         # Karten ohne Bild, die schon bekannt sind, zaehlen nicht als offen.
         return len(offen) > len(teil) or geschickt >= BILDER_JE_RUNDE

@@ -91,6 +91,7 @@ class FalscheZentrale:
         self.profile: list[dict] = []
         self.weg = False
         self.status_code: int | None = None
+        self.bild_ablehnen: set[str] = set()
 
     def __call__(self, req: httpx.Request) -> httpx.Response:
         if self.weg:
@@ -138,6 +139,9 @@ class FalscheZentrale:
         if p.startswith("/v1/bild/"):
             import hashlib
             sha = p.rsplit("/", 1)[1]
+            assert req.content, "leere Bilder gehen nicht hinaus"
+            if sha in self.bild_ablehnen:
+                return httpx.Response(400)
             assert hashlib.sha256(req.content).hexdigest() == sha
             self.bilder[sha] = req.content
             return httpx.Response(204)
@@ -330,3 +334,28 @@ async def test_grosser_kartenbestand_geht_in_stuecken(db, tmp_path) -> None:
     assert len(f.karten) == 251 and len(f.bilder) == 250
     assert runden >= 250 // sender.BILDER_JE_RUNDE - 1
     assert not await z.karten(z._client()), "die GIF-Karte darf nicht ewig offen bleiben"
+
+
+@pytest.mark.asyncio
+async def test_leeres_und_abgelehntes_bild_halten_nichts_auf(db, tmp_path) -> None:
+    """MK2 25.11.: zwei leere Bilddateien, jede 400 brach den Durchgang ab."""
+    import hashlib
+
+    from ft8_appliance.db.models import QslKarte
+    from ft8_appliance.db.session import session_scope
+    (tmp_path / "qsl").mkdir()
+    (tmp_path / "qsl" / "leer.jpg").write_bytes(b"")
+    (tmp_path / "qsl" / "schlecht.jpg").write_bytes(b"\xff\xd8kaputt")
+    (tmp_path / "qsl" / "gut.jpg").write_bytes(b"\xff\xd8gut")
+    async with session_scope() as s:
+        for i, datei in enumerate(("leer.jpg", "schlecht.jpg", "gut.jpg")):
+            s.add(QslKarte(schluessel=datei, call="EA4ZM", qso_date="20261125",
+                           time_on=f"100{i}", band="15M", mode="FT8",
+                           user_callsign="DK9XR", datei=datei, medientyp="image/jpeg"))
+    f = FalscheZentrale()
+    f.bild_ablehnen.add(hashlib.sha256(b"\xff\xd8kaputt").hexdigest())
+    z = _zentrale(tmp_path, f)
+    await z.karten(z._client())
+    assert f.karten["leer.jpg"]["sha256"] is None
+    assert list(f.bilder.values()) == [b"\xff\xd8gut"]
+    assert not await z.karten(z._client()), "abgelehnte und leere Bilder bleiben nicht offen"
