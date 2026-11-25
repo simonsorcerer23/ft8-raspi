@@ -3,6 +3,10 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.201.0 — 2026-11-25
+- test: der Bilanz-Rauchtest fragt eine lokale Stellvertreter-Station statt des echten Pi 5 — war der offline, scheiterte der Test und mit ihm jedes Release
+- feat: die Station meldet selbst an die DK9XR-Zentrale (Schnittstelle v1) — Livedaten wie live.json, Tagesprofil, QSOs mit taeglichem Abgleich und eQSL-Karten mit Operator; die DB ist die Warteschlange, offline geht nichts verloren; ohne zentrale.url und zentrale.token passiert nichts (Sebastian 25.11.: „1.ja, beides“)
+
 ## v0.200.11 — 2026-11-23
 - fix: certifi ab 2026.10.18 vorgeschrieben — die CVE-Wache fand auf dem Pi 5 certifi 2026.7.22 mit den emSign-Wurzeln, deren Zwischen-CA-Schluessel kompromittiert sind (GHSA-6q48-6c7w-9gw2, kritisch); das Self-Update zieht es beim naechsten Lauf nach
 
