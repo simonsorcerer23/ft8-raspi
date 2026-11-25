@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.201.1 — 2026-11-25
+- fix: Zentrale — leere Kartenbilder gehen nicht mehr hinaus (sha256 null), und ein abgelehntes Bild (4xx) wird uebersprungen und gemerkt statt den ganzen Durchgang abzubrechen; am MK2 stand das Nachholen deshalb eine Stunde
+
 ## v0.201.0 — 2026-11-25
 - test: der Bilanz-Rauchtest fragt eine lokale Stellvertreter-Station statt des echten Pi 5 — war der offline, scheiterte der Test und mit ihm jedes Release
 - feat: die Station meldet selbst an die DK9XR-Zentrale (Schnittstelle v1) — Livedaten wie live.json, Tagesprofil, QSOs mit taeglichem Abgleich und eQSL-Karten mit Operator; die DB ist die Warteschlange, offline geht nichts verloren; ohne zentrale.url und zentrale.token passiert nichts (Sebastian 25.11.: „1.ja, beides“)
