@@ -74,7 +74,7 @@ legt den Timer auf ein Gerät, das durchläuft, und gibt ihm das Ziel mit.
 | Exit | Bedeutung | für den Timer |
 |---|---|---|
 | 0 | alles gesichert und geprüft | Erfolg |
-| 75 | Station nicht erreichbar, letzter Stand jünger als 48 h (`FT8_BACKUP_OFFLINE_FRIST_H`) | Erfolg — der Pi darf auch mal aus sein |
+| 75 | Station nicht erreichbar, letzter Stand jünger als 48 h (`FT8_BACKUP_OFFLINE_FRIST_H`); bei Stationen in `FT8_BACKUP_ZEITWEISE` (Vorgabe `ft8-pi5`, seit 27.11.2026) ohne Frist, weil `dk9xr-spiegel` deren Ausfall nach 3 Tagen meldet | Erfolg — der Pi darf auch mal aus sein |
 | 1 | unvollständig, defekt, oder die Station ist so lange weg, dass die Sicherung veraltet | **Fehler, wird gemeldet** |
 
 Bis zum 28.09.2026 zählte Exit 1 als Erfolg — damit auch eine defekte
