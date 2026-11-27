@@ -6,6 +6,8 @@ import time
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
+import asyncio
+
 import pytest
 
 from ft8_appliance.integrations.blitzortung import BlitzortungClient, Strike
@@ -295,3 +297,42 @@ def test_no_repeat_push_for_a_front_that_sits_or_retreats(monkeypatch):
     fo.integrations.blitzortung.ingest(Strike(ts=datetime.now(UTC), lat=49.68, lon=11.10))
     fo.check()
     assert len(scheduled) == 1
+
+
+@pytest.mark.asyncio
+async def test_host_mit_falschem_zertifikat_bleibt_draussen(monkeypatch):
+    """ws7 liefert seit 24.11.2026 das Zertifikat von maps.blitzortung.org."""
+    import ssl
+
+    from ft8_appliance.integrations import blitzortung_ws as bw
+
+    versuche: list[str] = []
+
+    class _Ws:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def send(self, _):
+            raise ConnectionError("zu")
+
+    def connect(url, **_):
+        host = url.split("/")[2]
+        versuche.append(host)
+        if host == "ws7.blitzortung.org":
+            raise ssl.SSLCertVerificationError("Hostname mismatch")
+        return _Ws()
+
+    async def schlafen(_):
+        if len(versuche) >= 9:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(bw.websockets, "connect", connect)
+    monkeypatch.setattr(bw.asyncio, "sleep", schlafen)
+    with pytest.raises(asyncio.CancelledError):
+        async for _ in bw.stream_strikes():
+            pass
+    assert versuche.count("ws7.blitzortung.org") == 1
+    assert len(versuche) == 9

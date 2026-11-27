@@ -252,6 +252,21 @@ async def test_harter_fehler_verbucht_nichts(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_harter_fehler_nur_einmal_laut(monkeypatch, caplog) -> None:
+    """MK2: ein DK9XR-QSO ohne Zertifikat, eine Woche lang stuendlich ERROR."""
+    import logging
+    o = _orch(fehler=LotwError("Command Syntax Error", hart=True, code=10),
+              monkeypatch=monkeypatch)
+    q = SimpleNamespace(call="F5RMK", lotw_upload_attempts=0, lotw_last_attempt_at=None)
+    with caplog.at_level(logging.INFO):
+        for _ in range(3):
+            await Orchestrator._lotw_lade_charge(o, o.op, "DK9XR", "Ort", [q],
+                                                 datetime.now(UTC))
+    stufen = [r.levelname for r in caplog.records if "LoTW lehnt" in r.getMessage()]
+    assert stufen == ["ERROR", "INFO", "INFO"]
+
+
+@pytest.mark.asyncio
 async def test_netzfehler_laesst_offen(monkeypatch) -> None:
     await _db([_qso(i) for i in range(3)])
     o = _orch(fehler=LotwError("LoTW nicht erreichbar", code=11), monkeypatch=monkeypatch)

@@ -8598,8 +8598,15 @@ class Orchestrator:
                 # Fehlendes Zertifikat, unbekannte Station Location, von
                 # LoTW zurueckgewiesen: nichts als hochgeladen verbuchen,
                 # sonst waeren die QSOs nach dem Richten uebersprungen.
-                log.error("LoTW lehnt %s ab (Code %s): %s — Einrichtung pruefen",
-                          on_air, exc.code, exc)
+                # Einmal je Call und Code laut, danach leise: Am MK2 lag ein
+                # einzelnes DK9XR-QSO ohne DK9XR-Zertifikat und erzeugte eine
+                # Woche lang jede Stunde dieselbe Fehlerzeile.
+                gemeldet = self.__dict__.setdefault("_lotw_hart_gemeldet", set())
+                schluessel = (on_air, exc.code)
+                (log.info if schluessel in gemeldet else log.error)(
+                    "LoTW lehnt %s ab (Code %s): %s — Einrichtung pruefen",
+                    on_air, exc.code, exc)
+                gemeldet.add(schluessel)
                 return
             aufgegeben = [q.call for q in faellig
                           if q.lotw_upload_attempts >= self._UPLOAD_MAX_ATTEMPTS]

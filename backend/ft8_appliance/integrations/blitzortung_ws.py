@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import ssl
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -46,6 +47,10 @@ log = logging.getLogger(__name__)
 DEFAULT_WS_HOSTS = ("ws1.blitzortung.org",
                     "ws7.blitzortung.org", "ws8.blitzortung.org")
 SUBSCRIBE_FRAME = '{"a":111}'
+# Ein Host mit falschem Zertifikat bleibt so lange aus der Rotation. Seit
+# 2026-11-24 liefert ws7 das Zertifikat von maps.blitzortung.org; bis dahin
+# kam er jede dritte Runde wieder dran (236 Warnungen in 48 Stunden).
+ZERTIFIKAT_SPERRE_S = 6 * 3600.0
 
 
 def lzw_decode(s: str) -> str:
@@ -127,7 +132,14 @@ async def stream_strikes(
     """
     host_idx = 0
     backoff = backoff_base_s
+    gesperrt_bis: dict[str, float] = {}
     while True:
+        jetzt = time.monotonic()
+        for _ in range(len(hosts)):
+            if gesperrt_bis.get(hosts[host_idx % len(hosts)], 0.0) <= jetzt:
+                break
+            host_idx += 1
+        # Sind alle gesperrt, wird trotzdem weiter rotiert.
         host = hosts[host_idx % len(hosts)]
         url = f"wss://{host}/"
         connected_at: float | None = None
@@ -160,6 +172,11 @@ async def stream_strikes(
                         yield strike
         except asyncio.CancelledError:
             raise
+        except ssl.SSLCertVerificationError as exc:
+            gesperrt_bis[host] = time.monotonic() + ZERTIFIKAT_SPERRE_S
+            log.warning("blitzortung: Zertifikat von %s ungueltig (%s) — %d h "
+                        "aus der Rotation", host, getattr(exc, "verify_message", None) or exc,
+                        int(ZERTIFIKAT_SPERRE_S // 3600))
         except Exception as exc:
             log.warning("blitzortung: WS error on %s (%s) — rotating host",
                         host, exc)
