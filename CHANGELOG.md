@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.201.2 — 2026-11-27
+- test: LoTW-Logtest schneidet direkt am Logger mit statt ueber caplog (propagate=False aus web/app.py machte ihn reihenfolgeabhaengig)
+- fix: Blitzortung-Server mit falschem Zertifikat bleiben 6 h aus der Rotation (ws7 liefert seit 24.11. das von maps.blitzortung.org, 236 Warnungen in 48 h); eine harte LoTW-Ablehnung ist je Call und Code nur einmal ERROR (am MK2 stuendlich wegen eines DK9XR-QSOs ohne DK9XR-Zertifikat)
+- fix(backup): ft8-pi5 darf beliebig lange aus sein, statt die Sicherung nach 48 h jede Nacht rot zu machen
+- feat(rotor): Netzwache fuer den Zero am Rotor — WLAN neu, Treiber neu, nach 15 min ohne Netz Neustart; WLAN-Stromsparen aus. Am 24.11. 12:41 stuerzte der WLAN-Chip ab und der Zero lief 22 h ohne Netz
+
 ## v0.201.1 — 2026-11-25
 - fix: Zentrale — leere Kartenbilder gehen nicht mehr hinaus (sha256 null), und ein abgelehntes Bild (4xx) wird uebersprungen und gemerkt statt den ganzen Durchgang abzubrechen; am MK2 stand das Nachholen deshalb eine Stunde
 
