@@ -186,7 +186,7 @@ MESSPLAN: tuple[Messung, ...] = (
         quelle="Befund 17.09. aus dem Journal; Entscheidung Sebastian 18.09.",
     ),
     Messung(
-        "sonnenindizes", "laufend",
+        "sonnenindizes", "entschieden",
         "Erklaeren K-Index oder Sonnenfluss, wann uns mehr Stationen hoeren?",
         ("solar_log",),
         "Umgebung: erklaert sie, wann es laeuft und wann nicht?",
@@ -197,21 +197,27 @@ MESSPLAN: tuple[Messung, ...] = (
         # Hinweis). Sonnenfluss braucht 10 volle Tage, vorhanden sind 9.
         # Naechster Termin ist das 30-Tage-Ende der Reihe.
         lesen_ab=date(2026, 10, 12),
-        danach="Deutlich: als Picker-Signal pruefen. Bleibt es bei 'keiner erkennbar' "
-               "ueber 30 Tage: Frage verwerfen, solar_log einstellen.",
+        danach="Verworfen; solar_log wird seit v0.201.3 nicht mehr geschrieben, die "
+               "Anzeige der Sonnendaten bleibt.",
         seit=date(2026, 9, 12),
+        ergebnis="27.11.2026 am MK2 nach 46 Tagen ueber dem Lesetermin: K-Index gegen "
+                 "Empfangsberichte r = -0,06 (56 Bloecke), gegen Decodes r = +0,17 "
+                 "(46 Bloecke), keiner erkennbar; Sonnenfluss erreichte die 10 Tage "
+                 "nie. Sebastian 27.11.: beide verwerfen.",
         quelle="Bilanz-Abschnitt 'Umgebung' seit 17.09.",
     ),
     Messung(
-        "rauschflur", "laufend",
+        "rauschflur", "entschieden",
         "Erklaert der Rauschflur, wann Anrufe abschliessen?",
         ("band_noise",),
         "Umgebung: erklaert sie, wann es laeuft und wann nicht?",
         "Korrelation Rauschflur gegen Abschlussquote je Stunde; |r| > 0,4 = Zusammenhang.",
         lesen_ab=date(2026, 10, 12),
-        danach="Bleibt 'keiner erkennbar' (17.09.: +0,04 ueber 106 Stunden): Frage "
-               "verwerfen, band_noise-Aufzeichnung einstellen.",
+        danach="Verworfen; band_noise wird seit v0.201.3 nicht mehr geschrieben.",
         seit=date(2026, 9, 12),
+        ergebnis="27.11.2026 am MK2: Rauschflur gegen Abschlussquote r = -0,23 ueber "
+                 "89 Stunden, keiner erkennbar (17.09. am Pi 5: +0,04). Sebastian "
+                 "27.11.: verwerfen.",
         quelle="Bilanz-Abschnitt 'Umgebung' (Reihen ohne Leser, 12.09.)",
     ),
     Messung(
@@ -337,7 +343,9 @@ MESSPLAN: tuple[Messung, ...] = (
         "Stunde danach, gewechselt gegen gehalten, urteil_rate(). 'echt' mehr nach dem "
         "Wechsel: Schalter bleibt an, die Kontrolle entfaellt. 'echt' weniger: Schalter "
         "aus. Sonst weiterlaufen lassen und 14 Tage spaeter erneut lesen.",
-        lesen_ab=date(2026, 11, 26),
+        # 27.11. gelesen: kein einziger Wechsel, der Bandwechsel ruht auf
+        # Sebastians Entscheidung (Audit 14.11.). Er schob um 14 Tage.
+        lesen_ab=date(2026, 12, 10),
         danach="Sebastian entscheidet ueber den Schalter. Bleibt er an, ist er auch "
                "der Kandidat fuer die Station, sobald dort eine Mehrbandantenne ohne "
                "Abstimmung haengt. bandwechsel_log ist klein und laeuft weiter.",
@@ -383,7 +391,9 @@ MESSPLAN: tuple[Messung, ...] = (
         "obere, wird der Median zur Mindestschaetzung fuer einen Versuch. Sonst bleibt "
         "es bei der Sperre fuer 'gar kein FT4 gemeldet'. Weniger als 30 Versuche bis "
         "zum Lesetermin: 14 Tage spaeter erneut lesen.",
-        lesen_ab=date(2026, 11, 26),
+        # 27.11. gelesen: 23 Versuche mit Schaetzung, Median 29; untere Haelfte
+        # 3 von 11 mit QSO, obere 7 von 12. Unter 30, also 14 Tage weiter.
+        lesen_ab=date(2026, 12, 10),
         danach="Sebastian entscheidet ueber die Mindestschaetzung. ft4_probe_log ist "
                "klein und laeuft weiter, damit sich die Schwelle nachpruefen laesst.",
         seit=date(2026, 11, 14),
@@ -523,7 +533,9 @@ MESSPLAN: tuple[Messung, ...] = (
         # Seitdem bleibt der Tuner aus (rig_tuner_soll: aus), die Reihe
         # misst also die Antenne. Offen: ob "exakt 1,0" stimmt oder der
         # CAT-Weg zu grob ist — das zeigt nur das Display beim Senden.
-        lesen_ab=date(2026, 10, 25),
+        # 27.11.2026 am MK2: 576 Messungen, alle 1,00. Display noch nicht
+        # angesehen, Sebastian schob um 14 Tage.
+        lesen_ab=date(2026, 12, 11),
         danach="Bewegt sich die Reihe ohne Tuner (Regen, Frost, Wind), misst sie "
                "und bleibt als Fruehwarnung. Steht sie weiter auf exakt 1,00, "
                "am Display nachsehen: echter Wert dort heisst CAT-Abruf reparieren, "

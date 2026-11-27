@@ -42,7 +42,11 @@ def _mitschnitt():
     log = logging.getLogger("ft8_appliance.runtime.orchestrator")
     h = _Mitschnitt()
     log.addHandler(h)
-    altes_level, log.level = log.level, logging.INFO
+    # setLevel statt log.level = …: nur setLevel leert den Cache von
+    # isEnabledFor. Sonst blieb ein frueher Test mit WARNING-Ebene haengen,
+    # und die INFO-Zeile kam im naechsten nicht an.
+    altes_level = log.level
+    log.setLevel(logging.INFO)
     return log, h, altes_level
 
 
@@ -100,7 +104,7 @@ async def test_verworfene_aussendung_wird_nicht_protokolliert():
     try:
         await _tx(o, phase_s=8.0, in_slot=False)
     finally:
-        log.removeHandler(h); log.level = level
+        log.removeHandler(h); log.setLevel(level)
 
     assert not [z for z in h.zeilen if "TX_MESSAGE" in z]
 
@@ -114,6 +118,30 @@ async def test_echte_aussendung_wird_protokolliert():
     try:
         await _tx(o, phase_s=0.4, in_slot=True)
     finally:
-        log.removeHandler(h); log.level = level
+        log.removeHandler(h); log.setLevel(level)
 
     assert [z for z in h.zeilen if "TX_MESSAGE" in z]
+
+
+@pytest.mark.asyncio
+async def test_doppelter_ausloeser_desselben_bursts_gilt_nicht_als_ausfall(monkeypatch):
+    """MK2 25.–27.11.2026: die spaete Decoder-Stufe loeste dieselbe Antwort
+    eine Sekunde nach Burstbeginn erneut aus. Sie lief schon — als
+    'ausgefallen' gemeldet, sendete die State-Machine sie ein weiteres Mal."""
+    o = _orch()
+    ausgefallen: list = []
+    monkeypatch.setattr(type(o.state_machine), "on_tx_ausgefallen",
+                        lambda self, kind: ausgefallen.append(kind))
+    o._tx_burst_active = True
+    o._tx_burst_text = "CQ DK9XR JN58"
+    log, h, level = _mitschnitt()
+    try:
+        await _tx(o, phase_s=1.0, in_slot=False)
+    finally:
+        log.removeHandler(h); log.setLevel(level)
+    assert ausgefallen == []
+    assert not [z for z in h.zeilen if "verworfen" in z]
+    # Gegenprobe: eine andere Nachricht waehrend des Bursts faellt weiter aus.
+    o._tx_burst_text = "DL1ABC DK9XR JN58"
+    await _tx(o, phase_s=1.0, in_slot=False)
+    assert ausgefallen == ["cq"]

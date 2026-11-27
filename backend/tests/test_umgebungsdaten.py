@@ -113,3 +113,29 @@ def test_alle_drei_werden_mit_gepruned():
     tabellen = {t.__tablename__ for t, _ in repository._TELEMETRY_TABLES}
     assert {"solar_log", "band_noise", "path_prediction"} <= tabellen
     assert "qso" not in tabellen
+
+
+def test_verworfene_reihen_werden_nicht_mehr_geschrieben():
+    """Sebastian 27.11.2026: Sonnenindizes und Rauschflur verworfen."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from ft8_appliance.analyse.messplan import MESSPLAN
+
+    stand = {m.schluessel: m.status for m in MESSPLAN}
+    assert stand["sonnenindizes"] == stand["rauschflur"] == "entschieden"
+    o = orch_mod.Orchestrator
+    assert o._MESSREIHE_SONNE_AUS and o._MESSREIHE_RAUSCHEN_AUS
+
+    def nie(*a, **k):
+        raise AssertionError("darf nicht in die DB schreiben")
+
+    attrappe = SimpleNamespace(_MESSREIHE_SONNE_AUS=True, _MESSREIHE_RAUSCHEN_AUS=True,
+                               db_enabled=True, _s_meter_brauchbar=nie)
+    orig = orch_mod.session_scope
+    orch_mod.session_scope = nie
+    try:
+        asyncio.run(o._persist_solar(attrappe, SimpleNamespace(sfi=100)))
+        asyncio.run(o._persist_rauschen(attrappe, "15m", 21074000, -54, -40.0))
+    finally:
+        orch_mod.session_scope = orig

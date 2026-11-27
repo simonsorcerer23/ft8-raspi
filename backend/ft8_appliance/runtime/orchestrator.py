@@ -995,6 +995,11 @@ class Orchestrator:
     # beantwortet werden muessen (Beginn UNSERES Sendeslots). None ausserhalb.
     _late_ingest_grenze: float | None = field(default=None, init=False)
     _tx_burst_active: bool = field(default=False, init=False)
+    # Text des laufenden Bursts. Am MK2 loeste die spaete Decoder-Stufe
+    # dieselbe Antwort eine Sekunde nach Burstbeginn ein zweites Mal aus
+    # (27 von 207 Verwerfungen in 48 h, 25.–27.11.2026); die galt dann als
+    # ausgefallen und wurde ein weiteres Mal gesendet.
+    _tx_burst_text: str | None = field(default=None, init=False)
     _rig_restore_last_at: float = field(default=0.0, init=False)
     _consecutive_late_tx: int = field(default=0, init=False)
     _last_tx_late_alert_at: float = field(default=0.0, init=False)
@@ -7618,7 +7623,10 @@ class Orchestrator:
         Alle dreissig Minuten ein Eintrag; die Werte selbst aendern sich
         ohnehin nur stuendlich.
         """
-        if not self.db_enabled or sd is None:
+        # Seit 2026-11-27 nicht mehr geschrieben: nach 46 Tagen ueber dem
+        # Lesetermin kein Zusammenhang mit Empfangsberichten oder Decodes,
+        # Frage verworfen (analyse/messplan.py "sonnenindizes").
+        if self._MESSREIHE_SONNE_AUS or not self.db_enabled or sd is None:
             return
         try:
             from ..db.models import SolarLog
@@ -10741,6 +10749,9 @@ class Orchestrator:
         except Exception:
             pass
 
+    _MESSREIHE_SONNE_AUS: typing.ClassVar[bool] = True
+    _MESSREIHE_RAUSCHEN_AUS: typing.ClassVar[bool] = True
+
     _S_METER_TOT_AB = 20
     """Nach so vielen gleichen Werten in Folge gilt die Quelle als tot."""
 
@@ -10779,6 +10790,10 @@ class Orchestrator:
         rx_audio_dbfs: float | None = None,
     ) -> None:
         """Fail-soft — eine Messreihe darf den Betrieb nie kosten."""
+        # Seit 2026-11-27 nicht mehr geschrieben: Rauschflur gegen Abschluss-
+        # quote ohne Zusammenhang, Frage verworfen (messplan "rauschflur").
+        if self._MESSREIHE_RAUSCHEN_AUS:
+            return
         try:
             from ..db.models import BandNoise
             wert = self._s_meter_brauchbar(int(s_meter))
@@ -11035,6 +11050,9 @@ class Orchestrator:
                          "Slot-Grenze gestoppt oder gesperrt", text)
                 return
 
+        if self._tx_burst_active and text == self._tx_burst_text:
+            log.info("TX %r laeuft bereits — doppelter Ausloeser ignoriert", text)
+            return
         if self._tx_burst_active:
             # Vorgezogen: Frueher stand diese Pruefung erst hinter dem Synth,
             # und die Buchungen unten liefen auch dann, wenn die Aussendung
@@ -11099,6 +11117,9 @@ class Orchestrator:
             log.error("FT8 synth failed for %r: %s", text, exc)
             return
 
+        if self._tx_burst_active and text == self._tx_burst_text:
+            log.info("TX %r laeuft bereits — doppelter Ausloeser ignoriert", text)
+            return
         if self._tx_burst_active:
             log.warning("TX %r verworfen: ein Burst laeuft noch — die State-Machine sendet an der naechsten Grenze", text)
             self.state_machine.on_tx_ausgefallen(payload.get("kind"))
@@ -11106,6 +11127,7 @@ class Orchestrator:
             return
         loop = asyncio.get_running_loop()
         self._tx_burst_active = True
+        self._tx_burst_text = text
         try:
             await self.rig.set_ptt(True)
             # Mark PTT-On-Zeitpunkt fuer Settling-Period im SWR-Live-Cut.
