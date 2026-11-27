@@ -252,17 +252,29 @@ async def test_harter_fehler_verbucht_nichts(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_harter_fehler_nur_einmal_laut(monkeypatch, caplog) -> None:
+async def test_harter_fehler_nur_einmal_laut(monkeypatch) -> None:
     """MK2: ein DK9XR-QSO ohne Zertifikat, eine Woche lang stuendlich ERROR."""
     import logging
     o = _orch(fehler=LotwError("Command Syntax Error", hart=True, code=10),
               monkeypatch=monkeypatch)
     q = SimpleNamespace(call="F5RMK", lotw_upload_attempts=0, lotw_last_attempt_at=None)
-    with caplog.at_level(logging.INFO):
+    # Direkt am Logger mitschneiden: web/app.py setzt propagate=False,
+    # caplog saehe dann nichts (siehe test_bg_task_supervision.py).
+    lg = logging.getLogger("ft8_appliance.runtime.orchestrator")
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler(level=logging.INFO)
+    handler.emit = records.append
+    alt = lg.level
+    lg.addHandler(handler)
+    lg.setLevel(logging.INFO)
+    try:
         for _ in range(3):
             await Orchestrator._lotw_lade_charge(o, o.op, "DK9XR", "Ort", [q],
                                                  datetime.now(UTC))
-    stufen = [r.levelname for r in caplog.records if "LoTW lehnt" in r.getMessage()]
+    finally:
+        lg.removeHandler(handler)
+        lg.setLevel(alt)
+    stufen = [r.levelname for r in records if "LoTW lehnt" in r.getMessage()]
     assert stufen == ["ERROR", "INFO", "INFO"]
 
 
