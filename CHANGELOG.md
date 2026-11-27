@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.201.4 — 2026-11-27
+- feat: das Tier new_dxcc bevorzugt neue DXCC-Gebiete nur noch mit PSK-Beleg — ohne Beleg schlossen sie am MK2 mit 19 % gegen 31 % ab, am Pi 5 mit 5 % gegen 20 % (Sebastian 27.11.: „nur mit psk“); Messplan neu_dxcc entschieden
+
 ## v0.201.3 — 2026-11-27
 - fix: dieselbe Nachricht, die gerade gesendet wird, gilt bei einem zweiten Ausloeser nicht mehr als ausgefallen (am MK2 27 von 207 Verwerfungen in 48 h, jede loeste einen ueberfluessigen weiteren Anruf aus); Messplan: Sonnenindizes und Rauschflur verworfen, solar_log und band_noise werden nicht mehr geschrieben (Sebastian 27.11.), Autopilot, FT4-Versuche und SWR-Verlauf um 14 Tage geschoben; Testhelfer setzt die Log-Ebene per setLevel
 
