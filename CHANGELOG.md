@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.201.3 — 2026-11-27
+- fix: dieselbe Nachricht, die gerade gesendet wird, gilt bei einem zweiten Ausloeser nicht mehr als ausgefallen (am MK2 27 von 207 Verwerfungen in 48 h, jede loeste einen ueberfluessigen weiteren Anruf aus); Messplan: Sonnenindizes und Rauschflur verworfen, solar_log und band_noise werden nicht mehr geschrieben (Sebastian 27.11.), Autopilot, FT4-Versuche und SWR-Verlauf um 14 Tage geschoben; Testhelfer setzt die Log-Ebene per setLevel
+
 ## v0.201.2 — 2026-11-27
 - test: LoTW-Logtest schneidet direkt am Logger mit statt ueber caplog (propagate=False aus web/app.py machte ihn reihenfolgeabhaengig)
 - fix: Blitzortung-Server mit falschem Zertifikat bleiben 6 h aus der Rotation (ws7 liefert seit 24.11. das von maps.blitzortung.org, 236 Warnungen in 48 h); eine harte LoTW-Ablehnung ist je Call und Code nur einmal ERROR (am MK2 stuendlich wegen eines DK9XR-QSOs ohne DK9XR-Zertifikat)
