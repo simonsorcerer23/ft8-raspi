@@ -75,10 +75,15 @@ def _tier_new_dxcc_psk(d: DecodedMsg, ctx: MachineContext) -> int:
 
 
 def _tier_new_dxcc(d: DecodedMsg, ctx: MachineContext) -> int:
-    """Neues DXCC (auch ohne PSK)."""
-    if not d.call_from:
-        return 0
-    return 1 if d.call_from.upper() in ctx.new_dxcc_calls else 0
+    """Neues DXCC — seit 2026-11-27 nur noch mit PSK-Beleg.
+
+    Bis dahin galt es auch ohne Beleg und schloss schlecht ab: am Pi 5 im
+    September 9 von 175 Anrufen (5 %) gegen 20 % sonst, am MK2 6 von 31
+    (19 %) gegen 31 %. Mit PSK-Beleg lag die Quote deutlich ueber dem
+    Schnitt. Sebastian 27.11.2026: „nur mit psk“. Der Name bleibt, weil er
+    in jeder config.yaml steht; die Auto-Migration fuegte ihn sonst wieder ein.
+    """
+    return _tier_new_dxcc_psk(d, ctx)
 
 
 def _tier_psk_heard_us(d: DecodedMsg, ctx: MachineContext) -> int:

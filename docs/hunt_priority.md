@@ -41,7 +41,7 @@ ist konventionell `snr` als Tie-Breaker.
 | `marine` | Call ist Marinefunker (auch ohne PSK-Confirmation) | 0/1 | `marinefunker.json` |
 | `tail_end_target` | Station hat in den letzten 30 s ein RR73/RRR/73 gesendet (= QSO beendet, jetzt frei) — 24 h Cooldown pro Station | 0/1 | `tail_end_candidates` + Toggle `tail_end_hunter_enabled` |
 | `new_dxcc_psk` | Call ist aus neuem DXCC **und** PSK sagt „hört uns" | 0/1 | cty.dat + PSK-Cache |
-| `new_dxcc` | Call ist aus neuem DXCC (auch ohne PSK) | 0/1 | cty.dat + worked-Set |
+| `new_dxcc` | Seit 2026-11-27 wie `new_dxcc_psk`: neues DXCC nur mit PSK-Beleg (ohne Beleg schlossen neue Gebiete deutlich seltener ab) | 0/1 | cty.dat + PSK-Cache |
 | `grayline` | Rufer steht gerade in seinem Grayline-Fenster (Sonnenhöhe an seinem Standort zwischen −6° und +6°) | 0/1 | `ctx.call_to_latlon` + `util.propagation.is_in_grayline` |
 | `band_open` | hamqsl meldet für das Band „Good" (Tag/Nacht nach Sonnenstand am eigenen QTH); gilt dann für alle Rufer | 0/1 | hamqsl-Bandbedingungen + `util.propagation.is_band_open_for_dx` |
 | `active_hour` | Die UTC-Stunde lohnt für den Kontinent des Rufers: Abschlussquote der Zelle (Kontinent, Stunde) mindestens im Mittel (`hunt_zellen_prior`), sonst Top-50-%-Stunden aus der QSO-Tabelle | 0/1 | `ctx.zellen_success` bzw. `ctx.active_continent_hours` |
@@ -69,7 +69,7 @@ Aus `OperatingConfig.hunt_priority` (`backend/ft8_appliance/config/models.py`),
 5. `marine_psk` — Marinefunker mit PSK-Trust
 6. `marine` — Marinefunker (auch ohne PSK)
 7. `new_dxcc_psk` — Neues DXCC mit PSK-Trust
-8. `new_dxcc` — Neues DXCC (auch ohne PSK)
+8. `new_dxcc` — Neues DXCC, seit 2026-11-27 nur mit PSK-Beleg
 9. `grayline` — CQ-Rufer im eigenen Grayline-Fenster (v0.14.0)
 10. `band_open` — hamqsl: Band aktuell „Good" (v0.14.0)
 11. `active_hour` — DB-History: Continent jetzt aktiv (v0.16.0)

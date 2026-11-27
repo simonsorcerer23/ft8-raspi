@@ -632,7 +632,7 @@ MESSPLAN: tuple[Messung, ...] = (
         quelle="Modellkommentar v0.31.0 (skip_worked-Frage)",
     ),
     Messung(
-        "neu_dxcc", "laufend",
+        "neu_dxcc", "entschieden",
         "Schliessen Anrufe an neue DXCC-Gebiete anders ab?",
         ("pick_attempt.was_new_dxcc",),
         "Wen anrufen? Was die Ziel-Eigenschaften zum Abschluss beitragen",
@@ -646,8 +646,14 @@ MESSPLAN: tuple[Messung, ...] = (
         danach="Entscheidung Sebastian: DXCC-Tiers behalten (ein neues Gebiet ist mehr "
                "wert als ein Routine-QSO), nur mit PSK-Beleg bevorzugen, oder abstufen. "
                "Stand 21.09.: 175 Anrufe, 9 QSOs (5,1 %) gegen 19,6 % sonst, z = -4,76; "
-               "das Tier new_dxcc gab 32-mal den Ausschlag fuer 1 QSO.",
+               "das Tier new_dxcc gab 32-mal den Ausschlag fuer 1 QSO. Seit v0.201.4 "
+               "gilt new_dxcc nur mit PSK-Beleg; was_new_dxcc wird weiter geschrieben "
+               "und zeigt, ob die Quote neuer Gebiete damit steigt.",
         seit=date(2026, 5, 27),
+        ergebnis="27.11.2026 am MK2: neue Gebiete 6 von 31 (19,4 %) gegen 31,3 %, das "
+                 "Tier new_dxcc 4 von 19; mit PSK-Beleg schliessen Ziele deutlich "
+                 "oefter ab (psk_heard_us 41,7 %, psk_snr 52,3 %). Sebastian 27.11.: "
+                 "nur mit PSK-Beleg bevorzugen.",
         quelle="Modellkommentar v0.31.0",
     ),
     Messung(

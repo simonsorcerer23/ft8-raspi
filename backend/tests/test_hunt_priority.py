@@ -180,8 +180,10 @@ def test_psk_snr_priority_can_beat_decode_snr():
 
 
 def test_tier_new_dxcc():
-    ctx = _ctx(new_dxcc_calls={"9J2FI"})
+    """Seit 27.11.2026 nur mit PSK-Beleg (Sebastian: „nur mit psk“)."""
+    ctx = _ctx(new_dxcc_calls={"9J2FI", "3B8XY"}, psk_heard_us={"9J2FI"})
     assert _tier_new_dxcc(_decode("9J2FI"), ctx) == 1
+    assert _tier_new_dxcc(_decode("3B8XY"), ctx) == 0, "neu, aber ohne Beleg"
     assert _tier_new_dxcc(_decode("DL5ABC"), ctx) == 0
 
 
@@ -251,8 +253,9 @@ def test_compute_score_default_order():
             "psk_heard_us", "new_dxcc_band", "not_worked", "dxcc_rarity", "snr",
         ],
         marine_calls={"DL3QR"},
-        new_dxcc_calls={"9J2FI"},
-        psk_heard_us={"EA4XYZ"},
+        new_dxcc_calls={"9J2FI", "3B8XY"},
+        # Neue DXCC zaehlen seit 27.11.2026 nur mit PSK-Beleg.
+        psk_heard_us={"EA4XYZ", "9J2FI"},
         rarity_scores={"9J2FI": 45},
     )
     s_marine = _compute_tier_score(_decode("DL3QR", -15), ctx)
@@ -263,8 +266,10 @@ def test_compute_score_default_order():
     assert s_marine > s_dxcc
     assert s_marine > s_psk
     assert s_marine > s_common
-    # Neu-DXCC schlägt PSK
+    # Neu-DXCC mit Beleg schlägt reines PSK ...
     assert s_dxcc > s_psk
+    # ... ohne Beleg nicht mehr (Sebastian 27.11.2026: „nur mit psk“).
+    assert _compute_tier_score(_decode("3B8XY", -5), ctx) < s_psk
     # PSK schlägt Common
     assert s_psk > s_common
 
@@ -295,6 +300,7 @@ def test_compute_score_unknown_tier_ignored():
     ctx = _ctx(
         hunt_priority=["new_dxcc", "NONEXISTENT_TIER", "snr"],
         new_dxcc_calls={"9J2FI"},
+        psk_heard_us={"9J2FI"},
     )
     score = _compute_tier_score(_decode("9J2FI"), ctx)
     # Tier "NONEXISTENT_TIER" wird übersprungen, also nur (1, snr)
@@ -312,7 +318,8 @@ def test_compute_score_empty_priority_fallback():
 
 def test_compute_score_snr_tiebreaker_added():
     """Wenn 'snr' nicht in der Liste ist, wird's auto angehängt."""
-    ctx = _ctx(hunt_priority=["new_dxcc"], new_dxcc_calls={"9J2FI"})
+    ctx = _ctx(hunt_priority=["new_dxcc"], new_dxcc_calls={"9J2FI"},
+               psk_heard_us={"9J2FI"})
     s1 = _compute_tier_score(_decode("9J2FI", -10), ctx)
     s2 = _compute_tier_score(_decode("9J2FI", -5), ctx)
     # Beide haben new_dxcc=1 aber unterschiedliches SNR

@@ -922,7 +922,7 @@ class OperatingConfig(BaseModel):
             "marine_psk",        # Marinefunker + PSK sagt "hört uns"
             "marine",            # Marinefunker (auch ohne PSK)
             "new_dxcc_psk",      # neues DXCC + PSK sagt "hört uns"
-            "new_dxcc",          # neues DXCC (auch ohne PSK)
+            "new_dxcc",          # neues DXCC, seit 27.11.2026 nur mit PSK-Beleg
             "grayline",          # v0.14.0 — CQ-Rufer in eigenem Grayline-Fenster
             "band_open",         # v0.14.0 — hamqsl: Band aktuell "Good"
             "active_hour",       # v0.16.0 — DB-History sagt: Continent jetzt aktiv
