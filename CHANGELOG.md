@@ -3,6 +3,9 @@
 Alle nennenswerten Änderungen dieses Projekts. Generiert aus den
 git-Tags via `scripts/gen_changelog.sh` (Quelle: Commit-Messages).
 
+## v0.201.5 — 2026-11-28
+- fix: der Dienstbenutzer darf nmcli nicht mehr frei aufrufen, nur noch das feste Hilfsskript /usr/local/sbin/ft8-wlan mit fuenf Aktionen, das nur WLAN-Profile aendert und jede Eingabe prueft; bis jetzt liess sich mit "nmcli connection add|modify|delete|up *" jede Verbindung umbauen, auch die kabelgebundene (Audit 28.11.); das WLAN-Passwort geht ueber stdin statt in die Prozessliste; frontend/jsconfig.json angelegt, npm run check laeuft wieder (0 Fehler)
+
 ## v0.201.4 — 2026-11-27
 - feat: das Tier new_dxcc bevorzugt neue DXCC-Gebiete nur noch mit PSK-Beleg — ohne Beleg schlossen sie am MK2 mit 19 % gegen 31 % ab, am Pi 5 mit 5 % gegen 20 % (Sebastian 27.11.: „nur mit psk“); Messplan neu_dxcc entschieden
 
