@@ -268,6 +268,8 @@ install -m 644 "${RENDER_DIR}/systemd/ft8-ap-fallback.service"   /etc/systemd/sy
 install -m 644 "${APP_DIR}/deploy/systemd/ft8-hostapd.service"    /etc/systemd/system/
 install -m 644 "${RENDER_DIR}/systemd/ft8-self-update.service"   /etc/systemd/system/
 install -m 644 "${RENDER_DIR}/systemd/ft8-self-update.timer"     /etc/systemd/system/
+# WLAN-Profile aus der Oberflaeche: der Dienstbenutzer darf nur dieses Skript.
+install -m 755 "${APP_DIR}/deploy/scripts/ft8-wlan"              /usr/local/sbin/ft8-wlan
 
 # Journal dauerhaft auf die Platte. Raspberry Pi OS setzt per Drop-in
 # Storage=volatile (fuer SD-Karten gedacht); auf einem Pi, der von NVMe

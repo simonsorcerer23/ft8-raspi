@@ -63,7 +63,7 @@ def _reject_dash_prefix(value: str, what: str) -> str:
 class AddConnectionRequest(BaseModel):
     ssid: str = Field(min_length=1, max_length=32)
     psk: str | None = None       # None = open WiFi
-    priority: int = 50
+    priority: int = Field(default=50, ge=-999, le=999)
     autoconnect: bool = True
 
     @field_validator("ssid")

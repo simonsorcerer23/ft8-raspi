@@ -70,9 +70,9 @@ cd frontend
 npm run build
 ```
 
-`npm run check` erwartet derzeit `frontend/jsconfig.json`; wenn diese Datei
-fehlt, ist der Check selbst nicht lauffaehig. Nicht mit einem
-Anwendungsfehler verwechseln.
+`npm run check` (svelte-check mit `frontend/jsconfig.json`) laeuft seit
+2026-11-28 durch: 0 Fehler; die Warnungen sind ueberwiegend unbenutzte
+CSS-Selektoren.
 
 Workstation-Demo ohne Pi:
 

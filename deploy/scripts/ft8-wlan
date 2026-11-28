@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# /usr/local/sbin/ft8-wlan — WLAN-Profile fuer die Weboberflaeche.
+#
+# Der Dienstbenutzer darf per sudo nur dieses Skript ausfuehren, nicht nmcli
+# selbst. Bis 2026-11-28 standen im sudoers-Snippet "nmcli connection
+# add|modify|delete|up *": Wer die Weboberflaeche uebernahm, konnte damit jede
+# Verbindung aendern, auch die kabelgebundene, und beliebige Eigenschaften
+# setzen. Hier gibt es nur fuenf feste Aktionen, und geaendert werden nur
+# WLAN-Profile.
+#
+#   ft8-wlan rescan
+#   ft8-wlan add <ssid> <prioritaet> <yes|no>   (Passwort, falls noetig, auf stdin)
+#   ft8-wlan delete <name>
+#   ft8-wlan priority <name> <prioritaet>
+#   ft8-wlan up <name>
+
+set -euo pipefail
+export LC_ALL=C
+
+NMCLI=/usr/bin/nmcli
+# Nur fuer die Tests, und nie als root: dann gilt immer /usr/bin/nmcli.
+if [ "$(id -u)" -ne 0 ] && [ -n "${FT8_WLAN_NMCLI:-}" ]; then
+    NMCLI="${FT8_WLAN_NMCLI}"
+fi
+IFACE=wlan0
+
+fehler() { echo "ft8-wlan: $*" >&2; exit 2; }
+
+pruefe_name() {
+    local n="$1"
+    [ -n "$n" ] || fehler "leerer Name"
+    [ "${#n}" -le 64 ] || fehler "Name zu lang"
+    case "$n" in -*) fehler "Name darf nicht mit '-' beginnen" ;; esac
+    if printf '%s' "$n" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+        fehler "Steuerzeichen im Namen"
+    fi
+}
+
+pruefe_prioritaet() {
+    [[ "$1" =~ ^-?[0-9]{1,3}$ ]] || fehler "Prioritaet muss eine Zahl von -999 bis 999 sein"
+}
+
+# Nur gespeicherte WLAN-Profile duerfen geaendert, geloescht oder gestartet
+# werden.
+pruefe_wlan_profil() {
+    local typ
+    typ="$("${NMCLI}" -g connection.type connection show id "$1" 2>/dev/null | head -n1)" \
+        || fehler "Profil nicht gefunden"
+    [ "$typ" = "802-11-wireless" ] || fehler "kein WLAN-Profil"
+}
+
+[ $# -ge 1 ] || fehler "Aktion fehlt"
+aktion="$1"; shift
+
+case "$aktion" in
+    rescan)
+        [ $# -eq 0 ] || fehler "rescan nimmt keine Argumente"
+        exec "${NMCLI}" device wifi rescan
+        ;;
+    add)
+        [ $# -eq 3 ] || fehler "add <ssid> <prioritaet> <yes|no>"
+        ssid="$1"; prio="$2"; auto="$3"
+        pruefe_name "$ssid"
+        [ "${#ssid}" -le 32 ] || fehler "SSID laenger als 32 Zeichen"
+        pruefe_prioritaet "$prio"
+        case "$auto" in yes|no) ;; *) fehler "autoconnect muss yes oder no sein" ;; esac
+        psk=""
+        if [ ! -t 0 ]; then
+            IFS= read -r psk || true
+        fi
+        if [ -n "$psk" ]; then
+            if ! { [ "${#psk}" -ge 8 ] && [ "${#psk}" -le 63 ]; } \
+               && ! [[ "$psk" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+                fehler "WPA-Passwort muss 8 bis 63 Zeichen haben"
+            fi
+            if printf '%s' "$psk" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+                fehler "Steuerzeichen im Passwort"
+            fi
+        fi
+        "${NMCLI}" connection add type wifi con-name "$ssid" ifname "${IFACE}" ssid "$ssid"
+        mods=(connection.autoconnect "$auto" connection.autoconnect-priority "$prio")
+        if [ -n "$psk" ]; then
+            mods+=(wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$psk")
+        fi
+        if ! "${NMCLI}" connection modify id "$ssid" "${mods[@]}"; then
+            # Halb angelegtes Profil wieder weg, damit der naechste Versuch sauber ist.
+            "${NMCLI}" connection delete id "$ssid" >/dev/null 2>&1 || true
+            exit 1
+        fi
+        ;;
+    delete)
+        [ $# -eq 1 ] || fehler "delete <name>"
+        pruefe_name "$1"; pruefe_wlan_profil "$1"
+        exec "${NMCLI}" connection delete id "$1"
+        ;;
+    priority)
+        [ $# -eq 2 ] || fehler "priority <name> <prioritaet>"
+        pruefe_name "$1"; pruefe_prioritaet "$2"; pruefe_wlan_profil "$1"
+        exec "${NMCLI}" connection modify id "$1" connection.autoconnect-priority "$2"
+        ;;
+    up)
+        [ $# -eq 1 ] || fehler "up <name>"
+        pruefe_name "$1"; pruefe_wlan_profil "$1"
+        exec "${NMCLI}" connection up id "$1"
+        ;;
+    *)
+        fehler "unbekannte Aktion"
+        ;;
+esac

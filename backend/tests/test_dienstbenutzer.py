@@ -66,7 +66,9 @@ def test_dienstbenutzer_darf_nur_was_die_oberflaeche_ausloest(tmp_path: Path) ->
     for r in regeln:
         assert not r.startswith(("/usr/bin/install", "/usr/sbin/visudo")), r
         assert r != "ALL" and "ALL" not in r.split(), r
-        assert r.startswith(("/bin/systemctl ", "/sbin/shutdown ", "/usr/bin/nmcli ")), r
+        assert r.startswith(("/bin/systemctl ", "/sbin/shutdown ", "/usr/local/sbin/ft8-wlan ")), r
+        # nmcli nur ueber das Hilfsskript (Audit 28.11.2026)
+        assert "nmcli" not in r, r
     # Kein Neustart beliebiger Units, kein Stoppen des Controllers von aussen
     assert not any("systemctl restart ft8-rigctld" in r for r in regeln)
 
@@ -82,7 +84,9 @@ def test_jeder_sudo_aufruf_im_code_ist_erlaubt(tmp_path: Path) -> None:
         "/bin/systemctl start ft8-ap-fallback.service",
         "/bin/systemctl stop ft8-ap-fallback.service",
         "/sbin/shutdown -h +0 *", "/sbin/shutdown -r +0 *",
-        "/usr/bin/nmcli device wifi rescan",
+        "/usr/local/sbin/ft8-wlan rescan",
+        "/usr/local/sbin/ft8-wlan add *", "/usr/local/sbin/ft8-wlan delete *",
+        "/usr/local/sbin/ft8-wlan priority *", "/usr/local/sbin/ft8-wlan up *",
     ]
     for n in noetig:
         assert n in regeln, n

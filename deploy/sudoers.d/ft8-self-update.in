@@ -35,7 +35,8 @@
     /usr/bin/install -m 644 @APP_DIR@/.deploy-rendered/systemd/ft8-rigctld.service /etc/systemd/system/ft8-rigctld.service, \
     /usr/bin/install -m 644 @APP_DIR@/deploy/systemd/ft8-hostapd.service /etc/systemd/system/ft8-hostapd.service, \
     /usr/bin/install -m 440 @APP_DIR@/.deploy-rendered/sudoers.d/ft8-self-update /etc/sudoers.d/ft8-self-update, \
-    /usr/bin/install -m 644 @APP_DIR@/.deploy-rendered/ft8-rigctld.env /etc/default/ft8-rigctld
+    /usr/bin/install -m 644 @APP_DIR@/.deploy-rendered/ft8-rigctld.env /etc/default/ft8-rigctld, \
+    /usr/bin/install -m 755 @APP_DIR@/deploy/scripts/ft8-wlan /usr/local/sbin/ft8-wlan
 
 @APP_USER@ ALL=(root) NOPASSWD: /usr/sbin/visudo -c -f @APP_DIR@/.deploy-rendered/sudoers.d/ft8-self-update, /usr/sbin/visudo -c -f /etc/sudoers.d/ft8-self-update
 
@@ -53,11 +54,13 @@
     /sbin/shutdown -h +0 *, \
     /sbin/shutdown -r +0 *
 
-# WLAN-Profile aus der Oberflaeche (web/routes/network.py). Nur nmcli und nur
-# dessen Verbindungsverwaltung; NetworkManager fuehrt dabei keine Befehle aus.
+# WLAN-Profile aus der Oberflaeche (web/routes/network.py). Nur ueber das
+# feste Hilfsskript: es kennt fuenf Aktionen und aendert nur WLAN-Profile.
+# Bis 2026-11-28 stand hier "nmcli connection add|modify|delete|up *" — damit
+# liess sich jede Verbindung mit beliebigen Eigenschaften umbauen.
 @SERVICE_USER@ ALL=(root) NOPASSWD: \
-    /usr/bin/nmcli device wifi rescan, \
-    /usr/bin/nmcli connection add *, \
-    /usr/bin/nmcli connection modify *, \
-    /usr/bin/nmcli connection delete *, \
-    /usr/bin/nmcli connection up *
+    /usr/local/sbin/ft8-wlan rescan, \
+    /usr/local/sbin/ft8-wlan add *, \
+    /usr/local/sbin/ft8-wlan delete *, \
+    /usr/local/sbin/ft8-wlan priority *, \
+    /usr/local/sbin/ft8-wlan up *
